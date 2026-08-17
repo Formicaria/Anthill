@@ -125,6 +125,22 @@ public class AntExecutionFrameworkTests
 
     // ---- Contracts (spec §4.2) ------------------------------------------------------------------
 
+    /// <summary>
+    /// v0.3.8.76 — `RequiredCapabilities` may now be EMPTY, and only under a rule that makes empty
+    /// mean something.
+    ///
+    /// This asserted `NotEmpty` unconditionally, and it held for one reason: the archivist declared
+    /// `model.invoke` for a model call it cannot make (`ArchivistAnt` has a parameterless
+    /// constructor). Removing that lie left the role with no required capability at all, which is
+    /// the honest description of an ant that reads in-process mission state and emits artifacts — it
+    /// needs nothing granted, and saying so is information rather than an omission.
+    ///
+    /// But "empty because nothing is needed" and "empty because nobody filled it in" look identical,
+    /// and that ambiguity is exactly what a contract exists to remove. So the rule is stronger than
+    /// the one it replaces rather than weaker: a role may require no capabilities ONLY if it is
+    /// empty in every other dimension too — no tools, no model calls, no side effects, no patch
+    /// proposals. A role that reaches for anything must say what it needs to reach with.
+    /// </summary>
     [Fact]
     public void EverySpecialist_HasVersionedContract_WithTaskTypesAndHandoffs()
     {
@@ -134,7 +150,18 @@ public class AntExecutionFrameworkTests
             Assert.NotNull(c);
             Assert.False(string.IsNullOrWhiteSpace(c!.Version));
             Assert.NotEmpty(c.SupportedTaskTypes);
-            Assert.NotEmpty(c.RequiredCapabilities);
+
+            if (c.RequiredCapabilities.Count == 0)
+            {
+                Assert.True(
+                    c.AllowedTools.Count == 0 && !c.AllowsModelCalls
+                 && !c.AllowsSideEffects && !c.ProducesPatchProposals,
+                    $"'{s}' requires no capabilities while declaring tools, model calls, side effects "
+                  + "or patch proposals. An empty capability set is only readable as \"needs nothing\" "
+                  + "when the role reaches for nothing; beside any of those it is indistinguishable "
+                  + "from a line nobody filled in.");
+            }
+
             foreach (var target in c.AllowedHandoffRoles)
                 Assert.NotEqual(AntRuntimeKind.VisualScaffold, AntExecutionCatalog.KindOf(target)); // handoffs go to real roles
         }

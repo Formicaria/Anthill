@@ -171,7 +171,7 @@ public static partial class ApiHost
             // /tools — this is the pointer, not the report.
             ["unfit_role_count"] = Queen.Router is null
                 ? 0
-                : AntModelFitness.CheckAll(Queen.Router, AntExecutionCatalog.Contracts).Count(f => !f.Fit),
+                : AntModelFitness.CheckAll(Queen.Router).Count(f => !f.Fit),
         };
     }
 

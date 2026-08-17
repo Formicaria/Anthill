@@ -444,17 +444,35 @@ public static class AntExecutionCatalog
             ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
             ProducedArtifactTypes: S("security_review"),
             AllowedHandoffRoles: S("verifier", "medic", "builder"),
-            AllowsModelCalls: true, AllowsSideEffects: false, ProducesPatchProposals: false,
-            // A review is a VERDICT the colony branches on, so it must come back as a schema rather
-            // than as prose to be parsed — the whole reason v3.2.0 removed prose-derived control
-            // flow. Tool calling is not required: PolicyScan hands it the evidence directly.
-            Model: new ModelRequirement(StructuredOutput: true),
+            // v0.3.8.76 — FALSE, which is what has always been true of the code.
+            //
+            // `SoldierAnt` takes no `ModelRouter` and its whole verdict comes from `PolicyScan`, an
+            // in-process deterministic service. It has never been able to make a model call. The
+            // contract said `true` with a structured-output requirement, and the comment below it
+            // argued — correctly — that a verdict the colony branches on must come back as a schema.
+            // Both were reasoning about a model call that does not happen.
+            //
+            // This is the shape the security review kept finding one layer down: a declaration that
+            // reads as a constraint when nothing consults it. The cost was not theoretical. Model
+            // fitness grades a role by its declaration, so the soldier was reported UNFIT on any
+            // model without structured output — an operator sent to change a model to fix a role
+            // that never asks one anything. Five roles did this at once, which is the "seven roles
+            // need a capable model" warning the colony has been showing for a capable model that
+            // five of them will never call.
+            //
+            // What is NOT being said: not that the soldier should never use a model. If one is ever
+            // wired in, `ModelCallingRoles` in `ModelRouteRequirements` is where the requirement
+            // goes, and `ContractDeclarationTests` fails until the two agree.
+            AllowsModelCalls: false, AllowsSideEffects: false, ProducesPatchProposals: false,
+            Model: ModelRequirement.None,
             // v3.8.23: the review of a state-changing patch set is not optional and must not depend
             // on a model remembering to plan it.
             Scheduling: SchedulingMode.PolicyInserted),
         ["medic"] = new("medic", V,
             SupportedTaskTypes: S("failure_diagnosis", "repair_triage", "retry_classification", "root_cause_analysis", "recovery_recommendation"),
-            RequiredCapabilities: S(Capability.ModelInvoke, Capability.RepoRead),
+            // v0.3.8.76: `ModelInvoke` drops with the model call it was granting. A capability
+            // required for something the role cannot do is reach nothing asked for.
+            RequiredCapabilities: S(Capability.RepoRead),
             // v3.8.23: no tools. `read_failure_context` was a contract-only name. The medic reads
             // mission state in process; the reach it actually LACKS is the durable attempt history
             // and the colony's recurring failure classes, and the spec's answer to that is a typed
@@ -464,19 +482,29 @@ public static class AntExecutionCatalog
             ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
             ProducedArtifactTypes: S("failure_diagnosis", "repair_recommendation"),
             AllowedHandoffRoles: S("coder", "ui_cartographer", "tester", "builder"),
-            AllowsModelCalls: true, AllowsSideEffects: false, ProducesPatchProposals: false,
-            // The medic emits a FailureClass and a repair route that the scheduler acts on, so the
-            // output is structured by necessity. Reasoning is required rather than preferred: it
-            // infers a cause from evidence that does not state one, and a model that cannot hold a
-            // chain of inference produces a plausible diagnosis of the wrong thing.
-            Model: new ModelRequirement(StructuredOutput: true, Reasoning: true),
+            // v0.3.8.76 — FALSE. `MedicAnt` takes no `ModelRouter`; it diagnoses from the typed
+            // failure signature deterministically, and has since the bounded-repair work.
+            //
+            // The requirement removed here is the one it hurts most to remove, and it is worth
+            // saying why rather than quietly deleting it. It declared Reasoning, and v0.3.8.49 built
+            // reasoning-aware rerouting on top of that declaration: `RoleRequiresReasoning` reads it,
+            // and reroutes a role to a reasoning-capable model when the configured one cannot infer.
+            // For the medic that reroute has never fired on anything, because no medic call reaches
+            // the router. The protection was real for the coder and imaginary for the medic, and one
+            // declaration served both — so the suite's own test asserted the medic was protected and
+            // passed, which is this repository's oldest defect class in the guard that was supposed
+            // to be watching for it.
+            AllowsModelCalls: false, AllowsSideEffects: false, ProducesPatchProposals: false,
+            Model: ModelRequirement.None,
             // v3.8.23: only ever in response to a real failure. MedicAnt.Execute already opens by
             // returning Blocked when no failed task exists — a handler defending itself against a
             // scheduler that should never have called it. This is that rule, declared.
             Scheduling: SchedulingMode.FailureTriggered),
         ["archivist"] = new("archivist", V,
             SupportedTaskTypes: S("memory_consolidation", "lesson_extraction", "negative_memory", "rule_archival", "mission_summary", "skill_candidate_extraction"),
-            RequiredCapabilities: S(Capability.ModelInvoke),
+            // v0.3.8.76: drops with the model call. This left the archivist requiring NO capability
+            // at all, which is the honest description of a role that reads mission state in process.
+            RequiredCapabilities: S(),
             // v3.8.23: no tools, and this one is REDUNDANT rather than missing. The archivist
             // already emits memory_candidate artifacts; ExecutionService.IngestMemoryCandidates
             // turns them into durable events; LearningRecorder rebuilds candidates from those
@@ -487,12 +515,13 @@ public static class AntExecutionCatalog
             ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
             ProducedArtifactTypes: S("memory_candidate"),
             AllowedHandoffRoles: S(),
-            AllowsModelCalls: true, AllowsSideEffects: false, ProducesPatchProposals: false,
-            // The only role whose binding constraint is CONTEXT: it reads a terminal mission's whole
-            // history to extract lessons. A short window does not fail here — it silently truncates
-            // the history and produces confident lessons drawn from part of the evidence, which is
-            // worse than no lesson because it is written to durable memory.
-            Model: new ModelRequirement(StructuredOutput: true, MinContextTokens: 32_000),
+            // v0.3.8.76 — FALSE. `ArchivistAnt` has a parameterless constructor: no router, no
+            // store, nothing to call. The 32k context requirement removed here was the largest
+            // number in the table and the reason the fitness report told operators their model's
+            // window was too small for the colony. It was describing a read of mission state that
+            // happens in process, over objects, with no window at all.
+            AllowsModelCalls: false, AllowsSideEffects: false, ProducesPatchProposals: false,
+            Model: ModelRequirement.None,
             // v3.8.23: a lifecycle worker, not a planner task. It reads a TERMINAL mission, and the
             // planner schedules tasks while the mission is still running — so planning it has always
             // meant running it against a mission that cannot yet be summarised.
@@ -504,24 +533,51 @@ public static class AntExecutionCatalog
             ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
             ProducedArtifactTypes: S("ui_map"),
             AllowedHandoffRoles: S("coder", "soldier"),
-            AllowsModelCalls: true, AllowsSideEffects: false, ProducesPatchProposals: false,
-            // The clearest case for the whole mechanism. This role EXISTS to walk a repository with
-            // list_directory/read_text_file/search_workspace, and a model that cannot call tools
-            // does not fail — it is never shown them, and maps the UI from priors. A confident
-            // fabricated route map is far more damaging than an error.
-            Model: new ModelRequirement(ToolCalling: true, StructuredOutput: true)),
+            // v0.3.8.76 — FALSE, and this is the entry that was hardest to write down.
+            //
+            // The comment that stood here called this "the clearest case for the whole mechanism":
+            // the role exists to walk a repository with tools, and a model that cannot call them
+            // does not fail — it is never shown them and maps the UI from priors. Every word of that
+            // is true, and none of it was about `UiCartographerAnt`, which takes a `ToolRegistry`,
+            // walks the tree itself, and asks no model anything. The argument was so good that it
+            // survived three releases of contract review without anyone checking whether the role it
+            // described could make the call it was being protected from.
+            //
+            // Where the concern actually lives, checked rather than assumed. `/agent/run` hands any
+            // of the twelve executable roles to `ToolCallingLoop`, so a run under this role name CAN
+            // reach a model — and there the protection is already runtime rather than declarative:
+            // `ModelRouter.SendCore` reroutes to a tool-capable model whenever a request carries
+            // tools and the routed model cannot use them. That reroute reads the REQUEST, not this
+            // contract, so it protected the agent-run path the whole time this declaration was
+            // protecting nothing. Removing the declaration removes a duplicate of a rule that is
+            // enforced where it can actually be true.
+            AllowsModelCalls: false, AllowsSideEffects: false, ProducesPatchProposals: false,
+            Model: ModelRequirement.None),
         ["scribe"] = new("scribe", V,
             SupportedTaskTypes: S("release_notes", "changelog_update", "operator_documentation", "incident_summary", "verified_change_summary", "docs_patch_proposal"),
-            RequiredCapabilities: S(Capability.ModelInvoke, Capability.RepoRead),
+            // v0.3.8.76: drops from the ANT. The scribe ROUTE keeps it — see below.
+            RequiredCapabilities: S(Capability.RepoRead),
             AllowedTools: S("read_changed_files_summary"),
             ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
             ProducedArtifactTypes: S("release_notes", "docs_patch_set"),
             AllowedHandoffRoles: S("verifier", "soldier"),
-            AllowsModelCalls: true, AllowsSideEffects: false, ProducesPatchProposals: true, // docs paths ONLY (enforced at proposal time)
-            // Prose is the deliverable, so no structured-output requirement — but the patch set it
-            // proposes has to be machine-applicable, and it summarises a whole change set, so the
-            // window is the constraint worth declaring.
-            Model: new ModelRequirement(StructuredOutput: true, MinContextTokens: 16_000)),
+            // v0.3.8.76 — FALSE for the ANT, and the one place where the distinction this release
+            // draws is load-bearing rather than tidy.
+            //
+            // `ScribeAnt` takes a `ToolRegistry` and no router. But `"scribe"` is ALSO a route name,
+            // and `ResultAssembler.ComposeFinalAnswer` calls the router under it to synthesise the
+            // operator's final answer — a real model call, on the path that produces the text the
+            // operator actually reads. Two different things wear this name: an ant that cannot call
+            // a model, and a route that does nothing else.
+            //
+            // Setting this to `false` and stopping would therefore have REMOVED coverage of the one
+            // scribe model call that exists, which is the failure mode this release is about,
+            // arriving from the opposite direction. The requirement moves to
+            // `ModelRouteRequirements`, where it grades the route that makes the call, and where
+            // `planner` and `strategist` — which have always called models and never had a contract
+            // to be graded by — join it.
+            AllowsModelCalls: false, AllowsSideEffects: false, ProducesPatchProposals: true, // docs paths ONLY (enforced at proposal time)
+            Model: ModelRequirement.None),
     };
 
     public static AntExecutionContract? ContractFor(string roleId) =>
