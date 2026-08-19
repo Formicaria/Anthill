@@ -37,6 +37,16 @@ public static class EventTypes
     public const string TaskFailedTimeout = "task_failed_timeout";
     public const string TaskBlocked = "task_blocked";
     public const string TaskDrained = "task_drained";
+
+    /// <summary>
+    /// v0.3.8.81 — the role RETURNED after the mission was stopped, and what it returned was
+    /// discarded. Distinct from <see cref="TaskDrained"/>, which is the straggler still running when
+    /// the grace period expires: this one finished, usually by degrading, and the outcome it reported
+    /// was frequently a success. The two are separate event names because an operator asking "what
+    /// happened when I pressed stop" needs to tell "it was still going" from "it finished and I threw
+    /// the answer away", and the metadata carries the discarded outcome for the second.
+    /// </summary>
+    public const string TaskStoppedMidFlight = "task_stopped_mid_flight";
     public const string TaskExecutionRecorded = "task_execution_recorded";
     public const string TaskOutcomeApplied = "task_outcome_applied";
     public const string TaskResultSummarized = "task_result_summarized";
