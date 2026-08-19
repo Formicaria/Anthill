@@ -1,5 +1,133 @@
 # ANTHILL Changelog
 
+## v0.3.8.81 - the roles that kept working after the stop, and the memory it left behind
+
+**PLAN.md §2 R3 advances.** Six of R3's cited cancellation cells are now driven live, and doing so
+found two defects — one of which had been quietly corrupting the colony's durable memory since
+routing pheromones existed — plus three cells that could not be driven, each for its own reason,
+which are now written down rather than assumed away.
+
+### A cancelled role finished its work anyway
+
+Every model-calling role treats a non-Ok model call as *"the routed model is unavailable"* and
+**degrades rather than failing**. That is correct behaviour for the case it was written for. But a
+cancelled call is non-Ok — `ModelCallOutcome.Cancelled`, and `Ok` is false for it — so **cancellation
+arrived through the same door**:
+
+- the researcher returned `SucceededWithWarnings` — as the builder's identical non-Ok branch would —
+  so the task **completed**;
+- a completed task ingests handoffs, inserts a verification task after a deliverable, hands the
+  archivist something to remember, and processes the coder's patch proposals.
+
+The operator pressed stop and the colony answered with a fabricated fallback deliverable and more
+scheduled work. `DrainRunningTasks` has recorded this state since v2.26.0 — for tasks still RUNNING
+when the grace period expires. **A task that finished INSIDE the grace period by degrading was never
+its business**, which is the hole: the faster a role gave up on a stopped mission, the more likely
+its work was recorded as a completion.
+
+**Fixed** in `ExecutionService`: the operator's stop outranks whatever the ant reported, checked once
+after execution rather than at the eight ant call sites. Which roles degrade on a bad model call is a
+decision each ant owns and should keep owning; what a stopped mission may RECORD is this class's.
+Both paths — the drained straggler and the returning degrader — now go through one
+`MarkStoppedMidFlight`, non-retryable, with the ant's discarded outcome kept in the event's metadata
+and deliberately **not** persisted as an execution record. A `succeeded_with_warnings` from a stopped
+role in the evidence channel is exactly the row that would let a cancelled mission grade as work.
+
+`MissionStopReason` decides which stop it was, rather than this site forming a second opinion about
+whether a deadline or a person ended the mission.
+
+### And the stop was written into the colony's memory as the model's fault
+
+`ModelRouter.SendCore` held **two implementations of one rule, four lines apart**:
+
+```
+_breaker?.Record(routeKey, result.Status.ToCircuitSignal());   // Cancelled -> Neutral
+var success = result.Ok;                                       // Cancelled -> false
+var pheromoneDelta = success ? 0.01 : ... : -0.01;             // Cancelled -> -0.01
+```
+
+The breaker's own comment already said it — *"we stopped the call ourselves — no signal about
+provider health"*. The trail below it disagreed by omission, deriving everything from `Ok`. So every
+operator stop wrote a FAILURE against `model:{provider}:{model}:{role}`.
+
+**The breaker's copy is transient and the trail's copy is durable**, so the wrong one was the one
+that outlived the mission: the colony has been quietly learning that whichever model a cancelled role
+was using is unsuited to that role. Nothing looked wrong at the time — the mission was cancelled,
+which is what was asked for — and R8's reputation-aware routing is scheduled to read this. A wrong
+memory traceable to the mission that produced it is R8's exit gate, and this one would not have been,
+because the mission that wrote it looked fine.
+
+**Fixed** with one authority both readers ask: `ModelCallOutcomeExtensions.IsColonyStopped`. The call
+is still logged — a role that burned a cancelled call did make one — and the reputation is withheld,
+with `pheromone_delta: null` and `reputation_written: false` on the event so the log and the trail
+cannot tell a reader two different stories. `Error` is deliberately **not** folded in: an error is a
+call we could not read, not one we stopped, and only the second is guaranteed to say nothing about
+the route.
+
+### Six cells driven, five named as still cited
+
+`RoleCancellationTests` gains two live theories:
+
+- **`during_generation`** for researcher, web and coder. The role is held inside generation by a
+  `ScriptBook.Intercept` gate which stops the mission and returns the response shape a **real**
+  adapter returns — same status, same sentence, pinned against the adapter sources so the fixture
+  cannot drift into proving something no provider does.
+- **`during_tool_call`** for file, researcher and web. **Every** tool in the role's contract is
+  shadowed, not the one it is believed to dispatch first: picking by reading the ant's source is how
+  a fixture starts passing because the role stopped dispatching anything at all.
+
+Both assert the same five properties, and the fifth is new: **no failure written to the role's
+pheromone trail.**
+
+`TaskTypeFor` is pinned against the contracts, because a task type a role refuses is BLOCKED before
+it runs — every cancellation property would then hold about a role that never acted.
+
+**Five cells stay cited, and three of them for reasons nobody knew before this release tried.**
+
+Two are unreachable by contract: `verifier/during_generation` and `tester/during_tool_call` are both
+`SchedulingMode.PolicyInserted`, so no plan may assign them, and the harness drives a role by planning
+a task for it. The tester's is also the cell where the orphan-process property is worth proving rather
+than inheriting — a gate tool substituted for `run_allowlisted_check` would prove the runtime's
+bookkeeping and nothing about a child process.
+
+Three were attempted live and did not reach the point. Each is recorded as an **observation, not a
+diagnosis** — a matrix is exactly where a guess hardens into a belief:
+
+- **`builder/during_generation`** reached no model call under a plan-assigned `build_answer` task.
+  The degrade path this cell exists to prove is the same one `researcher` and `web` prove live, so the
+  finding above does not rest on it; what the builder does instead is the open question.
+- **`scribe/during_tool_call`** dispatched none of its granted tools under a `release_notes` task.
+  Consistent with gate 8 refusing before it reads anything in a fixture with no verified work — but
+  that is a hypothesis.
+- **`ui_cartographer/during_tool_call`** tripped its gate BEFORE any task for the role was recorded.
+  **Something dispatches one of `list_directory`, `read_text_file`, `search_workspace` or
+  `repository_index` outside this role's own task**, early enough that shadowing the grant stops the
+  mission before it starts. That is the most interesting of the three and is worth chasing on its own:
+  a tool dispatched by nobody's task is a dispatch no per-role authorization decision covers.
+
+### The graduation record is complete
+
+The cancellation column is filled for all twelve roles, and `ui_cartographer/fault` — the last
+non-cancellation null in the record — is closed by `UiCartographerFaultTests`.
+
+A **new** file rather than the unit cell's `UiCartographerAntTests`, which contains a fault about the
+INPUT (an empty workspace, where the listing succeeds and returns nothing) and none about the TOOL.
+The unexercised branch is `if (!listing.Success)` — the ant told nothing at all rather than told there
+is nothing. They look alike in a summary and differ where it matters: a broken listing tool producing
+an EMPTY map would be admitted by `UiChangeGate`, which asks whether a usable map exists rather than
+whether the task that produced it succeeded, and v0.3.8.64 had to make `{}` stop conforming for
+exactly this reason. The asymmetry is pinned too: a failed LISTING refuses, a failed read degrades.
+
+**Both gap-asserting tests were rewritten, not relaxed.**
+`TheRecordDeclaresItsGaps_AndThePlanNamesThem` asserted `gaps.Count > 0` and
+`NoRoleHasACancellationProof_AndThatIsRecordedRatherThanHidden` asserted twelve empty cells — each
+would have failed for the single outcome the ledger exists to reach. **Third time this repository has
+corrected the same shape** (v0.3.8.74, v0.3.8.79, here): *a guard that cannot express success is not
+a guard, it is a deadline.* What replaced them keeps the job the old ones did, which was never
+"count nulls" but "stop a cell being filled to quiet the suite": the column must cite ONE matrix, that
+matrix must carry its own completeness guard, and PLAN.md must still name the two cells that are cited
+rather than driven.
+
 ## v0.3.8.80 - the colony stops when told, and twelve of twelve gates pass
 
 **PLAN.md §2 R3 opens and §3 closes.** All twelve acceptance gates now pass — the first time the

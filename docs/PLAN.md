@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.80**.
+Shipping release: **v0.3.8.81**.
 
 ---
 
@@ -38,6 +38,8 @@ Done and load-bearing:
 |---|---|
 | Deterministic qualification scenarios | **20 of 20 closed by substance** *(v0.3.8.79)*. None open, none partial |
 | Acceptance gates | **12 of 12** *(v0.3.8.80)*. Gates 1 and 2 closed with R3's cancellation matrix, which is what made the roster's declarations true enough to grade |
+| Cancellation cells | **48 of 48 decided; 30 driven live, 5 cited, 13 not-applicable** *(v0.3.8.81)*. Was 24 driven and 11 cited. All five still cited are named in R3 below |
+| Graduation record | **Complete** *(v0.3.8.81)*. The cancellation column and the `ui_cartographer` fault cell were the last nulls |
 | Live qualification | **Never run under protocol.** One live mission happened at v0.3.8.73 and produced three real defects; that is not the recorded multi-provider run item R4 requires |
 | Model-calling roles | **5 roles and 8 routes, all declared, both directions asserted** *(v0.3.8.76)*. Was "7 declared, 5 of which cannot call a model" — and separately, 3 routes that do call one were declared nowhere |
 | Structured output | **Asked for on the wire by `coder`, `planner`, `strategist`** *(v0.3.8.76)*. The field existed, was plumbed and was gated since v3.4.0; no producer had ever set it |
@@ -160,7 +162,7 @@ The two scenarios the ledger overstated, and the two defects closing them uncove
 
 ---
 
-### R3 — Per-role cancellation and timeout · *1–3 releases* · **in progress**
+### R3 — Per-role cancellation and timeout · *1–2 releases remaining* · **in progress**
 
 The largest single item remaining, and the other large area where nothing had ever asserted the
 outcome.
@@ -179,15 +181,71 @@ outcome.
   READY, which is stronger than the gate-only check that existed: `Ready` is a conjunction of five
   conditions and "no gate blocks it" reads exactly like "it is ready" in a summary. Gate 2 reads its
   four clauses from four different sources on purpose, because the gate is about them agreeing.)*
-- ◻ **Drive `during_generation` and `during_tool_call` live** rather than citing them. The cited
-  tests prove the mechanism aborts; they do not prove the ROLE leaves nothing behind when it does.
-  This is where orphan processes actually appear.
-- ◻ **The graduation record's cancellation column**, including the missing `ui_cartographer` fault
-  cell.
+- ✅ **`during_generation` and `during_tool_call` driven live** for six of the eleven applicable
+  cells *(v0.3.8.81 — researcher, web and coder mid-generation; file, researcher and web
+  mid-tool-call)*.
+  **It found the defect this item predicted, and a second one behind it.** Every model-calling role
+  reads a non-Ok call as "the routed model is unavailable" and DEGRADES — which is right for the case
+  it was written for. A cancelled call is non-Ok, so cancellation came through that same door: the
+  researcher and the builder returned `SucceededWithWarnings`, the task COMPLETED, and a completed
+  task ingests handoffs, inserts a verification task after a deliverable, hands the archivist
+  something to remember and processes the coder's proposals. The operator pressed stop and the colony
+  answered with a fabricated fallback deliverable and more scheduled work. `DrainRunningTasks` has
+  recorded this state since v2.26.0 — for tasks still RUNNING at the grace deadline; one that
+  finished INSIDE it by degrading was never its business, so **the faster a role gave up, the more
+  likely its cancelled work was recorded as a completion.** Fixed once in `ExecutionService`, where
+  what a stopped mission may record is decided, rather than at the eight ant call sites, where how to
+  handle a bad model call is decided.
+- ✅ **A cancelled call is no longer reputation** *(v0.3.8.81 — the second defect, and the one that
+  outlived its mission)*. `ModelRouter.SendCore` held two implementations of one rule four lines
+  apart: the breaker read `Cancelled` as Neutral — "we stopped the call ourselves" — while the
+  pheromone trail derived everything from `Ok` and wrote a FAILURE against
+  `model:{provider}:{model}:{role}`. The transient copy was right and the durable copy was wrong, so
+  every operator stop taught the colony a little more firmly that the model its cancelled role was
+  using is unsuited to that role. **This is a wrong memory that R8's exit gate could not have traced,
+  because the mission that wrote it looked fine.** One authority now, `IsColonyStopped`, asked by
+  both readers.
+- ✅ **The graduation record's cancellation column, and the `ui_cartographer` fault cell**
+  *(v0.3.8.81 — the last nulls in the record. `UiCartographerFaultTests` covers the branch nobody
+  exercised: a failed listing TOOL, as against the empty WORKSPACE the unit tests already drive. A
+  broken tool producing an empty map would be admitted by `UiChangeGate`, which asks whether a usable
+  map exists rather than whether the task succeeded.)*
+  Both gap-asserting tests were **rewritten rather than relaxed**, on their own instructions — the
+  third time this file has recorded that correction after v0.3.8.74 and v0.3.8.79. *A guard that
+  cannot express success is not a guard, it is a deadline.*
+- ◻ **The five cancellation cells still cited.** Named individually rather than blurred into the
+  count, because `RoleQualificationRecordTests` asserts this document keeps naming them — and because
+  three of the five are cited for a reason nobody knew before this release attempted them.
 
-> **Exit gate.** The graduation record's cancellation column is complete for all twelve roles,
-> including the missing `ui_cartographer` fault cell. **Acceptance gates 1 and 2 — ✅ closed at
-> v0.3.8.80.**
+  *Unreachable by the harness, by contract:*
+  - **`verifier/during_generation`** — `SchedulingMode.PolicyInserted`, so no plan may assign it.
+    Needs a completed builder deliverable first, then a stop inside the verification task the runtime
+    inserts after it.
+  - **`tester/during_tool_call`** — also PolicyInserted, and the one role whose tool launches a real
+    process. It needs a REAL hanging check rather than a substituted gate tool: that is the only cell
+    where the orphan-process property can be proved rather than inherited, so substituting would
+    quietly convert the interesting cell into a bookkeeping one.
+
+  *Attempted live at v0.3.8.81 and did not reach the point. Recorded as OBSERVATIONS, because the
+  cause of each is not yet known and a matrix is exactly where a guess would harden into a belief:*
+  - **`builder/during_generation`** — reached no model call under a plan-assigned `build_answer`
+    task. The behaviour the cell exists to prove is proved for the same non-Ok degrade path by
+    `researcher` and `web`, so the release's finding does not rest on it; what the builder does
+    instead is the open question.
+  - **`scribe/during_tool_call`** — dispatched NONE of the tools its contract grants under a
+    plan-assigned `release_notes` task. Consistent with gate 8 (the scribe cannot act positively on
+    unverified work) refusing before it reads anything, in a fixture that gives it no verified work —
+    but that is a hypothesis, not a finding.
+  - **`ui_cartographer/during_tool_call`** — the gate tripped BEFORE any task for the role was
+    recorded. **Something dispatches one of `list_directory`, `read_text_file`, `search_workspace` or
+    `repository_index` outside this role's own task, early enough in a mission that shadowing the
+    grant stops the mission before it starts.** That is the most interesting of the three and is
+    worth chasing on its own: a tool dispatched by nobody's task is a dispatch no per-role
+    authorization decision covers.
+
+> **Exit gate.** All forty-eight cancellation cells decided, with all five remaining cited cells
+> driven live rather than cited. **The graduation record — ✅ complete at
+> v0.3.8.81. Acceptance gates 1 and 2 — ✅ closed at v0.3.8.80.**
 
 ---
 
@@ -803,3 +861,17 @@ never stored".
 **Timeouts that abandon the work.** Five sites called `WaitForExit(ms)`, carried on when it returned
 false, and read `ExitCode` — which throws on a live process — so a timeout surfaced as an
 ordinary-looking exception while the process kept running.
+
+**Two implementations of one rule, which eventually disagree.** Named in `HANDOFF.md` and earned its
+place here at v0.3.8.81, with the shortest distance yet between the two copies: *four lines, in one
+method.* `ModelRouter.SendCore` asked `ToCircuitSignal` whether a cancelled call says anything about
+the provider (it said no) and then derived a pheromone delta from `result.Ok` (which said yes,
+negatively). The transient reader was right and the durable one was wrong, so the disagreement was
+invisible in the mission and permanent in the memory. **The lesson is not "look harder" — it is that
+the second reader must ask the first**, which is what a shared predicate makes structural.
+
+**A degradation that outlives the reason for it.** Every model-calling role answers an unavailable
+provider with a fallback, correctly. Cancellation entered through the same status, so the fallback
+path became the cancellation path — and a role degrading gracefully is exactly a role that does not
+look broken. Worth naming separately from the above because the code was right at every site: the
+defect was in what ELSE arrives through a door built for one thing.
