@@ -125,7 +125,7 @@ public class RoleCancellationTests : IDisposable
         // in-flight HTTP call, which was true and remains true. What no test asked was what the ROLE
         // then does with the aborted call, and the answer was: treats it as an unavailable provider
         // and carries on. See ACancelledMission_StopsARoleMidGeneration.
-        foreach (var role in new[] { "researcher", "web", "coder" })
+        foreach (var role in new[] { "researcher", "web", "coder", "builder" })
             cells.Add(new(role, "during_generation", How.Harness,
                 "RoleCancellationTests.ACancelledMission_StopsARoleMidGeneration"));
 
@@ -145,7 +145,7 @@ public class RoleCancellationTests : IDisposable
         // SucceededWithWarnings degrade — so the finding is not resting on this cell.
         //
         // Both are named in PLAN.md §2 R3, and RoleQualificationRecordTests asserts they stay named.
-        foreach (var role in new[] { "verifier", "builder" })
+        foreach (var role in new[] { "verifier" })
             cells.Add(new(role, "during_generation", How.Cited,
                 "ModelCallCancellationTests.OllamaClient_AbortsCleanly_WhenAmbientTokenAlreadyCancelled;"
               + "ModelCallCancellationTests.OpenAiCompatibleClient_AbortsCleanly_WhenAmbientTokenAlreadyCancelled"));
@@ -161,7 +161,7 @@ public class RoleCancellationTests : IDisposable
         // v0.3.8.81 — three of the six driven live. The cited tests below prove the process-launching
         // SITES kill their trees, which is the orphan-process half and is real; they say nothing
         // about what the ROLE records once its tool call has been stopped underneath it.
-        foreach (var role in new[] { "file", "researcher", "web" })
+        foreach (var role in new[] { "file", "researcher", "web", "ui_cartographer", "scribe" })
             cells.Add(new(role, "during_tool_call", How.Harness,
                 "RoleCancellationTests.ACancelledMission_StopsARoleMidToolCall"));
 
@@ -183,7 +183,7 @@ public class RoleCancellationTests : IDisposable
         // mission that shadowing the grant stops the mission before it starts. That is worth knowing
         // and is not yet explained; it is carried in PLAN.md §2 R3 as an open question rather than
         // asserted here.
-        foreach (var role in new[] { "tester", "scribe", "ui_cartographer" })
+        foreach (var role in new[] { "tester" })
             cells.Add(new(role, "during_tool_call", How.Cited,
                 "ProcessTreeCancellationTests.EverySiteThatWaitsWithATimeout_KillsTheWholeProcessTree;"
               + "SubprocessHangTests.AGitThatNeverExits_TimesOutAndReturns"));
@@ -426,10 +426,11 @@ public class RoleCancellationTests : IDisposable
     /// the fixture cannot drift into proving something no provider does.
     /// </summary>
     [Theory]
-    [InlineData("researcher")] [InlineData("web")] [InlineData("coder")]
+    [InlineData("researcher")] [InlineData("web")] [InlineData("coder")] [InlineData("builder")]
     public void ACancelledMission_StopsARoleMidGeneration(string role)
     {
         var (queen, missionId) = RunStoppedDuring(role, duringToolCall: false);
+        AssertTheMissionRanTheScriptedPlan(queen, missionId, role);
         AssertTheRoleLeftNothingBehind(queen, missionId, role, "mid-generation");
     }
 
@@ -450,10 +451,81 @@ public class RoleCancellationTests : IDisposable
     /// </summary>
     [Theory]
     [InlineData("file")] [InlineData("researcher")] [InlineData("web")]
+    [InlineData("ui_cartographer")] [InlineData("scribe")]
     public void ACancelledMission_StopsARoleMidToolCall(string role)
     {
         var (queen, missionId) = RunStoppedDuring(role, duringToolCall: true);
+        AssertTheMissionRanTheScriptedPlan(queen, missionId, role);
         AssertTheRoleLeftNothingBehind(queen, missionId, role, "mid-tool-call");
+    }
+
+    /// <summary>
+    /// WHAT THE MISSION ACTUALLY DID, for a failure message. v0.3.8.82.
+    ///
+    /// Written because three cells of this harness failed at v0.3.8.81 with messages that described
+    /// the EXPECTATION and not the run — "the role never reached the stopping point", "no task was
+    /// recorded for this role" — and each of the three then cost a release to guess at. A fixture
+    /// that stops a mission from the inside has exactly one hard part, which is knowing what the
+    /// mission did instead, and that is the thing these messages withheld.
+    ///
+    /// Reads the plan from `task_created` events rather than from the task ROWS: rows appear when a
+    /// task starts running, so a plan whose tasks never ran is invisible in the table and fully
+    /// visible here. That difference is the whole diagnosis in the cartographer's case — "planned but
+    /// never dispatched" and "never planned" are different defects that produce the same empty table.
+    /// </summary>
+    private static string WhatHappened(Queen queen, string missionId)
+    {
+        string Field(Dictionary<string, object?> row, string key) =>
+            row.GetValueOrDefault(key)?.ToString() ?? "";
+
+        var planned = queen.Memory.GetRecentEvents(200, "task_created", missionId)
+            .Select(e => Field(e, "ant_name"))
+            .Where(a => a.Length > 0)
+            .ToList();
+
+        var ran = queen.Memory.GetTasksForMission(missionId)
+            .Select(t => $"{Field(t, "assigned_ant")}"
+                       + $"[{Field(t, "status")}"
+                       + (Field(t, "failure_type").Length > 0 ? $"/{Field(t, "failure_type")}" : "")
+                       + "]")
+            .ToList();
+
+        var dispatched = queen.Memory.GetRecentEvents(200, "tool_called", missionId)
+            .Select(e => $"{Field(e, "ant_name")}:{Field(e, "message")}")
+            .ToList();
+
+        return "\n    planned (task_created): "
+             + (planned.Count > 0 ? string.Join(", ", planned) : "<nothing — the planner produced no tasks>")
+             + "\n    ran (task rows): "
+             + (ran.Count > 0 ? string.Join(", ", ran) : "<no task ever started>")
+             + "\n    tools dispatched: "
+             + (dispatched.Count > 0 ? string.Join(", ", dispatched) : "<none>");
+    }
+
+    /// <summary>
+    /// The mission ran the plan this fixture WROTE. v0.3.8.82.
+    ///
+    /// A scripted-plan scenario that does not check this is not testing what it wrote: `Planner`
+    /// falls back to a static plan whenever the dynamic one is rejected or fails to parse, and
+    /// `AssignDefaultWorkers` drops individual tasks the registry refuses — both loudly on stderr and
+    /// both invisible to an assertion that only looks for the role it hoped for. The fallback plan
+    /// contains researcher, file and verifier steps, so a fixture aiming at one of those roles would
+    /// PASS on a plan it never wrote, which is this repository's oldest defect shape pointed at its
+    /// own test fixtures.
+    /// </summary>
+    private static void AssertTheMissionRanTheScriptedPlan(Queen queen, string missionId, string role)
+    {
+        var planned = queen.Memory.GetRecentEvents(200, "task_created", missionId)
+            .Select(e => e.GetValueOrDefault("ant_name")?.ToString() ?? "")
+            .Where(a => a.Length > 0)
+            .ToList();
+
+        Assert.True(planned.Count == 1 && planned[0] == role,
+            $"this fixture scripted ONE task, for '{role}', and the mission planned "
+          + (planned.Count == 0 ? "nothing" : string.Join(", ", planned))
+          + ". A scripted plan that was rejected or dropped silently becomes the static fallback "
+          + "(researcher, file, verifier), and every assertion after this point would be about a plan "
+          + "nobody wrote." + WhatHappened(queen, missionId));
     }
 
     /// <summary>
@@ -466,8 +538,12 @@ public class RoleCancellationTests : IDisposable
         var tasks = queen.Memory.GetTasksForMission(missionId);
         var mine = tasks.Where(t => (t.GetValueOrDefault("assigned_ant")?.ToString() ?? "") == role).ToList();
 
-        Assert.True(mine.Count > 0, $"no task was recorded for '{role}' at all, so the {point} "
-          + "cancellation was never exercised.");
+        Assert.True(mine.Count > 0,
+            $"no task was recorded for '{role}' at all, so the {point} cancellation was never "
+          + "exercised. A task ROW appears when the task starts running, so an empty one here with a "
+          + "populated plan below means the task was planned and never dispatched — a different "
+          + "defect from never being planned, and the two used to be indistinguishable from this "
+          + "message." + WhatHappened(queen, missionId));
 
         // 1. TERMINAL STATE. Not complete, and recorded as something the colony DID rather than as
         //    something the role failed at. `execution_error` would attribute the operator's stop to
@@ -679,7 +755,8 @@ public class RoleCancellationTests : IDisposable
                 + "denied before reaching the tool (check the capability grant for this role)."
                 : "the role made no model call, or its request carried no `| role: |` header for the "
                 + "scripted provider to read.")
-          + " A passing assertion after this point would be about a role that never acted.");
+          + " A passing assertion after this point would be about a role that never acted."
+          + WhatHappened(queen, missionId!));
         return (queen, missionId!);
     }
 
