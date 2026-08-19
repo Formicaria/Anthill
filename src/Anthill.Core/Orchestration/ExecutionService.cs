@@ -601,6 +601,51 @@ public sealed class ExecutionService : IExecutionService
                 }
                 result = execution.Narrative ?? execution.Summary;
             }
+
+            // v0.3.8.81 (PLAN.md §2 R3) — THE OPERATOR'S STOP OUTRANKS WHATEVER THE ANT REPORTED.
+            //
+            // Every model-calling role reads a non-Ok call as "the routed model is unavailable" and
+            // DEGRADES rather than failing, which is the right behaviour for the case it was written
+            // for. Cancellation arrives through that same non-Ok door — a stopped call is
+            // `ModelCallOutcome.Cancelled` and `Ok` is false for it — so the researcher and the
+            // builder returned SucceededWithWarnings and the task COMPLETED. A completed task then
+            // ingests handoffs, inserts a verification task after a deliverable, hands the archivist
+            // something to remember, and processes the coder's patch proposals. The operator pressed
+            // stop and the colony answered with a fabricated fallback deliverable and more work.
+            //
+            // Checked ONCE here rather than at the eight ant call sites. Which roles degrade on a bad
+            // model call is a decision each ant owns and should keep owning; what a STOPPED mission
+            // is allowed to record is a decision this class owns. Putting it in the ants would also
+            // be eight copies of one rule, and the release that fixed seven of them would look done.
+            //
+            // `DrainRunningTasks` has recorded this state since v2.26.0 — for tasks still RUNNING at
+            // the grace deadline. A task that finished INSIDE the grace period by degrading was never
+            // its business, and that is exactly the hole: the faster the role gave up, the more likely
+            // its cancelled work was recorded as a success. Both paths now go through one method.
+            //
+            // `MissionStopReason` rather than a fresh token check, so "why did the mission stop" keeps
+            // one answer — it reports the deadline as timeout and an external cancel as cancelled, and
+            // this site must not invent a second opinion about which happened.
+            if (MissionStopReason(context, ModelCallScope.Current) is { } stop)
+            {
+                lock (_executionLock)
+                {
+                    if (task.Status != TaskStatus.Running)
+                    {
+                        _memory.LogEvent(mission.Id, "task_late_result_ignored",
+                            "Late result ignored for a task already terminal when the mission stopped: "
+                          + task.Status.Value(), task.Id, runtimeSelection.RuntimeNodeId,
+                            MergeMetadata(AntRuntime.Metadata(runtimeSelection),
+                                new() { ["reason_type"] = stop.ReasonType }));
+                        return;
+                    }
+                    MarkStoppedMidFlight(mission, task, scheduler, taskStartedAt, stop.ReasonType,
+                        "task_stopped_mid_flight", execution);
+                    if (scheduler is not null) LogSchedulerTransitions(mission, scheduler);
+                }
+                return;
+            }
+
             // v3.2.0 (phase): record what the ant REPORTED, before the scheduler decides what to do
             // with it. Written here rather than at finalization because the mapping below can
             // legitimately discard this result (a late one, for a task no longer running) or
@@ -727,23 +772,74 @@ public sealed class ExecutionService : IExecutionService
         lock (_executionLock)
         {
             foreach (var task in running.Values.Where(t => t.Status == TaskStatus.Running).ToList())
-            {
-                var now = AnthillTime.NowUtc();
-                var cancelled = reasonType == Outcomes.MissionStopReasons.Cancelled;
-                task.CancellationReason = cancelled
-                    ? "cancelled: mission was cancelled while this task was still running"
-                    : $"timed_out: mission stopped ({reasonType}) while this task was still running";
-                task.Result = task.CancellationReason;
-                task.FinishedAt = now;
-                if (task.StartedAt is { } st) task.ElapsedSeconds = Math.Round((now - st).TotalSeconds, 3);
-                scheduler.MarkFailed(task.Id, task.CancellationReason,
-                    cancelled ? "cancelled" : "timeout", false, now, task.ElapsedSeconds);
-                FinalizeTaskResult(mission, task);
-                _memory.LogEvent(mission.Id, "task_drained", task.CancellationReason, task.Id, task.AssignedAnt,
-                    new() { ["reason_type"] = reasonType, ["grace_seconds"] = context.Options.MissionDrainGraceSeconds });
-            }
+                MarkStoppedMidFlight(mission, task, scheduler, task.StartedAt ?? AnthillTime.NowUtc(),
+                    reasonType, "task_drained", discarded: null,
+                    extra: new() { ["grace_seconds"] = context.Options.MissionDrainGraceSeconds });
             LogSchedulerTransitions(mission, scheduler);
         }
+    }
+
+    /// <summary>
+    /// Records a task the COLONY stopped — the one implementation of that rule. v0.3.8.81.
+    ///
+    /// Two paths reach it and they used to be one path and one hole. <see cref="DrainRunningTasks"/>
+    /// has handled tasks still RUNNING when the grace period expires since v2.26.0. The other is a
+    /// task that RETURNED after the stop — which every degrading role does promptly, because a
+    /// cancelled model call comes back as an unavailable-provider result and the role answers with a
+    /// fallback. That path had no handler at all, so the quicker a role gave up on a stopped mission
+    /// the more likely its work was recorded as a completion.
+    ///
+    /// Non-retryable, always. A retryable failure returns the task to Ready, and while the dispatch
+    /// loop would then skip it as "mission cancelled", the operator is left reading three records
+    /// for one stop — failed, retry scheduled, skipped — none of which says they stopped it.
+    ///
+    /// <paramref name="discarded"/> is what the ant reported and is NOT persisted as an execution
+    /// record. It goes into this event's metadata instead: the outcome is worth having for forensics
+    /// — it is how this defect was found — and must not enter the evidence channel, where a
+    /// `succeeded_with_warnings` from a stopped role is exactly the row that would let a cancelled
+    /// mission be graded as having done something.
+    /// </summary>
+    private void MarkStoppedMidFlight(Mission mission, Task task, TaskScheduler? scheduler,
+        DateTime startedAt, string reasonType, string eventName,
+        AntExecutionResult? discarded = null, Dictionary<string, object?>? extra = null)
+    {
+        var now = AnthillTime.NowUtc();
+        var cancelled = reasonType == Outcomes.MissionStopReasons.Cancelled;
+        // The same two sentences DrainRunningTasks has written since v2.26.0, kept verbatim so an
+        // operator reading a stopped mission sees one vocabulary rather than two that mean the same.
+        var reason = cancelled
+            ? "cancelled: mission was cancelled while this task was still running"
+            : $"timed_out: mission stopped ({reasonType}) while this task was still running";
+        var failureType = cancelled ? "cancelled" : "timeout";
+
+        task.CancellationReason = reason;
+        task.Result = reason;
+        task.FinishedAt = now;
+        task.ElapsedSeconds = Math.Round((now - (task.StartedAt ?? startedAt)).TotalSeconds, 3);
+        if (scheduler is not null)
+            scheduler.MarkFailed(task.Id, reason, failureType, retryable: false, now, task.ElapsedSeconds);
+        else
+        {
+            task.Status = TaskStatus.Failed;
+            task.FailedAt = now;
+            task.FailureReason = reason;
+            task.FailureType = failureType;
+        }
+        FinalizeTaskResult(mission, task);
+
+        var metadata = new Dictionary<string, object?>
+        {
+            ["reason_type"] = reasonType,
+            ["role"] = task.AssignedAnt,
+            ["failure_type"] = failureType,
+            ["elapsed_seconds"] = task.ElapsedSeconds,
+            ["discarded_status_code"] = discarded?.StatusCode,
+            ["discarded_summary"] = discarded is null ? null : TextUtil.Truncate(discarded.Summary, 300),
+        };
+        if (extra is not null) metadata = MergeMetadata(metadata, extra);
+
+        _memory.LogEvent(mission.Id, eventName, reason, task.Id, task.AssignedAnt, metadata);
+        Console.WriteLine(reason);
     }
 
     private void MarkTaskTimeout(Task task, Mission mission, MissionContext context, TaskScheduler? scheduler)

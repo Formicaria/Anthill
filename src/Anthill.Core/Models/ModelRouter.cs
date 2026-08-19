@@ -591,6 +591,13 @@ public sealed class ModelRouter
         // route's pheromone trail and reporting success:true in telemetry. Two definitions of
         // success in one method, the exact disease this phase exists to cure. There is now one.
         var success = result.Ok;
+        // v0.3.8.81: and the same disease one outcome over. `success` above is the single definition
+        // of "did this call succeed" and it is right; what it is NOT is the definition of "is this
+        // call evidence about the route". A call the COLONY stopped is neither a success nor a
+        // failure of the model — the breaker has said so since it was written, and this line said
+        // the opposite by omission, four lines below it. `IsColonyStopped` is now the one authority
+        // both read. See ModelCallOutcomeExtensions.IsColonyStopped for the full account.
+        var isRouteEvidence = !outcome.IsColonyStopped();
         var pheromoneDelta = success ? 0.01
             : outcome is ModelCallOutcome.Timeout or ModelCallOutcome.ConnectError ? -0.02 : -0.01;
 
@@ -631,14 +638,21 @@ public sealed class ModelRouter
                     ["completion_tokens"] = result.Usage.CompletionTokens,
                     ["tool_calls_requested"] = result.ToolCalls.Count,
                     ["tools_offered"] = request.Tools.Count,
-                    ["pheromone_delta"] = pheromoneDelta,
+                    // Null rather than a number when nothing was written, so the event and the trail
+                    // cannot tell a reader two different stories about the same call.
+                    ["pheromone_delta"] = isRouteEvidence ? pheromoneDelta : null,
+                    ["reputation_written"] = isRouteEvidence,
                 });
-            _memory.UpdatePheromoneTrail($"model:{provider}:{model}:{role}", "model_route", success, pheromoneDelta,
-                new()
-                {
-                    ["role"] = role, ["provider"] = provider, ["model"] = model, ["duration_ms"] = durationMs,
-                    ["last_mission_id"] = missionId, ["last_task_id"] = taskId,
-                });
+            // The CALL is still logged above — a role that burned a cancelled call did make one, and
+            // a qualification review needs to see it. What is withheld is the REPUTATION, because the
+            // operator's stop is not the route's fault and the trail is what routing reads next time.
+            if (isRouteEvidence)
+                _memory.UpdatePheromoneTrail($"model:{provider}:{model}:{role}", "model_route", success, pheromoneDelta,
+                    new()
+                    {
+                        ["role"] = role, ["provider"] = provider, ["model"] = model, ["duration_ms"] = durationMs,
+                        ["last_mission_id"] = missionId, ["last_task_id"] = taskId,
+                    });
         }
         return result;
     }

@@ -19,9 +19,25 @@ namespace Anthill.Tests;
 /// fault-proved. So each cell is CLAIMED explicitly and checked shallowly (the file exists, and it
 /// mentions the role), and the value is that a missing cell is visible rather than inferred.
 ///
-/// THE POINT IS THE GAPS. This ledger is not an achievement record. NO role has a
-/// cancellation-and-timeout proof — twelve of twelve cells empty — and saying so is the deliverable.
-/// A graduation record showing twelve complete rows would be describing a colony this is not.
+/// THE POINT WAS THE GAPS, and at v0.3.8.57 that read: "NO role has a cancellation-and-timeout
+/// proof — twelve of twelve cells empty — and saying so is the deliverable." It was true for
+/// twenty-three releases.
+///
+/// v0.3.8.81 CLOSES THE COLUMN, and the two tests at the bottom of this file are the ones that used
+/// to assert it was open. Both were rewritten rather than relaxed, because both had the shape this
+/// repository has now corrected three times: `PartialCoverage_IsDeclaredRatherThanImplied` at
+/// v0.3.8.79, its sibling at v0.3.8.74, and now these — a guard that asserts a gap EXISTS cannot
+/// express the outcome the work was for, so it stops being a guard and becomes a deadline. The
+/// replacements assert the opposite thing for the same reason: the column is full, one matrix decides
+/// every cell, and PLAN.md still names the cells that are cited rather than driven — so a record that
+/// LOOKS complete cannot quietly stop saying how complete it is.
+///
+/// The remaining honest gap is recorded in the matrix rather than here: five of the forty-eight
+/// cancellation cells are cited rather than harness-driven. Two because their contracts are
+/// `SchedulingMode.PolicyInserted` and no plan may assign them (verifier, tester); three because a
+/// live attempt did not reach the point — the builder made no model call, the scribe dispatched no
+/// tool, and the cartographer's gate tripped before its task existed. The matrix records each as an
+/// observation rather than a diagnosis, which is the difference between a known gap and a guess.
 /// </summary>
 public class RoleQualificationRecordTests
 {
@@ -56,6 +72,13 @@ public class RoleQualificationRecordTests
     private const string Structured = "AntStructuredResultTests.cs";
     private const string Lifecycle = "CodePatchLifecycleTests.cs";
 
+    /// <summary>
+    /// v0.3.8.81 — one file for every row, because ONE matrix decides all forty-eight cells. Twelve
+    /// separate citations would be twelve copies of one fact, which is how a ledger comes to disagree
+    /// with itself — the same argument the shared cells above already make.
+    /// </summary>
+    private const string Cancellation = "RoleCancellationTests.cs";
+
     private static Dictionary<string, string?> Row(
         string? unit, string? integration, string? fault, string? endToEnd, string? cancellation) =>
         new()
@@ -73,27 +96,31 @@ public class RoleQualificationRecordTests
 
     private static readonly RoleRecord[] Records =
     {
-        new("researcher", Row("StructuredCoreOutputTests.cs", Contract, Roster, Lifecycle, null)),
-        new("web",        Row(Structured, Contract, Roster, Lifecycle, null)),
-        new("file",       Row("WorkspaceToolsTests.cs", Contract, Roster, Lifecycle, null)),
+        new("researcher", Row("StructuredCoreOutputTests.cs", Contract, Roster, Lifecycle, Cancellation)),
+        new("web",        Row(Structured, Contract, Roster, Lifecycle, Cancellation)),
+        new("file",       Row("WorkspaceToolsTests.cs", Contract, Roster, Lifecycle, Cancellation)),
         new("coder",      Row("SandboxedCoderRunnerTests.cs", "CodePatchLifecycleTests.cs",
-                              "DeterministicBlockTests.cs", Lifecycle, null)),
-        new("builder",    Row(Structured, Contract, Roster, Lifecycle, null)),
+                              "DeterministicBlockTests.cs", Lifecycle, Cancellation)),
+        new("builder",    Row(Structured, Contract, Roster, Lifecycle, Cancellation)),
         new("verifier",   Row("VerificationVerdictTests.cs", "VerificationFrameworkTests.cs",
-                              "DeterministicBlockTests.cs", Lifecycle, null)),
+                              "DeterministicBlockTests.cs", Lifecycle, Cancellation)),
 
+        // v0.3.8.81 — the fault cell, and the last non-cancellation null in the record. Filled with a
+        // NEW file rather than with the unit cell's `UiCartographerAntTests.cs`, which contains a
+        // fault about the INPUT (an empty workspace) and none about the TOOL. Citing it here would
+        // have been true about the file and false about the column.
         new("ui_cartographer", Row("UiCartographerAntTests.cs", "UiChangeGateTests.cs",
-                                   null, Lifecycle, null)),
+                                   "UiCartographerFaultTests.cs", Lifecycle, Cancellation)),
         new("tester",     Row("TesterAntTests.cs", "TesterAntStructuredTests.cs",
-                              "FailureHandoffGateTests.cs", "MissionRevisionTests.cs", null)),
+                              "FailureHandoffGateTests.cs", "MissionRevisionTests.cs", Cancellation)),
         new("soldier",    Row("SoldierAntTests.cs", "StageBConsequentialTests.cs",
-                              "DeterministicBlockTests.cs", Lifecycle, null)),
+                              "DeterministicBlockTests.cs", Lifecycle, Cancellation)),
         new("scribe",     Row("ScribeAntTests.cs", "ScribeArchivistOrderingTests.cs",
-                              "RoleGraduationTests.cs", Lifecycle, null)),
+                              "RoleGraduationTests.cs", Lifecycle, Cancellation)),
         new("medic",      Row("MedicAntTests.cs", "BoundedRepairTests.cs",
-                              "FailureHandoffGateTests.cs", Lifecycle, null)),
+                              "FailureHandoffGateTests.cs", Lifecycle, Cancellation)),
         new("archivist",  Row("ArchivistAntTests.cs", "ScribeArchivistOrderingTests.cs",
-                              "MemoryCandidateIngestTests.cs", "FinalizationOrderTests.cs", null)),
+                              "MemoryCandidateIngestTests.cs", "FinalizationOrderTests.cs", Cancellation)),
     };
 
     private static string TestPath(string file) =>
@@ -166,70 +193,97 @@ public class RoleQualificationRecordTests
     }
 
     // -------------------------------------------------------------------------------------------
-    // The gaps
+    // The record is complete — and says how complete
     // -------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// The record is HONEST about being incomplete, and the plan says which rows are short.
+    /// EVERY CELL IS FILLED, and the plan still says which of them are cited rather than driven.
     ///
-    /// This assertion is deliberately the opposite of the usual one: it fails if the ledger ever
-    /// claims a complete colony, because at that point somebody has either done the work — and should
-    /// delete this test with the evidence in hand — or filled the cells in to make the suite quiet.
-    /// The second is far more likely, and this is the only place it can be caught.
+    /// This test replaces `TheRecordDeclaresItsGaps_AndThePlanNamesThem`, which asserted
+    /// `gaps.Count > 0` — an assertion that would have failed for the single outcome the ledger
+    /// exists to reach. That guard was right for twenty-three releases and could not survive being
+    /// satisfied, which is the third time this repository has had to correct the same shape
+    /// (v0.3.8.74, v0.3.8.79, here): a guard that cannot express success is not a guard, it is a
+    /// deadline.
+    ///
+    /// What replaces it has to do the job the old one did, which was NOT "count nulls" — it was
+    /// "stop a cell being filled to quiet the suite". So the completeness assertion is paired with
+    /// the one that actually costs something to satisfy dishonestly: PLAN.md must still name the
+    /// cancellation cells that are CITED rather than harness-driven. A future release that quietly
+    /// converted a driven cell back to a citation, or that drove the last two and forgot to say so,
+    /// fails here — which is the only way a full record keeps meaning anything.
     /// </summary>
     [Fact]
-    public void TheRecordDeclaresItsGaps_AndThePlanNamesThem()
+    public void TheRecordIsComplete_AndThePlanNamesWhatIsStillOnlyCited()
     {
         var gaps = Records
             .SelectMany(r => r.Proofs.Where(p => p.Value is null).Select(p => $"{r.Role}/{p.Key}"))
             .OrderBy(x => x, StringComparer.Ordinal)
             .ToList();
 
-        Assert.True(gaps.Count > 0,
-            "every graduation cell is now filled. If that is real, this test should be deleted along "
-          + "with the evidence that closed the last gap. If it is not real, a cell was filled to quiet "
-          + "the suite — check the cancellation column first, which is where the genuine gaps were.");
+        Assert.True(gaps.Count == 0,
+            "the graduation record has gaps again: " + string.Join(", ", gaps)
+          + ". A cell that goes back to null is a proof that was deleted or a role that was added; "
+          + "either way say which in PLAN.md rather than leaving the record to imply it.");
 
         var plan = File.ReadAllText(Path.Combine(SourceText.RepoRoot(), "docs", "PLAN.md"));
         Assert.Contains("graduation record", plan, StringComparison.OrdinalIgnoreCase);
+
+        // The two cells the matrix still decides by CITATION rather than by driving them. Named here
+        // by role and point so that closing them means editing this list with the evidence in hand.
+        foreach (var cited in new[]
+                 {
+                     "verifier/during_generation", "builder/during_generation",
+                     "tester/during_tool_call", "scribe/during_tool_call",
+                     "ui_cartographer/during_tool_call",
+                 })
+            Assert.True(plan.Contains(cited, StringComparison.Ordinal),
+                $"PLAN.md no longer names '{cited}' as a cited cancellation cell. If it was driven "
+              + "live, remove it from this list in the release that did so; if it was simply dropped "
+              + "from the plan, the record above now reads as more complete than the colony is.");
     }
 
     /// <summary>
-    /// NO ROLE HAS A CANCELLATION-AND-TIMEOUT PROOF. Twelve of twelve cells are empty.
+    /// THE CANCELLATION COLUMN, and the test that used to assert it was empty.
     ///
-    /// This is the finding, and it arrived by the ledger catching me rather than by inspection. The
-    /// first draft filled five of these cells with `ModelCallCancellationTests` and the tester's with
-    /// `ProcessTreeCancellationTests`. Both files are real and both prove something true — the model
-    /// call observes cancellation; the process-launching SITES kill their trees. Neither says anything
-    /// about a ROLE. A citation that is true about the system and false about the row is precisely how
-    /// a graduation record fills up while nothing gets proved, and the check that caught it was the
-    /// weakest one in the file: does the cited file so much as mention this role.
+    /// `NoRoleHasACancellationProof_AndThatIsRecordedRatherThanHidden` was the sharpest thing in this
+    /// file: the first draft of the ledger filled five cells with `ModelCallCancellationTests` and the
+    /// tester's with `ProcessTreeCancellationTests`, and the weakest check in the file — does the
+    /// cited file so much as mention this role — caught it. Both files are real and prove something
+    /// true about a MECHANISM; neither said anything about a ROLE.
     ///
-    /// It matters more than the count suggests. v0.3.8.57 found FIVE separate sites that abandoned a
-    /// running process on timeout, all of them in the area this column is emptiest about. Under-tested
-    /// and under-implemented turned out to be the same region, which is the argument for writing the
-    /// gap down instead of leaving it to be discovered again.
+    /// v0.3.8.80 built the matrix that decides all forty-eight role×point cells and v0.3.8.81 drove
+    /// nine of them live, so the column is now citable for the reason it was never citable before.
+    /// The check kept from the old test is the one that mattered: the citation must be a file that
+    /// DECIDES this role rather than one that mentions it, which is asserted by requiring the matrix
+    /// to carry its own completeness guard.
     /// </summary>
     [Fact]
-    public void NoRoleHasACancellationProof_AndThatIsRecordedRatherThanHidden()
+    public void TheCancellationColumn_IsOneMatrixThatDecidesEveryRole()
     {
         var without = Records
             .Where(r => r.Proofs["cancellation-and-timeout"] is null)
             .Select(r => r.Role)
             .ToList();
 
-        Assert.Equal(Records.Length, without.Count);
+        Assert.True(without.Count == 0,
+            "these roles have no cancellation-and-timeout proof: " + string.Join(", ", without));
 
-        // Every other column is better covered. When that stops being true — because someone writes a
-        // real per-role cancellation proof — this test's premise is stale and should be rewritten
-        // with the evidence, not relaxed.
-        foreach (var kind in ProofKinds.Where(k => k != "cancellation-and-timeout"))
-        {
-            var missing = Records.Count(r => r.Proofs[kind] is null);
-            Assert.True(missing < without.Count,
-                $"the '{kind}' column now has {missing} gaps against cancellation's {without.Count}. "
-              + "Either cancellation gained a proof or another column lost one; either way the claim "
-              + "above no longer describes the colony.");
-        }
+        // One file for twelve rows. Twelve different citations would mean twelve places for the
+        // column to start disagreeing with itself about what proved what.
+        var cited = Records.Select(r => r.Proofs["cancellation-and-timeout"]).Distinct().ToList();
+        Assert.True(cited.Count == 1 && cited[0] == Cancellation,
+            "the cancellation column cites more than one file: " + string.Join(", ", cited));
+
+        // And that file carries the guard that makes the citation mean something. Without this the
+        // column would rest on a filename, which is exactly the failure the old test caught.
+        var matrix = File.ReadAllText(TestPath(Cancellation));
+        Assert.Matches(@"\bEveryRoleAndPoint_IsDecidedExactlyOnce\s*\(", matrix);
+        Assert.Matches(@"\bTheMatrix_CoversEveryExecutableRole\s*\(", matrix);
+
+        foreach (var record in Records)
+            Assert.True(matrix.Contains($"\"{record.Role}\"", StringComparison.Ordinal),
+                $"the cancellation matrix never names '{record.Role}', so the guards above cannot be "
+              + "deciding a cell for it.");
     }
 }

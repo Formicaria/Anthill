@@ -142,8 +142,44 @@ public sealed class ScriptBook
 {
     private readonly Dictionary<string, Queue<string>> _scripts = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _last = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Func<ModelRequest, ModelResponse?>> _gates =
+        new(StringComparer.OrdinalIgnoreCase);
 
     public List<(string Role, string Prompt)> Requests { get; } = new();
+
+    /// <summary>
+    /// A hook that runs when <paramref name="role"/> is asked to generate, on the calling thread,
+    /// BEFORE the script answers. Returning a response substitutes it for the script; returning null
+    /// lets the script answer as usual. v0.3.8.81.
+    ///
+    /// Added for the R3 cancellation harness, which needs to hold a role INSIDE generation and then
+    /// stop the mission — the one moment a scripted provider cannot represent, because its whole
+    /// point is answering instantly.
+    ///
+    /// Deliberately a full <see cref="ModelResponse"/> and not a replacement string: what a stopped
+    /// call looks like is a STATUS (<c>ModelCallOutcome.Cancelled</c>), and a scenario that could
+    /// only substitute content would hand the ant an Ok result whose text happened to mention
+    /// cancellation. Every role branches on the status, so that fixture would prove the opposite of
+    /// what it claimed. Cancellation semantics stay in the test that asserts them rather than being
+    /// baked in here, so no existing scenario's behaviour moves.
+    /// </summary>
+    public ScriptBook Intercept(string role, Func<ModelRequest, ModelResponse?> gate)
+    {
+        _gates[role] = gate;
+        return this;
+    }
+
+    internal ModelResponse? Gate(string role, ModelRequest request)
+    {
+        if (!_gates.TryGetValue(role, out var gate)) return null;
+        var response = gate(request);
+        // Recorded here as well as in Answer, because a substituted call still HAPPENED — a scenario
+        // asserting "the role was asked" must not be able to tell the two paths apart.
+        if (response is not null)
+            lock (Requests)
+                Requests.Add((role, request.Messages.Count > 0 ? request.Messages[^1].Content ?? "" : ""));
+        return response;
+    }
 
     /// <summary>Answer(s) for a role, delivered first-to-last, then the last one repeats.</summary>
     public ScriptBook Role(string role, params string[] answers)
@@ -235,6 +271,11 @@ internal sealed class ScriptedProvider : IReasoningProvider
         var book = ScriptedColony.Current;
         var role = ScriptedColony.RoleOf(request);
         var prompt = request.Messages.Count > 0 ? request.Messages[^1].Content ?? "" : "";
+
+        // The scenario's own hook, if it installed one for this role. Runs before the script so a
+        // scenario can act at the moment the role is generating — see ScriptBook.Intercept.
+        if (book?.Gate(role, request) is { } substituted) return substituted;
+
         var answer = book?.Answer(role, prompt);
         return answer is null
             // No script for this role is a SCENARIO defect and must fail loudly as a provider
