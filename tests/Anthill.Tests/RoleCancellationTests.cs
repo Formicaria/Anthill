@@ -12,7 +12,8 @@ using Xunit;
 namespace Anthill.Tests;
 
 /// <summary>
-/// Every role stops when the operator says stop. v0.3.8.80 (PLAN.md §2 R3).
+/// Every role stops when the operator says stop. v0.3.8.80, extended live at v0.3.8.81
+/// (PLAN.md §2 R3).
 ///
 /// WHAT R3 ASKS FOR: all twelve roles, four cancellation points each — before dispatch, during
 /// generation, during a tool call, and while waiting on a dependency — with five properties per
@@ -34,12 +35,22 @@ namespace Anthill.Tests;
 /// not-applicable with a reason about the role — a role with no tools has no "during a tool call"
 /// point, and saying so is information rather than a gap. An undecided cell fails, because an
 /// undecided cell reads as covered.
+///
+/// v0.3.8.81 — SIX MORE CELLS DRIVEN LIVE, and the release exists because of what that found. The
+/// citations for `during_generation` and `during_tool_call` were true: the ambient scope does abort
+/// an in-flight HTTP call, the process-launching sites do kill their trees. What nobody had asked was
+/// what the ROLE does with an aborted call, and the answer was that it reads one as an unavailable
+/// provider, degrades to a fallback, and COMPLETES — after which the mission ingests its handoffs,
+/// inserts a verification task, and writes a failure against the model's pheromone trail. The
+/// mechanism was never the gap. The layer above it was, which is exactly what R3 said.
 /// </summary>
 [Collection("specialist-gates")]
 public class RoleCancellationTests : IDisposable
 {
     private readonly string _dir;
     private readonly bool _useOllamaWas = AnthillRuntime.UseOllama;
+    private readonly bool _webSearchWas = AnthillRuntime.EnableWebSearch;
+    private readonly bool _sandboxWas = AnthillRuntime.EnableSandboxExecution;
     private readonly string _rootWas = AnthillRuntime.AllowedWorkspaceRoot;
     private readonly RosterGates.Snapshot _gatesWere = RosterGates.Capture();
 
@@ -52,6 +63,8 @@ public class RoleCancellationTests : IDisposable
     public void Dispose()
     {
         AnthillRuntime.UseOllama = _useOllamaWas;
+        AnthillRuntime.EnableWebSearch = _webSearchWas;
+        AnthillRuntime.EnableSandboxExecution = _sandboxWas;
         AnthillRuntime.AllowedWorkspaceRoot = _rootWas;
         RosterGates.Restore(_gatesWere);
         try { Directory.Delete(_dir, recursive: true); } catch { }
@@ -106,7 +119,33 @@ public class RoleCancellationTests : IDisposable
         // v0.3.8.76 established which roles hold a ModelRouter, and it is these five. The other
         // seven cannot be cancelled "during generation" because they never generate — a cell marked
         // not-applicable from a fact the contract asserts, not from an assumption.
-        foreach (var role in new[] { "researcher", "web", "coder", "builder", "verifier" })
+        //
+        // v0.3.8.81 — THREE OF THE FIVE ARE NOW DRIVEN LIVE, and the release exists because doing so
+        // found what citing them could not. The cited tests prove the ambient scope aborts an
+        // in-flight HTTP call, which was true and remains true. What no test asked was what the ROLE
+        // then does with the aborted call, and the answer was: treats it as an unavailable provider
+        // and carries on. See ACancelledMission_StopsARoleMidGeneration.
+        foreach (var role in new[] { "researcher", "web", "coder" })
+            cells.Add(new(role, "during_generation", How.Harness,
+                "RoleCancellationTests.ACancelledMission_StopsARoleMidGeneration"));
+
+        // TWO STAY CITED, and the reasons are different — which is why they are two entries.
+        //
+        // `verifier`: `SchedulingMode.PolicyInserted`, so no plan may assign it and the harness —
+        // which drives a role by planning a task for it — cannot reach it. Driving it live means
+        // completing a builder deliverable first and stopping inside the verification task the
+        // runtime inserts after it.
+        //
+        // `builder`: attempted live and it did NOT reach a model call under a plan-assigned
+        // `build_answer` task, so the gate never fired and the cell would have been decided by a
+        // role that never generated. Recorded as an observation rather than a diagnosis: what the
+        // builder does instead is not yet known, and guessing at it here is how a matrix acquires a
+        // convenient belief. The behaviour this cell exists to prove is proved for the same code
+        // path by `researcher` and `web`, whose non-Ok branch is the identical
+        // SucceededWithWarnings degrade — so the finding is not resting on this cell.
+        //
+        // Both are named in PLAN.md §2 R3, and RoleQualificationRecordTests asserts they stay named.
+        foreach (var role in new[] { "verifier", "builder" })
             cells.Add(new(role, "during_generation", How.Cited,
                 "ModelCallCancellationTests.OllamaClient_AbortsCleanly_WhenAmbientTokenAlreadyCancelled;"
               + "ModelCallCancellationTests.OpenAiCompatibleClient_AbortsCleanly_WhenAmbientTokenAlreadyCancelled"));
@@ -118,7 +157,33 @@ public class RoleCancellationTests : IDisposable
               + "the point does not exist for it rather than being untested."));
 
         // ---- during a tool call: only the roles whose contract grants tools -------------------
-        foreach (var role in new[] { "tester", "file", "researcher", "web", "ui_cartographer", "scribe" })
+        //
+        // v0.3.8.81 — three of the six driven live. The cited tests below prove the process-launching
+        // SITES kill their trees, which is the orphan-process half and is real; they say nothing
+        // about what the ROLE records once its tool call has been stopped underneath it.
+        foreach (var role in new[] { "file", "researcher", "web" })
+            cells.Add(new(role, "during_tool_call", How.Harness,
+                "RoleCancellationTests.ACancelledMission_StopsARoleMidToolCall"));
+
+        // THREE STAY CITED, for three different reasons, each recorded as what was OBSERVED.
+        //
+        // `tester`: `SchedulingMode.PolicyInserted`, so no plan may assign it. It is also the one
+        // role whose tool launches a real process, which makes it the cell where the orphan-process
+        // property is worth proving rather than inheriting — a gate tool substituted for
+        // `run_allowlisted_check` would prove the runtime's bookkeeping and nothing about a child.
+        //
+        // `scribe`: attempted live, and it dispatched NONE of the tools its contract grants under a
+        // plan-assigned `release_notes` task. Consistent with the scribe refusing before it reads
+        // anything — gate 8 says it cannot act positively on unverified work, and this fixture gives
+        // it no verified work — but that is a hypothesis, and the cell records the observation.
+        //
+        // `ui_cartographer`: attempted live, and the gate tripped BEFORE any task for the role was
+        // recorded. Something dispatches one of `list_directory`, `read_text_file`,
+        // `search_workspace` or `repository_index` outside this role's own task, early enough in the
+        // mission that shadowing the grant stops the mission before it starts. That is worth knowing
+        // and is not yet explained; it is carried in PLAN.md §2 R3 as an open question rather than
+        // asserted here.
+        foreach (var role in new[] { "tester", "scribe", "ui_cartographer" })
             cells.Add(new(role, "during_tool_call", How.Cited,
                 "ProcessTreeCancellationTests.EverySiteThatWaitsWithATimeout_KillsTheWholeProcessTree;"
               + "SubprocessHangTests.AGitThatNeverExits_TimesOutAndReturns"));
@@ -289,11 +354,358 @@ public class RoleCancellationTests : IDisposable
           + "and it is what turns cancellation into a suggestion.");
     }
 
+    // -----------------------------------------------------------------------------------------------
+    // The LIVE points — v0.3.8.81
+    // -----------------------------------------------------------------------------------------------
+
     /// <summary>
-    /// Drives one mission whose plan assigns a task to <paramref name="role"/>, with the mission
-    /// token already cancelled. Shared by both theories so the twenty-four cells are one fixture.
+    /// The task type each role's contract actually supports. A planned task with the wrong type is
+    /// BLOCKED at dispatch rather than executed, which for a cancellation test is the worst possible
+    /// outcome: the mission would stop, every property below would hold, and the role would never
+    /// have run. Pinned against the contracts by <see cref="TheTaskTypeMap_AgreesWithTheContracts"/>.
     /// </summary>
-    private (Queen Queen, string MissionId) RunCancelled(string role, bool alreadyCancelled)
+    private static readonly Dictionary<string, string> TaskTypeFor = new(StringComparer.Ordinal)
+    {
+        ["researcher"] = "research",
+        ["web"] = "external_research",
+        ["file"] = "file_inspection",
+        ["coder"] = "patch_proposal",
+        ["builder"] = "build_answer",
+        ["verifier"] = "verification",
+        ["tester"] = "build_check",
+        ["soldier"] = "security_review",
+        ["medic"] = "failure_diagnosis",
+        ["archivist"] = "memory_consolidation",
+        ["ui_cartographer"] = "ui_mapping",
+        ["scribe"] = "release_notes",
+    };
+
+    /// <summary>Every entry is a task type the role's own contract admits.</summary>
+    [Fact]
+    public void TheTaskTypeMap_AgreesWithTheContracts()
+    {
+        var wrong = new List<string>();
+        foreach (var (role, taskType) in TaskTypeFor)
+        {
+            var contract = AntExecutionCatalog.ContractFor(role);
+            if (contract is null) { wrong.Add($"{role} has no contract"); continue; }
+            if (!contract.SupportsTaskType(taskType))
+                wrong.Add($"{role} does not support task type '{taskType}'");
+        }
+
+        Assert.True(wrong.Count == 0,
+            "the cancellation harness plans task types a role would refuse: " + string.Join("; ", wrong)
+          + ". A refused task is BLOCKED before it runs, so every cancellation property would pass "
+          + "about a role that never acted.");
+
+        var uncovered = Roles.Where(r => !TaskTypeFor.ContainsKey(r)).ToList();
+        Assert.True(uncovered.Count == 0, "no task type mapped for: " + string.Join(", ", uncovered));
+    }
+
+    /// <summary>
+    /// THE OPERATOR PRESSES STOP WHILE THE ROLE IS GENERATING, and the role must leave nothing behind.
+    ///
+    /// WHAT THIS FOUND, and why the cited cells could never have. Every model-calling role treats a
+    /// non-Ok call as "the routed model is unavailable" and degrades rather than failing — which is
+    /// correct for the case it was written for. A cancelled call IS non-Ok
+    /// (<c>ModelCallOutcome.Cancelled</c>, and <c>Ok</c> is false for it), so cancellation arrived
+    /// through that same door: the researcher and the builder returned <c>SucceededWithWarnings</c>,
+    /// the task COMPLETED, and a completed task ingests handoffs, inserts a verification task after a
+    /// deliverable, hands the archivist something to remember and processes the coder's proposals.
+    /// The operator pressed stop and the colony answered with a fabricated fallback deliverable and
+    /// more scheduled work.
+    ///
+    /// The mechanism was never wrong. `ModelCallCancellationTests` proves the HTTP call aborts, and
+    /// it does. The gap was one layer up and is exactly what R3 predicted: the role does not stop
+    /// merely because its model call did.
+    ///
+    /// HOW THE MOMENT IS REACHED. The scenario installs a gate on this role's generation
+    /// (<c>ScriptBook.Intercept</c>) which cancels the mission and then returns the response shape a
+    /// REAL adapter returns when the ambient token is already cancelled — same status, same sentence.
+    /// <see cref="TheCancellationFixture_MatchesWhatRealAdaptersReturn"/> pins that correspondence, so
+    /// the fixture cannot drift into proving something no provider does.
+    /// </summary>
+    [Theory]
+    [InlineData("researcher")] [InlineData("web")] [InlineData("coder")]
+    public void ACancelledMission_StopsARoleMidGeneration(string role)
+    {
+        var (queen, missionId) = RunStoppedDuring(role, duringToolCall: false);
+        AssertTheRoleLeftNothingBehind(queen, missionId, role, "mid-generation");
+    }
+
+    /// <summary>
+    /// THE OPERATOR PRESSES STOP WHILE THE ROLE IS INSIDE A TOOL CALL.
+    ///
+    /// The separate point matters because the role's recovery path is different: a failed tool result
+    /// is handled locally — the scribe's read sits inside a try/catch and falls back to prose, the
+    /// cartographer's listing failure becomes a typed dependency failure — so the role reaches its own
+    /// conclusion about a tool that was stopped underneath it and reports that conclusion as work.
+    ///
+    /// EVERY tool the role's contract grants is shadowed, not the one it is believed to call first.
+    /// Picking a tool by reading the ant's source is how a fixture starts passing because the role
+    /// stopped dispatching anything: the gate would never fire, the mission would be cancelled by
+    /// nobody, and the assertions would hold vacuously. Shadowing the whole grant means the first
+    /// dispatch — whichever it is — trips the gate, and a role that dispatches NOTHING fails the
+    /// entered-gate assertion instead of passing quietly.
+    /// </summary>
+    [Theory]
+    [InlineData("file")] [InlineData("researcher")] [InlineData("web")]
+    public void ACancelledMission_StopsARoleMidToolCall(string role)
+    {
+        var (queen, missionId) = RunStoppedDuring(role, duringToolCall: true);
+        AssertTheRoleLeftNothingBehind(queen, missionId, role, "mid-tool-call");
+    }
+
+    /// <summary>
+    /// The five properties, asserted together because they fail independently — and because the one
+    /// that matters most to an operator is the one nothing else in the suite looks at.
+    /// </summary>
+    private static void AssertTheRoleLeftNothingBehind(
+        Queen queen, string missionId, string role, string point)
+    {
+        var tasks = queen.Memory.GetTasksForMission(missionId);
+        var mine = tasks.Where(t => (t.GetValueOrDefault("assigned_ant")?.ToString() ?? "") == role).ToList();
+
+        Assert.True(mine.Count > 0, $"no task was recorded for '{role}' at all, so the {point} "
+          + "cancellation was never exercised.");
+
+        // 1. TERMINAL STATE. Not complete, and recorded as something the colony DID rather than as
+        //    something the role failed at. `execution_error` would attribute the operator's stop to
+        //    the ant, and it is also retryable — which returns the task to the Ready queue for the
+        //    dispatch loop to skip, so one stop is written down three times and none of the three
+        //    says a person stopped it.
+        foreach (var task in mine)
+        {
+            var status = task.GetValueOrDefault("status")?.ToString() ?? "";
+            Assert.True(status != "complete",
+                $"'{role}' was stopped {point} and its task still completed. A degrading role answers "
+              + "a cancelled model call with a fallback and reports success; the mission must not "
+              + "record that as work.");
+
+            var failureType = task.GetValueOrDefault("failure_type")?.ToString() ?? "";
+            Assert.True(failureType is "cancelled" or "timeout",
+                $"'{role}' was stopped {point} and its task is recorded as '{failureType}'. "
+              + "`execution_error` in particular attributes the operator's stop to the ant, and it is "
+              + "RETRYABLE — which returns the task to the Ready queue for the dispatch loop to skip, "
+              + "so one stop is written down three times and none of the three says a person did it.");
+
+            // The row an operator reads. `cancellation_reason` is the only field that says a person
+            // stopped this rather than that it went wrong, and it is what `DrainRunningTasks` has
+            // always written for the straggler case — the returning-degrader case wrote nothing.
+            var reason = task.GetValueOrDefault("cancellation_reason")?.ToString() ?? "";
+            Assert.False(string.IsNullOrWhiteSpace(reason),
+                $"'{role}' was stopped {point} and its task carries no cancellation_reason.");
+        }
+
+        // 2. NO POSITIVE EVALUATION. What auto-apply, memory and reputation all read.
+        var evaluation = queen.Memory.LoadMissionEvaluation(missionId);
+        Assert.True(evaluation is null || !evaluation.IsPositive,
+            $"'{role}' was stopped {point} and the mission still graded positively "
+          + $"({evaluation?.OutcomeCode}).");
+
+        // 3. NO MEMORY. The property that outlives the mission.
+        var archived = queen.Memory.GetRecentEvents(200, "memory_candidate_archived", missionId);
+        Assert.True(archived.Count == 0,
+            $"'{role}' was stopped {point} and {archived.Count} memory candidate(s) were archived.");
+
+        // 4. NO HANDOFF. Stopping the colony must not merely change which role is running.
+        Assert.DoesNotContain(tasks, t =>
+            (t.GetValueOrDefault("title")?.ToString() ?? "").StartsWith("Handoff:", StringComparison.Ordinal));
+
+        // 5. NO REPUTATION. The one an operator never sees and never recovers from.
+        //
+        //    A cancelled model call came back non-Ok, `ModelRouter.SendCore` derived its pheromone
+        //    delta from `result.Ok` alone, and the trail therefore recorded a FAILURE against
+        //    `model:{provider}:{model}:{role}` — while the circuit breaker, four lines above in the
+        //    same method, treated the identical outcome as Neutral because "we stopped the call
+        //    ourselves". Two implementations of one rule, and the durable one was wrong: every stop
+        //    taught the colony that the model its cancelled role was using is unsuited to that role.
+        var trailKey = $"model:{ScriptedColony.ProviderId}:{ScriptedColony.ModelId}:{role}";
+        var trail = queen.Memory.ListPheromoneTrails()
+            .FirstOrDefault(t => (t.GetValueOrDefault("trail_key")?.ToString() ?? "") == trailKey);
+
+        if (trail is not null)
+        {
+            var failures = Convert.ToInt32(trail.GetValueOrDefault("failure_count") ?? 0);
+            Assert.True(failures == 0,
+                $"stopping '{role}' {point} wrote {failures} failure(s) to '{trailKey}'. A call the "
+              + "colony stopped is evidence about the colony, never about the route — which is what "
+              + "the circuit breaker has always said about the same outcome.");
+        }
+    }
+
+    /// <summary>
+    /// The fixture's cancelled response is the one REAL adapters return. Without this the harness
+    /// could prove a role handles a shape no provider produces — the fixture-testing failure this
+    /// repository has caught before.
+    /// </summary>
+    [Fact]
+    public void TheCancellationFixture_MatchesWhatRealAdaptersReturn()
+    {
+        var response = CancelledLikeARealAdapter();
+
+        Assert.Equal(ModelCallOutcome.Cancelled, response.Status);
+        Assert.Equal(ModelCallOutcome.Cancelled,
+            ModelCallOutcomeExtensions.Classify(response.Content));
+
+        // And the adapters really do produce it. Read from source rather than asserted from memory:
+        // the sentinel is a STRING that `Classify` matches on, so a reworded adapter would silently
+        // stop being classified as cancelled and this harness would stop describing production.
+        var reasoning = Path.Combine(SourceText.RepoRoot(), "src", "Anthill.Modules",
+            "Anthill.Modules.Reasoning");
+        var producers = Directory.GetFiles(reasoning, "*.cs", SearchOption.AllDirectories)
+            .Count(f => File.ReadAllText(f).Contains(CancelSentinel, StringComparison.Ordinal));
+
+        Assert.True(producers >= 2,
+            $"only {producers} reasoning adapter source file(s) emit \"{CancelSentinel}\". Either the "
+          + "adapters reworded the sentinel — in which case Classify no longer sees a cancellation — "
+          + "or this fixture is describing a shape production stopped producing.");
+    }
+
+    /// <summary>The exact phrase <c>ModelCallOutcomeExtensions.Classify</c> matches on.</summary>
+    private const string CancelSentinel = "cancelled because the mission was stopped";
+
+    private static ModelResponse CancelledLikeARealAdapter() => new()
+    {
+        Status = ModelCallOutcome.Cancelled,
+        Content = $"ERROR: {ScriptedColony.ProviderId} request {CancelSentinel}.",
+        Provider = ScriptedColony.ProviderId,
+        Model = ScriptedColony.ModelId,
+    };
+
+    /// <summary>
+    /// A tool that stops the mission the first time a role dispatches it, then answers the way a tool
+    /// interrupted by cancellation answers: unsuccessfully, saying so.
+    ///
+    /// It does NOT block waiting for someone else to cancel. A gate that waits is a gate that can
+    /// hang CI when the role it was written for stops dispatching, and "the suite timed out" is a
+    /// worse diagnostic than "the role dispatched nothing". Cancelling from inside the dispatch is
+    /// also the more faithful moment: the operator's stop lands while the role is inside the call,
+    /// which is the point this cell is about.
+    /// </summary>
+    private sealed class StopOnDispatchTool(string name, ManualResetEventSlim entered, CancellationTokenSource stop)
+        : ITool
+    {
+        public string Name => name;
+        public string Description => "Test gate: stops the mission from inside a role's tool call.";
+
+        public ToolResult Run(IReadOnlyDictionary<string, object?> args)
+        {
+            entered.Set();
+            stop.Cancel();
+            return new ToolResult(Name, success: false, output: "",
+                error: "tool call aborted: the mission was stopped",
+                failure: FailureClass.DependencyFailure);
+        }
+    }
+
+    /// <summary>
+    /// Drives one mission whose plan assigns a task to <paramref name="role"/>, and stops the mission
+    /// from INSIDE that role's work — from its generation, or from its first tool dispatch.
+    /// </summary>
+    private (Queen Queen, string MissionId) RunStoppedDuring(string role, bool duringToolCall)
+    {
+        ApplyFullRoster();
+
+        using var cts = new CancellationTokenSource();
+        var entered = new ManualResetEventSlim(false);
+
+        // ONE task. The dependent second task of the pre-dispatch fixture would be skipped here for
+        // the ordinary reason (its predecessor did not complete), which proves nothing about this
+        // point and would make a failure ambiguous between the two.
+        var plan = $$"""
+            {
+              "tasks": [
+                { "title": "The step under test", "description": "Stopped from inside.",
+                  "assigned_ant": "{{role}}", "task_type": "{{TaskTypeFor[role]}}", "depends_on": [] }
+              ]
+            }
+            """;
+
+        var book = new ScriptBook().Role("planner", plan);
+        foreach (var r in Roles.Concat(new[] { "builder", "fallback" }).Distinct())
+            book.Role(r, $"SCRIPTED: {r} output.");
+
+        if (!duringToolCall)
+            book.Intercept(role, _ =>
+            {
+                entered.Set();
+                cts.Cancel();
+                return CancelledLikeARealAdapter();
+            });
+
+        using var scripted = ScriptedColony.Begin(book,
+            Roles.Concat(new[] { "planner", "fallback" }).Distinct().ToArray());
+
+        var memory = new SqliteMemory(Path.Combine(_dir, $"stopped-{role}-{Guid.NewGuid():N}.db"));
+        var host = new ModuleHost(memory, NullEventBus.Instance);
+        host.Load(new ToolsModule(new WorkspacePathGuard(), new CancellationScenarioToolGates()));
+        var queen = new Queen(memory);
+        queen.AdoptModuleTools(host.ContributedTools);
+
+        // The web ant's only real trigger is a search, and a search means the network. Shadowed for
+        // BOTH points, including the generation one where the ant searches before it generates — the
+        // gate class above already refuses, and a suite that reached a socket would be neither
+        // deterministic nor honest about what it proved.
+        queen.AdoptModuleTools(new ITool[]
+        {
+            new ScriptedWebSearchTool(
+                ("A local result", "https://example.org/one", "Enough for the ant to proceed."),
+                ("Another local result", "https://example.net/two", "On a second host, so dedupe runs.")),
+        });
+
+        if (duringToolCall)
+        {
+            // Shadow the WHOLE grant, after adoption — Register is last-write-wins, and going through
+            // AdoptModuleTools keeps the profile and capability grants re-resolved with it.
+            var contract = AntExecutionCatalog.ContractFor(role);
+            Assert.NotNull(contract);
+            Assert.True(contract!.AllowedTools.Count > 0,
+                $"'{role}' has no tools, so it has no during_tool_call point — the matrix says so and "
+              + "this theory should not name it.");
+            queen.AdoptModuleTools(contract.AllowedTools
+                .Select(t => (ITool)new StopOnDispatchTool(t, entered, cts)).ToArray());
+        }
+
+        string? missionId = null;
+        queen.RunMission($"Exercise {role} and stop it while it works.",
+            onMissionCreated: id => missionId = id, cancel: cts.Token);
+
+        Assert.NotNull(missionId);
+        Assert.True(entered.IsSet,
+            $"'{role}' never reached the stopping point, so nothing was cancelled mid-flight. Either "
+          + (duringToolCall
+                ? "the role dispatched none of the tools its contract grants, or the dispatch was "
+                + "denied before reaching the tool (check the capability grant for this role)."
+                : "the role made no model call, or its request carried no `| role: |` header for the "
+                + "scripted provider to read.")
+          + " A passing assertion after this point would be about a role that never acted.");
+        return (queen, missionId!);
+    }
+
+    /// <summary>File and web tools ON so a role's dispatch reaches the registry; writes, shell and
+    /// auto-apply off. The tools themselves are shadowed, so nothing here reaches a real socket or a
+    /// real file — this exists so the role's capability grant is resolved rather than withheld.</summary>
+    private sealed class CancellationScenarioToolGates : IToolRuntimeOptions
+    {
+        public bool FileToolsEnabled => true;
+        public bool FileWritingEnabled => false;
+        public bool ShellToolEnabled => false;
+        // OFF, and the fixture shadows `web_search` unconditionally on top of that. Two independent
+        // reasons the web ant cannot reach a socket from a unit test, because one of them is a flag
+        // and flags get edited.
+        public bool WebSearchEnabled => false;
+        public bool PatchApplicationEnabled => false;
+        public IReadOnlySet<string> WebSearchKeywords { get; } = new HashSet<string>();
+        public IReadOnlySet<string> PatchAllowedSuffixes { get; } = new HashSet<string> { ".md", ".txt" };
+        public IReadOnlySet<string> BlockedFileSuffixes { get; } = new HashSet<string> { ".db" };
+        public IReadOnlySet<string> BlockedPathParts { get; } = new HashSet<string> { ".git" };
+        public string ScriptDirectory => ".";
+        public string BackupDirectory => "data/backups";
+    }
+
+    /// <summary>The roster and workspace every fixture in this file runs under.</summary>
+    private void ApplyFullRoster()
     {
         AnthillRuntime.EnableSpecialistAntExecution = true;
         AnthillRuntime.ActivationTier = ActivationTier.Full;
@@ -304,7 +716,25 @@ public class RoleCancellationTests : IDisposable
         AnthillRuntime.EnableUiCartographerAnt = true;
         AnthillRuntime.EnableScribeAnt = true;
         AnthillRuntime.UseOllama = true;
+        // The web ant refuses before dispatching anything when this is false, so without it the
+        // web cells would prove that a blocked role leaves nothing behind — true, and about a
+        // different role than the one named. The module's own web gate stays OFF and `web_search`
+        // is shadowed, so opening this reaches no socket.
+        AnthillRuntime.EnableWebSearch = true;
+        // OFF explicitly, not by default. With it on the coder iterates inside a sandbox and may
+        // never reach `GenerateTyped`, so the generation gate would not fire and the cell would be
+        // decided by whatever an earlier test in this collection happened to leave set.
+        AnthillRuntime.EnableSandboxExecution = false;
         AnthillRuntime.AllowedWorkspaceRoot = Path.Combine(_dir, "workspace");
+    }
+
+    /// <summary>
+    /// Drives one mission whose plan assigns a task to <paramref name="role"/>, with the mission
+    /// token already cancelled. Shared by both theories so the twenty-four cells are one fixture.
+    /// </summary>
+    private (Queen Queen, string MissionId) RunCancelled(string role, bool alreadyCancelled)
+    {
+        ApplyFullRoster();
 
         var plan = $$"""
             {

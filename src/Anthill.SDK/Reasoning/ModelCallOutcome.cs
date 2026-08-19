@@ -106,13 +106,43 @@ public static class ModelCallOutcomeExtensions
         _ => "error",
     };
 
+    /// <summary>
+    /// THE COLONY stopped this call — an operator cancel or a mission deadline — so the outcome is
+    /// evidence about us and never about the route. v0.3.8.81 (PLAN.md §2 R3).
+    ///
+    /// This predicate exists because the rule already had TWO implementations that disagreed, four
+    /// lines apart inside one method. <see cref="ToCircuitSignal"/> has read Cancelled as
+    /// <see cref="CircuitSignal.Neutral"/> since it was written, with the comment "we stopped the
+    /// call ourselves — no signal about provider health". <c>ModelRouter.SendCore</c> derived its
+    /// pheromone delta from <see cref="ModelCallResult.Ok"/> alone, and <c>Ok</c> is false for a
+    /// cancelled call — so the same outcome wrote <c>success: false</c> and -0.01 against
+    /// <c>model:{provider}:{model}:{role}</c>.
+    ///
+    /// The breaker's copy is transient state and the trail's copy is DURABLE, so the wrong one was
+    /// the one that outlived the mission: every operator stop taught the colony a little more firmly
+    /// that the model its cancelled role was using is unsuited to that role. Nothing in the mission
+    /// looked wrong afterwards, which is why this survived — the damage is in the memory, and the
+    /// memory is not read again until routing next asks it a question.
+    ///
+    /// Both readers now answer from HERE. That is the only arrangement in which they cannot drift
+    /// apart again, and "two implementations of one rule" is a defect class this repository names.
+    /// </summary>
+    public static bool IsColonyStopped(this ModelCallOutcome outcome) =>
+        outcome is ModelCallOutcome.Cancelled;
+
     /// <summary>How the breaker should treat this outcome.</summary>
     public static CircuitSignal ToCircuitSignal(this ModelCallOutcome outcome) => outcome switch
     {
         // The provider was slow or unreachable.
         ModelCallOutcome.Timeout or ModelCallOutcome.ConnectError => CircuitSignal.TransientFault,
-        // We stopped the call ourselves, or couldn't classify it — no signal about provider health.
-        ModelCallOutcome.Cancelled or ModelCallOutcome.Error => CircuitSignal.Neutral,
+        // We stopped the call ourselves — no signal about provider health. Read from the shared
+        // predicate rather than naming the enum member again, so the trail and the breaker agree
+        // by construction instead of by two people remembering the same thing.
+        _ when outcome.IsColonyStopped() => CircuitSignal.Neutral,
+        // Unclassifiable: also no signal, and deliberately NOT folded into IsColonyStopped — an
+        // Error is a call we could not read, not a call we stopped, and only the second is
+        // guaranteed to say nothing about the route.
+        ModelCallOutcome.Error => CircuitSignal.Neutral,
         // Everything else means the provider actually responded (even a 401 or "model not pulled").
         _ => CircuitSignal.Healthy,
     };
