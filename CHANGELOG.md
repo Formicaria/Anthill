@@ -2,9 +2,10 @@
 
 ## v0.3.8.81 - the roles that kept working after the stop, and the memory it left behind
 
-**PLAN.md §2 R3 advances.** Nine of R3's cited cancellation cells are now driven live, and doing so
+**PLAN.md §2 R3 advances.** Six of R3's cited cancellation cells are now driven live, and doing so
 found two defects — one of which had been quietly corrupting the colony's durable memory since
-routing pheromones existed.
+routing pheromones existed — plus three cells that could not be driven, each for its own reason,
+which are now written down rather than assumed away.
 
 ### A cancelled role finished its work anyway
 
@@ -13,7 +14,8 @@ Every model-calling role treats a non-Ok model call as *"the routed model is una
 cancelled call is non-Ok — `ModelCallOutcome.Cancelled`, and `Ok` is false for it — so **cancellation
 arrived through the same door**:
 
-- the researcher and the builder returned `SucceededWithWarnings`, so the task **completed**;
+- the researcher returned `SucceededWithWarnings` — as the builder's identical non-Ok branch would —
+  so the task **completed**;
 - a completed task ingests handoffs, inserts a verification task after a deliverable, hands the
   archivist something to remember, and processes the coder's patch proposals.
 
@@ -62,17 +64,17 @@ cannot tell a reader two different stories. `Error` is deliberately **not** fold
 call we could not read, not one we stopped, and only the second is guaranteed to say nothing about
 the route.
 
-### Nine cells driven, two named as still cited
+### Six cells driven, five named as still cited
 
 `RoleCancellationTests` gains two live theories:
 
-- **`during_generation`** for researcher, web, coder and builder. The role is held inside generation
-  by a `ScriptBook.Intercept` gate which stops the mission and returns the response shape a **real**
+- **`during_generation`** for researcher, web and coder. The role is held inside generation by a
+  `ScriptBook.Intercept` gate which stops the mission and returns the response shape a **real**
   adapter returns — same status, same sentence, pinned against the adapter sources so the fixture
   cannot drift into proving something no provider does.
-- **`during_tool_call`** for file, researcher, web, ui_cartographer and scribe. **Every** tool in the
-  role's contract is shadowed, not the one it is believed to dispatch first: picking by reading the
-  ant's source is how a fixture starts passing because the role stopped dispatching anything at all.
+- **`during_tool_call`** for file, researcher and web. **Every** tool in the role's contract is
+  shadowed, not the one it is believed to dispatch first: picking by reading the ant's source is how
+  a fixture starts passing because the role stopped dispatching anything at all.
 
 Both assert the same five properties, and the fifth is new: **no failure written to the role's
 pheromone trail.**
@@ -80,11 +82,28 @@ pheromone trail.**
 `TaskTypeFor` is pinned against the contracts, because a task type a role refuses is BLOCKED before
 it runs — every cancellation property would then hold about a role that never acted.
 
-**Two cells stay cited and are named rather than blurred**: `verifier/during_generation` and
-`tester/during_tool_call`. Both contracts are `SchedulingMode.PolicyInserted`, so no plan may assign
-them, and the harness drives a role by planning a task for it. The tester's is also the cell where
-the orphan-process property is worth proving rather than inheriting — a gate tool substituted for
-`run_allowlisted_check` would prove the runtime's bookkeeping and nothing about a child process.
+**Five cells stay cited, and three of them for reasons nobody knew before this release tried.**
+
+Two are unreachable by contract: `verifier/during_generation` and `tester/during_tool_call` are both
+`SchedulingMode.PolicyInserted`, so no plan may assign them, and the harness drives a role by planning
+a task for it. The tester's is also the cell where the orphan-process property is worth proving rather
+than inheriting — a gate tool substituted for `run_allowlisted_check` would prove the runtime's
+bookkeeping and nothing about a child process.
+
+Three were attempted live and did not reach the point. Each is recorded as an **observation, not a
+diagnosis** — a matrix is exactly where a guess hardens into a belief:
+
+- **`builder/during_generation`** reached no model call under a plan-assigned `build_answer` task.
+  The degrade path this cell exists to prove is the same one `researcher` and `web` prove live, so the
+  finding above does not rest on it; what the builder does instead is the open question.
+- **`scribe/during_tool_call`** dispatched none of its granted tools under a `release_notes` task.
+  Consistent with gate 8 refusing before it reads anything in a fixture with no verified work — but
+  that is a hypothesis.
+- **`ui_cartographer/during_tool_call`** tripped its gate BEFORE any task for the role was recorded.
+  **Something dispatches one of `list_directory`, `read_text_file`, `search_workspace` or
+  `repository_index` outside this role's own task**, early enough that shadowing the grant stops the
+  mission before it starts. That is the most interesting of the three and is worth chasing on its own:
+  a tool dispatched by nobody's task is a dispatch no per-role authorization decision covers.
 
 ### The graduation record is complete
 

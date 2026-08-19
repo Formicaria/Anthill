@@ -36,7 +36,7 @@ namespace Anthill.Tests;
 /// point, and saying so is information rather than a gap. An undecided cell fails, because an
 /// undecided cell reads as covered.
 ///
-/// v0.3.8.81 — NINE MORE CELLS DRIVEN LIVE, and the release exists because of what that found. The
+/// v0.3.8.81 — SIX MORE CELLS DRIVEN LIVE, and the release exists because of what that found. The
 /// citations for `during_generation` and `during_tool_call` were true: the ambient scope does abort
 /// an in-flight HTTP call, the process-launching sites do kill their trees. What nobody had asked was
 /// what the ROLE does with an aborted call, and the answer was that it reads one as an unavailable
@@ -120,24 +120,35 @@ public class RoleCancellationTests : IDisposable
         // seven cannot be cancelled "during generation" because they never generate — a cell marked
         // not-applicable from a fact the contract asserts, not from an assumption.
         //
-        // v0.3.8.81 — FOUR OF THE FIVE ARE NOW DRIVEN LIVE, and the release exists because doing so
+        // v0.3.8.81 — THREE OF THE FIVE ARE NOW DRIVEN LIVE, and the release exists because doing so
         // found what citing them could not. The cited tests prove the ambient scope aborts an
         // in-flight HTTP call, which was true and remains true. What no test asked was what the ROLE
         // then does with the aborted call, and the answer was: treats it as an unavailable provider
         // and carries on. See ACancelledMission_StopsARoleMidGeneration.
-        foreach (var role in new[] { "researcher", "web", "coder", "builder" })
+        foreach (var role in new[] { "researcher", "web", "coder" })
             cells.Add(new(role, "during_generation", How.Harness,
                 "RoleCancellationTests.ACancelledMission_StopsARoleMidGeneration"));
 
-        // The verifier is the fifth and stays CITED, for a reason about scheduling rather than about
-        // cancellation: its contract is `SchedulingMode.PolicyInserted`, so no plan may assign it and
-        // the harness above — which drives a role by planning a task for it — cannot reach it. Doing
-        // it live means completing a builder deliverable first and cancelling inside the verification
-        // task the runtime inserts after it. That is a longer fixture than this release could also
-        // verify, and it is named in PLAN.md §2 R3 rather than left to be noticed.
-        cells.Add(new("verifier", "during_generation", How.Cited,
-            "ModelCallCancellationTests.OllamaClient_AbortsCleanly_WhenAmbientTokenAlreadyCancelled;"
-          + "ModelCallCancellationTests.OpenAiCompatibleClient_AbortsCleanly_WhenAmbientTokenAlreadyCancelled"));
+        // TWO STAY CITED, and the reasons are different — which is why they are two entries.
+        //
+        // `verifier`: `SchedulingMode.PolicyInserted`, so no plan may assign it and the harness —
+        // which drives a role by planning a task for it — cannot reach it. Driving it live means
+        // completing a builder deliverable first and stopping inside the verification task the
+        // runtime inserts after it.
+        //
+        // `builder`: attempted live and it did NOT reach a model call under a plan-assigned
+        // `build_answer` task, so the gate never fired and the cell would have been decided by a
+        // role that never generated. Recorded as an observation rather than a diagnosis: what the
+        // builder does instead is not yet known, and guessing at it here is how a matrix acquires a
+        // convenient belief. The behaviour this cell exists to prove is proved for the same code
+        // path by `researcher` and `web`, whose non-Ok branch is the identical
+        // SucceededWithWarnings degrade — so the finding is not resting on this cell.
+        //
+        // Both are named in PLAN.md §2 R3, and RoleQualificationRecordTests asserts they stay named.
+        foreach (var role in new[] { "verifier", "builder" })
+            cells.Add(new(role, "during_generation", How.Cited,
+                "ModelCallCancellationTests.OllamaClient_AbortsCleanly_WhenAmbientTokenAlreadyCancelled;"
+              + "ModelCallCancellationTests.OpenAiCompatibleClient_AbortsCleanly_WhenAmbientTokenAlreadyCancelled"));
 
         foreach (var role in new[] { "tester", "file", "ui_cartographer", "scribe", "soldier", "medic", "archivist" })
             cells.Add(new(role, "during_generation", How.NotApplicable,
@@ -147,22 +158,35 @@ public class RoleCancellationTests : IDisposable
 
         // ---- during a tool call: only the roles whose contract grants tools -------------------
         //
-        // v0.3.8.81 — five of the six driven live. The cited tests below prove the process-launching
+        // v0.3.8.81 — three of the six driven live. The cited tests below prove the process-launching
         // SITES kill their trees, which is the orphan-process half and is real; they say nothing
         // about what the ROLE records once its tool call has been stopped underneath it.
-        foreach (var role in new[] { "file", "researcher", "web", "ui_cartographer", "scribe" })
+        foreach (var role in new[] { "file", "researcher", "web" })
             cells.Add(new(role, "during_tool_call", How.Harness,
                 "RoleCancellationTests.ACancelledMission_StopsARoleMidToolCall"));
 
-        // The tester is the sixth and stays CITED, for the same scheduling reason as the verifier
-        // above — `SchedulingMode.PolicyInserted`, so no plan may assign it. It is also the one role
-        // whose tool launches a real process, which makes it the cell where the orphan-process
-        // property is worth proving rather than inheriting: a gate tool substituted for
+        // THREE STAY CITED, for three different reasons, each recorded as what was OBSERVED.
+        //
+        // `tester`: `SchedulingMode.PolicyInserted`, so no plan may assign it. It is also the one
+        // role whose tool launches a real process, which makes it the cell where the orphan-process
+        // property is worth proving rather than inheriting — a gate tool substituted for
         // `run_allowlisted_check` would prove the runtime's bookkeeping and nothing about a child.
-        // Named in PLAN.md §2 R3 with the verifier.
-        cells.Add(new("tester", "during_tool_call", How.Cited,
-            "ProcessTreeCancellationTests.EverySiteThatWaitsWithATimeout_KillsTheWholeProcessTree;"
-          + "SubprocessHangTests.AGitThatNeverExits_TimesOutAndReturns"));
+        //
+        // `scribe`: attempted live, and it dispatched NONE of the tools its contract grants under a
+        // plan-assigned `release_notes` task. Consistent with the scribe refusing before it reads
+        // anything — gate 8 says it cannot act positively on unverified work, and this fixture gives
+        // it no verified work — but that is a hypothesis, and the cell records the observation.
+        //
+        // `ui_cartographer`: attempted live, and the gate tripped BEFORE any task for the role was
+        // recorded. Something dispatches one of `list_directory`, `read_text_file`,
+        // `search_workspace` or `repository_index` outside this role's own task, early enough in the
+        // mission that shadowing the grant stops the mission before it starts. That is worth knowing
+        // and is not yet explained; it is carried in PLAN.md §2 R3 as an open question rather than
+        // asserted here.
+        foreach (var role in new[] { "tester", "scribe", "ui_cartographer" })
+            cells.Add(new(role, "during_tool_call", How.Cited,
+                "ProcessTreeCancellationTests.EverySiteThatWaitsWithATimeout_KillsTheWholeProcessTree;"
+              + "SubprocessHangTests.AGitThatNeverExits_TimesOutAndReturns"));
 
         foreach (var role in new[] { "coder", "builder", "verifier", "soldier", "medic", "archivist" })
             cells.Add(new(role, "during_tool_call", How.NotApplicable,
@@ -402,7 +426,7 @@ public class RoleCancellationTests : IDisposable
     /// the fixture cannot drift into proving something no provider does.
     /// </summary>
     [Theory]
-    [InlineData("researcher")] [InlineData("web")] [InlineData("coder")] [InlineData("builder")]
+    [InlineData("researcher")] [InlineData("web")] [InlineData("coder")]
     public void ACancelledMission_StopsARoleMidGeneration(string role)
     {
         var (queen, missionId) = RunStoppedDuring(role, duringToolCall: false);
@@ -426,7 +450,6 @@ public class RoleCancellationTests : IDisposable
     /// </summary>
     [Theory]
     [InlineData("file")] [InlineData("researcher")] [InlineData("web")]
-    [InlineData("ui_cartographer")] [InlineData("scribe")]
     public void ACancelledMission_StopsARoleMidToolCall(string role)
     {
         var (queen, missionId) = RunStoppedDuring(role, duringToolCall: true);

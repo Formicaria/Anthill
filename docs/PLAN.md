@@ -38,7 +38,7 @@ Done and load-bearing:
 |---|---|
 | Deterministic qualification scenarios | **20 of 20 closed by substance** *(v0.3.8.79)*. None open, none partial |
 | Acceptance gates | **12 of 12** *(v0.3.8.80)*. Gates 1 and 2 closed with R3's cancellation matrix, which is what made the roster's declarations true enough to grade |
-| Cancellation cells | **48 of 48 decided; 33 driven live, 2 cited, 13 not-applicable** *(v0.3.8.81)*. Was 24 driven and 11 cited. The two still cited are named in R3 below |
+| Cancellation cells | **48 of 48 decided; 30 driven live, 5 cited, 13 not-applicable** *(v0.3.8.81)*. Was 24 driven and 11 cited. All five still cited are named in R3 below |
 | Graduation record | **Complete** *(v0.3.8.81)*. The cancellation column and the `ui_cartographer` fault cell were the last nulls |
 | Live qualification | **Never run under protocol.** One live mission happened at v0.3.8.73 and produced three real defects; that is not the recorded multi-provider run item R4 requires |
 | Model-calling roles | **5 roles and 8 routes, all declared, both directions asserted** *(v0.3.8.76)*. Was "7 declared, 5 of which cannot call a model" — and separately, 3 routes that do call one were declared nowhere |
@@ -181,9 +181,9 @@ outcome.
   READY, which is stronger than the gate-only check that existed: `Ready` is a conjunction of five
   conditions and "no gate blocks it" reads exactly like "it is ready" in a summary. Gate 2 reads its
   four clauses from four different sources on purpose, because the gate is about them agreeing.)*
-- ✅ **`during_generation` and `during_tool_call` driven live** for nine of the eleven applicable
-  cells *(v0.3.8.81 — researcher, web, coder and builder mid-generation; file, researcher, web,
-  ui_cartographer and scribe mid-tool-call)*.
+- ✅ **`during_generation` and `during_tool_call` driven live** for six of the eleven applicable
+  cells *(v0.3.8.81 — researcher, web and coder mid-generation; file, researcher and web
+  mid-tool-call)*.
   **It found the defect this item predicted, and a second one behind it.** Every model-calling role
   reads a non-Ok call as "the routed model is unavailable" and DEGRADES — which is right for the case
   it was written for. A cancelled call is non-Ok, so cancellation came through that same door: the
@@ -213,18 +213,38 @@ outcome.
   Both gap-asserting tests were **rewritten rather than relaxed**, on their own instructions — the
   third time this file has recorded that correction after v0.3.8.74 and v0.3.8.79. *A guard that
   cannot express success is not a guard, it is a deadline.*
-- ◻ **The last two cancellation cells: `verifier/during_generation` and `tester/during_tool_call`.**
-  Both contracts are `SchedulingMode.PolicyInserted`, so no plan may assign them and the harness —
-  which drives a role by planning a task for it — cannot reach them. The verifier needs a completed
-  builder deliverable first, then a stop inside the verification task the runtime inserts after it.
-  The tester needs a REAL hanging check rather than a substituted gate tool, because it is the one
-  role whose tool launches a process and therefore the only cell where the orphan-process property
-  can be proved rather than inherited. **These two are the reason this item is still open**, and they
-  are named here rather than blurred into the count because `RoleQualificationRecordTests` asserts
-  this document keeps naming them.
+- ◻ **The five cancellation cells still cited.** Named individually rather than blurred into the
+  count, because `RoleQualificationRecordTests` asserts this document keeps naming them — and because
+  three of the five are cited for a reason nobody knew before this release attempted them.
 
-> **Exit gate.** All forty-eight cancellation cells decided, with `verifier/during_generation` and
-> `tester/during_tool_call` driven live rather than cited. **The graduation record — ✅ complete at
+  *Unreachable by the harness, by contract:*
+  - **`verifier/during_generation`** — `SchedulingMode.PolicyInserted`, so no plan may assign it.
+    Needs a completed builder deliverable first, then a stop inside the verification task the runtime
+    inserts after it.
+  - **`tester/during_tool_call`** — also PolicyInserted, and the one role whose tool launches a real
+    process. It needs a REAL hanging check rather than a substituted gate tool: that is the only cell
+    where the orphan-process property can be proved rather than inherited, so substituting would
+    quietly convert the interesting cell into a bookkeeping one.
+
+  *Attempted live at v0.3.8.81 and did not reach the point. Recorded as OBSERVATIONS, because the
+  cause of each is not yet known and a matrix is exactly where a guess would harden into a belief:*
+  - **`builder/during_generation`** — reached no model call under a plan-assigned `build_answer`
+    task. The behaviour the cell exists to prove is proved for the same non-Ok degrade path by
+    `researcher` and `web`, so the release's finding does not rest on it; what the builder does
+    instead is the open question.
+  - **`scribe/during_tool_call`** — dispatched NONE of the tools its contract grants under a
+    plan-assigned `release_notes` task. Consistent with gate 8 (the scribe cannot act positively on
+    unverified work) refusing before it reads anything, in a fixture that gives it no verified work —
+    but that is a hypothesis, not a finding.
+  - **`ui_cartographer/during_tool_call`** — the gate tripped BEFORE any task for the role was
+    recorded. **Something dispatches one of `list_directory`, `read_text_file`, `search_workspace` or
+    `repository_index` outside this role's own task, early enough in a mission that shadowing the
+    grant stops the mission before it starts.** That is the most interesting of the three and is
+    worth chasing on its own: a tool dispatched by nobody's task is a dispatch no per-role
+    authorization decision covers.
+
+> **Exit gate.** All forty-eight cancellation cells decided, with all five remaining cited cells
+> driven live rather than cited. **The graduation record — ✅ complete at
 > v0.3.8.81. Acceptance gates 1 and 2 — ✅ closed at v0.3.8.80.**
 
 ---
