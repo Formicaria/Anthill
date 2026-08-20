@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.81**.
+Shipping release: **v0.3.8.82**.
 
 ---
 
@@ -38,7 +38,7 @@ Done and load-bearing:
 |---|---|
 | Deterministic qualification scenarios | **20 of 20 closed by substance** *(v0.3.8.79)*. None open, none partial |
 | Acceptance gates | **12 of 12** *(v0.3.8.80)*. Gates 1 and 2 closed with R3's cancellation matrix, which is what made the roster's declarations true enough to grade |
-| Cancellation cells | **48 of 48 decided; 30 driven live, 5 cited, 13 not-applicable** *(v0.3.8.81)*. Was 24 driven and 11 cited. All five still cited are named in R3 below |
+| Cancellation cells | **48 of 48 decided; 29 driven live, 2 cited, 17 not-applicable** *(v0.3.8.82)*. The v0.3.8.81 count of 30 was wrong in a way worth stating: every plan the harness scripted was below `MinDynamicTasks` and was discarded for the static fallback, so no cell it claimed to drive was about the role it named |
 | Graduation record | **Complete** *(v0.3.8.81)*. The cancellation column and the `ui_cartographer` fault cell were the last nulls |
 | Live qualification | **Never run under protocol.** One live mission happened at v0.3.8.73 and produced three real defects; that is not the recorded multi-provider run item R4 requires |
 | Model-calling roles | **5 roles and 8 routes, all declared, both directions asserted** *(v0.3.8.76)*. Was "7 declared, 5 of which cannot call a model" — and separately, 3 routes that do call one were declared nowhere |
@@ -162,7 +162,7 @@ The two scenarios the ledger overstated, and the two defects closing them uncove
 
 ---
 
-### R3 — Per-role cancellation and timeout · *1–2 releases remaining* · **in progress**
+### R3 — Per-role cancellation and timeout · *2–3 releases remaining* · **in progress**
 
 The largest single item remaining, and the other large area where nothing had ever asserted the
 outcome.
@@ -213,38 +213,43 @@ outcome.
   Both gap-asserting tests were **rewritten rather than relaxed**, on their own instructions — the
   third time this file has recorded that correction after v0.3.8.74 and v0.3.8.79. *A guard that
   cannot express success is not a guard, it is a deadline.*
-- ◻ **The five cancellation cells still cited.** Named individually rather than blurred into the
-  count, because `RoleQualificationRecordTests` asserts this document keeps naming them — and because
-  three of the five are cited for a reason nobody knew before this release attempted them.
+- ✅ **The harness ran the plans it wrote** *(v0.3.8.82 — and this is the release, because until it
+  none of the above was about the roles it named)*. `Planner.TasksFromJson` rejects any plan with
+  fewer than `MinDynamicTasks` (3) usable tasks and the mission silently runs `FallbackTasks`
+  instead — a static researcher/file/coder/builder/verifier graph. **Every plan this harness ever
+  scripted was below that minimum**: one task in the live fixture, two in the pre-dispatch one. So
+  each cell passed because a fallback branch happened to contain the role the assertion was looking
+  for, which is this repository's oldest defect shape pointed at its own test fixtures.
+  `AssertTheMissionRanTheScriptedPlan` now compares the planned roles against the scripted ones on
+  every cell, and `ScriptedPlan` builds a three-task graph with the role under test first.
+- ✅ **`during_generation` and `during_tool_call` driven live, for real this time** *(v0.3.8.82 —
+  researcher, web, coder and builder mid-generation; file, researcher, web, ui_cartographer and
+  scribe mid-tool-call)*. The three cells v0.3.8.81 recorded as "attempted and did not reach the
+  point" all had the same cause, and none of them was what that release guessed at: the builder was
+  never planned, the scribe was never planned, and the cartographer's gate was tripped by the
+  FALLBACK plan's researcher dispatching a tool inside the cartographer's grant. The v0.3.8.81 note
+  worrying about "a dispatch outside per-role authorization attribution" described a fixture
+  artefact, and is withdrawn.
+- ✅ **The medic and the archivist cannot be driven by planning a task for them** *(v0.3.8.82 — a
+  contract fact, found only once the plans became real)*. `AntRegistry.ValidateTask` refuses a
+  planner-produced task for a `FailureTriggered` or `PostFinalization` role, so their
+  `before_dispatch` and `awaiting_dependency` cells are now NOT-APPLICABLE with that reason, checked
+  against the contract rather than asserted. They looked driven for two releases for the same reason
+  everything else did.
+- ◻ **The two cancellation cells still cited: `verifier/during_generation` and
+  `tester/during_tool_call`.** Both contracts are `SchedulingMode.PolicyInserted`. The verifier needs
+  a completed builder deliverable first, then a stop inside the verification task the runtime
+  inserts after it. The tester needs a REAL hanging check rather than a substituted gate tool,
+  because it is the one role whose tool launches a process and therefore the only cell where the
+  orphan-process property can be proved rather than inherited. Named here because
+  `RoleQualificationRecordTests` asserts this document keeps naming them.
+- ◻ **The medic's and archivist's four universal cells**, which need a fixture that produces their
+  real triggers — a failed task for the medic, a terminal mission for the archivist — rather than a
+  plan.
 
-  *Unreachable by the harness, by contract:*
-  - **`verifier/during_generation`** — `SchedulingMode.PolicyInserted`, so no plan may assign it.
-    Needs a completed builder deliverable first, then a stop inside the verification task the runtime
-    inserts after it.
-  - **`tester/during_tool_call`** — also PolicyInserted, and the one role whose tool launches a real
-    process. It needs a REAL hanging check rather than a substituted gate tool: that is the only cell
-    where the orphan-process property can be proved rather than inherited, so substituting would
-    quietly convert the interesting cell into a bookkeeping one.
-
-  *Attempted live at v0.3.8.81 and did not reach the point. Recorded as OBSERVATIONS, because the
-  cause of each is not yet known and a matrix is exactly where a guess would harden into a belief:*
-  - **`builder/during_generation`** — reached no model call under a plan-assigned `build_answer`
-    task. The behaviour the cell exists to prove is proved for the same non-Ok degrade path by
-    `researcher` and `web`, so the release's finding does not rest on it; what the builder does
-    instead is the open question.
-  - **`scribe/during_tool_call`** — dispatched NONE of the tools its contract grants under a
-    plan-assigned `release_notes` task. Consistent with gate 8 (the scribe cannot act positively on
-    unverified work) refusing before it reads anything, in a fixture that gives it no verified work —
-    but that is a hypothesis, not a finding.
-  - **`ui_cartographer/during_tool_call`** — the gate tripped BEFORE any task for the role was
-    recorded. **Something dispatches one of `list_directory`, `read_text_file`, `search_workspace` or
-    `repository_index` outside this role's own task, early enough in a mission that shadowing the
-    grant stops the mission before it starts.** That is the most interesting of the three and is
-    worth chasing on its own: a tool dispatched by nobody's task is a dispatch no per-role
-    authorization decision covers.
-
-> **Exit gate.** All forty-eight cancellation cells decided, with all five remaining cited cells
-> driven live rather than cited. **The graduation record — ✅ complete at
+> **Exit gate.** All forty-eight cancellation cells decided AND every driven cell proved to have run
+> the plan its fixture wrote, with `verifier/during_generation`, `tester/during_tool_call` and the
+> medic's and archivist's four universal cells driven rather than cited or excused. **The graduation record — ✅ complete at
 > v0.3.8.81. Acceptance gates 1 and 2 — ✅ closed at v0.3.8.80.**
 
 ---

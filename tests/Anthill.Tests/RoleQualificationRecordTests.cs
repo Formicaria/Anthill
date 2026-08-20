@@ -32,12 +32,14 @@ namespace Anthill.Tests;
 /// every cell, and PLAN.md still names the cells that are cited rather than driven — so a record that
 /// LOOKS complete cannot quietly stop saying how complete it is.
 ///
-/// The remaining honest gap is recorded in the matrix rather than here: five of the forty-eight
-/// cancellation cells are cited rather than harness-driven. Two because their contracts are
-/// `SchedulingMode.PolicyInserted` and no plan may assign them (verifier, tester); three because a
-/// live attempt did not reach the point — the builder made no model call, the scribe dispatched no
-/// tool, and the cartographer's gate tripped before its task existed. The matrix records each as an
-/// observation rather than a diagnosis, which is the difference between a known gap and a guess.
+/// The remaining honest gaps are recorded in the matrix rather than here. Two of the forty-eight
+/// cancellation cells are CITED — `verifier/during_generation` and `tester/during_tool_call`, both
+/// `SchedulingMode.PolicyInserted`. Four more are NOT-APPLICABLE for a contract reason found at
+/// v0.3.8.82: the medic and the archivist are `FailureTriggered` / `PostFinalization`, so a planner
+/// may not assign them and a fixture that drives a role by planning a task cannot reach their
+/// `before_dispatch` or `awaiting_dependency` points at all. Those four LOOKED driven for two
+/// releases, because the scripted plan was being discarded for a fallback that contained neither
+/// role — the assertions passed about a mission in which the named role never appeared.
 /// </summary>
 public class RoleQualificationRecordTests
 {
@@ -231,12 +233,7 @@ public class RoleQualificationRecordTests
 
         // The two cells the matrix still decides by CITATION rather than by driving them. Named here
         // by role and point so that closing them means editing this list with the evidence in hand.
-        foreach (var cited in new[]
-                 {
-                     "verifier/during_generation", "builder/during_generation",
-                     "tester/during_tool_call", "scribe/during_tool_call",
-                     "ui_cartographer/during_tool_call",
-                 })
+        foreach (var cited in new[] { "verifier/during_generation", "tester/during_tool_call" })
             Assert.True(plan.Contains(cited, StringComparison.Ordinal),
                 $"PLAN.md no longer names '{cited}' as a cited cancellation cell. If it was driven "
               + "live, remove it from this list in the release that did so; if it was simply dropped "
