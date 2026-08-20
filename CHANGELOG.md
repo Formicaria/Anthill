@@ -1,5 +1,83 @@
 # ANTHILL Changelog
 
+## v0.3.8.82 - the plans the harness wrote, and the plans it actually ran
+
+**PLAN.md §2 R3.** The cancellation matrix has been reporting coverage it did not have. Every plan
+its fixtures scripted was discarded before the mission started, and every cell passed anyway.
+
+### The scripted plan was never used. Not once. Since v0.3.8.80.
+
+`Planner.TasksFromJson`:
+
+```
+if (rejections.Count == 0 && tasks.Count < AnthillRuntime.MinDynamicTasks)
+    rejections.Add(... "below the minimum of 3");
+if (rejections.Count > 0) return new PlanParse(Array.Empty<Task>(), rejections);
+```
+
+`MinDynamicTasks` is 3. The live cancellation fixture scripted **one** task; the pre-dispatch fixture
+scripted **two**. Both were rejected, and `Planner.Plan` replaced them — correctly, loudly on stderr,
+and invisibly to a fixture that never looked — with `FallbackTasks`: a static
+researcher/file/coder/builder/verifier graph.
+
+**Every assertion then passed because the fallback happened to contain the role it was looking for.**
+The web cells ran researcher/web/builder/verifier; the coder, file and cartographer cells ran the
+code-goal branch; the scribe cell ran researcher/builder/verifier and completed with nothing ever
+cancelled. `CodePatchLifecycleTests` scripts eight tasks and has therefore always worked, which is
+why this never surfaced there.
+
+This is the defect class this repository names most often — *a check answering a question adjacent to
+the one asked, and passing* — pointed at its own test fixtures, where nothing was watching for it.
+
+**Fixed** with `ScriptedPlan`: a three-task graph with the role under test first and two dependent
+fillers. And guarded with `AssertTheMissionRanTheScriptedPlan`, which compares the roles the mission
+PLANNED against the roles the fixture WROTE, on every cell. A scripted-plan scenario that does not
+check this is not testing what it wrote.
+
+### What that corrects in v0.3.8.81's account
+
+Three cells were recorded there as "attempted live and did not reach the point", with the causes
+carefully marked as observations rather than diagnoses. That caution was right — all three had the
+same cause and none of them was what the release guessed at:
+
+- **builder** was never planned;
+- **scribe** was never planned;
+- **ui_cartographer**'s gate was tripped by the FALLBACK plan's researcher dispatching a tool inside
+  the cartographer's grant, before any cartographer task existed.
+
+The v0.3.8.81 note about "a dispatch that may sit outside per-role authorization attribution" was
+describing a fixture artefact. **It is withdrawn.** Every tool dispatch in the runtime goes through
+`ToolRegistry.RunTool` with a mission, a task and an ant name; there is no unattributed dispatch.
+
+All nine are now driven for real: researcher, web, coder and builder mid-generation; file,
+researcher, web, ui_cartographer and scribe mid-tool-call.
+
+### The medic and the archivist were never being driven either
+
+`AntRegistry.ValidateTask` refuses a planner-produced task for a `FailureTriggered` or
+`PostFinalization` role — the medic diagnoses a failure that must already exist, the archivist
+summarises a mission that must already be terminal. So a fixture that drives a role by PLANNING a
+task for it cannot reach either, and their `before_dispatch` and `awaiting_dependency` cells are now
+**not-applicable with that reason** — derived from the contract, and checked by
+`NotApplicableClaims_AgreeWithTheContracts` like the other two claim types, so a scheduling-mode
+change stops the exemption rather than outliving it.
+
+They looked driven for two releases for the same reason everything else did.
+
+### The honest count
+
+**48 of 48 decided: 29 driven live, 2 cited, 17 not-applicable.** v0.3.8.81 said 30 driven and 5
+cited. That number was not just optimistic — it was about missions in which the named role often
+never appeared.
+
+### QUALIFICATION.md reconciled
+
+It still claimed *"16 of 20 scenarios pinned"* and *"No role has a cancellation-and-timeout proof —
+twelve of twelve cells empty"*, both true when written and stale since v0.3.8.79 and v0.3.8.81. Now
+20 of 20, a complete graduation record, what the cancellation column cites, and the v0.3.8.82
+correction above — because a document that overstates a gap sends the next session to work that is
+already done, and one that understates a gap is worse.
+
 ## v0.3.8.81 - the roles that kept working after the stop, and the memory it left behind
 
 **PLAN.md §2 R3 advances.** Six of R3's cited cancellation cells are now driven live, and doing so
