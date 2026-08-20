@@ -593,8 +593,23 @@ public class RoleCancellationTests : IDisposable
         // The roles the fixture wrote, minus any the REGISTRY refuses from a planner-produced plan.
         // The medic and the archivist are dropped by `AntRegistry.ValidateTask` before dispatch, so
         // expecting them here would be asserting against a rule the runtime owns and enforces.
+        // The roles the fixture wrote, minus any the REGISTRY refuses from a planner-produced plan,
+        // plus the verifier the PARSER appends. Three rules, three owners, and the expected set is
+        // only right when it reads all three:
+        //
+        //   * `AntRegistry.ValidateTask` drops a `FailureTriggered` / `PostFinalization` role — the
+        //     medic and the archivist — before dispatch;
+        //   * `Planner.TasksFromJson` appends a verifier task when the plan names none ("Final task
+        //     should usually be verifier" is a prompt rule; this is the runtime making it true);
+        //   * everything else survives as written.
+        //
+        // Union rather than append, because a plan that already names the verifier gets no second
+        // one — `ScriptedRolesFor` includes it whenever the role under test is not itself one of the
+        // two fillers it displaces.
         var expected = ScriptedRolesFor(role)
             .Where(PlannerAssignable)
+            .Concat(new[] { "verifier" })
+            .Distinct(StringComparer.Ordinal)
             .OrderBy(r => r, StringComparer.Ordinal)
             .ToList();
 
