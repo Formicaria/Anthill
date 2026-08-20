@@ -1,5 +1,55 @@
 # ANTHILL Changelog
 
+## v0.3.8.84 - the citation that was never true, and the soldier that disproved it
+
+**PLAN.md §2 R3.** The last two cancellation cells were cited as unreachable. They were reachable
+the whole time, and a role already in the matrix proved it.
+
+### `PolicyInserted` never meant "no plan may assign it"
+
+v0.3.8.81 recorded `verifier/during_generation` and `tester/during_tool_call` as CITED, on the
+grounds that both contracts are `SchedulingMode.PolicyInserted` and a plan therefore cannot name
+them. `AntRegistry.ValidateTask` refuses only `FailureTriggered` and `PostFinalization` from planner
+output — and it narrowed to those two deliberately, at v0.3.8.51, on a field report:
+
+> a PLANNED tester/soldier step is a plan asking for MORE safety, not less. PolicyInserted now means
+> "the runtime guarantees this role runs when its trigger fires, whatever the plan says" — a floor,
+> not a ceiling.
+
+**The soldier is also `PolicyInserted`, and this same harness has been driving it at both universal
+points since v0.3.8.80.** The contradiction was inside the file, between two cells, for three
+releases. That is *a declaration that disagrees with the runtime* — written into the matrix whose
+entire job is catching declarations that disagree with runtimes.
+
+Both cells are now driven. Thirty-one of forty-eight cancellation cells are live, **and none is
+cited any more**: what remains is seventeen not-applicable on a checked contract fact, and the four
+that genuinely need a different fixture.
+
+### The tester's cell is split, not claimed whole
+
+The harness stops the tester inside a real dispatch of `run_allowlisted_check` and asserts what R3
+asks: no completed task, no memory candidate, no handoff, no reputation, a terminal state that says
+a person stopped it. It does **not** prove the orphan-process property, because the tool it
+dispatches is a gate rather than a process.
+
+So that half stays cited — `ProcessTreeCancellationTests` and `SubprocessHangTests`, in the same
+cell, where all three citations are checked to resolve. A cell claiming one test proved both halves
+would be the adjacent-question defect with extra steps, in the file that exists to name it.
+
+The fixture also pins `AnthillRuntime.WorkspaceChecks` to empty rather than inheriting it, so
+`CheckSource.DefaultSelection` falls back to the historical .NET pair and the tester always has
+something to dispatch. A leaked configuration declaring zero checks would make `TesterAnt` return
+Blocked — a role that never acted, passing its own cell.
+
+### What R3 still needs
+
+`medic/before_dispatch`, `medic/awaiting_dependency`, `archivist/before_dispatch` and
+`archivist/awaiting_dependency` — the only cells left that no fixture drives. Not-applicable to this
+harness on a contract fact rather than an oversight: the medic diagnoses a failure that must already
+exist, the archivist summarises a mission that must already be terminal, and `ValidateTask` refuses
+both from a plan. Reaching them means producing those triggers and cancelling around them, which is
+the next fixture rather than a bigger version of this one.
+
 ## v0.3.8.83 - the sweep, and the second fixture that never ran its own plan
 
 **PLAN.md §2 R3, and the defect class v0.3.8.82 named.** One release found that the cancellation

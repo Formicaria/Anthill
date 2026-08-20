@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.83**.
+Shipping release: **v0.3.8.84**.
 
 ---
 
@@ -38,7 +38,7 @@ Done and load-bearing:
 |---|---|
 | Deterministic qualification scenarios | **20 of 20 closed by substance** *(v0.3.8.79)*. None open, none partial |
 | Acceptance gates | **12 of 12** *(v0.3.8.80)*. Gates 1 and 2 closed with R3's cancellation matrix, which is what made the roster's declarations true enough to grade |
-| Cancellation cells | **48 of 48 decided; 29 driven live, 2 cited, 17 not-applicable** *(v0.3.8.82)*. The v0.3.8.81 count of 30 was wrong in a way worth stating: every plan the harness scripted was below `MinDynamicTasks` and was discarded for the static fallback, so no cell it claimed to drive was about the role it named |
+| Cancellation cells | **48 of 48 decided; 31 driven live, 0 cited, 17 not-applicable** *(v0.3.8.84)*. The last two citations were withdrawn rather than closed: they rested on `PolicyInserted` meaning "no plan may assign it", which `AntRegistry.ValidateTask` has deliberately not meant since v0.3.8.51 |
 | Graduation record | **Complete** *(v0.3.8.81)*. The cancellation column and the `ui_cartographer` fault cell were the last nulls |
 | Live qualification | **Never run under protocol.** One live mission happened at v0.3.8.73 and produced three real defects; that is not the recorded multi-provider run item R4 requires |
 | Model-calling roles | **5 roles and 8 routes, all declared, both directions asserted** *(v0.3.8.76)*. Was "7 declared, 5 of which cannot call a model" — and separately, 3 routes that do call one were declared nowhere |
@@ -162,7 +162,7 @@ The two scenarios the ledger overstated, and the two defects closing them uncove
 
 ---
 
-### R3 — Per-role cancellation and timeout · *2–3 releases remaining* · **in progress**
+### R3 — Per-role cancellation and timeout · *1–2 releases remaining* · **in progress**
 
 The largest single item remaining, and the other large area where nothing had ever asserted the
 outcome.
@@ -250,20 +250,32 @@ outcome.
   runtime the way `RoleCancellationTests` now does; the guard also asserts it found at least five
   plans, because a sweep that silently stops sweeping is the failure it exists to prevent.
 
-- ◻ **The two cancellation cells still cited: `verifier/during_generation` and
-  `tester/during_tool_call`.** Both contracts are `SchedulingMode.PolicyInserted`. The verifier needs
-  a completed builder deliverable first, then a stop inside the verification task the runtime
-  inserts after it. The tester needs a REAL hanging check rather than a substituted gate tool,
-  because it is the one role whose tool launches a process and therefore the only cell where the
-  orphan-process property can be proved rather than inherited. Named here because
-  `RoleQualificationRecordTests` asserts this document keeps naming them.
-- ◻ **The medic's and archivist's four universal cells**, which need a fixture that produces their
-  real triggers — a failed task for the medic, a terminal mission for the archivist — rather than a
-  plan.
+- ✅ **The last two cited cells, driven** *(v0.3.8.84 — and the citation was wrong, not merely
+  unfinished)*. Both `verifier/during_generation` and `tester/during_tool_call` were recorded as
+  unreachable because `SchedulingMode.PolicyInserted` meant "no plan may assign it".
+  `AntRegistry.ValidateTask` refuses only `FailureTriggered` and `PostFinalization` from planner
+  output, and v0.3.8.51 narrowed it to those two on a field report: *a planned tester or soldier step
+  is a plan asking for MORE safety, not less; PolicyInserted is a floor, not a ceiling.* **The
+  soldier — also PolicyInserted — was being driven by this same harness at both universal points the
+  whole time**, which is the contradiction that should have been visible from inside the file. A
+  declaration disagreeing with the runtime, written into the matrix whose job is catching those.
+  The tester's cell is SPLIT rather than claimed whole: the harness proves what the role leaves
+  behind, and the orphan-process half stays cited to the two tests that prove it, in the same cell,
+  where all three citations are checked to resolve.
+- ◻ **The four cells that remain: `medic/before_dispatch`, `medic/awaiting_dependency`,
+  `archivist/before_dispatch` and `archivist/awaiting_dependency`.** These are not-applicable to a
+  fixture that drives a role by planning a task for it, and that is a contract fact rather than a
+  gap in the harness: `AntRegistry.ValidateTask` refuses a planner-produced task for a
+  `FailureTriggered` or `PostFinalization` role, because the medic diagnoses a failure that must
+  already exist and the archivist summarises a mission that must already be terminal. Reaching them
+  means producing those triggers — a task that fails, a mission that finalizes — and cancelling
+  around them. Named individually because `RoleQualificationRecordTests` asserts this document keeps
+  naming whatever is not driven.
 
 > **Exit gate.** All forty-eight cancellation cells decided AND every driven cell proved to have run
-> the plan its fixture wrote, with `verifier/during_generation`, `tester/during_tool_call` and the
-> medic's and archivist's four universal cells driven rather than cited or excused. **The graduation record — ✅ complete at
+> the plan its fixture wrote, with the medic's and archivist's four universal cells driven from their
+> real triggers rather than excused. Thirty-one driven and no citations left as of v0.3.8.84; the
+> four remaining are the gate. **The graduation record — ✅ complete at
 > v0.3.8.81. Acceptance gates 1 and 2 — ✅ closed at v0.3.8.80.**
 
 ---
