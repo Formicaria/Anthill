@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.82**.
+Shipping release: **v0.3.8.83**.
 
 ---
 
@@ -230,12 +230,26 @@ outcome.
   FALLBACK plan's researcher dispatching a tool inside the cartographer's grant. The v0.3.8.81 note
   worrying about "a dispatch outside per-role authorization attribution" described a fixture
   artefact, and is withdrawn.
-- ✅ **The medic and the archivist cannot be driven by planning a task for them** *(v0.3.8.82 — a
+- ✅ **The medic and the archivist cannot be driven by planning a task for them** *(reasoned at
+  v0.3.8.82, LANDED at v0.3.8.83 — that release documented the reclassification and shipped a matrix
+  that still drove all twelve, because the edit was lost and nothing compares a stated count against
+  the matrix that produces it. A
   contract fact, found only once the plans became real)*. `AntRegistry.ValidateTask` refuses a
   planner-produced task for a `FailureTriggered` or `PostFinalization` role, so their
   `before_dispatch` and `awaiting_dependency` cells are now NOT-APPLICABLE with that reason, checked
   against the contract rather than asserted. They looked driven for two releases for the same reason
   everything else did.
+- ✅ **The sweep for the same defect elsewhere in the suite** *(v0.3.8.83 — and it found a second
+  instance)*. `ScriptedPlanConformanceTests` reads every `.Role("planner", …)` in the test suite and
+  requires each scripted plan to be one the Planner would ACCEPT: at least `MinDynamicTasks` tasks,
+  and only planner-eligible roles. `EarnedRepairLifecycleTests` scripted two — researcher and coder —
+  for a goal containing both "document" and "add", which selects the fallback's CODE branch. That
+  branch has a coder, so the patch → failing check → medic → repair → passing check loop the whole
+  scenario asserts still happened, and **qualification scenario 15's last edge was being proved
+  about a plan nobody wrote.** A plan may satisfy the guard statically, or its fixture may verify at
+  runtime the way `RoleCancellationTests` now does; the guard also asserts it found at least five
+  plans, because a sweep that silently stops sweeping is the failure it exists to prevent.
+
 - ◻ **The two cancellation cells still cited: `verifier/during_generation` and
   `tester/during_tool_call`.** Both contracts are `SchedulingMode.PolicyInserted`. The verifier needs
   a completed builder deliverable first, then a stop inside the verification task the runtime
@@ -874,6 +888,14 @@ the provider (it said no) and then derived a pheromone delta from `result.Ok` (w
 negatively). The transient reader was right and the durable one was wrong, so the disagreement was
 invisible in the mission and permanent in the memory. **The lesson is not "look harder" — it is that
 the second reader must ask the first**, which is what a shared predicate makes structural.
+
+**A fixture that never ran the thing it declared.** Named at v0.3.8.82 and swept at v0.3.8.83, and
+it belongs here rather than in a test file because the shape is general: a component that SUBSTITUTES
+a safe default when its input is unusable — correctly, and loudly, to a log nobody in a test run
+reads — turns every consumer that does not check into a consumer testing the default. Two fixtures
+were affected and neither looked wrong; both asserted true things about a mission the fallback plan
+produced. The fix is not "read the log": it is that a caller who supplies an input must be able to
+assert the input was used.
 
 **A degradation that outlives the reason for it.** Every model-calling role answers an unavailable
 provider with a fallback, correctly. Cancellation entered through the same status, so the fallback
