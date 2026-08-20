@@ -109,10 +109,28 @@ public class RoleCancellationTests : IDisposable
     {
         var cells = new List<Cell>();
 
-        // ---- before dispatch: universal, and the harness proves it for all twelve --------------
-        foreach (var role in Roles)
+        // ---- before dispatch ------------------------------------------------------------------
+        //
+        // TEN, not twelve — v0.3.8.83, and it is the correction v0.3.8.82's own documents already
+        // described. That release recorded the medic and the archivist as not-applicable here and
+        // shipped a matrix that still drove all twelve: the edit was lost and nothing compared the
+        // count in PLAN.md against the code that produces it. A declaration disagreeing with the
+        // runtime, in the release whose subject was declarations disagreeing with runtimes.
+        //
+        // The fact itself is unchanged. This fixture drives a role by PLANNING a task for it, and
+        // `AntRegistry.ValidateTask` refuses a planner-produced task for a `FailureTriggered` or
+        // `PostFinalization` role — the medic diagnoses a failure that must already exist, the
+        // archivist summarises a mission that must already be terminal.
+        foreach (var role in Roles.Where(PlannerAssignable))
             cells.Add(new(role, "before_dispatch", How.Harness,
                 "RoleCancellationTests.ACancelledMission_StopsEveryRoleBeforeItActs"));
+
+        foreach (var role in Roles.Where(r => !PlannerAssignable(r)))
+            cells.Add(new(role, "before_dispatch", How.NotApplicable,
+                "this role has no planner-assigned dispatch to cancel before it: its contract is "
+              + "FailureTriggered or PostFinalization, so it runs in response to a trigger and "
+              + "AntRegistry.ValidateTask refuses a planned task for it. The point exists for its "
+              + "real trigger and needs a fixture that produces one."));
 
         // ---- during generation: only the five roles that can reach a model --------------------
         //
@@ -194,10 +212,16 @@ public class RoleCancellationTests : IDisposable
               + "call to cancel. The coder is the sharpest case and is deliberate: it PROPOSES "
               + "patches and never applies them, which is why it holds no apply_patch and no shell."));
 
-        // ---- awaiting a dependency: universal, and the harness proves it ----------------------
-        foreach (var role in Roles)
+        // ---- awaiting a dependency: the same ten, for the same contract reason ----------------
+        foreach (var role in Roles.Where(PlannerAssignable))
             cells.Add(new(role, "awaiting_dependency", How.Harness,
                 "RoleCancellationTests.ACancelledMission_SkipsWorkWaitingOnADependency"));
+
+        foreach (var role in Roles.Where(r => !PlannerAssignable(r)))
+            cells.Add(new(role, "awaiting_dependency", How.NotApplicable,
+                "the same contract fact as before_dispatch: a role the planner may not assign has no "
+              + "planned task that can sit waiting on a dependency. Its trigger-driven dispatch has "
+              + "the point and this fixture does not produce one."));
 
         return cells.ToArray();
     }
@@ -310,7 +334,7 @@ public class RoleCancellationTests : IDisposable
     [Theory]
     [InlineData("tester")] [InlineData("file")] [InlineData("researcher")] [InlineData("web")]
     [InlineData("ui_cartographer")] [InlineData("scribe")] [InlineData("coder")] [InlineData("builder")]
-    [InlineData("verifier")] [InlineData("soldier")] [InlineData("medic")] [InlineData("archivist")]
+    [InlineData("verifier")] [InlineData("soldier")]
     public void ACancelledMission_StopsEveryRoleBeforeItActs(string role)
     {
         var (queen, missionId) = RunCancelled(role, alreadyCancelled: true);
@@ -348,7 +372,7 @@ public class RoleCancellationTests : IDisposable
     [Theory]
     [InlineData("tester")] [InlineData("file")] [InlineData("researcher")] [InlineData("web")]
     [InlineData("ui_cartographer")] [InlineData("scribe")] [InlineData("coder")] [InlineData("builder")]
-    [InlineData("verifier")] [InlineData("soldier")] [InlineData("medic")] [InlineData("archivist")]
+    [InlineData("verifier")] [InlineData("soldier")]
     public void ACancelledMission_SkipsWorkWaitingOnADependency(string role)
     {
         var (queen, missionId) = RunCancelled(role, alreadyCancelled: true);
