@@ -31,6 +31,15 @@ namespace Anthill.Tests;
 ///     to `dotnet_build`, and the documented extension point was unreachable because `TesterAnt`
 ///     matches ids against task text that `ExecutionService` writes, not the operator.
 ///
+/// v0.3.8.83 — THIS PLAN HAD TWO TASKS AND NEEDED THREE, and until it did, none of the below was
+/// happening on the plan written here. `Planner.TasksFromJson` rejects a plan below
+/// `AnthillRuntime.MinDynamicTasks` and `Planner.Plan` substitutes `FallbackTasks`; this mission's
+/// goal contains both "document" and "add", which selects the fallback's CODE branch — researcher,
+/// file, coder, builder, verifier. That branch contains a coder, so the patch/check/medic/repair
+/// loop every assertion below reads still happened, and the scenario passed for two years' worth of
+/// releases about a plan nobody wrote. The third task is a verifier, which is what the plan was
+/// implicitly relying on the runtime to append anyway.
+///
 /// THE SHAPE. The declared check passes only when `VERIFIED.md` exists in the tree it runs in. The
 /// coder's first proposal does not create it, so the check fails against revision one — a real
 /// failure, caused by what the patch did and did not contain. The medic hands back to the coder, the
@@ -89,7 +98,10 @@ public class EarnedRepairLifecycleTests : IDisposable
               "task_type": "research", "depends_on": [] },
             { "title": "Propose the documentation patch", "description": "Propose the note as a structured patch, JSON only.",
               "assigned_ant": "coder", "assigned_worker": "coder.docs_coder",
-              "task_type": "patch_proposal", "depends_on": ["Frame the request"] }
+              "task_type": "patch_proposal", "depends_on": ["Frame the request"] },
+            { "title": "Verify the note landed", "description": "Check the note says what the request asked for.",
+              "assigned_ant": "verifier", "assigned_worker": "verifier.result_verifier",
+              "task_type": "verification", "depends_on": ["Propose the documentation patch"] }
           ]
         }
         """;

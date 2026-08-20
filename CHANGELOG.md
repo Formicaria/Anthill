@@ -1,5 +1,81 @@
 # ANTHILL Changelog
 
+## v0.3.8.83 - the sweep, and the second fixture that never ran its own plan
+
+**PLAN.md §2 R3, and the defect class v0.3.8.82 named.** One release found that the cancellation
+harness never ran the plans it scripted. This one asks the same question of every other fixture in
+the suite, and one of them gave the same answer.
+
+### EarnedRepairLifecycleTests scripted two tasks and needed three
+
+`Planner.TasksFromJson` rejects a plan below `AnthillRuntime.MinDynamicTasks` (3), and `Planner.Plan`
+substitutes `FallbackTasks`. That fixture's goal — *"Add a colony note to the documentation."* —
+contains both `document` and `add`, which selects the fallback's CODE branch: researcher, file,
+coder, builder, verifier.
+
+**That branch contains a coder**, so the patch → failing check → medic → repair → passing check loop
+the scenario exists to prove still happened. Every assertion in it — the tester runs twice, a medic
+appears, two revisions, two patch sets — was satisfied. **Qualification scenario 15's last edge has
+been proved about a plan nobody wrote since v0.3.8.73.**
+
+Fixed by giving the plan its third task: a verifier, which is what it was implicitly relying on the
+runtime to append anyway.
+
+### And v0.3.8.82 shipped a document its code did not match
+
+That release's PLAN.md and changelog both state the count as **29 driven, 2 cited, 17
+not-applicable**, and describe the medic and the archivist being reclassified because
+`AntRegistry.ValidateTask` refuses a planner-produced task for a `FailureTriggered` or
+`PostFinalization` role. The reasoning was right. **The code change was lost** — the edit that
+performed it aborted partway and wrote nothing — so the shipped matrix still drove all twelve and
+the real count was 33/2/13.
+
+Nothing caught it because nothing compares the count a document states against the matrix that
+produces it. That is *a declaration that disagrees with the runtime*, in the release whose entire
+subject was declarations disagreeing with runtimes, committed by the person writing it.
+
+Landed here: the two universal points are `Roles.Where(PlannerAssignable)`, the medic's and
+archivist's four cells are not-applicable with the contract reason, and
+`NotApplicableClaims_AgreeWithTheContracts` checks that claim the way it already checks the other
+two — so a scheduling-mode change ends the exemption instead of outliving it. The suite drops four
+theory cases, 3032 to 3028, which is the visible shape of four cells that were never about the roles
+they named.
+
+### The guard, and the two ways to satisfy it
+
+`ScriptedPlanConformanceTests` reads every `.Role("planner", …)` in the suite and requires the plan
+it names to be one the Planner would accept — enough tasks, and only planner-eligible roles, the two
+rejections that send a mission to the fallback.
+
+A fixture may satisfy it **statically**, by declaring a conformant plan, or **at runtime**, by
+asserting what the mission actually planned the way `RoleCancellationTests` does. The second is
+stronger and is the end state; the first exists because most fixtures declare a constant, and a
+constant can be read without running anything.
+
+Two details that are the difference between a guard and a decoration:
+
+- **It asserts it found at least five plans.** A rename of `ScriptBook.Role` or of the `"planner"`
+  key would otherwise leave it passing over an empty set — a sweep that silently stops sweeping.
+- **It matches CODE, not text.** Several fixtures discuss `.Role("planner", …)` in comments
+  explaining their plan's shape, and the first draft of this guard reported its own documentation as
+  an instance. `SourceText.CodeOnly` exists for exactly that, and this is the fourth guard to need
+  it.
+
+### What it did NOT do, and why that is recorded rather than half-done
+
+It does not require every fixture to verify its plan at runtime. That is the right end state and it
+is not a mechanical change: the richer lifecycle scenarios acquire policy-inserted tester, soldier
+and verification tasks as they run, so "the plan the mission ran" is a larger set than "the plan the
+fixture wrote", and each fixture has to say which of the two it means. Carried in PLAN.md.
+
+### The shape, in §6
+
+*A fixture that never ran the thing it declared* is now recorded with the general form rather than
+the instance: a component that substitutes a safe default when its input is unusable — correctly, and
+loudly, to a log no test run reads — turns every consumer that does not check into a consumer testing
+the default. The fix is not "read the log". It is that a caller who supplies an input must be able to
+assert the input was used.
+
 ## v0.3.8.82 - the plans the harness wrote, and the plans it actually ran
 
 **PLAN.md §2 R3.** The cancellation matrix has been reporting coverage it did not have. Every plan
