@@ -5,6 +5,7 @@ using Anthill.Core.Memory;
 using Anthill.Core.Modules;
 using Anthill.Core.Orchestration;
 using Anthill.Core.Security;
+using Anthill.Core.Tools;          // CheckDefinition, for pinning the tester's check selection
 using Anthill.Modules.Tools;
 using Anthill.SDK.Events;
 using Xunit;
