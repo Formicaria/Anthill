@@ -32,14 +32,17 @@ namespace Anthill.Tests;
 /// every cell, and PLAN.md still names the cells that are cited rather than driven — so a record that
 /// LOOKS complete cannot quietly stop saying how complete it is.
 ///
-/// The remaining honest gaps are recorded in the matrix rather than here. Two of the forty-eight
-/// cancellation cells are CITED — `verifier/during_generation` and `tester/during_tool_call`, both
-/// `SchedulingMode.PolicyInserted`. Four more are NOT-APPLICABLE for a contract reason found at
-/// v0.3.8.82: the medic and the archivist are `FailureTriggered` / `PostFinalization`, so a planner
-/// may not assign them and a fixture that drives a role by planning a task cannot reach their
-/// `before_dispatch` or `awaiting_dependency` points at all. Those four LOOKED driven for two
-/// releases, because the scripted plan was being discarded for a fallback that contained neither
-/// role — the assertions passed about a mission in which the named role never appeared.
+/// The remaining honest gap is four cells, and it is a real one. The medic and the archivist are
+/// `FailureTriggered` / `PostFinalization`, which `AntRegistry.ValidateTask` refuses from planner
+/// output, so a fixture that drives a role by PLANNING a task for it cannot reach their
+/// `before_dispatch` or `awaiting_dependency` points. Reaching them needs their real triggers — a
+/// failed task, a terminal mission — which is a different fixture.
+///
+/// The two cells v0.3.8.81 recorded as CITED for the same-sounding reason were NOT the same reason,
+/// and v0.3.8.84 corrected them: `PolicyInserted` roles ARE plannable, deliberately (v0.3.8.51),
+/// and the soldier had been driven by this harness at both universal points throughout. Every
+/// cancellation cell is now either driven or not-applicable on a contract fact; none is cited to a
+/// scheduling claim that was never true.
 /// </summary>
 public class RoleQualificationRecordTests
 {
@@ -233,9 +236,13 @@ public class RoleQualificationRecordTests
 
         // The two cells the matrix still decides by CITATION rather than by driving them. Named here
         // by role and point so that closing them means editing this list with the evidence in hand.
-        foreach (var cited in new[] { "verifier/during_generation", "tester/during_tool_call" })
+        foreach (var cited in new[]
+                 {
+                     "medic/before_dispatch", "medic/awaiting_dependency",
+                     "archivist/before_dispatch", "archivist/awaiting_dependency",
+                 })
             Assert.True(plan.Contains(cited, StringComparison.Ordinal),
-                $"PLAN.md no longer names '{cited}' as a cited cancellation cell. If it was driven "
+                $"PLAN.md no longer names '{cited}' as an undriven cancellation cell. If it was driven "
               + "live, remove it from this list in the release that did so; if it was simply dropped "
               + "from the plan, the record above now reads as more complete than the colony is.");
     }
