@@ -52,6 +52,7 @@ public class RoleCancellationTests : IDisposable
     private readonly bool _webSearchWas = AnthillRuntime.EnableWebSearch;
     private readonly bool _sandboxWas = AnthillRuntime.EnableSandboxExecution;
     private readonly string _rootWas = AnthillRuntime.AllowedWorkspaceRoot;
+    private readonly IReadOnlyList<CheckDefinition> _checksWere = AnthillRuntime.WorkspaceChecks;
     private readonly RosterGates.Snapshot _gatesWere = RosterGates.Capture();
 
     public RoleCancellationTests()
@@ -66,6 +67,7 @@ public class RoleCancellationTests : IDisposable
         AnthillRuntime.EnableWebSearch = _webSearchWas;
         AnthillRuntime.EnableSandboxExecution = _sandboxWas;
         AnthillRuntime.AllowedWorkspaceRoot = _rootWas;
+        AnthillRuntime.WorkspaceChecks = _checksWere;
         RosterGates.Restore(_gatesWere);
         try { Directory.Delete(_dir, recursive: true); } catch { }
     }
@@ -147,12 +149,20 @@ public class RoleCancellationTests : IDisposable
             cells.Add(new(role, "during_generation", How.Harness,
                 "RoleCancellationTests.ACancelledMission_StopsARoleMidGeneration"));
 
-        // TWO STAY CITED, and the reasons are different — which is why they are two entries.
+        // v0.3.8.84 — THE VERIFIER JOINS THEM, and the reason it was cited was wrong.
         //
-        // `verifier`: `SchedulingMode.PolicyInserted`, so no plan may assign it and the harness —
-        // which drives a role by planning a task for it — cannot reach it. Driving it live means
-        // completing a builder deliverable first and stopping inside the verification task the
-        // runtime inserts after it.
+        // v0.3.8.81 recorded it as unreachable because `SchedulingMode.PolicyInserted` means "no
+        // plan may assign it". `AntRegistry.ValidateTask` says otherwise, and says it deliberately:
+        // only `FailureTriggered` and `PostFinalization` are refused from planner output, and
+        // v0.3.8.51 narrowed the rule to those two on a field report — "a PLANNED tester/soldier
+        // step is a plan asking for MORE safety, not less. PolicyInserted now means the runtime
+        // GUARANTEES this role runs when its trigger fires, whatever the plan says — a floor, not a
+        // ceiling."
+        //
+        // So the citation was a declaration disagreeing with the runtime, written into a matrix
+        // whose purpose is catching exactly that. The soldier — also PolicyInserted — was being
+        // driven by this same harness at both universal points the whole time, which is the
+        // contradiction that should have been visible from inside the file.
         //
         // `builder`: attempted live and it did NOT reach a model call under a plan-assigned
         // `build_answer` task, so the gate never fired and the cell would have been decided by a
@@ -163,10 +173,8 @@ public class RoleCancellationTests : IDisposable
         // SucceededWithWarnings degrade — so the finding is not resting on this cell.
         //
         // Both are named in PLAN.md §2 R3, and RoleQualificationRecordTests asserts they stay named.
-        foreach (var role in new[] { "verifier" })
-            cells.Add(new(role, "during_generation", How.Cited,
-                "ModelCallCancellationTests.OllamaClient_AbortsCleanly_WhenAmbientTokenAlreadyCancelled;"
-              + "ModelCallCancellationTests.OpenAiCompatibleClient_AbortsCleanly_WhenAmbientTokenAlreadyCancelled"));
+        cells.Add(new("verifier", "during_generation", How.Harness,
+            "RoleCancellationTests.ACancelledMission_StopsARoleMidGeneration"));
 
         foreach (var role in new[] { "tester", "file", "ui_cartographer", "scribe", "soldier", "medic", "archivist" })
             cells.Add(new(role, "during_generation", How.NotApplicable,
@@ -183,12 +191,15 @@ public class RoleCancellationTests : IDisposable
             cells.Add(new(role, "during_tool_call", How.Harness,
                 "RoleCancellationTests.ACancelledMission_StopsARoleMidToolCall"));
 
-        // THREE STAY CITED, for three different reasons, each recorded as what was OBSERVED.
+        // v0.3.8.84 — THE TESTER JOINS THEM TOO, on the same corrected reading of PolicyInserted,
+        // and its cell is deliberately SPLIT rather than claimed whole.
         //
-        // `tester`: `SchedulingMode.PolicyInserted`, so no plan may assign it. It is also the one
-        // role whose tool launches a real process, which makes it the cell where the orphan-process
-        // property is worth proving rather than inheriting — a gate tool substituted for
-        // `run_allowlisted_check` would prove the runtime's bookkeeping and nothing about a child.
+        // The harness drives what a harness can: the role is stopped inside a real dispatch of
+        // `run_allowlisted_check` and must leave no completed task, no memory, no handoff and no
+        // reputation behind. It does NOT prove the orphan-process property, because the tool it
+        // dispatches is a gate rather than a process — so that half stays cited to the two tests
+        // that do prove it, in the same Detail, where both are checked to resolve. A cell claiming
+        // one test proved both halves would be the adjacent-question defect with extra steps.
         //
         // `scribe`: attempted live, and it dispatched NONE of the tools its contract grants under a
         // plan-assigned `release_notes` task. Consistent with the scribe refusing before it reads
@@ -201,10 +212,10 @@ public class RoleCancellationTests : IDisposable
         // mission that shadowing the grant stops the mission before it starts. That is worth knowing
         // and is not yet explained; it is carried in PLAN.md §2 R3 as an open question rather than
         // asserted here.
-        foreach (var role in new[] { "tester" })
-            cells.Add(new(role, "during_tool_call", How.Cited,
-                "ProcessTreeCancellationTests.EverySiteThatWaitsWithATimeout_KillsTheWholeProcessTree;"
-              + "SubprocessHangTests.AGitThatNeverExits_TimesOutAndReturns"));
+        cells.Add(new("tester", "during_tool_call", How.Harness,
+            "RoleCancellationTests.ACancelledMission_StopsARoleMidToolCall;"
+          + "ProcessTreeCancellationTests.EverySiteThatWaitsWithATimeout_KillsTheWholeProcessTree;"
+          + "SubprocessHangTests.AGitThatNeverExits_TimesOutAndReturns"));
 
         foreach (var role in new[] { "coder", "builder", "verifier", "soldier", "medic", "archivist" })
             cells.Add(new(role, "during_tool_call", How.NotApplicable,
@@ -526,6 +537,7 @@ public class RoleCancellationTests : IDisposable
     /// </summary>
     [Theory]
     [InlineData("researcher")] [InlineData("web")] [InlineData("coder")] [InlineData("builder")]
+    [InlineData("verifier")]
     public void ACancelledMission_StopsARoleMidGeneration(string role)
     {
         var (queen, missionId) = RunStoppedDuring(role, duringToolCall: false);
@@ -550,7 +562,7 @@ public class RoleCancellationTests : IDisposable
     /// </summary>
     [Theory]
     [InlineData("file")] [InlineData("researcher")] [InlineData("web")]
-    [InlineData("ui_cartographer")] [InlineData("scribe")]
+    [InlineData("ui_cartographer")] [InlineData("scribe")] [InlineData("tester")]
     public void ACancelledMission_StopsARoleMidToolCall(string role)
     {
         var (queen, missionId) = RunStoppedDuring(role, duringToolCall: true);
@@ -926,6 +938,11 @@ public class RoleCancellationTests : IDisposable
         // never reach `GenerateTyped`, so the generation gate would not fire and the cell would be
         // decided by whatever an earlier test in this collection happened to leave set.
         AnthillRuntime.EnableSandboxExecution = false;
+        // No DECLARED checks, so `CheckSource.DefaultSelection` falls back to the historical .NET
+        // pair and the tester always has something to dispatch. Pinned rather than inherited: this
+        // collection shares static state, and a leaked configuration that declared zero checks would
+        // make TesterAnt return Blocked — a role that never acted, passing the cell.
+        AnthillRuntime.WorkspaceChecks = Array.Empty<CheckDefinition>();
         AnthillRuntime.AllowedWorkspaceRoot = Path.Combine(_dir, "workspace");
     }
 
