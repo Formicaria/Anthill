@@ -8,7 +8,7 @@ Two things with the same name and different jobs. Keeping them apart is the poin
 | Blocks a merge | **yes** | **no** |
 | Model | scripted (`ScriptedColony`) | real |
 | Proves | the runtime does what it says | the runtime survives what models actually do |
-| Status | 16 of 20 scenarios pinned | **NEVER RUN** — see §3 |
+| Status | **20 of 20 scenarios closed by substance** *(v0.3.8.79)* | **NEVER RUN** — see §3 |
 
 A live run must never gate a merge. It costs money, needs credentials, depends on someone else's
 uptime, and is non-deterministic by construction — a suite with those properties either becomes flaky
@@ -43,16 +43,34 @@ blocker.
 The readiness surface (`RoleReadiness`) answers a **different question**: "can this role run now".
 A role can be Ready and have no fault proof at all. Graduation is about what has been proved.
 
-**No role has a cancellation-and-timeout proof** — twelve of twelve cells empty. That finding
-arrived by the ledger catching a bad citation rather than by inspection: the first draft cited
-`ModelCallCancellationTests` and `ProcessTreeCancellationTests`, which are real and prove real things
-(the model call observes cancellation; the process-launching sites kill their trees) and say nothing
-about any ROLE. A citation true about the system and false about the row is how a record fills up
-while nothing gets proved.
+**The record is COMPLETE as of v0.3.8.81** — every row, every column, including the
+cancellation-and-timeout column that was twelve-of-twelve empty from v0.3.8.57 until then, and the
+`ui_cartographer` fault cell that was the last non-cancellation null.
 
-It matters more than the count suggests: v0.3.8.57 found five separate sites that abandoned a running
-process on timeout, all in the area this column is emptiest about. Under-tested and under-implemented
-turned out to be the same region.
+The original finding is kept because the shape recurs. That column was empty by DISCOVERY, not by
+omission: the first draft filled it with `ModelCallCancellationTests` and `ProcessTreeCancellationTests`
+— real files proving real things (the model call observes cancellation; the process-launching sites
+kill their trees) and saying nothing about any ROLE. The check that caught it was the weakest one in
+the ledger: does the cited file so much as mention this role. A citation true about the system and
+false about the row is how a record fills up while nothing gets proved.
+
+It mattered more than the count suggested: v0.3.8.57 found five separate sites that abandoned a
+running process on timeout, all in the area this column was emptiest about. Under-tested and
+under-implemented turned out to be the same region.
+
+**What the column now cites, and what it does not claim.** One file decides all forty-eight
+role × cancellation-point cells: `RoleCancellationTests`. Twenty-nine are driven live, two are cited
+to mechanism tests (`verifier/during_generation` and `tester/during_tool_call`, both
+`SchedulingMode.PolicyInserted` and therefore unreachable by planning a task), and seventeen are
+not-applicable with a reason checked against the contract rather than trusted.
+
+**And a correction worth reading, from v0.3.8.82.** Between v0.3.8.80 and v0.3.8.82 that matrix
+reported more coverage than it had. Every plan its fixtures scripted was below
+`AnthillRuntime.MinDynamicTasks`, so `Planner` discarded it and ran the static fallback — and each
+cell passed because a fallback branch happened to contain the role the assertion named. The
+assertions were true; they were about the wrong mission. `AssertTheMissionRanTheScriptedPlan` now
+compares the planned roles against the scripted ones on every cell, which is the guard whose absence
+made a fixture-level substitution invisible for two releases.
 
 ---
 
