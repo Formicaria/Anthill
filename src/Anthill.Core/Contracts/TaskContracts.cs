@@ -29,20 +29,63 @@ public sealed class TaskContract
     private static readonly string[] SideEffects = { "none", "reversible", "destructive" };
     private static readonly string[] Risks = { "low", "medium", "high", "critical" };
 
-    /// <summary>Project a planner task into its contract using the tool catalog's declarations.</summary>
+    /// <summary>
+    /// Whether <see cref="RequiredCapabilities"/> came from a KNOWN role contract. v0.3.8.87.
+    ///
+    /// Not decoration — <see cref="Validate"/> reads it, and the distinction it carries is the whole
+    /// reason the archivist used to be described as invoking a model.
+    ///
+    /// An empty capability list has two meanings and the schema could express only one. "This role
+    /// requires nothing" is a real, correct declaration — <c>AntExecutionCatalog</c> makes it for the
+    /// archivist, which consolidates memory the Queen hands it and touches nothing else. "We do not
+    /// know what this role requires" is the unknown-ant case and must stay a rejection. Before this
+    /// flag both arrived as `Count == 0`, so the guard could only reject both — and the projection
+    /// dodged it by declaring <c>model.invoke</c> for six roles, five of which hold no ModelRouter at
+    /// all (v0.3.8.76). A guard that cannot express "requires nothing" makes every honest caller lie
+    /// to it.
+    /// </summary>
+    [JsonPropertyName("capabilities_declared_by_contract")]
+    public bool CapabilitiesDeclaredByContract { get; set; }
+
+    /// <summary>
+    /// Project a planner task into its contract. ONE BOOK — v0.3.8.87.
+    ///
+    /// Every field below that describes the ROLE now comes from <c>AntExecutionCatalog</c>, the same
+    /// declaration <c>ToolAuthorization.Evaluate</c> enforces at dispatch. Until this release they
+    /// came from <c>ToolCatalog</c>, which nothing enforced and which disagreed with the contracts
+    /// about capabilities for four roles, about side effects for two, and about six roles it did not
+    /// list at all. This gate decides ADMISSION; that one decides DISPATCH; a task could be admitted
+    /// on one declaration and refused on the other. The note at the bottom of ToolVocabulary.cs has
+    /// the full list of what the two books disagreed about.
+    ///
+    /// SIDE EFFECTS ARE DERIVED, not restated. Every contract today declares
+    /// <c>AllowsSideEffects: false</c> — including the coder, which PROPOSES patches and never
+    /// applies them — so deriving the class from that flag produces "none" where the old catalog
+    /// said "reversible". The flag is the authority: it is what the runtime reads, and a projection
+    /// that contradicted it was describing a colony this one is not.
+    ///
+    /// Risk follows patch proposals rather than side effects, because a proposal is the thing an
+    /// operator must review even though it changes nothing by itself.
+    /// </summary>
     public static TaskContract FromTask(Domain.Task t)
     {
-        var d = ToolCatalog.Describe(t.AssignedAnt);
-        // A role the registry says is executable+enabled but the catalog doesn't know yet must not
-        // be silently un-plannable — it gets a cautious fallback declaration (high risk, manual
-        // compensation) instead. Ants unknown to BOTH stay capability-less and are rejected.
-        if (d is null && Agents.AntRegistry.ExecutableRoleIds.Contains(t.AssignedAnt ?? ""))
-            d = new ToolDescriptor
-            {
-                Name = t.AssignedAnt!, Description = "Executable role without an explicit catalog entry (fallback declaration).",
-                RequiredCapabilities = new[] { Capability.ModelInvoke },
-                SideEffectClass = "reversible", RiskClass = "high", Compensation = "manual",
-            };
+        var role = t.AssignedAnt ?? "";
+        var contract = Agents.AntExecutionCatalog.ContractFor(role);
+
+        // A role the registry says is executable+enabled but that has no contract must not be
+        // silently un-plannable — it gets a cautious declaration instead. Ants unknown to BOTH stay
+        // capability-less and are rejected, which is the behaviour this has always had.
+        var executableWithoutContract =
+            contract is null && Agents.AntRegistry.ExecutableRoleIds.Contains(role);
+
+        var sideEffect = contract is not null
+            ? (contract.AllowsSideEffects ? "reversible" : "none")
+            : executableWithoutContract ? "reversible" : "destructive"; // unknown ant fails toward caution
+
+        var risk = contract is not null
+            ? (contract.ProducesPatchProposals ? "medium" : "low")
+            : executableWithoutContract ? "high" : "critical";
+
         return new TaskContract
         {
             Id = t.Id, Title = t.Title, Objective = t.Description,
@@ -51,11 +94,12 @@ public sealed class TaskContract
                 "verification" => "verify",
                 "research" or "analysis" => "research",
                 "patch_proposal" or "patch" or "code_change" or "build" => "change",
-                _ => d?.SideEffectClass == "none" ? "diagnose" : "change",
+                _ => sideEffect == "none" ? "diagnose" : "change",
             },
-            RequiredCapabilities = d?.RequiredCapabilities.ToList() ?? new List<string>(),
-            SideEffectClass = d?.SideEffectClass ?? "destructive", // unknown ant fails toward caution
-            RiskClass = d?.RiskClass ?? "critical",
+            RequiredCapabilities = contract?.RequiredCapabilities.ToList() ?? new List<string>(),
+            CapabilitiesDeclaredByContract = contract is not null,
+            SideEffectClass = sideEffect,
+            RiskClass = risk,
             Dependencies = t.DependsOn.ToList(),
             IdempotencyKey = t.Id, // task identity doubles as the replay key at this layer
         };
@@ -71,7 +115,16 @@ public sealed class TaskContract
         if (!TaskTypes.Contains(TaskType)) errors.Add($"task_type '{TaskType}' is not in the schema");
         if (!SideEffects.Contains(SideEffectClass)) errors.Add($"side_effect_class '{SideEffectClass}' is not in the schema");
         if (!Risks.Contains(RiskClass)) errors.Add($"risk_class '{RiskClass}' is not in the schema");
-        if (RequiredCapabilities.Count == 0) errors.Add("a task with no declared capabilities cannot be permission-checked");
+        // SPLIT, not softened — v0.3.8.87. The permanent half is unchanged and still fails closed: a
+        // role no contract describes cannot be permission-checked, so its task stays out of the
+        // queue. What was wrong was the inference that empty MEANS unknown. A contract that declares
+        // zero capabilities has answered the question; it has not declined to.
+        //
+        // The flag can only be set by a lookup that SUCCEEDED, so this cannot be widened by an
+        // absent role: an unknown ant leaves it false and lands on the same rejection it always did.
+        if (RequiredCapabilities.Count == 0 && !CapabilitiesDeclaredByContract)
+            errors.Add("no role contract declares this ant's capabilities, so the task cannot be "
+                     + "permission-checked before dispatch");
         if (Dependencies.Contains(Id)) errors.Add("a task cannot depend on itself");
         return errors;
     }
