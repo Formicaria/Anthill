@@ -1,5 +1,63 @@
 # ANTHILL Changelog
 
+## v0.3.8.86 - the vocabulary that named half the colony
+
+**Ongoing cleanup, and the fourth place this repository has found the same shape.**
+`EventTypes` declared 69 event constants. The runtime emits 134.
+
+### What the file claimed, and what was true
+
+Its header said the list "was READ, out of the working tree, from the LogEvent call sites", that "a
+subscriber written against this file is written against reality rather than against an intention",
+and — one line below — **"when adding an event: add the constant here in the same change as the
+publisher, never after."**
+
+That instruction was in place from the file's first release and was followed for roughly half the
+events. The sixty-seven missing names were not obscure ones: `archivist_ran`, `archivist_skipped`,
+every `autonomy_autoapply_*` outcome, every `patch_verify_*` step, every `policy_review_*` and
+`verification_*` decision. **The operator-facing half** — precisely where a filter that matches
+nothing is indistinguishable from a quiet colony, which is the failure mode the header names.
+
+### And two constants nothing published, which is the sharper half
+
+`AutonomyAutoApplyRolledBack` and `AutonomyAutoApplyRollbackFailed` existed only in that file. Both
+were **near-misses of real event names**:
+
+| declared, published by nobody | what the runtime actually emits |
+|---|---|
+| `autonomy_autoapply_rolled_back` | `autonomy_autoapply_batch_rolled_back` |
+| `autonomy_autoapply_rollback_failed` | `autonomy_autoapply_rollback_incomplete` |
+
+A subscriber filtering on either constant compiles, runs, and matches nothing forever while the real
+events stream past it. That is the exact empty-panel failure the file was written to prevent,
+produced by the file itself — *declared, and reaching nobody*, in the declaration's own home.
+
+### The guard, and the mistake it made first
+
+`EventVocabularyTests` enforces both directions: every literal handed to `LogEvent` is declared, and
+every declared constant is published by something. Plus a non-vacuity check, because a rename of
+`LogEvent` would otherwise leave both assertions green over an empty set — which is how the drift
+lasted as long as it did.
+
+**Two channels count as publication**, and conflating them produced a false finding on the first
+pass. `Memory.LogEvent` writes the persisted event log; the event bus carries
+`EventType = EventTypes.X`. `ModuleRegistered` is live through the second and appears in no
+`LogEvent` at all — an earlier draft called it a phantom for exactly that reason, which is the
+adjacent-question defect committed while hunting one. The check now asks "is this used", not "is
+this logged".
+
+### What this did not do
+
+Publishers still pass literals rather than the constants; only one constant is referenced by name
+anywhere in `src/`. Converting ~131 call sites is a separate and larger change. The guard makes the
+drift it would prevent impossible to WIDEN in the meantime: a new literal must be declared to pass.
+
+### The shape, in §6
+
+*A rule a document states and nothing checks describes the author's intention rather than the tree.*
+This repository has now found that shape in a plan checklist (v0.3.8.76), a graduation record
+(v0.3.8.81), a qualification ledger (v0.3.8.83) and an event vocabulary (here).
+
 ## v0.3.8.85 - the archivist nobody could stop
 
 **PLAN.md §2 R3.** One cancellation cell was recorded not-applicable because the planner cannot

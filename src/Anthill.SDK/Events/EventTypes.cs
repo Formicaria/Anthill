@@ -3,16 +3,35 @@ namespace Anthill.SDK.Events;
 /// <summary>
 /// Every event type the colony emits today, as constants.
 ///
-/// This list was not designed — it was READ, out of the working tree, from the ~85
-/// <c>LogEvent</c> call sites across Core. That provenance is the point: these are the events the
-/// system actually produces, so a subscriber written against this file is written against reality
-/// rather than against an intention.
+/// This list was not designed — it was READ, out of the working tree, from the <c>LogEvent</c> call
+/// sites. That provenance is the point: these are the events the system actually produces, so a
+/// subscriber written against this file is written against reality rather than against an intention.
 ///
-/// Until now publishers and readers have traded raw string literals, which means a typo in
-/// <c>ApiHost</c> or <c>app.js</c> produces a filter that silently matches nothing — the failure
-/// mode being an empty panel with no error anywhere. Naming them once ends that class of bug.
+/// Publishers and readers used to trade raw string literals, which means a typo in <c>ApiHost</c> or
+/// <c>app.js</c> produces a filter that silently matches nothing — the failure mode being an empty
+/// panel with no error anywhere. Naming them once is what ends that class of bug.
 ///
 /// When adding an event: add the constant here in the same change as the publisher, never after.
+///
+/// v0.3.8.86 — AND UNTIL THAT RELEASE, THE PARAGRAPH ABOVE WAS THE DEFECT IT DESCRIBES. The file
+/// read as though the vocabulary were complete and consumed. It was neither: the runtime emitted 134
+/// distinct event names and this file declared 69, so "written against reality" was true of half the
+/// system — and the missing half was the operator-facing half, where a filter matching nothing looks
+/// exactly like a quiet colony. Two of the declared constants were emitted by NOBODY, and both were
+/// near-misses of real event names (<c>autonomy_autoapply_rolled_back</c> against the real
+/// <c>autonomy_autoapply_batch_rolled_back</c>), which is worse than absent: a subscriber filtering
+/// on the constant would match nothing while the real events streamed past it. Exactly the empty
+/// panel this file exists to prevent, produced by this file.
+///
+/// `EventVocabularyTests` now enforces both directions, because the instruction one line above this
+/// one had been in place the whole time and was followed for roughly half the events. A rule a
+/// document states and nothing checks is a rule that describes the author's intention rather than
+/// the tree.
+///
+/// TWO CHANNELS PUBLISH THESE, and the guard knows it: <c>Memory.LogEvent</c> writes the persisted
+/// event log, and the event bus carries <c>EventType = EventTypes.X</c>. A constant is live if
+/// either uses it — which is why <c>ModuleRegistered</c> counts, despite no <c>LogEvent</c> naming
+/// it.
 /// </summary>
 public static class EventTypes
 {
@@ -96,8 +115,6 @@ public static class EventTypes
     public const string PatchReverted = "patch_reverted";
     public const string PatchRevertFailed = "patch_revert_failed";
     public const string AutonomyAutoApplyApplied = "autonomy_autoapply_applied";
-    public const string AutonomyAutoApplyRolledBack = "autonomy_autoapply_rolled_back";
-    public const string AutonomyAutoApplyRollbackFailed = "autonomy_autoapply_rollback_failed";
 
     // ---- learning and memory -----------------------------------------------
 
@@ -133,4 +150,100 @@ public static class EventTypes
     public const string ReadinessAttested = "readiness_attested";
     public const string SelfTestEvent = "selftest_event";
     public const string SelfTestProbe = "selftest_probe";
+
+    // =============================================================================================
+    // v0.3.8.86 — THE SIXTY-SEVEN THIS FILE DID NOT HAVE.
+    //
+    // The header above says these constants "were READ, out of the working tree, from the ~85
+    // LogEvent call sites across Core", and that "a subscriber written against this file is written
+    // against reality rather than against an intention". Both sentences were true of the events it
+    // listed and false of the file as a whole: the runtime emits 134 distinct event names and this
+    // file declared 69, so a subscriber written against it was written against half the system —
+    // and the missing half is the operator-facing half, where an empty panel is what a wrong filter
+    // looks like.
+    //
+    // Added as one block rather than merged into the sections above, because they were absent as a
+    // block and a reader deserves to see which half of the vocabulary arrived late.
+    // =============================================================================================
+
+    // ---- autonomy and auto-apply — the operator-facing loop ----------------------
+    public const string AutonomyAutoapplyApplyFailed = "autonomy_autoapply_apply_failed";
+    public const string AutonomyAutoapplyBatchRolledBack = "autonomy_autoapply_batch_rolled_back";
+    public const string AutonomyAutoapplyBreakGlass = "autonomy_autoapply_break_glass";
+    public const string AutonomyAutoapplyCommitted = "autonomy_autoapply_committed";
+    public const string AutonomyAutoapplyError = "autonomy_autoapply_error";
+    public const string AutonomyAutoapplyGitFailed = "autonomy_autoapply_git_failed";
+    public const string AutonomyAutoapplyHalted = "autonomy_autoapply_halted";
+    public const string AutonomyAutoapplyIneligible = "autonomy_autoapply_ineligible";
+    public const string AutonomyAutoapplyPreflightRefused = "autonomy_autoapply_preflight_refused";
+    public const string AutonomyAutoapplyReverted = "autonomy_autoapply_reverted";
+    public const string AutonomyAutoapplyRollbackIncomplete = "autonomy_autoapply_rollback_incomplete";
+    public const string AutonomyAutoapplySkipped = "autonomy_autoapply_skipped";
+    public const string AutonomyAutoapplyStaleEvidence = "autonomy_autoapply_stale_evidence";
+    public const string AutonomyAutoapplyStarted = "autonomy_autoapply_started";
+    public const string AutonomyError = "autonomy_error";
+    public const string AutonomyIdle = "autonomy_idle";
+    public const string AutonomyMissionFinished = "autonomy_mission_finished";
+    public const string AutonomyMissionStarted = "autonomy_mission_started";
+    public const string AutonomyResumed = "autonomy_resumed";
+    public const string AutonomyStarted = "autonomy_started";
+    public const string AutonomyStopped = "autonomy_stopped";
+
+    // ---- patch verification and materialization ----------------------------------
+    public const string PatchBypassBlocked = "patch_bypass_blocked";
+    public const string PatchSetMaterializationFailed = "patch_set_materialization_failed";
+    public const string PatchSetVerificationFaulted = "patch_set_verification_faulted";
+    public const string PatchSetVerified = "patch_set_verified";
+    public const string PatchVerifiedApproved = "patch_verified_approved";
+    public const string PatchVerifyFailed = "patch_verify_failed";
+    public const string PatchVerifyRestoreFailed = "patch_verify_restore_failed";
+    public const string PatchVerifyStarted = "patch_verify_started";
+
+    // ---- policy-inserted reviews and verification --------------------------------
+    public const string PolicyReviewInserted = "policy_review_inserted";
+    public const string PolicyReviewRefused = "policy_review_refused";
+    public const string PolicyReviewSkipped = "policy_review_skipped";
+    public const string VerificationBoundToEvidence = "verification_bound_to_evidence";
+    public const string VerificationInserted = "verification_inserted";
+    public const string VerificationRefused = "verification_refused";
+    public const string VerificationSkipped = "verification_skipped";
+
+    // ---- the archivist, after finalization ---------------------------------------
+    public const string ArchivistFailed = "archivist_failed";
+    public const string ArchivistRan = "archivist_ran";
+    public const string ArchivistSkipped = "archivist_skipped";
+
+    // ---- operator actions on the dashboard ---------------------------------------
+    public const string AntProfileCleared = "ant_profile_cleared";
+    public const string AntProfileSaved = "ant_profile_saved";
+    public const string DirectoryGateClosed = "directory_gate_closed";
+    public const string DirectoryGateOpened = "directory_gate_opened";
+    public const string JobsCancelAll = "jobs_cancel_all";
+    public const string MaintenanceClearMissions = "maintenance_clear_missions";
+    public const string MaintenanceFlush = "maintenance_flush";
+    public const string MaintenanceResetConfig = "maintenance_reset_config";
+    public const string ObjectiveRetired = "objective_retired";
+    public const string ObjectiveSuggestionApproved = "objective_suggestion_approved";
+    public const string ObjectivesCleared = "objectives_cleared";
+    public const string OperatorFileCreated = "operator_file_created";
+    public const string OperatorFileEdited = "operator_file_edited";
+    public const string OperatorShellCommand = "operator_shell_command";
+    public const string OperatorShellError = "operator_shell_error";
+    public const string OperatorShellResult = "operator_shell_result";
+    public const string UserToolRegistered = "user_tool_registered";
+
+    // ---- agent runs and installs -------------------------------------------------
+    public const string AgentInstallStarted = "agent_install_started";
+    public const string AgentRunFinished = "agent_run_finished";
+    public const string AgentRunStarted = "agent_run_started";
+
+    // ---- everything else the runtime emits ---------------------------------------
+    public const string ArtifactSchemaViolation = "artifact_schema_violation";
+    public const string EvidenceFollowUpsCreated = "evidence_follow_ups_created";
+    public const string FailureContextRecorded = "failure_context_recorded";
+    public const string MissionReportUnavailable = "mission_report_unavailable";
+    public const string MissionRevisionRegistered = "mission_revision_registered";
+    public const string RequiredHandoffRefused = "required_handoff_refused";
+    public const string TaskRanInRevision = "task_ran_in_revision";
+    public const string UiChangeBlockedUnmapped = "ui_change_blocked_unmapped";
 }
