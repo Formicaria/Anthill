@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.85**.
+Shipping release: **v0.3.8.86**.
 
 ---
 
@@ -394,6 +394,11 @@ Everything above, pointed at a real repository with a real pull request at the e
 ---
 
 ### Ongoing — technical cleanup
+
+- ✅ **The event vocabulary is complete and consumed** *(v0.3.8.86 — 67 emitted names added, 2 phantoms
+  removed, both directions enforced by `EventVocabularyTests`)*. Publishers still pass literals rather
+  than the constants; that conversion is a separate, larger change and the guard makes the drift it
+  would prevent impossible to widen in the meantime — a new literal must be declared to pass.
 
 **Not a tail.** Fully async execution, ~166 runtime statics, VRAM scheduling, multi-platform QA,
 event-loss accounting and deployment verification are independent workstreams. The statics in
@@ -915,6 +920,18 @@ the provider (it said no) and then derived a pheromone delta from `result.Ok` (w
 negatively). The transient reader was right and the durable one was wrong, so the disagreement was
 invisible in the mission and permanent in the memory. **The lesson is not "look harder" — it is that
 the second reader must ask the first**, which is what a shared predicate makes structural.
+
+**A vocabulary that named half of what it described.** `EventTypes` declared 69 event constants
+against 134 the runtime emits, said in its own header that it "was READ, out of the working tree,
+from the LogEvent call sites" and that a subscriber written against it "is written against reality",
+and instructed every future author to add the constant in the same change as the publisher. That
+instruction was followed for roughly half the events across every release that had it. Two of the 69
+were emitted by nobody and both were NEAR-MISSES of real names — the filter compiles, runs, and
+matches nothing forever, which is the exact empty-panel failure the file was created to prevent.
+Closed at v0.3.8.86 with `EventVocabularyTests`, and the general shape is the interesting part: *a
+rule a document states and nothing checks describes the author's intention rather than the tree.*
+This repository has now found that shape in a plan checklist, a graduation record, a qualification
+ledger and an event vocabulary.
 
 **A fixture that never ran the thing it declared.** Named at v0.3.8.82 and swept at v0.3.8.83, and
 it belongs here rather than in a test file because the shape is general: a component that SUBSTITUTES
