@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.84**.
+Shipping release: **v0.3.8.85**.
 
 ---
 
@@ -38,7 +38,7 @@ Done and load-bearing:
 |---|---|
 | Deterministic qualification scenarios | **20 of 20 closed by substance** *(v0.3.8.79)*. None open, none partial |
 | Acceptance gates | **12 of 12** *(v0.3.8.80)*. Gates 1 and 2 closed with R3's cancellation matrix, which is what made the roster's declarations true enough to grade |
-| Cancellation cells | **48 of 48 decided; 31 driven live, 0 cited, 17 not-applicable** *(v0.3.8.84)*. The last two citations were withdrawn rather than closed: they rested on `PolicyInserted` meaning "no plan may assign it", which `AntRegistry.ValidateTask` has deliberately not meant since v0.3.8.51 |
+| Cancellation cells | **48 of 48 decided; 32 driven live, 0 cited, 16 not-applicable** *(v0.3.8.85)*. The archivist's `before_dispatch` cell moved from not-applicable to DRIVEN by looking at the role's own dispatch site instead of the planner's — and nothing had ever stopped it there |
 | Graduation record | **Complete** *(v0.3.8.81)*. The cancellation column and the `ui_cartographer` fault cell were the last nulls |
 | Live qualification | **Never run under protocol.** One live mission happened at v0.3.8.73 and produced three real defects; that is not the recorded multi-provider run item R4 requires |
 | Model-calling roles | **5 roles and 8 routes, all declared, both directions asserted** *(v0.3.8.76)*. Was "7 declared, 5 of which cannot call a model" — and separately, 3 routes that do call one were declared nowhere |
@@ -262,14 +262,29 @@ outcome.
   The tester's cell is SPLIT rather than claimed whole: the harness proves what the role leaves
   behind, and the orphan-process half stays cited to the two tests that prove it, in the same cell,
   where all three citations are checked to resolve.
-- ◻ **The four cells that remain: `medic/before_dispatch`, `medic/awaiting_dependency`,
-  `archivist/before_dispatch` and `archivist/awaiting_dependency`.** These are not-applicable to a
+- ✅ **`archivist/before_dispatch`, and the defect it was hiding** *(v0.3.8.85)*. The cell was
+  recorded not-applicable because `AntRegistry.ValidateTask` refuses a planned archivist — true of
+  the PLANNER and false of the role. `Queen.RunArchivistAfterFinalization` is its real dispatch
+  site, invoked directly once the canonical evaluation is persisted, and "cancel before this role
+  acts" is answerable there. **The answer was that nothing stopped it**: that path does not go
+  through `ExecutionService.RunSingleTask`, so it could not inherit v0.3.8.81's stop check and had
+  none of its own — a cancelled mission still ran the archivist over its partial work and ingested
+  the candidates it proposed. Fixed by reading the persisted outcome, the authority this method's
+  own documentation already insists on, and skipping with the existing `archivist_skipped` event
+  under a distinct reason.
+  **And it shows how this harness can pass for the wrong reason even now.** The no-positive-memory
+  property watches `memory_candidate_archived`, and a stopped mission usually gives the archivist
+  nothing worth proposing — so the assertion passed because the archivist found nothing, not because
+  it was prevented from looking.
+- ◻ **The three cells that remain: `medic/before_dispatch`, `medic/awaiting_dependency` and
+  `archivist/awaiting_dependency`.** These are not-applicable to a
   fixture that drives a role by planning a task for it, and that is a contract fact rather than a
   gap in the harness: `AntRegistry.ValidateTask` refuses a planner-produced task for a
-  `FailureTriggered` or `PostFinalization` role, because the medic diagnoses a failure that must
-  already exist and the archivist summarises a mission that must already be terminal. Reaching them
-  means producing those triggers — a task that fails, a mission that finalizes — and cancelling
-  around them. Named individually because `RoleQualificationRecordTests` asserts this document keeps
+  `FailureTriggered` role, because the medic diagnoses a failure that must already exist. Reaching
+  its two needs a critical task that fails under adaptive mission control, cancelled around. The
+  archivist's remaining cell is stronger than not-applicable-by-planner and worth stating as such:
+  it is never SCHEDULED at all, so there is no queue entry for a dependency to hold up, now or
+  ever. Named individually because `RoleQualificationRecordTests` asserts this document keeps
   naming whatever is not driven.
 
 > **Exit gate.** All forty-eight cancellation cells decided AND every driven cell proved to have run
