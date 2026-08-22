@@ -1,10 +1,13 @@
-using System.Text.Json.Serialization;
-
 namespace Anthill.SDK.Contracts;
 
 // v3.8.9 — the HALF of the old Anthill.Core.Contracts.TaskContracts that is genuinely shared
-// vocabulary: what a capability is, how a failure is classified, and what a tool declares about
-// itself. Nothing here knows what a mission or a task is.
+// vocabulary: what a capability is and how a failure is classified. Nothing here knows what a
+// mission or a task is.
+//
+// v0.3.8.87 removed the third thing it used to hold — a per-role declaration of capabilities and
+// side effects that duplicated the contracts and disagreed with them. See the note at the bottom of
+// this file; the `System.Text.Json.Serialization` import went with it, because nothing left here is
+// serialized.
 //
 // The other half stayed in the core, and the reason is the whole lesson of this split. An earlier
 // attempt moved the entire file after checking its `using` statements and finding none — but
@@ -213,45 +216,52 @@ public static class FailureClassNames
     }
 }
 
-/// <summary>Typed declaration of one tool/caste: what it can touch, what it needs, how it fails.</summary>
-public sealed class ToolDescriptor
-{
-    [JsonPropertyName("name")] public string Name { get; init; } = "";
-    [JsonPropertyName("description")] public string Description { get; init; } = "";
-    [JsonPropertyName("version")] public string Version { get; init; } = "1";
-    [JsonPropertyName("required_capabilities")] public string[] RequiredCapabilities { get; init; } = Array.Empty<string>();
-    [JsonPropertyName("side_effect_class")] public string SideEffectClass { get; init; } = "none"; // none | reversible | destructive
-    [JsonPropertyName("risk_class")] public string RiskClass { get; init; } = "low"; // low | medium | high | critical
-    [JsonPropertyName("idempotent")] public bool Idempotent { get; init; }
-    [JsonPropertyName("supports_cancellation")] public bool SupportsCancellation { get; init; } = true;
-    [JsonPropertyName("supports_timeout")] public bool SupportsTimeout { get; init; } = true;
-    [JsonPropertyName("compensation")] public string Compensation { get; init; } = "none"; // none | manual | automatic
-}
-
 /// <summary>
-/// The typed tool catalog for today's executable castes. Honest declarations of what EXISTS —
-/// no capability is granted here; this is what each caste WOULD need, evaluable pre-execution.
+/// THERE IS NO SECOND CATALOG. v0.3.8.87 — and what used to be here is worth recording, because this
+/// file is where the duplicate would come back.
+///
+/// A `ToolDescriptor` type and a `ToolCatalog` holding six of them lived here, giving each role a
+/// `RequiredCapabilities` list, a `SideEffectClass`, a `RiskClass` and a `Compensation`.
+/// `Anthill.Core.Agents.AntExecutionCatalog` declares the same facts for all twelve roles. Two
+/// implementations of one rule — and only the second was ever enforced.
+///
+/// `ToolAuthorization.Evaluate` reads the CONTRACT and refuses a dispatch the grant does not cover.
+/// The catalog here was read by `TaskContract.FromTask`, which feeds `ContractGate.Admit`, which
+/// decides whether a planned task may enter the execution queue. So the ADMISSION gate and the
+/// DISPATCH gate answered the same question from different books, and the books disagreed:
+///
+/// <list type="bullet">
+/// <item>`researcher` — the contract requires repo.read and repo.search; the catalog claimed
+///   model.invoke alone.</item>
+/// <item>`coder` and `verifier` — the catalog added repo.read that neither contract requires.</item>
+/// <item>`builder` — the catalog required <c>repo.write.sandbox</c>, which `CapabilityGrant` is
+///   written never to grant, in a comment that names it. A requirement nothing could satisfy,
+///   declared beside a check nothing ran.</item>
+/// <item>Every contract declares <c>AllowsSideEffects: false</c>; the catalog called the coder and
+///   the builder "reversible" with manual compensation.</item>
+/// <item>The archivist, medic, tester, soldier, scribe and ui_cartographer had no entry at all, so
+///   the projection's fallback declared <c>model.invoke</c> for all six — the exact lie v0.3.8.76
+///   deleted from the archivist's contract, preserved here because nobody read both books at once.</item>
+/// </list>
+///
+/// `ToolCatalog.CanRun` — the pre-execution permission check that lived here — had no production
+/// caller in its entire life. Its one caller was a test that built the descriptor AND the grant set
+/// itself and asserted they matched, which is the failure <see cref="FailureClassNames"/> records a
+/// few lines above, in those words: *no test anywhere ran a value from a real producer into a real
+/// consumer.*
+///
+/// So the fix is not to reconcile the two lists. It is to remove the choice, the same way
+/// <see cref="FailureClassNames"/> removed it for the wire format: the contracts declare what a role
+/// requires and what it may do, `TaskContract.FromTask` derives the side-effect projection from
+/// them, and `CapabilityDeclarationTests.OnlyTheRoleContracts_DeclareRoleCapabilities` fails if a
+/// second declaration appears in this file again.
+///
+/// <see cref="Capability"/> stays. It is the vocabulary both halves named, and the one thing here
+/// that was never duplicated.
 /// </summary>
-public static class ToolCatalog
+public static class ToolVocabularyHistory
 {
-    public static readonly IReadOnlyDictionary<string, ToolDescriptor> Tools =
-        new Dictionary<string, ToolDescriptor>(StringComparer.OrdinalIgnoreCase)
-    {
-        ["researcher"] = new() { Name = "researcher", Description = "Model-only analysis and synthesis.", RequiredCapabilities = new[] { Capability.ModelInvoke }, SideEffectClass = "none", RiskClass = "low", Idempotent = true },
-        ["web"] = new() { Name = "web", Description = "Public web search/fetch.", RequiredCapabilities = new[] { Capability.ModelInvoke, Capability.NetworkHttpPublic }, SideEffectClass = "none", RiskClass = "low", Idempotent = true },
-        ["file"] = new() { Name = "file", Description = "Read-only workspace inspection.", RequiredCapabilities = new[] { Capability.RepoRead, Capability.RepoSearch }, SideEffectClass = "none", RiskClass = "low", Idempotent = true },
-        ["coder"] = new() { Name = "coder", Description = "Patch proposals (apply is separately gated).", RequiredCapabilities = new[] { Capability.ModelInvoke, Capability.RepoRead, Capability.RepoPatchPropose }, SideEffectClass = "reversible", RiskClass = "medium", Idempotent = false, Compensation = "manual" },
-        ["builder"] = new() { Name = "builder", Description = "Build/assemble outputs in the sandbox.", RequiredCapabilities = new[] { Capability.ModelInvoke, Capability.RepoWriteSandbox }, SideEffectClass = "reversible", RiskClass = "medium", Idempotent = false, Compensation = "manual" },
-        ["verifier"] = new() { Name = "verifier", Description = "Independent result verification.", RequiredCapabilities = new[] { Capability.ModelInvoke, Capability.RepoRead }, SideEffectClass = "none", RiskClass = "low", Idempotent = true },
-    };
-
-    public static ToolDescriptor? Describe(string ant) => Tools.TryGetValue(ant ?? "", out var d) ? d : null;
-
-    /// <summary>Pre-execution permission check: does the grant set cover the tool's needs?
-    /// Unknown tools fail toward refusal.</summary>
-    public static bool CanRun(string ant, IReadOnlyCollection<string> grantedCapabilities)
-    {
-        var d = Describe(ant);
-        return d is not null && d.RequiredCapabilities.All(grantedCapabilities.Contains);
-    }
+    /// <summary>The release that removed the second catalog. Referenced by the guard's message so a
+    /// reader who trips it lands on the paragraph above rather than on a diff.</summary>
+    public const string SecondCatalogRemovedIn = "v0.3.8.87";
 }
