@@ -238,9 +238,14 @@ public class RoleQualificationRecordTests
 
         // The two cells the matrix still decides by CITATION rather than by driving them. Named here
         // by role and point so that closing them means editing this list with the evidence in hand.
+        // v0.3.8.88 — `medic/before_dispatch` LEFT THIS LIST, which is the only way an entry ever
+        // should: it was driven live, from the medic's real trigger, by
+        // `CodePatchLifecycleTests.ACancelledMission_DoesNotRunTheMedicItHadJustScheduled`. The two
+        // that remain are not gaps and never will be — they are cells the runtime cannot produce, and
+        // PLAN.md now says which kind each one is rather than listing all three as "remaining".
         foreach (var cited in new[]
                  {
-                     "medic/before_dispatch", "medic/awaiting_dependency",
+                     "medic/awaiting_dependency",
                      "archivist/awaiting_dependency",
                  })
             Assert.True(plan.Contains(cited, StringComparison.Ordinal),

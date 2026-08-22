@@ -1,5 +1,94 @@
 # ANTHILL Changelog
 
+## v0.3.8.88 - the last cell, and the hazard underneath it
+
+**R3 is closed.** All forty-eight cancellation cells decided: **33 driven live, 0 cited, 15
+not-applicable.** And the release that closed it spent most of itself on the thing that made the
+previous one cost a full cycle.
+
+### `medic/before_dispatch` — driven, from the trigger rather than excused
+
+The last gap. Every other `before_dispatch` cell is driven by PLANNING a task for the role and
+cancelling before the first wave; the medic cannot be reached that way, because its contract is
+`FailureTriggered` and `AntRegistry.ValidateTask` refuses a planned task for it — deliberately, since
+`MedicAnt.Execute` opens by returning Blocked when nothing has failed. A planned medic can only ever
+refuse, so a fixture that planned one would be cancelling a role that was never going to act.
+
+v0.3.8.83 wrote down what it would take: "a critical task that fails under adaptive mission control."
+The fixture already existed one file over. `CodePatchLifecycleTests` drives a patch mission whose
+policy-inserted tester runs a check against the materialized revision, legitimately fails, and hands
+off to the medic on the typed retryable failure.
+
+**The window is exact, not approximate.** Both admission paths — `IngestHandoffs` and
+`ApplyAdaptiveDecision`'s repair arm — admit the task FIRST and log afterwards, naming the
+destination role as the event's ant. So that event means *scheduled, persisted, not yet dispatched*.
+The fixture stops the colony on it through a synchronous test bus, because the production
+`InProcessEventBus` dispatches off the publisher's thread by contract — right for observability, and
+it would have made the stopping instant a race and this cell a coin toss.
+
+The colony passes: no medic task completes, no repair rides the stop, no memory is archived, no
+positive evaluation. Non-vacuity is asserted first — every property below it is also satisfied by a
+mission where the medic was never scheduled at all, which is a different run and a passing test about
+nothing.
+
+### The hazard underneath: state captured before the bootstrap that sets it
+
+v0.3.8.87 came back with four lifecycle tests red whose production code had not changed. The same
+four reproduced against the previous tag under the same filter — which is what separated "my change
+broke this" from "this was never deterministic".
+
+`AnthillRuntime.Initialize` is ONE-SHOT, and `ProjectConfig` writes the on-disk config over
+**fifty-one** process-global statics — every roster gate, `UseOllama`, `EnableAutonomy`,
+`EnablePatchApplication`, the file and shell gates. `Queen`'s constructor calls it. So:
+
+- A test that set a roster flag and then built the FIRST Queen in the process had its setting
+  silently discarded. The identical test running second kept it, because the bootstrap
+  short-circuits. `TheMemoryTrail` and `AllTwelveRoles` have byte-identical setup and only the second
+  one passed.
+- `ScenarioA` built its Queen *before* opening the archivist's gate, so the role-availability
+  snapshot was already taken and the archivist was unavailable for the whole run.
+
+Because the values come from a file on the developer's machine, which tests got lucky differed per
+machine.
+
+**Closed at the root rather than at the four instances.** A `[ModuleInitializer]` runs the bootstrap
+before the first test, so by the time any test reads one of those fifty-one statics it already holds
+its configured value and no later Queen can move it. A sweep found **twenty-one** more test files
+saving one of them for restore with no guarantee the bootstrap had happened; all twenty-one are now
+covered by that one line. `RosterGates.Capture` — which has existed since v0.3.8.41 for exactly this
+hazard, and whose header already named it — also forces it, for callers that reach the roster
+directly.
+
+`RuntimeBootstrapOrderTests` guards all of it: the bootstrap ran, it ran as a module initializer
+rather than as an early test getting lucky, and `ProjectConfig` still writes the globals the guard is
+about.
+
+### A third, caught by the run rather than by the pre-flight
+
+The medic fixture first asserted that every medic task row must carry `cancelled` or `timeout` and a
+cancellation reason, on the stated grounds that "a task row appears when the task starts running".
+That is true on the PLANNER path and false here: `TryAdmitDynamicTask` calls `SaveTask` at
+**admission**, so a dynamic task is persisted the moment it is scheduled — which is exactly the
+window this cell is about. The row is evidence the cell was reached, not evidence the role ran, and a
+task that never dispatched correctly carries no failure at all.
+
+The assertion demanded the runtime invent a failure for work that never started. It is now
+conditional: nothing may complete, nothing may be left running, and IF a failure type was recorded it
+may not be `execution_error` — which would attribute the operator's stop to the ant and is retryable.
+The pre-flight simulated every source guard and could not have caught this one; it took the run.
+
+### Two guards that made the release's own mistake, and were caught making it
+
+Worth recording because the release is about exactly this shape.
+
+The non-vacuity guard above was first written against `Initialize` — which delegates, and whose body
+is 282 characters containing zero config assignments. Brace-matched, it found nothing and would have
+failed for a reason unrelated to the hazard: a guard pointed one method away from the thing it
+guards. Before that, it sliced to end-of-file and counted 51 assignments from *all* methods while its
+message claimed to be counting one. And the "twenty-six statics" figure in the first draft of this
+entry came from a truncated read of the same method; the real number is fifty-one, corrected
+everywhere it was asserted.
+
 ## v0.3.8.87 - two books said what a role may do
 
 **Ongoing cleanup, and the widest instance of an old shape.** Two catalogs declared each role's

@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.87**.
+Shipping release: **v0.3.8.88**.
 
 ---
 
@@ -38,7 +38,7 @@ Done and load-bearing:
 |---|---|
 | Deterministic qualification scenarios | **20 of 20 closed by substance** *(v0.3.8.79)*. None open, none partial |
 | Acceptance gates | **12 of 12** *(v0.3.8.80)*. Gates 1 and 2 closed with R3's cancellation matrix, which is what made the roster's declarations true enough to grade |
-| Cancellation cells | **48 of 48 decided; 32 driven live, 0 cited, 16 not-applicable** *(v0.3.8.85)*. The archivist's `before_dispatch` cell moved from not-applicable to DRIVEN by looking at the role's own dispatch site instead of the planner's — and nothing had ever stopped it there |
+| Cancellation cells | **48 of 48 decided; 33 driven live, 0 cited, 15 not-applicable** *(v0.3.8.88 — R3's exit gate MET)*. Two cells moved from not-applicable to DRIVEN by looking at the role's own trigger instead of the planner's: the archivist's at v0.3.8.85 (nothing had ever stopped it at finalization) and the medic's at v0.3.8.88 (from the tester→medic handoff). The 15 that remain are points the runtime cannot produce, each with the reason recorded |
 | Graduation record | **Complete** *(v0.3.8.81)*. The cancellation column and the `ui_cartographer` fault cell were the last nulls |
 | Live qualification | **Never run under protocol.** One live mission happened at v0.3.8.73 and produced three real defects; that is not the recorded multi-provider run item R4 requires |
 | Model-calling roles | **5 roles and 8 routes, all declared, both directions asserted** *(v0.3.8.76)*. Was "7 declared, 5 of which cannot call a model" — and separately, 3 routes that do call one were declared nowhere |
@@ -162,7 +162,7 @@ The two scenarios the ledger overstated, and the two defects closing them uncove
 
 ---
 
-### R3 — Per-role cancellation and timeout · *1–2 releases remaining* · **in progress**
+### R3 — Per-role cancellation and timeout · ✅ **CLOSED at v0.3.8.88**
 
 The largest single item remaining, and the other large area where nothing had ever asserted the
 outcome.
@@ -276,15 +276,23 @@ outcome.
   property watches `memory_candidate_archived`, and a stopped mission usually gives the archivist
   nothing worth proposing — so the assertion passed because the archivist found nothing, not because
   it was prevented from looking.
-- ◻ **The three cells that remain: `medic/before_dispatch`, `medic/awaiting_dependency` and
-  `archivist/awaiting_dependency`.** Named individually because `RoleQualificationRecordTests`
-  asserts this document keeps naming whatever is not driven. They are three different kinds of
-  remaining, and v0.3.8.87 separated them — the first is a gap, the other two are facts.
+- ✅ **`medic/before_dispatch` — DRIVEN LIVE** *(v0.3.8.88)*. The last gap, closed from the medic's
+  real trigger rather than excused. v0.3.8.83 had already written down what it would take — "a
+  critical task that fails under adaptive mission control" — and the fixture existed one file over:
+  `CodePatchLifecycleTests` drives a patch mission whose policy-inserted tester runs a check against
+  the materialized revision, fails, and hands off to the medic.
 
-  - `medic/before_dispatch` — **a real gap.** The point exists: the adaptive controller admits a
-    repair task to the scheduler and a wave later dispatches it, so there is a window in which the
-    operator's stop must land. Reaching it needs a critical task that fails under adaptive mission
-    control, with the cancel arriving between admission and dispatch. Not driven yet.
+  The window is exact rather than approximate. Both admission paths — `IngestHandoffs` and
+  `ApplyAdaptiveDecision`'s repair arm — admit the task FIRST and log afterwards with the
+  destination role as the event's ant name, so that event means *scheduled, persisted, not yet
+  dispatched*. The fixture stops the colony on it, through a synchronous test bus: the production
+  `InProcessEventBus` dispatches off the publisher's thread by contract, which would make the
+  stopping instant a race and the cell a coin toss.
+
+- ◻ **The two cells that remain are FACTS, not gaps: `medic/awaiting_dependency` and
+  `archivist/awaiting_dependency`.** Named individually because `RoleQualificationRecordTests`
+  asserts this document keeps naming whatever is not driven. Neither can be produced by the runtime,
+  and each says why in the matrix.
   - `medic/awaiting_dependency` — **not-applicable on a runtime fact, since v0.3.8.87.** Its old
     reason was "a role the planner may not assign has no planned task that can sit waiting", which
     is true, and answers a question adjacent to the one the cell asks: the medic DOES get a task,
@@ -300,11 +308,15 @@ outcome.
     entry for a dependency to hold up, now or ever. It does not depend on how a task happens to be
     constructed.
 
-> **Exit gate.** All forty-eight cancellation cells decided AND every driven cell proved to have run
-> the plan its fixture wrote, with the medic's and archivist's four universal cells driven from their
-> real triggers rather than excused. Thirty-one driven and no citations left as of v0.3.8.84; the
-> four remaining are the gate. **The graduation record — ✅ complete at
-> v0.3.8.81. Acceptance gates 1 and 2 — ✅ closed at v0.3.8.80.**
+> **Exit gate — ✅ MET at v0.3.8.88.** All forty-eight cancellation cells decided; every driven cell
+> proved to have run the plan its fixture wrote; **33 driven live, 0 cited, 15 not-applicable**. The
+> medic's and archivist's universal cells were the gate's real substance and none of them was
+> excused: `archivist/before_dispatch` was driven at v0.3.8.85 by looking at the role's own dispatch
+> site instead of the planner's, `medic/before_dispatch` at v0.3.8.88 from the tester→medic handoff,
+> and the two `awaiting_dependency` cells are recorded as facts the runtime cannot produce — with the
+> medic's reason rewritten at v0.3.8.87 from a claim about the planner to a proof about the
+> scheduler, pinned by a source guard. **The graduation record — ✅ complete at v0.3.8.81. Acceptance
+> gates 1 and 2 — ✅ closed at v0.3.8.80.**
 
 ---
 
@@ -933,6 +945,18 @@ test anywhere ran a value from a real producer into a real consumer.*
 **A declaration that disagrees with the runtime.** The verifier's contract said planner-selectable
 for six releases after the runtime guaranteed insertion. `scheduling_mode` is reported by the API and
 read by operators, so this was the system stating a guarantee it did not keep.
+
+**State captured before the bootstrap that sets it.** v0.3.8.88, and it cost a release cycle to
+find. `AnthillRuntime.Initialize` is ONE-SHOT and projects the on-disk config over fifty-one
+process-global statics; `Queen`'s constructor calls it. So a test that set a roster flag and then
+built the first Queen in the process had its setting silently discarded, while the identical test
+running second kept it — the outcome decided by position in the run, and, because the values come
+from a file on the developer's machine, by whose machine ran it. Four lifecycle tests failed at
+v0.3.8.87 with no production change behind them; the same four reproduced on the previous tag under
+the same filter, which is what separated "my change broke this" from "this was never deterministic".
+A sweep found twenty-one more test files saving one of those statics with no guarantee the bootstrap
+had happened. Closed at the root — a `[ModuleInitializer]` runs it before the first test — rather than at
+the four instances that happened to break.
 
 **Prose as a control channel.** The bound on repair looping was a substring search of a previous
 medic's narrative, and task results are truncated — so the bound was weakest exactly where the loop

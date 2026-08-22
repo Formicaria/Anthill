@@ -889,4 +889,167 @@ public class CodePatchLifecycleTests : IDisposable
         public string ScriptDirectory => ".";
         public string BackupDirectory => "data/backups";
     }
+
+    /// <summary>
+    /// THE OPERATOR STOPS THE COLONY IN THE INSTANT BETWEEN THE MEDIC BEING SCHEDULED AND THE MEDIC
+    /// RUNNING. v0.3.8.88 — the last undriven cell of R3's cancellation matrix.
+    ///
+    /// WHY THIS TOOK UNTIL NOW. Every other `before_dispatch` cell is driven by PLANNING a task for
+    /// the role and cancelling the mission before the first wave. The medic cannot be reached that
+    /// way: its contract is `FailureTriggered`, and `AntRegistry.ValidateTask` refuses a
+    /// planner-produced task for it — deliberately, because `MedicAnt.Execute` opens by returning
+    /// Blocked when no task has failed. A planned medic can only ever refuse, so a fixture that
+    /// planned one would be cancelling a role that was never going to act.
+    ///
+    /// So the point has to be reached through the medic's REAL trigger, which is what this scenario
+    /// already produces: the tester's check runs against the materialized revision, legitimately
+    /// fails, and hands off to the medic on the typed retryable failure. That is the same run
+    /// <see cref="TheRepairLoop_MaterializesFreshEvidencePerGeneration_AndStopsAtItsBound"/> pins —
+    /// reused rather than rebuilt, because a second copy of a scenario is a second thing to drift.
+    ///
+    /// HOW THE MOMENT IS FOUND, and why it is exact rather than approximate. Both of the medic's
+    /// admission paths — `IngestHandoffs` and `ApplyAdaptiveDecision`'s repair arm — call
+    /// `TryAdmitDynamicTask` FIRST and log the admission afterwards, with the destination role as
+    /// the event's ant name. So an `handoff_admitted` or `adaptive_repair` event naming the medic
+    /// means: the task is in the scheduler, persisted, and has not been dispatched. Cancelling on
+    /// that event is the operator's stop landing in exactly the window this cell is about.
+    ///
+    /// The bus below is SYNCHRONOUS, and that is a deliberate divergence from the production one.
+    /// `InProcessEventBus` dispatches off the publisher's thread by contract ("must not block on
+    /// subscribers"), which is right for observability and useless for this: the stop would land
+    /// whenever a background loop happened to be scheduled, and the cell would be decided by a race.
+    /// Publishing inline puts the cancel at a known instruction. It is the same class of hook as
+    /// `RoleCancellationTests.StopOnDispatchTool`, which cancels from inside a tool call — the bus
+    /// is the trigger, never the thing under test.
+    /// </summary>
+    [Fact]
+    public void ACancelledMission_DoesNotRunTheMedicItHadJustScheduled()
+    {
+        var book = new ScriptBook()
+            .Role("planner", ScriptedPlan)
+            .Role("researcher", "SCRIPTED: frame the note.")
+            .Role("coder", ScriptedProposals)
+            .Role("verifier", "SCRIPTED: reviewed.")
+            .Role("tester", "SCRIPTED: checks recorded.")
+            .Role("soldier", "SCRIPTED: no concern.")
+            .Role("builder", "SCRIPTED: proposed for review.")
+            .Role("medic", "SCRIPTED: the check failure is environmental to this tree; re-propose.")
+            .Role("scribe", "SCRIPTED: recorded.")
+            .Role("archivist", "SCRIPTED: recorded.");
+
+        AnthillRuntime.EnableSpecialistAntExecution = true;
+        AnthillRuntime.ActivationTier = Anthill.Core.Agents.ActivationTier.Full;
+        AnthillRuntime.EnableTesterAnt = true;
+        AnthillRuntime.EnableSoldierAnt = true;
+        AnthillRuntime.EnableMedicAnt = true;
+
+        AnthillRuntime.UseOllama = true;
+        AnthillRuntime.AllowedWorkspaceRoot = _workspace;
+        using var scripted = ScriptedColony.Begin(book,
+            "planner", "researcher", "coder", "verifier", "tester", "soldier",
+            "builder", "medic", "scribe", "archivist", "fallback");
+
+        using var cts = new CancellationTokenSource();
+        var admitted = new List<string>();
+
+        // Wired onto the memory BEFORE the Queen is constructed: the Queen ADOPTS an already-wired
+        // bus rather than replacing it (v3.8.6), so this survives composition.
+        using var memory = new SqliteMemory(Path.Combine(_dir, "medic-stop.db"));
+        memory.EventBus = new StopWhenTheMedicIsAdmitted(cts, admitted);
+
+        var queen = new Queen(memory);
+        string? missionId = null;
+        queen.RunMission("Add a short colony note to the documentation.",
+            onMissionCreated: id => missionId = id, cancel: cts.Token);
+
+        Assert.NotNull(missionId);
+
+        // NON-VACUITY FIRST. Every assertion below is satisfied by a mission where the medic was
+        // never scheduled at all, which is a different run and a passing test about nothing.
+        Assert.True(admitted.Count > 0,
+            "the medic was never admitted, so the stop never landed in the window this cell is "
+          + "about. The trigger is the tester's check failing against the materialized revision; if "
+          + "that stopped happening, this drives no cell and TheRepairLoop above will say so too.");
+
+        var tasks = queen.Memory.GetTasksForMission(missionId!);
+        var medicTasks = tasks
+            .Where(t => (t.GetValueOrDefault("assigned_ant")?.ToString() ?? "") == "medic")
+            .ToList();
+
+        // 1. THE MEDIC DID NOT COMPLETE, AND IS NOT LEFT RUNNING.
+        //
+        //    A ROW EXISTS BEFORE DISPATCH HERE, and the first draft of this test asserted otherwise.
+        //    On the planner path a task row appears when the task starts running, which is what
+        //    `RoleCancellationTests` documents. Dynamic tasks are different: `TryAdmitDynamicTask`
+        //    calls `SaveTask` at ADMISSION, so the medic is persisted the moment it is scheduled —
+        //    which is precisely the window this cell is about. The row is the evidence the cell was
+        //    reached, not evidence the role ran.
+        foreach (var task in medicTasks)
+        {
+            var status = task.GetValueOrDefault("status")?.ToString() ?? "";
+
+            Assert.True(status != "complete",
+                "the medic ran to completion inside a mission the operator had already stopped.");
+            Assert.True(status != "running",
+                "the medic is still recorded as running after the mission ended — a stopped colony "
+              + "that leaves work in flight has not stopped, it has stopped reporting.");
+
+            // 2. AND IF IT WAS MARKED AT ALL, IT IS MARKED AS STOPPED RATHER THAN BROKEN.
+            //
+            //    CONDITIONAL, and the condition is the finding. A task admitted and never dispatched
+            //    carries NO failure type, and that is the correct record: nothing went wrong with it,
+            //    it simply never ran. Demanding `cancelled` here would demand the runtime invent a
+            //    failure for work that never started — which is the opposite of what the rest of this
+            //    matrix asks for.
+            //
+            //    What must never appear is `execution_error`: it attributes the operator's stop to
+            //    the ant, and it is RETRYABLE, which returns the task to the Ready queue for the
+            //    dispatch loop to skip.
+            var failureType = task.GetValueOrDefault("failure_type")?.ToString() ?? "";
+            if (failureType.Length > 0)
+                Assert.True(failureType is "cancelled" or "timeout",
+                    $"the medic never dispatched and its task is recorded as '{failureType}' "
+                  + $"(status '{status}'). A stop is not an error the ant made.");
+        }
+
+        // 3. NO REPAIR RODE THE STOP. The medic's whole job is to route more work; a stopped colony
+        //    that still routes repair has changed which role is running rather than stopped.
+        Assert.DoesNotContain(tasks, t =>
+            (t.GetValueOrDefault("assigned_ant")?.ToString() ?? "") == "coder"
+         && (t.GetValueOrDefault("description")?.ToString() ?? "").Contains("medic:", StringComparison.Ordinal));
+
+        // 4. NO POSITIVE EVALUATION — what auto-apply, memory and reputation all consume.
+        var evaluation = queen.Memory.LoadMissionEvaluation(missionId!);
+        Assert.True(evaluation is null || !evaluation.IsPositive,
+            $"the mission was stopped and still graded positively ({evaluation?.OutcomeCode}).");
+
+        // 5. NO MEMORY. The property that outlives the mission.
+        Assert.Empty(queen.Memory.GetRecentEvents(200, "memory_candidate_archived", missionId));
+    }
+
+    /// <summary>
+    /// A bus that delivers inline and stops the colony the first time the medic is admitted.
+    ///
+    /// Records what it saw rather than only acting on it: the fixture asserts the admission
+    /// happened, and a trigger that cannot be observed afterwards is one that fails silently when
+    /// the trigger moves.
+    /// </summary>
+    private sealed class StopWhenTheMedicIsAdmitted(CancellationTokenSource stop, List<string> seen)
+        : Anthill.SDK.Events.IEventBus
+    {
+        public void Publish(Anthill.SDK.Events.ColonyEvent colonyEvent)
+        {
+            if (colonyEvent.AntName != "medic") return;
+            if (colonyEvent.EventType is not ("handoff_admitted" or "adaptive_repair")) return;
+
+            seen.Add(colonyEvent.EventType);
+            stop.Cancel();
+        }
+
+        // Nothing subscribes: this bus exists to observe one publication, not to fan out.
+        public IDisposable Subscribe(Action<Anthill.SDK.Events.ColonyEvent> handler) => new Noop();
+        public IDisposable Subscribe(string eventType, Action<Anthill.SDK.Events.ColonyEvent> handler) => new Noop();
+
+        private sealed class Noop : IDisposable { public void Dispose() { } }
+    }
 }
