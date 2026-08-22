@@ -114,6 +114,60 @@ public class EventVocabularyTests
     }
 
     /// <summary>
+    /// THE OTHER SIDE OF THE CALL, and the blind spot it found. v0.3.8.89.
+    ///
+    /// The two assertions above read PUBLICATION: event names handed directly to `LogEvent`. That is
+    /// what v0.3.8.86 could see, and its own doc comment says so — but a name passed through a
+    /// wrapper never appears in that position. `ExecutionService.RecordAdaptiveAdmission` takes the
+    /// event type as a parameter and its callers pass the literal; the memory-candidate names reach
+    /// `LogEvent` the same way. All four were emitted, queried, asserted on in tests, and declared
+    /// nowhere — while the sweep above reported the vocabulary complete.
+    ///
+    /// So this reads CONSUMPTION instead. `GetRecentEvents(limit, "name", ...)` names an event type
+    /// in an unambiguous position — the parameter exists for nothing else — which makes it a
+    /// zero-false-positive detector and a genuinely different question from the one above.
+    ///
+    /// It is not a general fix for wrapper-passed names: an event emitted through a wrapper and never
+    /// queried by name is still invisible to both directions. That is a known remaining gap and it is
+    /// recorded as one rather than implied to be closed.
+    /// </summary>
+    [Fact]
+    public void EveryEventTypeQueriedByName_IsDeclared()
+    {
+        var values = Declared().Values.ToHashSet(StringComparer.Ordinal);
+        var queried = new SortedDictionary<string, string>(StringComparer.Ordinal);
+
+        var roots = new[] { Path.Combine(SourceText.RepoRoot(), "src"), Path.Combine(SourceText.RepoRoot(), "tests") };
+        foreach (var root in roots)
+            foreach (var file in Directory.GetFiles(root, "*.cs", SearchOption.AllDirectories))
+            {
+                if (file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                 || file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+                    continue;
+
+                foreach (Match m in QueriedByName.Matches(SourceText.CodeOnly(File.ReadAllText(file))))
+                    queried.TryAdd(m.Groups["name"].Value, Path.GetFileName(file));
+            }
+
+        Assert.True(queried.Count >= 10,
+            $"only {queried.Count} event type(s) are queried by name across the tree. More than that "
+          + "are; the call shape this reads has moved and the guard is checking nothing.");
+
+        var undeclared = queried.Where(kv => !values.Contains(kv.Key)).ToList();
+        Assert.True(undeclared.Count == 0,
+            $"{undeclared.Count} event type(s) are QUERIED by name and declared nowhere:\n  "
+          + string.Join("\n  ", undeclared.Select(kv => $"{kv.Key}  ({kv.Value})"))
+          + "\nSomething reads these events, so they are part of the vocabulary whether or not they "
+          + "reach LogEvent as a literal. A caller filtering on a name the vocabulary does not carry "
+          + "is one rename away from matching nothing forever.");
+    }
+
+    /// <summary>An event type in the one position that can only be an event type:
+    /// <c>GetRecentEvents(200, "adaptive_repair", missionId)</c>.</summary>
+    private static readonly Regex QueriedByName =
+        new(@"GetRecentEvents\(\s*\d+\s*,\s*""(?<name>[a-z][a-z0-9_]*)""");
+
+    /// <summary>
     /// Neither assertion above may pass over an empty set. A rename of `LogEvent`, or a change to how
     /// the constants are declared, would otherwise leave both of them green and blind — which is how
     /// the vocabulary drifted for as long as it did.
