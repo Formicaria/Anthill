@@ -136,12 +136,21 @@ public class RoleCancellationTests : IDisposable
         cells.Add(new("archivist", "before_dispatch", How.Harness,
             "RoleCancellationTests.ACancelledMission_DoesNotRunTheArchivistAfterFinalization"));
 
-        cells.Add(new("medic", "before_dispatch", How.NotApplicable,
-            "this role has no planner-assigned dispatch to cancel before it: its contract is "
-          + "FailureTriggered, so it runs in response to a failure that must already exist and "
-          + "AntRegistry.ValidateTask refuses a planned task for it. The point exists for its real "
-          + "trigger and needs a fixture that produces one — a critical task that fails under "
-          + "adaptive mission control."));
+        // v0.3.8.88 — THE LAST CELL, AND IT WAS DRIVEN FROM THE TRIGGER RATHER THAN EXCUSED.
+        //
+        // v0.3.8.83 recorded this not-applicable and said exactly what it would take: "the point
+        // exists for its real trigger and needs a fixture that produces one — a critical task that
+        // fails under adaptive mission control." That was right, and the fixture already existed one
+        // file over. `CodePatchLifecycleTests` drives a patch mission whose policy-inserted tester
+        // runs a check against the materialized revision, legitimately fails, and hands off to the
+        // medic on the typed retryable failure.
+        //
+        // What makes the moment exact: both of the medic's admission paths — `IngestHandoffs` and
+        // `ApplyAdaptiveDecision`'s repair arm — admit the task FIRST and log afterwards, naming the
+        // destination role as the event's ant. So the admission event means "scheduled, persisted,
+        // not yet dispatched", which is this cell's window, and the fixture stops the colony on it.
+        cells.Add(new("medic", "before_dispatch", How.Harness,
+            "CodePatchLifecycleTests.ACancelledMission_DoesNotRunTheMedicItHadJustScheduled"));
 
         // ---- during generation: only the five roles that can reach a model --------------------
         //
