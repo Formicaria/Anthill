@@ -32,7 +32,9 @@ namespace Anthill.Tests;
 /// every cell, and PLAN.md still names the cells that are cited rather than driven — so a record that
 /// LOOKS complete cannot quietly stop saying how complete it is.
 ///
-/// The remaining honest gap is four cells, and it is a real one. The medic and the archivist are
+/// The remaining honest gap is three cells — v0.3.8.85 closed `archivist/before_dispatch` by
+/// looking at the role's OWN dispatch site rather than the planner's, and found that nothing had
+/// ever stopped it. What is left is a real gap. The medic and the archivist are
 /// `FailureTriggered` / `PostFinalization`, which `AntRegistry.ValidateTask` refuses from planner
 /// output, so a fixture that drives a role by PLANNING a task for it cannot reach their
 /// `before_dispatch` or `awaiting_dependency` points. Reaching them needs their real triggers — a
@@ -239,7 +241,7 @@ public class RoleQualificationRecordTests
         foreach (var cited in new[]
                  {
                      "medic/before_dispatch", "medic/awaiting_dependency",
-                     "archivist/before_dispatch", "archivist/awaiting_dependency",
+                     "archivist/awaiting_dependency",
                  })
             Assert.True(plan.Contains(cited, StringComparison.Ordinal),
                 $"PLAN.md no longer names '{cited}' as an undriven cancellation cell. If it was driven "
