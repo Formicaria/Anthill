@@ -52,6 +52,28 @@ sweeps in this repository simulate source guards and semantics, and cannot see a
 that is the compiler's job and it did it. The remaining type references were then checked against
 their declaring namespaces rather than fixed one build at a time.
 
+### And a plan this release's own new fixture had put out of reach
+
+The first full run of this release was 2787 of 2788, and the one failure was v0.3.8.83's
+`EveryScriptedPlan_IsOneThePlannerWouldAccept` refusing the new file: its scripted plan was a local
+`var` inside the method that used it, so the guard could not read it, and the file does not verify its
+plan at runtime either. Its words: *"a plan nothing checks is a plan the Planner may have replaced."*
+
+The plan itself was fine — three tasks, three planner-eligible roles. What was wrong is that nothing
+could **say** so, which is precisely the state the v0.3.8.82 defect lived in: the Planner discards a
+plan below `MinDynamicTasks`, substitutes `FallbackTasks`, and a fixture that happens to assert on a
+role the fallback contains passes over a plan nobody wrote. A plan that is correct today and
+unreadable to the guard is one edit away from being that.
+
+Both scripts are now class-level constants, with the placement's reason written at the declaration
+rather than left as style — including why the runtime alternative was rejected here: this mission
+acquires policy-inserted tester and soldier tasks as it runs, so "what the mission planned" is a
+larger set than "what the fixture wrote", and this file's subject is the record, not the plan.
+
+Recorded because a guard catching the release that added it is the guard working, and because the
+pre-flight sweep that should have caught it first did not: it simulated the guards the *change*
+touched, not the guards that read every file in the tests directory.
+
 ### The R4 recorder
 
 `LiveQualificationRecord.For(memory, artifacts, evidence, missionId)` assembles the telemetry table

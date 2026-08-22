@@ -50,6 +50,46 @@ public class LiveQualificationRecordTests : IDisposable
         _workspaceRootWas = AnthillRuntime.AllowedWorkspaceRoot;
     }
 
+    // -----------------------------------------------------------------------------------------------
+    // The scripted mission's two scripts, DECLARED AT CLASS LEVEL and not inside the method that
+    // uses them. That placement is load-bearing, not style: `ScriptedPlanConformanceTests` resolves
+    // `.Role("planner", NAME)` by finding `const string NAME = """…""";` in the same file, and a plan
+    // held in a local `var` resolves to nothing. Its own words for what that costs — "a plan nothing
+    // checks is a plan the Planner may have replaced" — describe the v0.3.8.82 defect exactly: the
+    // Planner rejects a plan below `MinDynamicTasks`, substitutes `FallbackTasks`, and a fixture
+    // asserting on a role the fallback happens to contain passes over a plan nobody wrote.
+    //
+    // The alternative the guard also accepts — verifying the plan at RUNTIME with
+    // `AssertTheMissionRanTheScriptedPlan` — was considered and rejected here. This mission acquires
+    // policy-inserted tester and soldier tasks as it runs, so "what the mission planned" is a larger
+    // set than "what this file wrote", and this file's subject is the RECORD, not the plan. The
+    // static form says everything this fixture needs said: three tasks, three planner-eligible roles.
+    // -----------------------------------------------------------------------------------------------
+
+    private const string ScriptedPlan = """
+        {
+          "tasks": [
+            { "title": "Understand the request", "description": "Frame the note.",
+              "assigned_ant": "researcher", "task_type": "research", "depends_on": [] },
+            { "title": "Propose the documentation patch", "description": "Propose the note as JSON.",
+              "assigned_ant": "coder", "task_type": "patch_proposal", "depends_on": [] },
+            { "title": "Verify the outcome", "description": "Check the proposal.",
+              "assigned_ant": "verifier", "task_type": "verification", "depends_on": [] }
+          ]
+        }
+        """;
+
+    private const string ScriptedProposals = """
+        {
+          "summary": "Add the requested colony note.",
+          "proposals": [
+            { "file_path": "docs/COLONY-NOTE.md", "change_type": "add", "old_content": null,
+              "new_content": "# Colony note\n\nWritten through the real lifecycle.\n",
+              "reason": "The mission asks for a documentation note.", "risk": "low" }
+          ]
+        }
+        """;
+
     public void Dispose()
     {
         AnthillRuntime.UseOllama = _useOllamaWas;
@@ -301,34 +341,10 @@ public class LiveQualificationRecordTests : IDisposable
         AnthillRuntime.UseOllama = true;
         AnthillRuntime.AllowedWorkspaceRoot = Path.Combine(_dir, "workspace");
 
-        var plan = """
-            {
-              "tasks": [
-                { "title": "Understand the request", "description": "Frame the note.",
-                  "assigned_ant": "researcher", "task_type": "research", "depends_on": [] },
-                { "title": "Propose the documentation patch", "description": "Propose the note as JSON.",
-                  "assigned_ant": "coder", "task_type": "patch_proposal", "depends_on": [] },
-                { "title": "Verify the outcome", "description": "Check the proposal.",
-                  "assigned_ant": "verifier", "task_type": "verification", "depends_on": [] }
-              ]
-            }
-            """;
-
-        var proposals = """
-            {
-              "summary": "Add the requested colony note.",
-              "proposals": [
-                { "file_path": "docs/COLONY-NOTE.md", "change_type": "add", "old_content": null,
-                  "new_content": "# Colony note\n\nWritten through the real lifecycle.\n",
-                  "reason": "The mission asks for a documentation note.", "risk": "low" }
-              ]
-            }
-            """;
-
         var book = new ScriptBook()
-            .Role("planner", plan)
+            .Role("planner", ScriptedPlan)
             .Role("researcher", "SCRIPTED: the note should describe the colony.")
-            .Role("coder", proposals)
+            .Role("coder", ScriptedProposals)
             .Role("verifier", "SCRIPTED: the proposal addresses the request.")
             .Role("tester", "SCRIPTED: checks recorded.")
             .Role("soldier", "SCRIPTED: no security concern.")
