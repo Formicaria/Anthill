@@ -1,5 +1,53 @@
 # ANTHILL Changelog
 
+## v0.3.8.85 - the archivist nobody could stop
+
+**PLAN.md §2 R3.** One cancellation cell was recorded not-applicable because the planner cannot
+assign the role. Looking at the role's OWN dispatch site instead found that nothing had ever stopped
+it there.
+
+### A cancelled mission still ran the archivist, and still learned from it
+
+`Queen.RunArchivistAfterFinalization` invokes the handler directly, once the canonical evaluation is
+persisted. No plan, no scheduler, no task row — **so it could not inherit v0.3.8.81's stop check,
+and it had none of its own.** A mission the operator cancelled reached finalization, ran the
+archivist over whatever partial work existed, and ingested the memory candidates it proposed.
+
+R3 names this damage in the sentence it opens with: *a cancelled tester leaves a process, a
+cancelled archivist leaves a **memory***. The memory is the one that outlives the mission and that
+R8's reputation routing is scheduled to read.
+
+**Fixed** by reading the persisted `MissionEvaluation.OutcomeCode` — the authority this method's own
+documentation already insists on ("the CANONICAL outcome is handed over rather than re-derived") —
+and skipping on `cancelled` or `timed_out` through the existing `archivist_skipped` event under a
+distinct reason. Checked before `TryClaimArchivist`, so a skipped run does not consume the
+once-per-evaluation claim.
+
+### Why five releases of a cancellation harness missed it
+
+The no-positive-memory property watches `memory_candidate_archived` events. A stopped mission
+usually gives the archivist nothing worth proposing — **so the assertion passed because the archivist
+found nothing, not because it was prevented from looking.** A property that holds by luck is
+indistinguishable from one that holds by design right up until the day it stops, and this one had no
+mechanism behind it at all.
+
+### The cell, and what "not applicable" was actually saying
+
+`archivist/before_dispatch` was marked not-applicable at v0.3.8.82 on the grounds that
+`AntRegistry.ValidateTask` refuses a planned archivist. That is true of the PLANNER and false of the
+ROLE — and the matrix's own framing invited the mistake, because "before dispatch" had silently come
+to mean "before the SCHEDULER dispatches it" for a fixture that drives every role by planning a task.
+
+The cell is now driven. **32 of 48 cancellation cells are live, none cited, 16 not-applicable.**
+
+### What R3 still needs
+
+`medic/before_dispatch`, `medic/awaiting_dependency` and `archivist/awaiting_dependency`. The medic's
+two need a critical task that fails under adaptive mission control, cancelled around — its trigger is
+real and this fixture does not produce one. The archivist's remaining cell is stronger than
+not-applicable-by-planner and is now stated as such: it is never SCHEDULED at all, so there is no
+queue entry for a dependency to hold up, now or ever.
+
 ## v0.3.8.84 - the citation that was never true, and the soldier that disproved it
 
 **PLAN.md §2 R3.** The last two cancellation cells were cited as unreachable. They were reachable

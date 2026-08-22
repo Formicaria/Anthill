@@ -862,6 +862,41 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
             return;
         }
 
+        // v0.3.8.85 (PLAN.md §2 R3) — A STOPPED MISSION IS NOT A LESSON.
+        //
+        // This dispatch had no cancellation check of any kind, and unlike every other role's it
+        // could not have inherited one: it does not go through `ExecutionService.RunSingleTask`, so
+        // there is no task row, no scheduler, and nothing for v0.3.8.81's stop check to run against.
+        // A mission the operator stopped still reached here, still ran the archivist over whatever
+        // partial work existed, and still ingested its memory candidates.
+        //
+        // R3 names this exact damage — "a cancelled tester leaves a process, a cancelled archivist
+        // leaves a MEMORY" — and the memory is the one that outlives the mission and feeds R8. The
+        // cancellation harness did not catch it because it asserts on `memory_candidate_archived`
+        // events, and a stopped mission usually yields the archivist nothing to propose. The
+        // property held by luck rather than by design, which is the weakest way for a property to
+        // hold and indistinguishable from holding properly until the day it does not.
+        //
+        // Read from the PERSISTED canonical evaluation, not from an ambient token: this method's own
+        // documentation says the outcome is handed over rather than re-derived precisely so nothing
+        // downstream computes its own answer, and `MissionEvaluation` already maps the stop reason to
+        // this vocabulary. Checked BEFORE `TryClaimArchivist` so a skipped run does not consume the
+        // once-per-evaluation claim.
+        if (evaluation.OutcomeCode is Outcomes.MissionOutcome.Cancelled
+                                   or Outcomes.MissionOutcome.TimedOut)
+        {
+            Memory.LogEvent(mission.Id, "archivist_skipped",
+                $"Archivist did not run: the mission was {evaluation.OutcomeCode} and a stopped "
+              + "mission's partial work is not a lesson to remember.",
+                metadata: new()
+                {
+                    ["role"] = "archivist",
+                    ["outcome_code"] = evaluation.OutcomeCode,
+                    ["reason"] = "mission_stopped",
+                });
+            return;
+        }
+
         if (!_ants.TryGetValue("archivist", out var archivist)) return;
 
         // v0.3.8.41 — once per evaluation. Memory candidates are the input to skill-candidate
