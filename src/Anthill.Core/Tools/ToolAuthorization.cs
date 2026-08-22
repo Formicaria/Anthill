@@ -120,8 +120,25 @@ public static class ToolAuthorization
         if (!ctx.AllowedTools.Contains(toolName))
             return Decision.Deny($"tool '{toolName}' is not allowlisted for role '{ctx.RoleId}'");
         var contract = AntExecutionCatalog.ContractFor(ctx.RoleId);
-        if (contract is not null && !contract.RequiredCapabilities.All(ctx.GrantedCapabilities.Contains))
-            return Decision.Deny($"role '{ctx.RoleId}' is missing required capabilities for dispatch");
+        if (contract is not null)
+        {
+            // NAME THEM. v0.3.8.87 — the refusal used to say only "is missing required capabilities",
+            // which tells an operator that the capability gate said no and leaves them to work out
+            // which capability, and therefore which switch. The set is small and known here; making
+            // the reader reconstruct it from two catalogs is how a gate's message becomes a riddle.
+            var missing = contract.RequiredCapabilities
+                .Where(c => !ctx.GrantedCapabilities.Contains(c))
+                .OrderBy(c => c, StringComparer.Ordinal)
+                .ToList();
+            if (missing.Count > 0)
+                return Decision.Deny(
+                    $"role '{ctx.RoleId}' is missing required capabilities for dispatch: "
+                  + string.Join(", ", missing)
+                  + ". This colony grants: "
+                  + (ctx.GrantedCapabilities.Count == 0
+                        ? "(none)"
+                        : string.Join(", ", ctx.GrantedCapabilities.OrderBy(c => c, StringComparer.Ordinal))));
+        }
         return Decision.Ok;
     }
 }

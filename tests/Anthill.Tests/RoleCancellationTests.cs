@@ -237,14 +237,133 @@ public class RoleCancellationTests : IDisposable
             cells.Add(new(role, "awaiting_dependency", How.Harness,
                 "RoleCancellationTests.ACancelledMission_SkipsWorkWaitingOnADependency"));
 
-        foreach (var role in Roles.Where(r => !PlannerAssignable(r)))
-            cells.Add(new(role, "awaiting_dependency", How.NotApplicable,
-                "a role the planner may not assign has no planned task that can sit waiting on a "
-              + "dependency. The archivist's case is stronger than the medic's and worth stating: it "
-              + "is never SCHEDULED at all — the Queen invokes it directly after finalization — so "
-              + "there is no queue entry for a dependency to hold up, now or ever."));
+        // v0.3.8.87 — THE MEDIC'S REASON WAS TRUE OF THE PLANNER AND SILENT ABOUT THE RUNTIME, which
+        // is the correction v0.3.8.83 made one cell over and this one did not receive.
+        //
+        // It read: "a role the planner may not assign has no planned task that can sit waiting on a
+        // dependency." Both halves are true and the conclusion does not follow. The medic DOES get a
+        // task — two paths create one at runtime — so "no PLANNED task" answers a question adjacent
+        // to the one the cell asks, and passes.
+        //
+        // The runtime answer is stronger and is the one that belongs here. Every path that creates a
+        // medic task sets ParentTaskIds and leaves DependsOn empty:
+        //
+        //   * `ExecutionService.ApplyAdaptiveDecision`'s repair arm — `ParentTaskIds = { broken.Id }`,
+        //     no DependsOn. Compare the delta-plan arm four lines below, which sets BOTH for the
+        //     verifier it inserts. The difference is deliberate rather than an oversight: the medic's
+        //     parent is a task that has already FAILED, and a dependency edge onto a failed task is
+        //     one the scheduler can never satisfy. The medic would not wait, it would deadlock.
+        //   * `IngestHandoffs` — `created.ParentTaskIds = { sourceTask.Id }`, and `HandoffGate`
+        //     constructs the task with no DependsOn at all. This is the tester's required
+        //     "check failure needs diagnosis" handoff, the medic's other real trigger.
+        //
+        // So the point does not exist for this role because of how its work is scheduled, not
+        // because of who may schedule it. `ANoFailureTriggeredRole_IsEverGivenADependency` holds the
+        // creation sites to that.
+        cells.Add(new("medic", "awaiting_dependency", How.NotApplicable,
+            "no path that creates a medic task gives it a dependency, and none can: the medic's "
+          + "input is a task that has already failed, so an edge onto it would never be satisfiable "
+          + "and the role would deadlock rather than wait. Both creation sites — the adaptive "
+          + "controller's repair arm and HandoffGate — set ParentTaskIds and leave DependsOn empty, "
+          + "which is lineage without a wait. Pinned by "
+          + "RoleCancellationTests.ANoFailureTriggeredRole_IsEverGivenADependency."));
+
+        cells.Add(new("archivist", "awaiting_dependency", How.NotApplicable,
+            "this role is never SCHEDULED at all — the Queen invokes it directly after finalization, "
+          + "so there is no queue entry for a dependency to hold up, now or ever. The strongest "
+          + "not-applicable in the matrix, and the only one that does not depend on how a task "
+          + "happens to be constructed."));
 
         return cells.ToArray();
+    }
+
+    /// <summary>
+    /// NO FAILURE-TRIGGERED ROLE IS EVER GIVEN A DEPENDENCY. v0.3.8.87.
+    ///
+    /// The medic's `awaiting_dependency` cell is not-applicable because of how its work is
+    /// SCHEDULED, and a claim about scheduling has to be checked against the scheduling code — the
+    /// old claim was about the planner, which is a different question that happens to have the same
+    /// answer today. See the cell's Detail for why an edge onto the medic's parent could never be
+    /// satisfied: the parent has already failed, so the role would deadlock rather than wait.
+    ///
+    /// A source guard, because the property is the ABSENCE of a line. Nothing can be run to observe
+    /// a dependency that is never set; what can be observed is that no creation site sets one, and
+    /// the day someone adds `DependsOn` beside `AssignedAnt = "medic"` — reasonably, to express
+    /// lineage — this fails and points at the cell that has to be re-decided.
+    ///
+    /// Reads through <see cref="SourceText.CodeOnly"/> and skips this file, for the reason this
+    /// repository has learned three times: the paragraph above quotes the construct it forbids.
+    /// </summary>
+    [Fact]
+    public void ANoFailureTriggeredRole_IsEverGivenADependency()
+    {
+        var failureTriggered = AntExecutionCatalog.Contracts
+            .Where(kv => kv.Value.Scheduling == SchedulingMode.FailureTriggered)
+            .Select(kv => kv.Key)
+            .ToList();
+
+        Assert.True(failureTriggered.Count > 0,
+            "no role is FailureTriggered any more, so this guard ranges over nothing. The medic was "
+          + "the case it was written for; if its scheduling changed, its awaiting_dependency cell "
+          + "has to be re-decided rather than left inherited.");
+
+        var offenders = new List<string>();
+        var sitesSeen = 0;
+
+        foreach (var file in SourceText.ProductionFiles(SourceText.RepoRoot()))
+        {
+            var code = SourceText.CodeOnly(File.ReadAllText(file));
+            foreach (var body in ObjectInitializers(code, "new Task"))
+            {
+                sitesSeen++;
+                foreach (var role in failureTriggered)
+                {
+                    if (!body.Contains($"AssignedAnt = \"{role}\"", StringComparison.Ordinal)) continue;
+                    if (!body.Contains("DependsOn", StringComparison.Ordinal)) continue;
+                    offenders.Add($"{Path.GetFileName(file)} constructs a '{role}' task with DependsOn");
+                }
+            }
+        }
+
+        Assert.True(sitesSeen >= 5,
+            $"only {sitesSeen} `new Task` initializer(s) were found in src/. The runtime creates more "
+          + "than that; the shape this guard scans for has moved and it is now checking nothing.");
+
+        Assert.True(offenders.Count == 0,
+            "a FailureTriggered role is being given a scheduling dependency:\n  "
+          + string.Join("\n  ", offenders)
+          + "\nIts parent is a task that has already failed, so the edge can never be satisfied and "
+          + "the role deadlocks instead of waiting. If lineage is what was wanted, ParentTaskIds "
+          + "carries it — that is why the adaptive controller's repair arm sets one and not the "
+          + "other. If a dependency really is intended, this role's awaiting_dependency cell stops "
+          + "being not-applicable and has to be driven.");
+    }
+
+    /// <summary>
+    /// Every <c>{ ... }</c> body that follows <paramref name="construct"/>, brace-matched.
+    ///
+    /// Not a regex: these initializers nest (<c>ParentTaskIds = new List&lt;string&gt; { id }</c>),
+    /// and a non-greedy match would stop at the inner close brace and read half a site as a whole
+    /// one — which is how a source guard quietly starts covering less than it says.
+    /// </summary>
+    private static IEnumerable<string> ObjectInitializers(string code, string construct)
+    {
+        var at = 0;
+        while ((at = code.IndexOf(construct, at, StringComparison.Ordinal)) >= 0)
+        {
+            at += construct.Length;
+
+            var open = at;
+            while (open < code.Length && char.IsWhiteSpace(code[open])) open++;
+            if (open >= code.Length || code[open] != '{') continue;
+
+            var depth = 0;
+            for (var i = open; i < code.Length; i++)
+            {
+                if (code[i] == '{') depth++;
+                else if (code[i] == '}' && --depth == 0) { yield return code[open..(i + 1)]; at = i; break; }
+            }
+        }
     }
 
     /// <summary>Every role × point is decided exactly once. An undecided cell reads as covered.</summary>
