@@ -79,23 +79,33 @@ public class ColonyAcceptanceTests : IDisposable
     [Fact]
     public void ScenarioA_AResearchMission_RunsTheRealPath_AndLeavesAReconstructableRecord()
     {
-        var queen = NewQueen("a.db");
         string? missionId = null;
         // The archivist is gate-controlled; the scenario asserts its candidates, so its gate is
         // open for the run — the same pattern every specialist-gate test uses.
-        var specialistsWere = Anthill.Core.Configuration.AnthillRuntime.EnableSpecialistAntExecution;
-        var archivistWas = Anthill.Core.Configuration.AnthillRuntime.EnableArchivistAnt;
+        //
+        // v0.3.8.87 — AND THE GATE IS OPENED BEFORE THE QUEEN IS BUILT, which is the half that was
+        // missing. `Queen`'s constructor snapshots role availability
+        // (`AntExecutorCatalog.Initialize`) from the flags as they stand at that moment, so a gate
+        // opened afterwards opens nothing for that colony. `NewQueen` used to be the first line of
+        // this test: the archivist was unavailable for the whole run, and the candidates asserted
+        // below existed only when an earlier test had left the flag on. `RosterGates.Capture` in the
+        // fixture also forces `AnthillRuntime.Initialize` first, so the constructor's own one-shot
+        // config load can no longer overwrite what is set here.
+        var gatesWere = RosterGates.Capture();
+        Queen queen;
         try
         {
             Anthill.Core.Configuration.AnthillRuntime.EnableSpecialistAntExecution = true;
+            Anthill.Core.Configuration.AnthillRuntime.ActivationTier = Anthill.Core.Agents.ActivationTier.Full;
             Anthill.Core.Configuration.AnthillRuntime.EnableArchivistAnt = true;
+
+            queen = NewQueen("a.db");
             queen.RunMission("Summarize in one sentence what the ANTHILL framework does.",
                 onMissionCreated: id => missionId = id);
         }
         finally
         {
-            Anthill.Core.Configuration.AnthillRuntime.EnableSpecialistAntExecution = specialistsWere;
-            Anthill.Core.Configuration.AnthillRuntime.EnableArchivistAnt = archivistWas;
+            RosterGates.Restore(gatesWere);
         }
         Assert.NotNull(missionId);
 

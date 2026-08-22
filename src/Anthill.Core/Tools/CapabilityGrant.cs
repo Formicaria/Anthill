@@ -75,4 +75,49 @@ public static class CapabilityGrant
             Capability.RepoRead, Capability.RepoSearch, Capability.ProcessExecuteReadonly,
             Capability.NetworkHttpPublic, Capability.ModelInvoke, Capability.RepoPatchPropose,
         };
+
+    /// <summary>
+    /// Capability names that EXIST and that no colony role may ever hold, each with the reason.
+    /// v0.3.8.87.
+    ///
+    /// Seven of the fourteen names in <see cref="Capability"/> are granted by nothing and required by
+    /// nobody. That is not automatically wrong — <c>repo.patch.apply</c> is withheld on purpose and
+    /// the comment above says so — but "deliberately withheld" and "nobody got round to wiring it"
+    /// look identical from outside, and the difference is the whole reason a permission vocabulary is
+    /// worth reading. v0.3.8.86 found the same shape in the event vocabulary, where two constants
+    /// nothing published were NEAR-MISSES of real event names and a subscriber filtering on either
+    /// matched nothing forever.
+    ///
+    /// So the set is enumerated rather than inferred. <c>CapabilityDeclarationTests</c> requires every
+    /// declared capability to be granted, required, or named here — which means a new capability
+    /// cannot join the vocabulary and quietly reach nobody, and a name listed here cannot start being
+    /// granted without someone removing it from this list and reading the reason first.
+    ///
+    /// This is a REGISTER, never a gate. Nothing consults it to decide anything at runtime; refusal
+    /// comes from <see cref="Resolve"/> not granting the capability, exactly as before.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> DeliberatelyUngranted { get; } =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [Capability.RepoPatchApply] =
+                "no mission agent applies a patch. Applying is the approval pipeline's alone, and this "
+              + "name exists separately from repo.patch.propose precisely so Resolve can grant one and "
+              + "withhold the other.",
+            [Capability.RepoWriteSandbox] =
+                "no role writes to a sandbox today. Held back rather than deleted because sandboxed "
+              + "execution is a runtime switch (AnthillRuntime.EnableSandboxExecution) and the "
+              + "capability is what a future grant would name. Until v0.3.8.87 ToolCatalog declared "
+              + "the BUILDER as requiring it — a requirement nothing could ever satisfy, in a catalog "
+              + "nothing enforced.",
+            [Capability.NetworkHttpHomelab] =
+                "homelab HTTP belongs to the Homelab module's action runners, which authorize through "
+              + "ActionExecutor rather than through a colony role's capability grant.",
+            [Capability.ProxmoxRead] = "Proxmox is reached by the Homelab module, not by a colony role.",
+            [Capability.ProxmoxVmStart] = "as proxmox.read — module surface, not a role capability.",
+            [Capability.ProxmoxVmStop] = "as proxmox.read — module surface, not a role capability.",
+            [Capability.ProxmoxSnapshotCreate] = "as proxmox.read — module surface, not a role capability.",
+            [Capability.CredentialUse] =
+                "no role is granted credential use. Secrets reach a module through its own configured "
+              + "client, never through a mission agent's grant set.",
+        };
 }

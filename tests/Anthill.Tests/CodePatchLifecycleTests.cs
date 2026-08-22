@@ -36,6 +36,19 @@ public class CodePatchLifecycleTests : IDisposable
     private readonly string _workspaceRootWas;
     private readonly bool _sandboxWas;
 
+    /// <summary>
+    /// v0.3.8.87 — the roster, captured through `RosterGates` like the other five lifecycle
+    /// fixtures, and captured as a FIELD so it runs before anything in the constructor body.
+    ///
+    /// `RosterGates.Capture` forces `AnthillRuntime.Initialize` first. Three tests in this file set
+    /// roster flags and then built a Queen, whose constructor runs that one-shot bootstrap and
+    /// reloads every flag from the operator's config before snapshotting role availability. Their
+    /// settings survived only if an earlier test in the process had already triggered it — so
+    /// `TheMemoryTrail`, which happened to run first, lost its scribe and its archivist while
+    /// `AllTwelveRoles` twenty lines below kept both from identical code.
+    /// </summary>
+    private readonly RosterGates.Snapshot _gatesWere = RosterGates.Capture();
+
     public CodePatchLifecycleTests()
     {
         _dir = Path.Combine(Path.GetTempPath(), "anthill-lifecycle-" + Guid.NewGuid().ToString("N")[..10]);
@@ -57,6 +70,7 @@ public class CodePatchLifecycleTests : IDisposable
         AnthillRuntime.UseOllama = _useOllamaWas;
         AnthillRuntime.AllowedWorkspaceRoot = _workspaceRootWas;
         AnthillRuntime.EnableSandboxExecution = _sandboxWas;
+        RosterGates.Restore(_gatesWere);
         try { Directory.Delete(_dir, recursive: true); } catch { }
     }
 
@@ -113,6 +127,15 @@ public class CodePatchLifecycleTests : IDisposable
     [Fact]
     public void AScriptedPatchMission_ReachesTheCoder_MaterializesTheSet_AndInsertsTheReviewRoles()
     {
+        // v0.3.8.87 — the roster this test asserts on, stated. It asserts the review roles are
+        // POLICY-INSERTED, and a role whose gate is shut is skipped with `policy_review_skipped`
+        // rather than inserted — so without this the test was asking whether the operator's own
+        // config.json happened to have the tester switched on. The fixture restores these.
+        AnthillRuntime.EnableSpecialistAntExecution = true;
+        AnthillRuntime.ActivationTier = Anthill.Core.Agents.ActivationTier.Full;
+        AnthillRuntime.EnableTesterAnt = true;
+        AnthillRuntime.EnableSoldierAnt = true;
+
         var book = new ScriptBook()
             .Role("planner", ScriptedPlan)
             .Role("researcher", "SCRIPTED: the note should state that the scripted colony wrote it.")
@@ -198,6 +221,17 @@ public class CodePatchLifecycleTests : IDisposable
             .Role("medic", "SCRIPTED: the check failure is environmental to this tree; re-propose.")
             .Role("scribe", "SCRIPTED: recorded.")
             .Role("archivist", "SCRIPTED: recorded.");
+
+        // v0.3.8.87 — the three roles the repair loop is made of. The tester must run and FAIL for
+        // the loop to exist at all, and the medic must be reachable for the diagnosis this asserts;
+        // with their gates shut the mission proposes once, nothing reviews it, and the assertion
+        // below reads as "the repair generation produced no patch set" when no repair was ever
+        // triggered. The fixture restores these.
+        AnthillRuntime.EnableSpecialistAntExecution = true;
+        AnthillRuntime.ActivationTier = Anthill.Core.Agents.ActivationTier.Full;
+        AnthillRuntime.EnableTesterAnt = true;
+        AnthillRuntime.EnableSoldierAnt = true;
+        AnthillRuntime.EnableMedicAnt = true;
 
         AnthillRuntime.UseOllama = true;
         AnthillRuntime.AllowedWorkspaceRoot = _workspace;
@@ -309,6 +343,14 @@ public class CodePatchLifecycleTests : IDisposable
             AnthillRuntime.EnableUiCartographerAnt = true;
             AnthillRuntime.EnableScribeAnt = true;
             AnthillRuntime.EnableArchivistAnt = true;
+            // v0.3.8.87 — the other three, and the tier above all of them. These blocks named the
+            // three roles the test was written for and inherited the rest, so a twelve-role
+            // assertion depended on the tester, soldier and medic being on in whatever ran before
+            // it. The tier is a ceiling over every flag, and nothing here had ever pinned it.
+            AnthillRuntime.ActivationTier = Anthill.Core.Agents.ActivationTier.Full;
+            AnthillRuntime.EnableTesterAnt = true;
+            AnthillRuntime.EnableSoldierAnt = true;
+            AnthillRuntime.EnableMedicAnt = true;
             AnthillRuntime.UseOllama = true;
             AnthillRuntime.AllowedWorkspaceRoot = _workspace;
 
@@ -412,6 +454,14 @@ public class CodePatchLifecycleTests : IDisposable
             AnthillRuntime.EnableUiCartographerAnt = true;
             AnthillRuntime.EnableScribeAnt = true;
             AnthillRuntime.EnableArchivistAnt = true;
+            // v0.3.8.87 — the other three, and the tier above all of them. These blocks named the
+            // three roles the test was written for and inherited the rest, so a twelve-role
+            // assertion depended on the tester, soldier and medic being on in whatever ran before
+            // it. The tier is a ceiling over every flag, and nothing here had ever pinned it.
+            AnthillRuntime.ActivationTier = Anthill.Core.Agents.ActivationTier.Full;
+            AnthillRuntime.EnableTesterAnt = true;
+            AnthillRuntime.EnableSoldierAnt = true;
+            AnthillRuntime.EnableMedicAnt = true;
             AnthillRuntime.UseOllama = true;
             AnthillRuntime.AllowedWorkspaceRoot = _workspace;
 
@@ -634,6 +684,14 @@ public class CodePatchLifecycleTests : IDisposable
             AnthillRuntime.EnableUiCartographerAnt = true;
             AnthillRuntime.EnableScribeAnt = true;
             AnthillRuntime.EnableArchivistAnt = true;
+            // v0.3.8.87 — the other three, and the tier above all of them. These blocks named the
+            // three roles the test was written for and inherited the rest, so a twelve-role
+            // assertion depended on the tester, soldier and medic being on in whatever ran before
+            // it. The tier is a ceiling over every flag, and nothing here had ever pinned it.
+            AnthillRuntime.ActivationTier = Anthill.Core.Agents.ActivationTier.Full;
+            AnthillRuntime.EnableTesterAnt = true;
+            AnthillRuntime.EnableSoldierAnt = true;
+            AnthillRuntime.EnableMedicAnt = true;
             AnthillRuntime.UseOllama = true;
             AnthillRuntime.AllowedWorkspaceRoot = _workspace;
             // The ant's own gate, checked before it ever reaches a tool. The tool it then reaches is

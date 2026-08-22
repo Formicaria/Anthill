@@ -68,11 +68,37 @@ internal static class RosterGates
         bool Specialists, ActivationTier Tier, bool Tester, bool Soldier,
         bool Medic, bool Archivist, bool UiCartographer, bool Scribe);
 
-    public static Snapshot Capture() => new(
+    /// <summary>
+    /// v0.3.8.87 — FORCES THE BOOTSTRAP FIRST, and that one line is what makes every other helper
+    /// here reliable.
+    ///
+    /// This file's header already names the ordering dependency: the flags only mean anything once
+    /// `AnthillRuntime.Initialize` has run. What it did not do was close it. `Initialize` is
+    /// ONE-SHOT (`if (_initialised &amp;&amp; !force) return;`) and it projects the on-disk config over
+    /// every roster flag — and `Queen`'s constructor calls it, then builds the role-availability
+    /// snapshot from the result.
+    ///
+    /// So a test that set the roster and then constructed the FIRST Queen in the process had its
+    /// roster silently discarded and ran against the operator's `config.json` instead; the same test
+    /// running second kept it, because the bootstrap short-circuits. Whether a test got the colony it
+    /// asked for depended on its position in the run, and — because the flags come from a file on the
+    /// developer's machine — on whose machine it ran.
+    ///
+    /// Forcing it here, in the one function every helper below and every fixture above goes through,
+    /// fixes all of them at once. Idempotent, so it costs nothing on any later call.
+    ///
+    /// It does NOT help a test that constructs its Queen before opening the gate: that colony's
+    /// snapshot is already taken. Nothing in this file can fix that one — the call has to move.
+    /// </summary>
+    public static Snapshot Capture()
+    {
+        AnthillRuntime.Initialize();
+        return new(
         AnthillRuntime.EnableSpecialistAntExecution, AnthillRuntime.ActivationTier,
         AnthillRuntime.EnableTesterAnt, AnthillRuntime.EnableSoldierAnt,
         AnthillRuntime.EnableMedicAnt, AnthillRuntime.EnableArchivistAnt,
         AnthillRuntime.EnableUiCartographerAnt, AnthillRuntime.EnableScribeAnt);
+    }
 
     public static void Restore(Snapshot s)
     {

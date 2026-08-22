@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.86**.
+Shipping release: **v0.3.8.87**.
 
 ---
 
@@ -277,15 +277,28 @@ outcome.
   nothing worth proposing — so the assertion passed because the archivist found nothing, not because
   it was prevented from looking.
 - ◻ **The three cells that remain: `medic/before_dispatch`, `medic/awaiting_dependency` and
-  `archivist/awaiting_dependency`.** These are not-applicable to a
-  fixture that drives a role by planning a task for it, and that is a contract fact rather than a
-  gap in the harness: `AntRegistry.ValidateTask` refuses a planner-produced task for a
-  `FailureTriggered` role, because the medic diagnoses a failure that must already exist. Reaching
-  its two needs a critical task that fails under adaptive mission control, cancelled around. The
-  archivist's remaining cell is stronger than not-applicable-by-planner and worth stating as such:
-  it is never SCHEDULED at all, so there is no queue entry for a dependency to hold up, now or
-  ever. Named individually because `RoleQualificationRecordTests` asserts this document keeps
-  naming whatever is not driven.
+  `archivist/awaiting_dependency`.** Named individually because `RoleQualificationRecordTests`
+  asserts this document keeps naming whatever is not driven. They are three different kinds of
+  remaining, and v0.3.8.87 separated them — the first is a gap, the other two are facts.
+
+  - `medic/before_dispatch` — **a real gap.** The point exists: the adaptive controller admits a
+    repair task to the scheduler and a wave later dispatches it, so there is a window in which the
+    operator's stop must land. Reaching it needs a critical task that fails under adaptive mission
+    control, with the cancel arriving between admission and dispatch. Not driven yet.
+  - `medic/awaiting_dependency` — **not-applicable on a runtime fact, since v0.3.8.87.** Its old
+    reason was "a role the planner may not assign has no planned task that can sit waiting", which
+    is true, and answers a question adjacent to the one the cell asks: the medic DOES get a task,
+    from two runtime paths. Neither gives it a dependency, and neither can. Its parent is a task
+    that has already FAILED, so an edge onto that parent would never be satisfiable and the role
+    would deadlock rather than wait — which is why `ApplyAdaptiveDecision`'s repair arm sets
+    `ParentTaskIds` and leaves `DependsOn` empty while the delta-plan arm four lines below sets
+    both. `HandoffGate` likewise constructs its task with no dependency.
+    `RoleCancellationTests.ANoFailureTriggeredRole_IsEverGivenADependency` holds the creation sites
+    to that, so the claim now fails when the code changes rather than when someone rereads it.
+  - `archivist/awaiting_dependency` — **the strongest not-applicable in the matrix.** The role is
+    never SCHEDULED at all; the Queen invokes it directly after finalization, so there is no queue
+    entry for a dependency to hold up, now or ever. It does not depend on how a task happens to be
+    constructed.
 
 > **Exit gate.** All forty-eight cancellation cells decided AND every driven cell proved to have run
 > the plan its fixture wrote, with the medic's and archivist's four universal cells driven from their
@@ -399,6 +412,20 @@ Everything above, pointed at a real repository with a real pull request at the e
   removed, both directions enforced by `EventVocabularyTests`)*. Publishers still pass literals rather
   than the constants; that conversion is a separate, larger change and the guard makes the drift it
   would prevent impossible to widen in the meantime — a new literal must be declared to pass.
+- ✅ **One catalog declares what a role may do** *(v0.3.8.87 — `ToolCatalog` removed,
+  `CapabilityDeclarationTests` added)*. `AntExecutionCatalog` and `ToolCatalog` both declared each
+  role's capabilities and side effects; only the first was enforced, and the second was read by the
+  gate that decides whether a planned task may enter the queue. They disagreed about capabilities for
+  four roles, about side effects for two, and about six roles the second did not list at all — which
+  is where v0.3.8.76's deleted `model.invoke` lie survived. The pre-execution permission check that
+  lived beside it, `ToolCatalog.CanRun`, had no production caller in its whole life; its one caller
+  was a test that built both sides itself.
+- ◻ **The `Capability` vocabulary is half-unwired, and now says so.** Seven of the fourteen names are
+  granted by nothing and required by nobody. `repo.patch.apply` is withheld on purpose and always
+  was; the Proxmox, homelab and credential names belong to a module surface that authorizes through
+  `ActionExecutor` instead. Each is recorded in `CapabilityGrant.DeliberatelyUngranted` with its
+  reason, and a new capability can no longer join the vocabulary and quietly reach nobody. Wiring or
+  removing them is R6/R10 work, not cleanup.
 
 **Not a tail.** Fully async execution, ~166 runtime statics, VRAM scheduling, multi-platform QA,
 event-loss accounting and deployment verification are independent workstreams. The statics in
@@ -895,7 +922,13 @@ without anything noticing.
 **Declared, and reaching nobody.** `RequiredInputArtifactTypes`, `EvidenceKinds.SchemaValid` and
 `Task.InputArtifactIds` were each declared before anything populated them, and each looked exactly
 like a working feature for releases. `Evidence.Judges` joined them inside a single release — added
-and read by nothing until the same release closed it.
+and read by nothing until the same release closed it. v0.3.8.86 found the vocabulary case: two event
+constants nothing published, both NEAR-MISSES of real event names, so a subscriber filtering on
+either compiled, ran, and matched nothing forever. v0.3.8.87 found the version with a passing test
+attached — `ToolCatalog.CanRun`, a pre-execution permission check with no production caller in its
+whole life, whose only caller was a test that built the descriptor AND the grant set itself. The
+sharper reading is the one `FailureClassNames` had already written down about a different bug: *no
+test anywhere ran a value from a real producer into a real consumer.*
 
 **A declaration that disagrees with the runtime.** The verifier's contract said planner-selectable
 for six releases after the runtime guaranteed insertion. `scheduling_mode` is reported by the API and
@@ -920,6 +953,17 @@ the provider (it said no) and then derived a pheromone delta from `result.Ok` (w
 negatively). The transient reader was right and the durable one was wrong, so the disagreement was
 invisible in the mission and permanent in the memory. **The lesson is not "look harder" — it is that
 the second reader must ask the first**, which is what a shared predicate makes structural.
+
+v0.3.8.87 found the widest distance instead of the shortest: two whole catalogs, in two assemblies,
+declaring what each role may do. `AntExecutionCatalog` was enforced at DISPATCH; `ToolCatalog` was
+read at ADMISSION and checked against nothing. They disagreed about capabilities for four roles,
+about side effects for two, and about six roles the second did not list — where the projection's
+fallback supplied `model.invoke`, the exact lie v0.3.8.76 had deleted from the archivist's contract
+and which survived in the other book because nobody read both at once. The sharpest single
+disagreement: `ToolCatalog` required `repo.write.sandbox` for the builder, a capability
+`CapabilityGrant` is written never to grant, in a comment that names it. A requirement nothing could
+satisfy, beside a check nothing ran. **The fix is the one `FailureClassNames` already established —
+not "pick a book", but remove the choice.**
 
 **A vocabulary that named half of what it described.** `EventTypes` declared 69 event constants
 against 134 the runtime emits, said in its own header that it "was READ, out of the working tree,
