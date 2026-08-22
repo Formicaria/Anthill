@@ -128,12 +128,20 @@ public class RoleCancellationTests : IDisposable
             cells.Add(new(role, "before_dispatch", How.Harness,
                 "RoleCancellationTests.ACancelledMission_StopsEveryRoleBeforeItActs"));
 
-        foreach (var role in Roles.Where(r => !PlannerAssignable(r)))
-            cells.Add(new(role, "before_dispatch", How.NotApplicable,
-                "this role has no planner-assigned dispatch to cancel before it: its contract is "
-              + "FailureTriggered or PostFinalization, so it runs in response to a trigger and "
-              + "AntRegistry.ValidateTask refuses a planned task for it. The point exists for its "
-              + "real trigger and needs a fixture that produces one."));
+        // v0.3.8.85 — THE ARCHIVIST'S before_dispatch POINT EXISTS AT A DIFFERENT DISPATCH SITE, and
+        // once you look there it is drivable. `Queen.RunArchivistAfterFinalization` invokes the
+        // handler directly after the canonical evaluation is persisted — no plan, no scheduler, no
+        // task row — so "cancel before this role acts" means cancelling the MISSION and asking
+        // whether finalization still reached it. It did, and nothing stopped it.
+        cells.Add(new("archivist", "before_dispatch", How.Harness,
+            "RoleCancellationTests.ACancelledMission_DoesNotRunTheArchivistAfterFinalization"));
+
+        cells.Add(new("medic", "before_dispatch", How.NotApplicable,
+            "this role has no planner-assigned dispatch to cancel before it: its contract is "
+          + "FailureTriggered, so it runs in response to a failure that must already exist and "
+          + "AntRegistry.ValidateTask refuses a planned task for it. The point exists for its real "
+          + "trigger and needs a fixture that produces one — a critical task that fails under "
+          + "adaptive mission control."));
 
         // ---- during generation: only the five roles that can reach a model --------------------
         //
@@ -231,9 +239,10 @@ public class RoleCancellationTests : IDisposable
 
         foreach (var role in Roles.Where(r => !PlannerAssignable(r)))
             cells.Add(new(role, "awaiting_dependency", How.NotApplicable,
-                "the same contract fact as before_dispatch: a role the planner may not assign has no "
-              + "planned task that can sit waiting on a dependency. Its trigger-driven dispatch has "
-              + "the point and this fixture does not produce one."));
+                "a role the planner may not assign has no planned task that can sit waiting on a "
+              + "dependency. The archivist's case is stronger than the medic's and worth stating: it "
+              + "is never SCHEDULED at all — the Queen invokes it directly after finalization — so "
+              + "there is no queue entry for a dependency to hold up, now or ever."));
 
         return cells.ToArray();
     }
@@ -671,6 +680,55 @@ public class RoleCancellationTests : IDisposable
         // a scheduling-mode change that made one of these plannable should show up as this test
         // failing and the matrix being updated with the evidence.
         Assert.DoesNotContain(role, planned);
+    }
+
+    /// <summary>
+    /// A CANCELLED MISSION DOES NOT RUN THE ARCHIVIST. v0.3.8.85 (PLAN.md §2 R3).
+    ///
+    /// THE CELL THIS CLOSES, and why it was not reachable from the theories above. Every other role
+    /// is driven by planning a task for it; the archivist is `PostFinalization` and
+    /// `AntRegistry.ValidateTask` refuses a planned one, so v0.3.8.82 recorded its `before_dispatch`
+    /// cell as not-applicable. That was true of the PLANNER and false of the role: the archivist has
+    /// a dispatch site of its own — `Queen.RunArchivistAfterFinalization`, invoked directly once the
+    /// canonical evaluation is persisted — and "cancel before this role acts" is a perfectly
+    /// meaningful question to ask there.
+    ///
+    /// WHAT THE ANSWER WAS. Nothing stopped it. That path does not go through
+    /// `ExecutionService.RunSingleTask`, so it could not inherit v0.3.8.81's stop check, and it had
+    /// no check of its own: a mission the operator cancelled still ran the archivist over its
+    /// partial work and still ingested the candidates it proposed.
+    ///
+    /// AND WHY THIS HARNESS MISSED IT for five releases while asserting "no positive memory". The
+    /// existing property watches `memory_candidate_archived` events, and a stopped mission usually
+    /// gives the archivist nothing worth proposing — so the assertion passed because the archivist
+    /// found nothing, not because it was prevented from looking. A property that holds by luck is
+    /// indistinguishable from one that holds by design until the day it stops.
+    /// </summary>
+    [Fact]
+    public void ACancelledMission_DoesNotRunTheArchivistAfterFinalization()
+    {
+        var (queen, missionId) = RunCancelled("researcher", alreadyCancelled: true);
+
+        var ran = queen.Memory.GetRecentEvents(200, "archivist_ran", missionId);
+        Assert.True(ran.Count == 0,
+            "the archivist ran after a cancelled mission finalized. A stopped mission's partial work "
+          + "is not a lesson, and the memory it writes is the thing that outlives the mission."
+          + WhatHappened(queen, missionId));
+
+        // Skipped for the RIGHT reason. The same event already fires when the role is switched off,
+        // and "no lessons were extracted" and "the archivist is unavailable" must not look the same
+        // — which is the distinction that event was created to preserve in the first place.
+        var skipped = queen.Memory.GetRecentEvents(200, "archivist_skipped", missionId);
+        Assert.True(skipped.Count > 0,
+            "the archivist neither ran nor recorded why it did not. Silence here is the state this "
+          + "event exists to prevent." + WhatHappened(queen, missionId));
+
+        Assert.Contains(skipped, e =>
+            (e.GetValueOrDefault("message")?.ToString() ?? "").Contains("cancelled", StringComparison.OrdinalIgnoreCase)
+         || (e.GetValueOrDefault("metadata_json")?.ToString() ?? "").Contains("mission_stopped", StringComparison.Ordinal));
+
+        // And the property that was holding by luck now holds because nothing was asked.
+        Assert.Empty(queen.Memory.GetRecentEvents(200, "memory_candidate_archived", missionId));
     }
 
     /// <summary>
