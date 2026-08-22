@@ -1,5 +1,129 @@
 # ANTHILL Changelog
 
+## v0.3.8.87 - two books said what a role may do
+
+**Ongoing cleanup, and the widest instance of an old shape.** Two catalogs declared each role's
+capabilities and side effects. Only one was enforced. The gate that decides whether a planned task
+may enter the execution queue read the other.
+
+### The two books
+
+| | declares | read by | enforced? |
+|---|---|---|---|
+| `AntExecutionCatalog` | all twelve roles | `ToolAuthorization.Evaluate` at **dispatch** | yes — refuses a dispatch the grant does not cover |
+| `ToolCatalog` | six roles | `TaskContract.FromTask` → `ContractGate.Admit` → `Planner`, at **admission** | no — nothing ever checked it against a grant |
+
+They disagreed:
+
+| role | dispatch enforces | admission projected |
+|---|---|---|
+| `researcher` | model.invoke, repo.read, repo.search | model.invoke |
+| `coder` | model.invoke, repo.patch.propose | + repo.read |
+| `verifier` | model.invoke | + repo.read |
+| `builder` | model.invoke | + **repo.write.sandbox** |
+
+`repo.write.sandbox` is a capability `CapabilityGrant` is written **never** to grant, in a comment
+that names it. The builder therefore declared, at the admission gate, a requirement no colony could
+ever satisfy — and nothing noticed, because nothing checked.
+
+Side effects diverged too. Every one of the twelve contracts declares `AllowsSideEffects: false` —
+including the coder, which PROPOSES patches and never applies them. `ToolCatalog` called the coder
+and the builder `reversible` with manual compensation.
+
+### And the lie that was already deleted once
+
+Six roles — archivist, medic, tester, soldier, scribe, ui_cartographer — had no `ToolCatalog` entry,
+so `FromTask` fell back to a synthesized declaration requiring `model.invoke`. Five of them hold no
+`ModelRouter` at all.
+
+The archivist is the sharp one. **v0.3.8.76 removed exactly this lie from its contract**, replacing
+`model.invoke` with an honest empty requirement, and added a rule that makes empty mean something: a
+role may require nothing only if it declares no tools, no model calls, no side effects and no patch
+proposals. That change landed in one book. The other kept telling the lie, because `TaskContract`'s
+schema rejected an empty capability list — so the one role that genuinely requires nothing could not
+be expressed, and every honest caller had to lie to the guard.
+
+### What changed
+
+- **`ToolCatalog` and `ToolDescriptor` are gone.** Not reconciled — removed, the way
+  `FailureClassNames` removed the choice between two wire formats rather than picking one. The
+  contracts declare what a role requires and what it may do; `TaskContract.FromTask` derives the
+  side-effect projection from those same flags.
+- **`ToolCatalog.CanRun` is gone with them.** The pre-execution permission check had no production
+  caller in its entire life. Its one caller was a test that built the descriptor AND the grant set
+  itself and asserted they matched — *no test anywhere ran a value from a real producer into a real
+  consumer*, which is the sentence `FailureClassNames` already carries about a different bug. That
+  test now evaluates `ToolAuthorization` against a grant `CapabilityGrant.Resolve` actually produced.
+- **`TaskContract.Validate`'s capability guard is SPLIT, not softened.** An unknown ant is still
+  refused, for the same reason and with a message that now says which layer refused it. A contract
+  that declares zero capabilities is admissible, because a lookup that SUCCEEDED and returned nothing
+  is an answer. The new `CapabilitiesDeclaredByContract` flag can only be set by a successful lookup,
+  so an absent role cannot widen the guard.
+- **`ToolAuthorization`'s refusal names the capabilities.** It said "is missing required
+  capabilities" and left the operator to work out which — and therefore which switch. It now names
+  the missing ones and what the colony grants.
+- **`CapabilityGrant.DeliberatelyUngranted`** — the seven capability names granted by nothing and
+  required by nobody, each with its reason. `repo.patch.apply` is withheld on purpose; the Proxmox,
+  homelab and credential names belong to a module surface that authorizes elsewhere. "Withheld" and
+  "forgotten" used to look identical from outside.
+
+### The guards
+
+`CapabilityDeclarationTests` — five assertions, each running a real producer into a real consumer:
+every required capability is in the vocabulary; `CapabilityGrant.Full` covers everything an equipped
+colony resolves (two answers to "what can be granted" that nothing had compared); every declared
+capability is granted, required, or on the withheld register; the admission projection equals what
+the dispatch gate enforces, per role; a role requiring nothing is admissible while an unknown role is
+still refused. Plus a source guard that fails if a second declaration reappears in `ToolVocabulary.cs`,
+and a non-vacuity check on both the vocabulary and the contract set.
+
+**Deliberately NOT added:** "every capability a role requires can be granted by some colony" is
+already proved by `StageBConsequentialTests.AFullyEquippedColony_SatisfiesEveryContractsRequirements`.
+Restating it in the new file would have been this release's own defect with a new file name.
+
+### R3 — the medic's dependency cell was true of the planner and silent about the runtime
+
+`medic/awaiting_dependency` was not-applicable because "a role the planner may not assign has no
+planned task that can sit waiting on a dependency". True, and adjacent: the medic DOES get a task,
+from two runtime paths. The correction v0.3.8.83 made one cell over, arriving one cell late.
+
+The runtime reason is stronger. Neither path gives the medic a dependency and neither can — its
+parent is a task that has already FAILED, so an edge onto it would never be satisfiable and the role
+would deadlock rather than wait. `ApplyAdaptiveDecision`'s repair arm sets `ParentTaskIds` and leaves
+`DependsOn` empty; the delta-plan arm four lines below sets both, for a verifier whose parents
+completed. `HandoffGate` constructs its task with no dependency at all.
+`ANoFailureTriggeredRole_IsEverGivenADependency` — a brace-matching source guard over every
+`new Task` initializer in `src/` — holds the creation sites to that, so the claim fails when the code
+changes rather than when someone rereads the comment.
+
+### And the ordering defect this release tripped over — pre-existing, and worth the detour
+
+`.87` first came back with four lifecycle tests red. They are not caused by anything here: running the
+same four against **v0.3.8.86** under the same filter reproduces every failure. What changed was
+collection ordering, and what that exposed was a real dependency.
+
+`Queen`'s constructor calls `AnthillRuntime.Initialize()` — ONE-SHOT, and it projects the on-disk
+config over every roster flag — and then builds the role-availability snapshot from the result. Two
+consequences:
+
+- A test that set `EnableTesterAnt = true` and then constructed the **first** Queen in the process
+  had its setting silently overwritten by the operator's own `config.json`. The identical test
+  running second kept it, because the bootstrap short-circuits. `TheMemoryTrail` and `AllTwelveRoles`
+  have byte-identical setup and only the second one passed.
+- `ScenarioA` built its Queen **before** opening the archivist's gate. The snapshot was already
+  taken, so the archivist was unavailable for the entire run — and the memory candidates it asserts
+  existed only when an earlier test had left the flag on.
+
+Because the flags come from a file on the developer's machine, which tests were lucky differed per
+machine. `RosterGates` — which has existed since v0.3.8.41 for exactly this hazard, and whose header
+already names it — now forces the bootstrap inside `Capture()`, which fixes every caller at once. The
+five tests that set the roster by hand now state the roles they need, and `ScenarioA`'s Queen moved
+after its gate. No production behaviour changed.
+
+The matrix is unchanged at **32 driven live, 0 cited, 16 not-applicable**. `medic/before_dispatch`
+remains a real gap and PLAN.md now says so in those words, separately from the two cells that are
+facts.
+
 ## v0.3.8.86 - the vocabulary that named half the colony
 
 **Ongoing cleanup, and the fourth place this repository has found the same shape.**
