@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.88**.
+Shipping release: **v0.3.8.89**.
 
 ---
 
@@ -333,8 +333,24 @@ Budget the run at one release and its findings at one to four. The single unstru
 at v0.3.8.73 produced three real defects, one of which — the operator report having no compiler —
 was architectural.
 
+- ✅ **The recorder, built and proved before any live run** *(v0.3.8.89)*.
+  `LiveQualificationRecord` assembles the exit gate's telemetry table out of records the colony
+  already keeps — provenance for the model that actually served each call, `model_call` events for
+  tokens and durations, typed failure classes, the consumption ledger for what each role really read,
+  and `MissionReconstruction` for whether the run replays. `LiveQualificationRecordTests` holds it to
+  `QUALIFICATION.md`'s table one-to-one and drives it against a scripted mission, so the live run is
+  an operator pressing go rather than a live run plus an argument about whether its telemetry was
+  complete.
+- ◻ **Cost has no producer, and that blocks part of this gate.** The table asks for cost in the
+  operator's currency; the runtime records tokens and nothing converts them. The recorder reports the
+  gap with its reason rather than assuming a rate. Closing it is a per-provider price table as
+  operator configuration — a small, separate change, and one that must not be done inside the
+  recorder.
+- ◻ **The runs themselves.** Ollama, an OpenAI-compatible provider, and an agent CLI.
+
 > **Exit gate.** A recorded run per provider with complete telemetry, and `QUALIFICATION.md` updated
-> from "never happened" to the run's own evidence.
+> from "never happened" to the run's own evidence. The recorder is ✅ at v0.3.8.89; the gate stays
+> open on the runs, and on cost, which no run can supply until pricing is configuration.
 
 ---
 
@@ -941,6 +957,16 @@ attached — `ToolCatalog.CanRun`, a pre-execution permission check with no prod
 whole life, whose only caller was a test that built the descriptor AND the grant set itself. The
 sharper reading is the one `FailureClassNames` had already written down about a different bug: *no
 test anywhere ran a value from a real producer into a real consumer.*
+
+**A filter that could not match, guarding the property that mattered most.** v0.3.8.89. Five
+assertions queried `memory_candidate_archived`; the ingest emits `memory_candidate`. One of the five
+was the cancellation harness's "no memory survives a stopped mission" — the property R3's header
+singles out as the one that outlives the mission — and it was checking for an event no producer
+writes. v0.3.8.85 wrote the sentence that names it ("held by luck rather than by design") and
+attributed it to the archivist usually having nothing to propose; the real reason is that the filter
+matched nothing. Found from the CONSUMER side: an event type queried by name is a position that can
+only be an event type, and four of eighteen such names were declared nowhere — a blind spot in
+v0.3.8.86's publication sweep, which by design reads only literals handed directly to `LogEvent`.
 
 **A declaration that disagrees with the runtime.** The verifier's contract said planner-selectable
 for six releases after the runtime guaranteed insertion. `scheduling_mode` is reported by the API and
