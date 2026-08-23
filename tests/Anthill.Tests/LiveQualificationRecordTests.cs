@@ -245,16 +245,21 @@ public class LiveQualificationRecordTests : IDisposable
     }
 
     /// <summary>
-    /// COST IS RECORDED AS UNMEASURED, ALWAYS, AND NEVER COMPUTED.
+    /// COST IS A GAP ON THIS RUN, AND THE GAP NAMES WHICH LAYER DECLINED. v0.3.8.90.
     ///
-    /// The document's table asks for cost "in the operator's currency". `ModelRouter` records tokens
-    /// and nothing anywhere records money: converting one to the other needs a per-provider price
-    /// table that does not exist as configuration. A rate assumed inside the recorder would put a
-    /// figure in front of an operator that no part of this system can stand behind — so the gap is
-    /// stated, and R4's exit gate cannot be read as met on this field.
+    /// Until v0.3.8.90 the answer here was "always a gap, because nothing converts tokens to money".
+    /// `ModelPricing` is now that converter, so the assertion has to change shape rather than be
+    /// deleted — and what it asserts is the part that must never change: the SCRIPTED provider
+    /// reports no usage, and a run whose usage is unknown cannot be priced at any rate.
+    ///
+    /// The distinction is the whole point. "No price table" and "the provider reported nothing" are
+    /// different operator actions — one is a line of configuration, the other is a fact about the
+    /// provider — so the note must say which, rather than leaving the operator to infer it from an
+    /// empty field. Here it is the second, and it stays the second no matter what the operator later
+    /// writes into `model_pricing`.
     /// </summary>
     [Fact]
-    public void Cost_IsAlwaysRecordedAsAGap_NeverAsANumber()
+    public void Cost_IsAGapThatNamesWhyItIsAGap_NeverAnAssumedRate()
     {
         var (memory, missionId) = RunScriptedMission();
         var record = LiveQualificationRecord.For(memory, memory, memory, missionId);
@@ -262,12 +267,42 @@ public class LiveQualificationRecordTests : IDisposable
         var cost = record.Fields.Single(f => f.Field == QualificationFields.Cost);
 
         Assert.False(cost.Measured,
-            "cost is reported as measured. Nothing in this runtime converts tokens to currency; if "
-          + "that changed, the price table is now a real input and this guard should assert the "
-          + "conversion rather than the gap.");
+            "cost is reported as measured on a run whose provider reported no token usage. Zero "
+          + "tokens at any rate is zero money, and 'this run was free' is a claim an operator would "
+          + "act on. Unknown usage must stay unknown.");
         Assert.Null(cost.Value);
-        Assert.Contains("price table", cost.Note, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(cost, record.Unmeasured);
+
+        // Names the layer that said no. `ScriptedProvider` returns Usage = ModelUsage.Unknown, so the
+        // refusal is the silent-provider one, NOT the missing-table one — and a note that said
+        // "no price table" here would be describing a different problem from the one the run has.
+        Assert.Contains("reported no token usage", cost.Note, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// AND THE RECORDER ASKS THE PRICING LAYER RATHER THAN CARRYING A RATE OF ITS OWN.
+    ///
+    /// `PLAN.md` states the constraint in the same sentence that names the gap: closing it is
+    /// "a small, separate change, and one that must not be done inside the recorder". A rate computed
+    /// here would be a second implementation of a rule that belongs in one place, and the recorder's
+    /// whole claim is that it assembles records rather than producing them.
+    ///
+    /// Asserted against the SOURCE because the property is structural: there is no input to this
+    /// recorder that would make an inlined multiplication observable at runtime once `ModelPricing`
+    /// also exists and agrees with it. That is the shape a source assertion is for.
+    /// </summary>
+    [Fact]
+    public void TheRecorder_AsksThePricingLayer_AndDoesNotPriceAnythingItself()
+    {
+        var source = File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
+            "src", "Anthill.Core", "Readiness", "LiveQualificationRecord.cs"));
+        var code = SourceText.CodeOnly(source);
+
+        Assert.Contains("ModelPricing.Quote(", code, StringComparison.Ordinal);
+
+        Assert.DoesNotContain("1_000_000", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("InputPerMillion", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("OutputPerMillion", code, StringComparison.Ordinal);
     }
 
     /// <summary>

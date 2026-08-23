@@ -675,16 +675,33 @@ public sealed partial class SqliteMemory
         return Query(sql, args.ToArray());
     }
 
+    /// <summary>
+    /// The counters behind the operator's system summary. v0.3.8.90 — rebuilt on the shared set.
+    ///
+    /// TWO IMPLEMENTATIONS OF ONE RULE, and they had already disagreed. This method spelled the
+    /// failure vocabulary as seven SQL literals while <see cref="GetRecentFailureEvents"/> built the
+    /// same query from <c>AnthillRuntime.FailureEventTypes</c>. Three of those literals named events
+    /// nothing emits (see the note on that set), so `failure_event_count` under-counted by exactly
+    /// the failures an operator most wants counted, and `model_call_count` — filtered on
+    /// `model_call_completed`, a name that has never existed — was structurally always zero while
+    /// being rendered as a real figure on `/status`.
+    ///
+    /// Now parameterised from the one set, so the two can no longer drift. A count that is always
+    /// zero is worse than a missing count: the operator reads "no model calls" and believes it.
+    /// </summary>
     public Dictionary<string, object?> SummarizeEvents()
     {
+        var failureTypes = AnthillRuntime.FailureEventTypes.ToList();
+        var failurePlaceholders = string.Join(",", failureTypes.Select((_, i) => $"@f{i}"));
+        var failureArgs = failureTypes.Select((t, i) => ($"@f{i}", (object?)t)).ToArray();
+
         var summary = Query(
-            @"SELECT COUNT(*) AS event_count,
-                COALESCE(SUM(CASE WHEN event_type IN ('task_failed','tool_failed','patch_apply_failed',
-                    'patch_proposal_parse_failed','mission_timeout','task_timeout','model_call_failed')
+            $@"SELECT COUNT(*) AS event_count,
+                COALESCE(SUM(CASE WHEN event_type IN ({failurePlaceholders})
                     THEN 1 ELSE 0 END),0) AS failure_event_count,
-                COALESCE(SUM(CASE WHEN event_type='task_completed' THEN 1 ELSE 0 END),0) AS task_completed_count,
-                COALESCE(SUM(CASE WHEN event_type='model_call_completed' THEN 1 ELSE 0 END),0) AS model_call_count,
-                MAX(created_at) AS last_event_at FROM events").FirstOrDefault() ?? new();
+                COALESCE(SUM(CASE WHEN event_type='{EventTypes.TaskCompleted}' THEN 1 ELSE 0 END),0) AS task_completed_count,
+                COALESCE(SUM(CASE WHEN event_type='{EventTypes.ModelCall}' THEN 1 ELSE 0 END),0) AS model_call_count,
+                MAX(created_at) AS last_event_at FROM events", failureArgs).FirstOrDefault() ?? new();
         summary["top_event_types"] = Query(
             "SELECT event_type, COUNT(*) AS count FROM events GROUP BY event_type ORDER BY count DESC, event_type ASC LIMIT 12");
         return summary;
@@ -710,15 +727,24 @@ public sealed partial class SqliteMemory
     /// </summary>
     internal static string SignalCategoryFor(string trailType) => (trailType ?? "").ToLowerInvariant() switch
     {
+        // v0.3.8.90: four arms removed — "objective", "objective_pattern", "model_provider" and
+        // "provider". None is a declared `TrailKind`, and `PheromoneVocabularyTests` makes writing an
+        // undeclared kind a build failure, so no trail could ever have reached them. Harmless in
+        // effect (the `_` fallback caught nothing) and worth deleting anyway: a switch arm for a
+        // value that cannot arrive reads as coverage. The three existing pheromone guards check
+        // declared→written, written→declared and declared→categorised; none checked
+        // categorised→declared, which is the direction these four lived in. That fourth direction is
+        // now `EverySignalCategoryArm_NamesADeclaredTrailKind`.
+        //
         // Which ant/worker/task/pattern verifiably works — the strategy signals planning may read.
         "planner_pattern" or "worker_pattern" or "task_pattern" or "capability"
-            or "ant" or "worker" or "task_type" or "objective" or "objective_pattern" => "procedural_learning",
+            or "ant" or "worker" or "task_type" => "procedural_learning",
         // Which model route serves a role well — a routing preference, also plannable.
         "model_route" => "routing_preference",
         // Advisory source heuristics — never proven truth.
         "source_domain" => "quality_signal",
         // Did the tool/provider answer — reliability, not strategy.
-        "external_research_tool" or "tool" or "model_provider" or "provider" => "reliability_signal",
+        "external_research_tool" or "tool" => "reliability_signal",
         _ => "operational_telemetry",
     };
 

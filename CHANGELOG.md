@@ -1,3 +1,162 @@
+## v0.3.8.90 - the operator's price table, and four routes that could not be taken
+
+**R4's last non-run item closes, and a sweep for v0.3.8.89's defect class finds ten more — including
+two escalation paths to a human that have never once reached one.**
+
+### Cost has a producer now, and it is the operator
+
+v0.3.8.89 shipped the live-qualification recorder with one field permanently empty: the runtime
+measured tokens and nothing converted them to money. `ModelPricing` is that converter.
+
+```json
+"model_pricing_currency": "USD",
+"model_pricing": {
+  "ollama/*":           { "input_per_million": 0,    "output_per_million": 0 },
+  "openai/gpt-4o-mini": { "input_per_million": 0.15, "output_per_million": 0.60 }
+}
+```
+
+Configuration rather than code because a rate compiled into this repository is wrong for somebody the
+day it ships and wrong for everybody eventually. `provider/*` prices a whole provider, which is how a
+LOCAL run reports a **measured zero** instead of an unknown — and the colony does not assume that
+itself, because "local models are free" is a claim about somebody's hardware and electricity, not a
+fact this process can observe.
+
+**The refusals are the feature.** Three of them, deliberately distinguishable, because they are three
+different things for an operator to do: no table configured, a provider that reported no usage, and a
+served model the table does not cover. Nine tests, most of them about those.
+
+And the rule underneath: **a partially priced run is not priced.** If one served model has no entry,
+pricing the rest produces a total lower than the run's real cost, wearing a decimal point and a
+currency symbol, with nothing to say it is partial. An absent figure prompts a question; an
+understated one does not. Same reasoning as tokens: a provider that reports nothing is unknown, not
+zero.
+
+`ModelPricing.Quote` takes its table as an argument rather than reading `AnthillRuntime`. That is
+v0.3.8.88's lesson applied before it could bite again — a one-shot bootstrap overwrites statics, so
+code that reads one at the wrong moment reads the wrong value — and it is why the pricing tests need
+no collection, no roster snapshot and no globals. The recorder asks and prints the answer, including
+when the answer is a refusal; a guard asserts the recorder contains no arithmetic of its own, which
+is PLAN.md's own condition on this change.
+
+**R4's exit gate is now open on nothing but the runs themselves.**
+
+### The sweep: a filter that could not match
+
+v0.3.8.89 named the class — `memory_candidate_archived`, an event five assertions watched for and
+nothing has ever emitted. This release swept every vocabulary in the tree for the same shape and
+found ten more. Six are fixed here; four are recorded in PLAN.md with their file and line, because
+each needs a decision rather than an edit.
+
+#### The expensive one: two escalations to a human that reached nobody
+
+Four routes to the builder asked for task type **`build`**. The builder's contract declares
+`SupportedTaskTypes: S("build_answer", "synthesis")`, and `HandoffGate.Evaluate` refuses a handoff
+whose required type the destination does not support — exact set membership, no normalisation. So all
+four were refused, every time, for as long as they have existed.
+
+The refusal was not a no-op. Three of the four are `Required: true`, so it set `DeterministicBlock` on
+the source task and logged `required_handoff_refused` — *"mission cannot be verified"*. The soldier's
+block on a blocking security finding, and the medic's escalation of an environmental failure, are the
+two paths whose entire purpose is to reach a person. Both instead marked the mission unverifiable and
+reached nobody, and it read as a strict colony rather than a broken route.
+
+Renaming the contract to accept `build` was considered and rejected: `build` is also a verifier name
+(`VerificationResult.Verifier == "build"`), so admitting it would put one string in two vocabularies.
+The call sites were wrong.
+
+Nothing caught it because the two guards that look at task types look elsewhere —
+`RosterContractTests` at the types the PLANNER emits, `RoleCancellationTests` at the harness's own
+map. A handoff's `RequiredTaskType` is a third population nothing was reading, which is the
+adjacent-question defect in the form of two guards that between them cover everything except the
+thing that broke. `HandoffTaskTypeTests` now reads it, from source, resolved against the live catalog.
+
+#### The operator's diagnostics, filtered on three names that do not exist
+
+`AnthillRuntime.FailureEventTypes` had seven members and three named nothing: `task_timeout` (the real
+name is `task_failed_timeout`), `model_call_failed` (never existed — the router emits one `model_call`
+per call and carries the outcome in metadata), and `mission_timeout`, which is real as a **stop
+reason** and not as an event type. A timed-out mission and a dead provider — the two failures an
+operator most needs to see — were the two that could not appear, while the four working members
+returned enough rows that the panel never looked broken.
+
+`SummarizeEvents` had the same list again as SQL literals, which is the second half of the defect: two
+implementations of one rule, and its `model_call_count` filtered on `model_call_completed`, so a
+figure rendered on `/status` was structurally always zero. Both now build from the one set, which is
+spelled through `EventTypes` rather than as loose strings.
+
+#### The notification centre has never announced a success
+
+`app.js` filtered on `mission_complete`. The colony emits `mission_completed`. The pattern is anchored
+`^(...)$`, so one missing letter meant the notification simply never appeared — while every other
+alternative in the same pattern (failures, patches, approvals) had a real producer and arrived
+normally. A feature that works for bad news and silently not for good news is the hardest kind of
+broken to notice. `mission_partial` added at the same time.
+
+#### The autonomy dedupe could not see a successful run
+
+`Strategist.IsNearDuplicate` filtered `mission_status` on `"complete" or "partial"`. The column holds
+`MissionOutcome` codes — `completed_verified`, `completed_unverified`, `partial` — and has never held
+`"complete"`. So the guard that stops the Director regenerating the same goal was blind to exactly the
+runs it exists to compare against, while its own reason string says "a recent completed run".
+`ObjectiveProgress.Assess` reads the same column correctly: two consumers, one column, one of them
+wrong.
+
+Not fixed with `MissionOutcome.IsPositiveSuccess`, deliberately — that predicate answers "was this a
+success", and dedupe asks "did a comparable run already happen". A run that finished without
+producing evidence still produced a goal.
+
+#### Four switch arms nothing could reach
+
+`SignalCategoryFor` had arms for `objective`, `objective_pattern`, `model_provider` and `provider` —
+none a declared `TrailKind`, and writing an undeclared kind already fails the build. Harmless in
+effect, because the `_` fallback caught nothing, and deleted anyway: an unreachable arm reads as
+coverage, and the next person adding a kind sees a plausible arm and assumes it is wired. The three
+existing pheromone guards check declared→written, written→declared and declared→categorised; the
+direction these lived in — categorised→declared — is now the fourth.
+
+### A reset that forgot what only the operator knew
+
+Found while adding the price table. `ResetConfig` restores tunables to their defaults and preserves
+"connection settings", implemented as an object initializer plus a hand-written list of key names
+returned to the console — two copies of one rule, and the priority route (v3.8.1) had fallen out of
+both. A reset silently discarded the operator's answer to "which model do I actually want".
+
+A price table would have been worse: typed-in reference data this process cannot rediscover, whose
+loss turns every later cost report back into a gap with no indication anything was dropped. Both are
+preserved now, and `ConfigResetTests` pins the initializer and the returned list to each other,
+because a rule expressed as data drifts where the compiler cannot see it.
+
+### Six event names declared, and the blind spot that hid them
+
+`tool_completed`, `tool_failed`, `patch_applied`, `patch_apply_failed`, and the three mission
+terminals `mission_completed` / `mission_partial` / `mission_failed`. All were emitted; none was
+declared, because v0.3.8.86's detector reads a literal handed to `LogEvent` as its first argument and
+these arrive through a wrapper, a ternary, or a first argument containing a call — which the
+`[^,()]+` in the pattern rejects.
+
+They are declared here because two consumers needed to reference them by name rather than re-spell
+them, and a hand-spelled name is one keystroke from matching nothing — which is precisely what
+happened to the notification centre. Roughly a dozen names remain emitted and undeclared; widening
+the detector is a sweep of its own and is now named in PLAN.md rather than half-done here.
+
+### What this release deliberately did not fix
+
+A second sweep, over configuration rather than vocabularies, found a cluster worth its own release:
+25 parsed keys `config.example.json` never documents — including `roster_profile` and `disabled_roles`,
+the only working off-switches for seven specialist ants the example shows as `false` and the roster
+profile then forces to `true`; three documented keys read by nothing; nine `RuntimeOptions` fields
+nobody reads, against that file's own stated rule; and an `api_token_env` whose fallback is the
+static's prior value, so redirecting it to an unset variable keeps authenticating against
+`ANTHILL_API_TOKEN`. The token precedence is security-adjacent and the roster one is a safety claim
+the file gets wrong. Both are in PLAN.md with their sites.
+
+Four filter findings are likewise recorded rather than half-fixed — `AntEvidence.Kind == "tool"`,
+`ArtifactSchemas.ForAntKind` missing an arm for the kind the coder actually emits, ADR-004 evidence
+kinds tested against citation kinds, and five `VerificationPolicy` keys no task type can reach. Each
+needs a decision about which side is wrong, and the `ForAntKind` one may double-store if changed
+naively.
+
 # ANTHILL Changelog
 
 ## v0.3.8.89 - the record, and the assertion that could not fail
