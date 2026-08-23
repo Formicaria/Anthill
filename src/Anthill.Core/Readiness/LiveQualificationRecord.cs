@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Anthill.Core.Configuration;   // ModelPricing / ModelCallUsage, and the operator's price table
 using Anthill.Core.Domain;
 using Anthill.Core.Memory;
 using Anthill.SDK.Artifacts;
@@ -170,6 +171,20 @@ public sealed record LiveQualificationRecord
         }
 
         var missionMs = MissionWallTime(tasks);
+
+        // Priced PER CALL, not per role. A role can be served by two models in one mission — the
+        // priority route, a fallback after a failure — and pricing a role's summed tokens against
+        // whichever model happened to be first would attribute the expensive model's tokens to the
+        // cheap one's rate. Per call is the only granularity at which the arithmetic is true.
+        var quote = ModelPricing.Quote(
+            AnthillRuntime.ModelPricingTable,
+            AnthillRuntime.ModelPricingCurrency,
+            calls.Select(e => new ModelCallUsage(
+                Meta(e, "provider") ?? "",
+                Meta(e, "model") ?? "",
+                IntOrNull(e, "prompt_tokens"),
+                IntOrNull(e, "completion_tokens"))));
+
         var anyTokens = roles.Values.Any(r => r.PromptTokens is not null || r.CompletionTokens is not null);
         var anyProvider = roles.Values.Any(r => r.Provider is { Length: > 0 });
 
@@ -197,17 +212,15 @@ public sealed record LiveQualificationRecord
                     + "nothing rather than zero"
                     : "no provider in this run reported usage — unknown, not zero"),
 
-            // THE ONE FIELD WITH NO PRODUCER, and it is stated rather than computed.
+            // THE FIELD THAT HAD NO PRODUCER UNTIL v0.3.8.90, and still refuses to invent one.
             //
-            // `ModelRouter` records tokens; nothing anywhere records money. Turning tokens into
-            // currency needs a per-provider price table, which is operator configuration that does
-            // not exist — and inventing a rate here would put a number in front of an operator that
-            // no part of this system can stand behind. Recorded as a gap so the exit gate cannot be
-            // read as met on this field.
-            new(QualificationFields.Cost, null, false,
-                "no price table exists. The runtime records prompt and completion tokens per call and "
-              + "nothing converts them to currency; a rate assumed here would be a fabricated figure "
-              + "in an operator-facing report. Wiring it needs per-provider pricing as configuration."),
+            // v0.3.8.89 recorded this as a permanent gap: the runtime measured tokens and nothing
+            // converted them to money. `ModelPricing` is that converter, and it is deliberately NOT
+            // implemented here — PLAN.md's own wording, "a small, separate change, and one that must
+            // not be done inside the recorder". The recorder asks and prints the answer, including
+            // when the answer is a refusal, and the refusal names which layer declined: no table, a
+            // provider that reported no usage, or a served model the table does not cover.
+            new(QualificationFields.Cost, quote.Rendered, quote.Measured, quote.Reason),
 
             new(QualificationFields.WallTime,
                 missionMs is { } ms
@@ -355,6 +368,16 @@ public sealed record LiveQualificationRecord
     /// The null is the point. Summing absent values to zero would turn "this provider does not report
     /// usage" into "this provider used no tokens", and the second is a claim about the run.
     /// </summary>
+    /// <summary>
+    /// One numeric metadata value from ONE event, or null when that event did not report it.
+    ///
+    /// The single-event twin of <see cref="SumNullable"/>, and it exists for the same reason: a call
+    /// whose provider reported no usage must stay null all the way into the price quote, because
+    /// zero tokens at any rate is zero money and that is a claim about the run.
+    /// </summary>
+    private static int? IntOrNull(Dictionary<string, object?> row, string key) =>
+        Meta(row, key) is { } raw && int.TryParse(raw, out var value) ? value : null;
+
     private static int? SumNullable(List<Dictionary<string, object?>> rows, string key)
     {
         var total = 0;

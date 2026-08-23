@@ -99,6 +99,10 @@
     "fallback":   { "provider": "ollama", "model": "llama3.1:8b" }
   },
 
+  "_comment_pricing": "v0.3.8.90 — what your provider charges, per MILLION tokens, in your currency. EMPTY BY DEFAULT and deliberately so: the colony measures tokens, and only you know what they cost. Keys are 'provider/model'; 'provider/*' prices a whole provider, which is how a local Ollama run reports a MEASURED zero instead of an unknown (the colony will not assume local is free on your behalf). A run is priced only when EVERY model it used has an entry and every call reported usage — a partial total would understate what the run cost, and an understated figure in an operator report is worse than an absent one. Read by the live qualification record; see docs/QUALIFICATION.md.",
+  "model_pricing_currency": "USD",
+  "model_pricing": {},
+
   "_comment_features": "All feature gates default safe. Enable what you need.",
   "web_search_enabled":        true,
   "patch_application_enabled": true,
