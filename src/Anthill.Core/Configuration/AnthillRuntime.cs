@@ -15,7 +15,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "0.3.8.90";
+    public const string Version = "0.3.8.91";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -89,6 +89,9 @@ public static class AnthillRuntime
         ["read_providers"] = true, ["manage_providers"] = true,
         // Operator shell console: admin-only interactive host terminal. Gated a second time by
         // operator_shell_enabled at runtime; never granted to coordinators (see UserRoles).
+        // v0.3.8.91: the PERMISSION still ships granted to admins — a coordinator never gets it
+        // (UserRoles) — but the FEATURE now ships off (operator_shell_enabled defaults false), so
+        // the gate that matters is the runtime one. Two gates, and the outer one is closed.
         ["operator_shell"] = true,
         // Homelab (v1.9.0, NORTH_STAR D3). Reads + integration management ship enabled. The two
         // action permissions gained their implementation in v2.3.0 (approval-gated actions) but
@@ -228,6 +231,12 @@ public static class AnthillRuntime
     public static IReadOnlyDictionary<string, ModelPrice> ModelPricingTable =
         new Dictionary<string, ModelPrice>(StringComparer.OrdinalIgnoreCase);
     public static string ModelPricingCurrency = "USD";
+
+    /// <summary>
+    /// v0.3.8.91 — force the first-run setup token even on a loopback bind. See
+    /// <see cref="Anthill.Core.Security.SetupAuthority"/>; the default decides from the bind.
+    /// </summary>
+    public static bool RequireSetupToken;
 
     /// <summary>A priority route counts only when BOTH halves are named — a provider without a model
     /// is not a route, and silently completing it from defaults would route work somewhere nobody chose.</summary>
@@ -1068,6 +1077,15 @@ public static class AnthillRuntime
             config.ModelPricing ?? new(), StringComparer.OrdinalIgnoreCase);
         ModelPricingCurrency = string.IsNullOrWhiteSpace(config.ModelPricingCurrency)
             ? "USD" : config.ModelPricingCurrency.Trim();
+
+        // IsNullOrWhiteSpace rather than `??`: an env var set to the empty string in a compose file
+        // is an operator saying nothing, not an operator saying "false". Three neighbouring
+        // overrides in this method still use `??` and are recorded in PLAN.md as part of the
+        // configuration-authority release; a new one is not going to join them.
+        var forceSetupToken = Environment.GetEnvironmentVariable("ANTHILL_REQUIRE_SETUP_TOKEN");
+        RequireSetupToken = string.IsNullOrWhiteSpace(forceSetupToken)
+            ? config.SetupTokenRequired
+            : forceSetupToken.Trim() is "1" or "true" or "TRUE" or "True";
     }
 
     // ---- Live settings editing (web console) ------------------------------

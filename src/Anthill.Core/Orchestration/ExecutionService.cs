@@ -1301,9 +1301,47 @@ public sealed class ExecutionService : IExecutionService
         {
             try { unregistered?.Dispose(); } catch { }
             Console.Error.WriteLine($"Verification faulted for task {task.Id}: {error.Message}");
+
+            // FAILED TO RUN IS NOT THE SAME AS RAN AND PASSED, and until v0.3.8.91 this path treated
+            // them alike. The catch logged and returned; `DeterministicBlock` stayed null; and
+            // `ProcessPatchProposals` continued straight into `InsertPolicyReviewTasks` and
+            // `ApplyUnderBypass`, whose FIRST gate is `task.DeterministicBlock is not null`. So a
+            // fault in materialisation, workspace scope, the evidence store or revision registration
+            // produced no block, and under a Bypass conversation the patch was written to the
+            // operator's tree with no verification behind it at all.
+            //
+            // This method's own doc says "the approval pipeline still owns whether anything is
+            // applied". That was true when it was written and stopped being true when the bypass
+            // lane was added — a guarantee stated in one file and revoked in another. The block is
+            // the mechanism that makes the sentence true again.
+            //
+            // `??=` rather than `=`: an earlier in-band refusal already wrote a more specific
+            // reason, and overwriting it would replace "the build failed" with "verification
+            // crashed" for an operator trying to understand which.
+            task.DeterministicBlock ??=
+                $"verification could not run for patch set {patchSet.Id}: {error.Message}. A patch "
+              + "is promotable only on evidence that verification PASSED; a verifier that failed to "
+              + "execute produced no evidence, which is not the same as producing none needed.";
+
             _memory.LogEvent(mission.Id, "patch_set_verification_faulted",
                 $"Verification could not run: {error.Message}", task.Id, task.AssignedAnt,
-                new() { ["patch_set_id"] = patchSet.Id });
+                new()
+                {
+                    ["patch_set_id"] = patchSet.Id,
+                    // Named so the operator's failure view can distinguish this from a verifier that
+                    // ran and said no — different diagnosis, different fix.
+                    ["promotable"] = false,
+                    ["deterministic_block"] = task.DeterministicBlock,
+                });
+
+            try { _memory.SaveTask(mission.Id, task); }
+            catch (Exception save)
+            {
+                // The block must outlive this process. If it cannot be persisted, say so loudly
+                // rather than proceeding with an in-memory-only refusal that a restart forgets.
+                Console.Error.WriteLine(
+                    $"Could not persist the verification-fault block for task {task.Id}: {save.Message}");
+            }
         }
     }
 

@@ -18,10 +18,28 @@ Two small architectural changes underpin every deployment target in this doc, no
 - **ANTHILL now binds all interfaces (`0.0.0.0`) by default**, in every safety profile. Previously
   the default (and every safety profile's forced override) was `127.0.0.1`, which meant a fresh
   container/service install was unreachable from the network until someone edited `config.json`.
-  The actual security boundary was already the operator login (password auth, PBKDF2-SHA256,
-  role-based sessions — see [Security Model](../README.md#security-model)) and not network
-  isolation, so this changes a cosmetic default, not the real safety rail. Set `api_host` to
-  `127.0.0.1` (or `ANTHILL_HOST=127.0.0.1`) if you specifically want localhost-only.
+  The security boundary is the operator login (password auth, PBKDF2-SHA256, role-based sessions —
+  see [Security Model](../README.md#security-model)) rather than network isolation. Set `api_host`
+  to `127.0.0.1` (or `ANTHILL_HOST=127.0.0.1`) if you specifically want localhost-only.
+
+  **Corrected at v0.3.8.91.** This paragraph used to end "so this changes a cosmetic default, not
+  the real safety rail". That reasoning holds from the second account onward and fails for exactly
+  the window it was describing: on a fresh install there is no operator login yet to be the
+  boundary, so `/auth/setup` — unauthenticated by necessity while no account exists — belonged to
+  whoever reached the port first. Combined with `operator_shell_enabled`, which shipped `true` and
+  is host command execution for administrators, the wildcard bind was a real exposure and not a
+  cosmetic one.
+
+  Both halves are fixed. The operator terminal now ships **off**. And on any non-loopback bind the
+  process mints a single-use **first-run setup token** at startup, prints it to the service log,
+  writes it to `SETUP-TOKEN.txt` under the workspace directory, and requires it on `/auth/setup`.
+  Setup spends it permanently.
+
+  > **Behind a reverse proxy?** The token rule reads the BIND, not the caller's address — otherwise
+  > a proxy, whose requests all arrive from localhost, would authorise the whole internet through
+  > one hop. A proxy in front of a **loopback** bind is the one shape this process cannot see: set
+  > `setup_token_required: true` (or `ANTHILL_REQUIRE_SETUP_TOKEN=1`) so the token is required
+  > anyway.
 - **`ANTHILL_HOST` / `ANTHILL_PORT` / `ANTHILL_OLLAMA_HOST` / `ANTHILL_OLLAMA_MODEL` environment
   variables now override `config.json`**, with the highest precedence of any config source. This
   is what makes container/LXC/service deployment clean: you configure the *deployment*
@@ -38,9 +56,9 @@ Two small architectural changes underpin every deployment target in this doc, no
   show you the actual address to use instead, on both Linux and Windows, without you having to run
   `ip addr`/`ipconfig` yourself.
 
-None of this changes the actual security posture (auth is always on; see the config-level
-comments in `AnthillConfig.cs`/`config.example.json`) — it changes what a fresh install looks
-like on first boot.
+Auth is always on (see the config-level comments in `AnthillConfig.cs`/`config.example.json`), and
+from v0.3.8.91 the first-run window is covered too — see the correction above. What these changes
+alter is what a fresh install looks like on first boot.
 
 ## 2. Docker (implemented)
 

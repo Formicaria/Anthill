@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.90**.
+Shipping release: **v0.3.8.91**.
 
 ---
 
@@ -317,6 +317,70 @@ outcome.
 > medic's reason rewritten at v0.3.8.87 from a claim about the planner to a proof about the
 > scheduler, pinned by a source guard. **The graduation record — ✅ complete at v0.3.8.81. Acceptance
 > gates 1 and 2 — ✅ closed at v0.3.8.80.**
+
+---
+
+### R0 — Correctness before capability · *4–6 releases* · **in progress, gates everything**
+
+Inserted at v0.3.8.91 after an external repository review, and placed FIRST because its findings are
+not stylistic: several documents promise guarantees the runtime does not enforce, and two of them
+were reachable. Every claim was verified against the code before being accepted; two were revised
+(one worse than reported, one narrower). The reviewer's frame is the right one for this whole group:
+*the foundations are sound, and the work is deleting the alternate paths around them.*
+
+**Nothing below R0 proceeds until it closes.** No new ant, no memory feature, no broader autonomy, no
+connectors. R4's live runs wait too — a qualification report is only as true as the instrumentation
+under it.
+
+- ✅ **The window before the first administrator** *(v0.3.8.91)*. `/auth/setup` was unauthenticated
+  while `CountUsers() == 0`, on a listener every profile forces to `0.0.0.0`, with
+  `operator_shell_enabled` shipping true — reach the port, win the race, get a host shell. Closed by
+  `SetupAuthority` (single-use bootstrap token, rule written on the BIND not the caller's address),
+  a transactional `CreateInitialAdministrator`, and the operator terminal shipping off. The
+  `DEPLOYMENT.md` paragraph that argued the bind was safe is corrected rather than deleted.
+- ✅ **A verification fault fails closed** *(v0.3.8.91)*. The catch left `DeterministicBlock` null and
+  `ApplyUnderBypass` gates on exactly that, so a crashed verifier let an unverified patch reach the
+  operator's tree under a Bypass conversation.
+- ✅ **No control decision is read out of prose** *(v0.3.8.91)*. A REJECTED patch satisfied
+  `Contains("applied") && !Contains("not applied")`, returned HTTP 200 and fired a real git commit.
+- ◻ **One promotion gate.** Five paths can write a proposed patch and each checks a different set of
+  preconditions; `ApplyApprovedPatch` checks five things and reads no evidence. `PatchPromotionGate`
+  becomes the single authority: patch-set id and hash, current revision, deterministic verification
+  Passed, required tester and soldier work finished with no blocking finding, evidence bound to this
+  revision, mission not cancelled, no deterministic block, and human approval satisfied OR
+  deliberately bypassed. **Bypass skips the human, never the colony's safety system.**
+- ◻ **Patch sets apply as a unit on EVERY path.** Six places in this repository state that guarantee;
+  it is true only of the auto-apply lane. The ordinary path applies one proposal at a time, continues
+  past a failure, and git-commits each separately — so a three-file set can leave a tree that was
+  never verified plus two commits. Needs one `ApplyPatchSetTransaction`: validate every target, stage
+  every mutation, journal, apply as one, roll the set back on any failure.
+- ◻ **The live tree must match the verified tree.** `AppliedTreeHash` covers only the files the patch
+  touched, so an edit to any other file between verify and apply is invisible to both the manual and
+  the auto-apply lane. Either fingerprint the workspace against the verified base before applying, or
+  re-run the required checks against the live result with transactional rollback.
+- ◻ **File mutation and database state, one recoverable transaction.** The write happens first,
+  un-journaled, followed by four separate database updates. A crash between them leaves the patch on
+  disk and `approved` in the database — where retrying marks it *failed* on a stale base and revert
+  refuses, because only an applied patch can be reverted. Needs Prepared → Mutating → Applied →
+  Recorded with startup reconciliation, and crash injection at every transition.
+- ◻ **A refused lease must prevent execution.** `TryClaimTask` is correctly atomic and the caller
+  ignores it: the scheduler commits the task to Running BEFORE the claim is attempted, so a refusal
+  logs `attempt_claim_refused` and runs anyway. Harmless in one process and a duplicate-side-effects
+  bug the moment two share a database. Fix the ordering, not the symptom.
+- ◻ **One configuration authority.** The v0.3.8.90 sweep plus the review: a generated schema (key,
+  type, default, env override, range, security class, aliases, UI exposure, restart) with the example
+  file and docs generated FROM it. Includes the `api_token_env` fallback, which keeps authenticating
+  against `ANTHILL_API_TOKEN` after an operator redirects it; the `??` env overrides an empty string
+  wins; and invalid config starting with defaults instead of refusing.
+- ◻ **The evidence and artifact vocabulary mismatches** carried from v0.3.8.90, because R4 must
+  measure reality rather than an instrumentation layer with known dead mappings.
+- ◻ **Enforcement.** Warnings as errors, analyzers, dependency and secret scanning, a complexity
+  budget, module auto-discovery, typed database rows instead of `Dictionary<string, object?>`, and
+  the agent rules written down rather than remembered.
+
+> **Exit gate.** Every write to the operator's tree passes one gate; every externally visible
+> mutation is recoverable after a crash; no security decision reads prose or falls back to a broader
+> source when its authoritative input is missing; and the configuration surface has one authority.
 
 ---
 

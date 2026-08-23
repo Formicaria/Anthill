@@ -11,7 +11,7 @@
   "_comment_workspace": "Path the file ant is allowed to READ from. Set to your project source root.",
   "agent_workspace_dir": "/path/to/your/project",
 
-  "_comment_api": "api_host: 0.0.0.0 (default) = accept from all interfaces, like a normal container/service — reachable at this machine's LAN IP with zero config. Set to 127.0.0.1 for localhost-only. Either can also be set via the ANTHILL_HOST / ANTHILL_PORT env vars (highest precedence, handy for Docker/LXC/Windows Service). On first launch the UI guides you through creating the admin account — no token needed. ANTHILL_API_TOKEN (optional, >= 32 chars) provides a programmatic bearer token for scripts/CI alongside normal operator accounts.",
+  "_comment_api": "api_host: 0.0.0.0 (default) = accept from all interfaces, like a normal container/service — reachable at this machine's LAN IP with zero config. Set to 127.0.0.1 for localhost-only. Either can also be set via the ANTHILL_HOST / ANTHILL_PORT env vars (highest precedence, handy for Docker/LXC/Windows Service). On first launch the UI guides you through creating the admin account; on a non-loopback bind that step also requires the one-time setup token this process prints at startup (see _comment_setup_token). ANTHILL_API_TOKEN (optional, >= 32 chars) provides a programmatic bearer token for scripts/CI alongside normal operator accounts.",
   "api_host":             "0.0.0.0",
   "api_port":             8713,
   "api_auth_enabled":     true,
@@ -99,6 +99,9 @@
     "fallback":   { "provider": "ollama", "model": "llama3.1:8b" }
   },
 
+  "_comment_setup_token": "v0.3.8.91 first-run protection. Before the first administrator exists, /auth/setup has to be reachable without a login - so on any NON-LOOPBACK bind the process mints a single-use setup token at startup, prints it to the service log, writes it to SETUP-TOKEN.txt in the workspace directory, and requires it. Setup spends it permanently. The rule reads the BIND and not the caller's address: behind a reverse proxy every request arrives from localhost, so an address rule would authorise the internet through one hop. Set this true for the one shape the bind cannot describe - a reverse proxy in front of a 127.0.0.1 bind. Also ANTHILL_REQUIRE_SETUP_TOKEN=1.",
+  "setup_token_required": false,
+
   "_comment_pricing": "v0.3.8.90 — what your provider charges, per MILLION tokens, in your currency. EMPTY BY DEFAULT and deliberately so: the colony measures tokens, and only you know what they cost. Keys are 'provider/model'; 'provider/*' prices a whole provider, which is how a local Ollama run reports a MEASURED zero instead of an unknown (the colony will not assume local is free on your behalf). A run is priced only when EVERY model it used has an entry and every call reported usage — a partial total would understate what the run cost, and an understated figure in an operator report is worse than an absent one. Read by the live qualification record; see docs/QUALIFICATION.md.",
   "model_pricing_currency": "USD",
   "model_pricing": {},
@@ -111,7 +114,7 @@
   "file_tools_enabled":        true,
 
   "_comment_operator_shell": "Configuration -> Shell: admin-only interactive terminal into THIS host. Distinct from shell_tool_enabled (the AI ants' allowlisted tool) -- this is arbitrary command execution by a logged-in human admin, host RCE, every command audit-logged, never granted to coordinators. Turn off on untrusted networks. operator_shell_dir = default working directory (blank = agent_workspace_dir).",
-  "operator_shell_enabled":    true,
+  "operator_shell_enabled":    false,
   "operator_shell_dir":        "",
 
   "max_web_searches_per_mission":    3,

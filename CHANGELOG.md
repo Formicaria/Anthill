@@ -1,3 +1,128 @@
+## v0.3.8.91 - the window before the first administrator
+
+**An external review of the repository found a remotely claimable administrator account on a fresh
+install. It was right, and it was the first of several places where a document promised a guarantee
+the runtime did not enforce. The roadmap stops until those are closed.**
+
+Every claim in this entry was verified against the code before it was fixed. Nothing here is taken
+on the reviewer's word, and two findings were revised in the process: one was worse than reported,
+one had a narrower trigger.
+
+### The front door
+
+A fresh install binds `0.0.0.0:8713` — every shipped safety profile forces it — and `/auth/setup`
+was gated on `CountUsers() == 0` and nothing else, because somebody has to be able to create the
+first account. On a server or LXC that meant the administrator account belonged to whoever reached
+the port first. `operator_shell_enabled` shipped **true**, and its own configuration comment calls it
+host command execution for administrators.
+
+Reach the port → win the race → open a shell on the host.
+
+`DEPLOYMENT.md` had argued the wildcard bind was safe because *"the actual security boundary was
+already the operator login … and not network isolation"*. That is true from the second account
+onward and false for exactly the window the paragraph was describing: before the first login exists,
+there is no login to be the boundary. The paragraph is corrected in this release rather than quietly
+rewritten.
+
+**`SetupAuthority`** mints a single-use bootstrap secret at startup when no administrator exists,
+prints it to the service log, writes it to `SETUP-TOKEN.txt` under the workspace directory, and
+`/auth/setup` requires it. Setup spends it permanently.
+
+**The rule reads the BIND, not the caller's address**, and that is the load-bearing decision. Behind
+a reverse proxy every request arrives from loopback, so a rule written on the remote IP would
+authorise the entire internet through one hop. `Admit` takes no address parameter at all — a test
+asserts that, because the mistake should be unavailable rather than merely avoided. A loopback bind
+needs no token (reaching the port already proves local access, and the desktop app must not send its
+user hunting for a file). The one shape the bind cannot describe — a proxy in front of a loopback
+bind — gets `setup_token_required: true`, and the docs say so next to the proxy instructions.
+
+**The operator terminal now ships off**, in the defaults and in every safety profile. It is arbitrary
+host command execution; it belongs with patch application and the shell tool, which the same method
+already forces off. An existing `config.json` carrying `true` keeps it — the raw overlay wins over
+the profile — so this changes new installations rather than revoking a live feature.
+
+### Exactly one first administrator
+
+Underneath the exposure, a plain read-then-write race. The endpoint asked `CountUsers()`, then called
+`CreateUser` as a separate operation. Two concurrent setup requests with **different** usernames both
+saw zero users and both inserted an administrator; different names meant no primary-key collision to
+save it. `CreateUser`'s own lock does not help — it wraps the INSERT, the question was asked outside
+it, and it is an instance lock with no meaning across processes sharing a colony database.
+
+`CreateInitialAdministrator` puts the count and the insert in ONE transaction, which is the shape
+`TryClaimTask` already uses and for the same reason it states: *a precondition checked outside the
+transaction is not a precondition.* Sixteen threads released together now produce exactly one
+administrator; a two-thread race reproduces this too rarely to be a guard.
+
+### Failed to run is not the same as ran and passed
+
+`VerifyPatchSet`'s catch logged `patch_set_verification_faulted` and returned. It set no
+`DeterministicBlock` — and `ApplyUnderBypass`'s first gate is exactly that field. So a fault in
+materialisation, workspace scope, the evidence store or revision registration produced no block, and
+under a Bypass conversation the patch was written to the operator's tree with nothing verified behind
+it.
+
+The method's own doc says *"the approval pipeline still owns whether anything is applied"*. That was
+true when it was written and stopped being true when the bypass lane was added — a guarantee stated
+in one file and revoked in another. The fault now raises the block, persists it, and records
+`promotable: false` so the operator's view can tell a verifier that CRASHED from one that said no.
+
+**Narrower than reported, and worth stating:** per-verifier exceptions are already caught inside the
+framework and converted to failed results, so the outer catch fires only on those four dependency
+faults, and reaching the write also needs a Bypass conversation with the write gates on. It still
+failed open. It is still a release blocker. It is not "any verification error".
+
+### A rejected patch that reported success and committed to git
+
+The reviewer filed this as style. It is not.
+
+`ApproveAndApplyPatch` decided whether a patch had landed by reading the English sentence the apply
+helper returned:
+
+```csharp
+applied = result.Contains("applied") && !result.Contains("not applied")
+```
+
+Three of that helper's REFUSAL sentences satisfy it. **"Patch cannot be applied because status is
+rejected"** contains `applied`, does not contain `not applied` — so a patch an operator had
+explicitly rejected was reported as applied, returned HTTP 200, and fired a real `git commit` over a
+file nothing had written. "Patch is already applied" did the same and re-committed. The approval half
+had the same hole: "Approval request is not pending. Current Status: approved".
+
+The comment above the check asserted that no refusal sentence contains those words. The
+counterexamples were in the same file, eighty lines up. `architecture.md` already states the rule
+this broke — *"it never reconstructs failure state from prose"* — and the violation sat on the
+highest-consequence action in the system.
+
+`ApplyApprovedPatchTyped` returns a `PatchApplyResult` whose OUTCOME is the decision; the
+string-returning method is now a formatter over it with no decision of its own. The approval step
+reads the stored status. The commit follows the outcome, so "already applied" no longer re-commits.
+
+### What this release does NOT fix, and the order it comes in
+
+The review named 22 items. This one is the front door. The rest are sequenced rather than rushed,
+and PLAN.md now carries them as named gates:
+
+- **.92 — one promotion gate.** Five code paths can write a proposed patch and each checks a
+  different set of preconditions; `ApplyApprovedPatch` checks five things and consults no evidence at
+  all. Patch sets are documented as applying "as a unit or not at all" in six places, and that is
+  true only of the auto-apply lane — the ordinary path applies one proposal at a time, continues past
+  a failure, and commits each separately. Verification binds to a tree hash covering only the files
+  the patch touched, so an edit to any other file between verify and apply is invisible.
+- **.93 — crash-safe state.** The filesystem write happens before the database updates, un-journaled,
+  with no startup reconciliation: a crash between them leaves a patch applied on disk and `approved`
+  in the database, where retrying marks it *failed* and revert refuses because only an applied patch
+  can be reverted. And a refused durable task lease currently logs and executes anyway, because the
+  scheduler commits the task to Running before the claim is attempted.
+- **.94 — one configuration authority.** Including the `api_token_env` fallback that keeps
+  authenticating against `ANTHILL_API_TOKEN` after an operator redirects it.
+- **.95 — enforcement.** Warnings as errors, analyzers, complexity budget, and the agent rules as a
+  document rather than a habit.
+
+R4's live runs come after those. The reviewer's closing judgement is recorded in PLAN.md because it
+is the right frame for the next five releases: the foundations are sound, and the work is deleting
+the alternate paths around them.
+
 ## v0.3.8.90 - the operator's price table, and four routes that could not be taken
 
 **R4's last non-run item closes, and a sweep for v0.3.8.89's defect class finds ten more — including

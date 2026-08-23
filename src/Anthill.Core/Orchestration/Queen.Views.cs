@@ -67,22 +67,39 @@ public sealed partial class Queen
         return $"Approval request rejected.\nID: {approvalId}\nStatus: rejected\nReason: {note}";
     }
 
-    public string ApplyApprovedPatch(string approvalId)
+    /// <summary>
+    /// String-returning face, kept for the CLI and the endpoints that render text. v0.3.8.91: it is
+    /// now a FORMATTER over <see cref="ApplyApprovedPatchTyped"/> and carries no decision of its own.
+    /// Nothing may branch on what it returns; the typed twin exists for that.
+    /// </summary>
+    public string ApplyApprovedPatch(string approvalId) => ApplyApprovedPatchTyped(approvalId).Message;
+
+    /// <summary>
+    /// Apply an approved patch, and say in a TYPE what happened. v0.3.8.91.
+    ///
+    /// Every refusal below used to be distinguishable only by reading its sentence, and three of
+    /// those sentences contain the word "applied" — see <see cref="PatchApplyResult"/> for the
+    /// rejected-patch-reports-success defect that came out of it.
+    /// </summary>
+    public PatchApplyResult ApplyApprovedPatchTyped(string approvalId)
     {
         try { approvalId = Validation.ValidateApprovalId(approvalId); }
-        catch (Exception e) { return $"Invalid approval id: {e.Message}"; }
+        catch (Exception e) { return new(PatchApplyOutcome.RefusedUnknown, $"Invalid approval id: {e.Message}"); }
         var approval = Memory.GetApprovalRequest(approvalId);
-        if (approval is null) return $"No approval request found with id: {approvalId}";
+        if (approval is null) return new(PatchApplyOutcome.RefusedUnknown, $"No approval request found with id: {approvalId}");
         if (Str(approval, "status") != ApprovalStatus.Approved.Value())
-            return $"Cannot apply patch. Approval request is not approved.\nID: {approvalId}\nCurrent Status: {Str(approval, "status")}";
+            return new(PatchApplyOutcome.RefusedNotApproved,
+                $"Cannot apply patch. Approval request is not approved.\nID: {approvalId}\nCurrent Status: {Str(approval, "status")}");
         if (Str(approval, "action_type") != ApprovalActionType.PatchProposal.Value())
-            return $"Cannot apply approval type: {Str(approval, "action_type")}\nOnly patch_proposal approvals can be applied.";
+            return new(PatchApplyOutcome.RefusedUnknown,
+                $"Cannot apply approval type: {Str(approval, "action_type")}\nOnly patch_proposal approvals can be applied.");
         var patchId = Str(approval, "target_id");
         var patch = Memory.GetPatchProposal(patchId);
-        if (patch is null) return $"No patch proposal found for approval target id: {patchId}";
-        if (Str(patch, "status") == PatchStatus.Applied.Value()) return $"Patch is already applied.\nPatch ID: {patchId}";
+        if (patch is null) return new(PatchApplyOutcome.RefusedUnknown, $"No patch proposal found for approval target id: {patchId}");
+        if (Str(patch, "status") == PatchStatus.Applied.Value())
+            return new(PatchApplyOutcome.RefusedStatus, $"Patch is already applied.\nPatch ID: {patchId}");
         if (Str(patch, "status") is var ps && (ps == PatchStatus.Rejected.Value() || ps == PatchStatus.Failed.Value()))
-            return $"Patch cannot be applied because status is {ps}.\nPatch ID: {patchId}";
+            return new(PatchApplyOutcome.RefusedStatus, $"Patch cannot be applied because status is {ps}.\nPatch ID: {patchId}");
 
         var result = Tools.RunTool("apply_patch", Str(approval, "mission_id"), Str(approval, "task_id"), "queen",
             new() { ["patch"] = patch });
@@ -91,7 +108,8 @@ public sealed partial class Queen
             Memory.UpdatePatchStatus(patchId, PatchStatus.Failed, lastError: result.Error);
             Memory.LogEvent(Str(approval, "mission_id"), "patch_apply_failed", $"Patch application failed: {patchId}",
                 Str(approval, "task_id"), "queen", new() { ["approval_request_id"] = approvalId, ["patch_id"] = patchId, ["error"] = result.Error });
-            return $"Patch application failed.\nApproval ID: {approvalId}\nPatch ID: {patchId}\nError: {result.Error}";
+            return new(PatchApplyOutcome.Failed,
+                $"Patch application failed.\nApproval ID: {approvalId}\nPatch ID: {patchId}\nError: {result.Error}");
         }
         string? backupPath = null;
         try { backupPath = JsonDocument.Parse(string.IsNullOrEmpty(result.Output) ? "{}" : result.Output).RootElement.TryGetProperty("backup_path", out var bp) ? bp.GetString() : null; }
@@ -104,7 +122,8 @@ public sealed partial class Queen
         Memory.UpdatePheromoneTrail("capability:controlled_file_writing", "capability", true, 0.03,
             new() { ["approval_request_id"] = approvalId, ["patch_id"] = patchId, ["file_path"] = Str(patch, "file_path") });
 
-        return $"Patch applied successfully.\nApproval ID: {approvalId}\nPatch ID: {patchId}\nFile: {Str(patch, "file_path")}\nBackup: {backupPath ?? "n/a"}\nApproval Status: consumed\nPatch Status: applied";
+        return new(PatchApplyOutcome.Applied,
+            $"Patch applied successfully.\nApproval ID: {approvalId}\nPatch ID: {patchId}\nFile: {Str(patch, "file_path")}\nBackup: {backupPath ?? "n/a"}\nApproval Status: consumed\nPatch Status: applied");
     }
 
     /// <summary>
@@ -336,17 +355,31 @@ public sealed partial class Queen
         var (ok, approvalId, message) = EnsurePatchApproval(patchId, requestedBy);
         if (!ok) return (false, message);
 
-        var approveResult = ApproveRequest(approvalId);
-        // The transition helpers speak prose; every success sentence contains "approved" and no
-        // refusal does. Checked once here rather than re-parsed at every caller.
-        if (!approveResult.Contains("approved", StringComparison.OrdinalIgnoreCase))
-            return (false, approveResult);
+        // NO PROSE IS PARSED HERE ANY MORE. v0.3.8.91.
+        //
+        // This read `approveResult.Contains("approved")` and
+        // `applyResult.Contains("applied") && !applyResult.Contains("not applied")`, under a comment
+        // asserting that no refusal sentence contains those words. Three do. "Approval request is not
+        // pending. Current Status: approved" passed the first check; "Patch cannot be applied because
+        // status is rejected" and "Patch is already applied" passed the second — so a REJECTED patch
+        // was reported as applied, returned HTTP success, and fired a real `git commit` over a file
+        // nothing had written.
+        //
+        // The approval step is read from the stored STATUS rather than from a returned type, because
+        // `ApproveRequest` has several callers and changing its signature is a wider edit than this
+        // fix needs; the row is authoritative either way, which the sentence never was. The apply
+        // step returns `PatchApplyResult`, whose outcome is the decision.
+        var approveMessage = ApproveRequest(approvalId);
+        var approvalNow = Memory.GetApprovalRequest(approvalId);
+        if (approvalNow is null || Str(approvalNow, "status") != ApprovalStatus.Approved.Value())
+            return (false, approveMessage);
 
-        var applyResult = ApplyApprovedPatch(approvalId);
-        var applied = applyResult.Contains("applied", StringComparison.OrdinalIgnoreCase)
-                   && !applyResult.Contains("not applied", StringComparison.OrdinalIgnoreCase);
-        if (applied) CommitAppliedPatch(patchId, requestedBy);
-        return (applied, applyResult);
+        var apply = ApplyApprovedPatchTyped(approvalId);
+
+        // The commit follows the OUTCOME, not the wording. `RefusedStatus` covers "already applied",
+        // which used to re-commit a patch this call did not apply.
+        if (apply.Applied) CommitAppliedPatch(patchId, requestedBy);
+        return (apply.Applied, apply.Message);
     }
 
     /// <summary>

@@ -214,6 +214,29 @@ public static partial class ApiHost
                 Console.WriteLine($"[apply-recovery] {line}");
         }
         catch (Exception e) { Console.Error.WriteLine($"[apply-recovery] recovery scan failed: {e.Message}"); }
+
+        // v0.3.8.91: mint the first-run bootstrap secret, BEFORE the listener opens. On a
+        // network-reachable bind with no administrator yet, /auth/setup requires it — see
+        // SetupAuthority for why the rule is written on the bind rather than the caller's address.
+        // The console line is the primary channel: a service or LXC operator reads it in the log,
+        // and it is the only channel that works when the workspace is read-only.
+        var setupSecret = SetupAuthority.Arm(
+            AnthillRuntime.ApiHost,
+            AnthillRuntime.RequireSetupToken,
+            Queen.Memory.CountUsers() > 0,
+            AnthillRuntime.WorkspaceRootPath);
+
+        if (setupSecret.Length > 0)
+        {
+            Console.WriteLine("");
+            Console.WriteLine("  ANTHILL FIRST-RUN SETUP TOKEN");
+            Console.WriteLine($"    {setupSecret}");
+            Console.WriteLine("  No administrator exists yet and this instance is reachable from the");
+            Console.WriteLine("  network, so creating the first account requires this token. Single use.");
+            if (SetupAuthority.SecretPath.Length > 0)
+                Console.WriteLine($"  Also written to: {SetupAuthority.SecretPath}");
+            Console.WriteLine("");
+        }
 #if MICROMOUND
         if (AnthillRuntime.EnableMicromound)
             InitMicromound(); // MICROMOUND M1 (read-only; see Micromound/ApiHost.Micromound.cs)
@@ -545,6 +568,21 @@ public sealed class TurnRequest
     public bool Stream { get; set; }
 }
 public sealed class LoginRequest { public string? Username { get; set; } public string? Password { get; set; } }
+
+/// <summary>
+/// First-run setup: credentials plus the bootstrap token. v0.3.8.91.
+///
+/// A separate type from <see cref="LoginRequest"/> on purpose. The token is meaningful on exactly
+/// one endpoint, and putting it on the login shape would offer every caller a field that does
+/// nothing — which is how a credential ends up in a log line somebody thought was a login.
+/// </summary>
+public sealed class SetupRequest
+{
+    public string? Username { get; set; }
+    public string? Password { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("setup_token")]
+    public string? SetupToken { get; set; }
+}
 public sealed class UserRequest { public string? Username { get; set; } public string? Password { get; set; } public string? Role { get; set; } }
 public sealed class UserPatch { public string? Password { get; set; } public string? Role { get; set; } public bool? Active { get; set; } }
 public sealed class RejectBody { public string? Reason { get; set; } }
