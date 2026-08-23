@@ -1024,7 +1024,7 @@ public class CodePatchLifecycleTests : IDisposable
             $"the mission was stopped and still graded positively ({evaluation?.OutcomeCode}).");
 
         // 5. NO MEMORY. The property that outlives the mission.
-        Assert.Empty(queen.Memory.GetRecentEvents(200, "memory_candidate_archived", missionId));
+        Assert.Empty(queen.Memory.GetRecentEvents(200, "memory_candidate", missionId));
     }
 
     /// <summary>

@@ -501,7 +501,7 @@ public class RoleCancellationTests : IDisposable
 
         // 2. NO POSITIVE MEMORY. The property that outlives the mission: a lesson learned from work
         //    that never ran is a lesson about nothing, written to durable storage.
-        var archived = queen.Memory.GetRecentEvents(200, "memory_candidate_archived", missionId);
+        var archived = queen.Memory.GetRecentEvents(200, "memory_candidate", missionId);
         Assert.True(archived.Count == 0,
             $"'{role}' was cancelled before dispatch and {archived.Count} memory candidate(s) were "
           + "archived anyway.");
@@ -827,7 +827,7 @@ public class RoleCancellationTests : IDisposable
     /// partial work and still ingested the candidates it proposed.
     ///
     /// AND WHY THIS HARNESS MISSED IT for five releases while asserting "no positive memory". The
-    /// existing property watches `memory_candidate_archived` events, and a stopped mission usually
+    /// existing property watches `memory_candidate` events, and a stopped mission usually
     /// gives the archivist nothing worth proposing — so the assertion passed because the archivist
     /// found nothing, not because it was prevented from looking. A property that holds by luck is
     /// indistinguishable from one that holds by design until the day it stops.
@@ -856,7 +856,7 @@ public class RoleCancellationTests : IDisposable
          || (e.GetValueOrDefault("metadata_json")?.ToString() ?? "").Contains("mission_stopped", StringComparison.Ordinal));
 
         // And the property that was holding by luck now holds because nothing was asked.
-        Assert.Empty(queen.Memory.GetRecentEvents(200, "memory_candidate_archived", missionId));
+        Assert.Empty(queen.Memory.GetRecentEvents(200, "memory_candidate", missionId));
     }
 
     /// <summary>
@@ -911,7 +911,7 @@ public class RoleCancellationTests : IDisposable
           + $"({evaluation?.OutcomeCode}).");
 
         // 3. NO MEMORY. The property that outlives the mission.
-        var archived = queen.Memory.GetRecentEvents(200, "memory_candidate_archived", missionId);
+        var archived = queen.Memory.GetRecentEvents(200, "memory_candidate", missionId);
         Assert.True(archived.Count == 0,
             $"'{role}' was stopped {point} and {archived.Count} memory candidate(s) were archived.");
 

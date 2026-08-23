@@ -107,6 +107,28 @@ ignores the four-section format, invents a file path, or takes ninety seconds to
 Provenance already carries most of this per artifact as of v0.3.8.57 — provider, model, environment,
 call counts. A live run should be reconstructable from the store afterwards rather than from notes.
 
+### The recorder exists, and one field has no producer *(v0.3.8.89)*
+
+`LiveQualificationRecord.For(memory, artifacts, evidence, missionId)` assembles that table from the
+store. It was built and proved against a scripted mission BEFORE any live run, deliberately: every
+field above is already persisted somewhere, so the recorder is an assembler rather than new
+instrumentation, and proving it now means a live run is an operator pressing go instead of a live run
+plus an argument about whether its telemetry was complete.
+
+`LiveQualificationRecordTests` reads the table above and requires a one-to-one match with the fields
+the recorder produces — a row nobody produces fails, and a field nobody asked for fails too.
+
+**Cost has no producer and is recorded as a gap.** `ModelRouter` records prompt and completion tokens
+per call; nothing converts them to currency, because that needs a per-provider price table that does
+not exist as configuration. The recorder reports `cost: unmeasured` with that reason rather than
+assuming a rate — a fabricated figure in an operator-facing report would be worse than an absent one.
+**R4's exit gate therefore cannot be read as met on this field**, and closing it means adding pricing
+as operator configuration, not changing the recorder.
+
+Two other fields stay unmeasured in a scripted run and are expected to be measured live: token counts
+(the scripted provider reports no usage, which several real providers also do — absent stays absent,
+never zero) and the provider's model VERSION, as distinct from its name.
+
 ### Recording the result
 
 Add a dated section below. Do not edit this document to say a run happened without one.

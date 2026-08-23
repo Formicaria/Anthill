@@ -1,5 +1,112 @@
 # ANTHILL Changelog
 
+## v0.3.8.89 - the record, and the assertion that could not fail
+
+**R4's recorder, built before the run — and, found while building it, five assertions watching for an
+event nothing emits.**
+
+### The assertion that could not fail
+
+`memory_candidate_archived` is queried in five places. **Nothing has ever emitted it.** The ingest's
+event type is `memory_candidate`.
+
+One of those five is the cancellation harness's *"NO MEMORY. The property that outlives the mission"*
+— one of the five properties R3 rests on, and the one its own header calls the most important:
+"a cancelled tester leaves a process, a cancelled archivist leaves a MEMORY." It was checking that an
+event no producer writes had not appeared. It could not have failed.
+
+v0.3.8.85 came within a sentence of this. Its comment in `Queen.cs` reads: "The cancellation harness
+did not catch it because it asserts on `memory_candidate_archived` events, and a stopped mission
+usually yields the archivist nothing to propose. The property held by luck rather than by design."
+It was not luck. The filter matched nothing — the exact near-miss v0.3.8.86 described three releases
+later, in the release that hunted near-misses, sitting in the harness that release trusted.
+
+The five call sites now name `memory_candidate`. The archivist skip that v0.3.8.85 added is what
+makes them hold; until now nothing was testing it.
+
+### How it was found, and the blind spot that hid it
+
+v0.3.8.86 added sixty-seven event constants by reading every literal handed **directly** to
+`LogEvent`. Its doc comment is honest about that scope, and the scope has a hole: a name passed
+through a wrapper never appears in that position. `RecordAdaptiveAdmission` takes the event type as a
+parameter; its callers pass `"adaptive_repair"` and `"adaptive_delta_plan"`. Both were emitted,
+queried, asserted on — and declared nowhere, while the sweep reported the vocabulary complete.
+
+`EveryEventTypeQueriedByName_IsDeclared` reads the **consumer** side instead:
+`GetRecentEvents(limit, "name", …)` names an event type in a position that can only be one, so it has
+no false positives. Four of the eighteen names queried that way were undeclared. Three are now
+declared; the fourth had no producer and is recorded in `EventTypes` as an absence with its reason.
+
+The two directions corner the problem between them: declaring the phantom fails the
+publication check, and not declaring it fails the query check. The only way out is to fix the call
+sites, which is the point.
+
+**Still open, and stated rather than implied:** an event emitted through a wrapper and never queried
+by name remains invisible to both directions.
+
+### A missing using, caught by the compiler
+
+The first build of this release failed on one line: `WorkspacePathGuard` lives in
+`Anthill.Core.Security` and the new test file did not import it. Recorded because the pre-flight
+sweeps in this repository simulate source guards and semantics, and cannot see a missing namespace —
+that is the compiler's job and it did it. The remaining type references were then checked against
+their declaring namespaces rather than fixed one build at a time.
+
+### And a plan this release's own new fixture had put out of reach
+
+The first full run of this release was 2787 of 2788, and the one failure was v0.3.8.83's
+`EveryScriptedPlan_IsOneThePlannerWouldAccept` refusing the new file: its scripted plan was a local
+`var` inside the method that used it, so the guard could not read it, and the file does not verify its
+plan at runtime either. Its words: *"a plan nothing checks is a plan the Planner may have replaced."*
+
+The plan itself was fine — three tasks, three planner-eligible roles. What was wrong is that nothing
+could **say** so, which is precisely the state the v0.3.8.82 defect lived in: the Planner discards a
+plan below `MinDynamicTasks`, substitutes `FallbackTasks`, and a fixture that happens to assert on a
+role the fallback contains passes over a plan nobody wrote. A plan that is correct today and
+unreadable to the guard is one edit away from being that.
+
+Both scripts are now class-level constants, with the placement's reason written at the declaration
+rather than left as style — including why the runtime alternative was rejected here: this mission
+acquires policy-inserted tester and soldier tasks as it runs, so "what the mission planned" is a
+larger set than "what the fixture wrote", and this file's subject is the record, not the plan.
+
+Recorded because a guard catching the release that added it is the guard working, and because the
+pre-flight sweep that should have caught it first did not: it simulated the guards the *change*
+touched, not the guards that read every file in the tests directory.
+
+### The R4 recorder
+
+`LiveQualificationRecord.For(memory, artifacts, evidence, missionId)` assembles the telemetry table
+`QUALIFICATION.md` §3 demands, out of records the colony already keeps — provenance for the model that
+actually served each call, `model_call` events for tokens and durations, typed failure classes, the
+consumption ledger for what each role really read, `MissionReconstruction` for whether the run
+replays.
+
+Built and proved **before** any live run, deliberately. Every field can be checked against a scripted
+mission with no provider attached, so the live run becomes an operator pressing go rather than a live
+run plus an argument about whether its telemetry was complete — and it removes the failure mode R4 is
+most exposed to: finding a hole mid-run and being unable to say whether it is in the provider or in
+the report.
+
+`LiveQualificationRecordTests` reads §3's table and requires a **one-to-one** match with the fields
+the recorder produces. A row nothing produces fails; a field nobody asked for fails too.
+
+### Cost has no producer, and the record says so
+
+The table asks for cost in the operator's currency. `ModelRouter` records tokens; **nothing converts
+them to money**, because that needs a per-provider price table that does not exist as configuration.
+
+The recorder reports `cost: unmeasured` with that reason rather than assuming a rate — a fabricated
+figure in an operator-facing report is worse than an absent one. **R4's exit gate cannot be read as
+met on this field**, and closing it means adding pricing as operator configuration, not changing the
+recorder. `Cost_IsAlwaysRecordedAsAGap_NeverAsANumber` holds it there.
+
+The same rule runs through the rest: the scripted provider reports no usage, so tokens come back
+UNMEASURED rather than zero — asserted, because summing absent values to zero would turn "this
+provider does not report usage" into "this run used no tokens", and the second is a claim an operator
+would act on. `V3Readiness` already states the principle for its own thresholds: *unmeasured is not
+ready.*
+
 ## v0.3.8.88 - the last cell, and the hazard underneath it
 
 **R3 is closed.** All forty-eight cancellation cells decided: **33 driven live, 0 cited, 15

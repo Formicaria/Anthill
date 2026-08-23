@@ -246,4 +246,29 @@ public static class EventTypes
     public const string RequiredHandoffRefused = "required_handoff_refused";
     public const string TaskRanInRevision = "task_ran_in_revision";
     public const string UiChangeBlockedUnmapped = "ui_change_blocked_unmapped";
+
+    // ---- v0.3.8.89: the four the v0.3.8.86 sweep could not see -------------------
+    //
+    // That release added sixty-seven names by reading every event literal handed DIRECTLY to
+    // `LogEvent`. These four are emitted through a wrapper instead — `RecordAdaptiveAdmission` takes
+    // the event type as a PARAMETER and its callers pass the literal, and the memory-candidate names
+    // reach `LogEvent` the same way — so the detector matched nothing and reported the vocabulary
+    // complete. A guard honest about its own scope, and a blind spot all the same.
+    //
+    // Found by looking at the CONSUMER side: `GetRecentEvents(limit, "name", ...)` names an event
+    // type in an unambiguous position, and four of the eighteen names queried that way were declared
+    // nowhere. `EventVocabularyTests.EveryEventTypeQueriedByName_IsDeclared` is that check.
+    public const string AdaptiveDeltaPlan = "adaptive_delta_plan";
+    public const string AdaptiveRepair = "adaptive_repair";
+    public const string MemoryCandidate = "memory_candidate";
+    //
+    // `memory_candidate_archived` IS NOT HERE, and the absence is the finding. Five assertions
+    // queried that name — including the cancellation harness's "no memory survives a stopped
+    // mission", one of the five properties R3 rests on — and NOTHING has ever emitted it. The
+    // ingest's own event type is `memory_candidate` (MemoryCandidateIngest.EventType).
+    //
+    // A near-miss of a real name, so every one of those assertions was checking that an event no
+    // producer writes did not appear, and could not have failed. v0.3.8.85 came close: its comment
+    // in Queen.cs says the property "held by luck rather than by design" because a stopped mission
+    // usually gives the archivist nothing to propose. It was not luck. The filter matched nothing.
 }
