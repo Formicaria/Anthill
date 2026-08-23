@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.89**.
+Shipping release: **v0.3.8.90**.
 
 ---
 
@@ -341,16 +341,22 @@ was architectural.
   `QUALIFICATION.md`'s table one-to-one and drives it against a scripted mission, so the live run is
   an operator pressing go rather than a live run plus an argument about whether its telemetry was
   complete.
-- ◻ **Cost has no producer, and that blocks part of this gate.** The table asks for cost in the
-  operator's currency; the runtime records tokens and nothing converts them. The recorder reports the
-  gap with its reason rather than assuming a rate. Closing it is a per-provider price table as
-  operator configuration — a small, separate change, and one that must not be done inside the
-  recorder.
+- ✅ **Cost has a producer: the operator** *(v0.3.8.90)*. `ModelPricing` converts the tokens the
+  runtime already measures against a `model_pricing` table in `config.json` — `provider/model`, or
+  `provider/*` for a whole provider, which is how a local run reports a MEASURED zero instead of an
+  unknown. A pure function over a table passed in, not a reader of statics, and deliberately not
+  inside the recorder: this plan's own wording for the change.
+  **The refusals are the safety property**, and there are three, distinguishable because they are
+  three different things to do: no table configured, a provider that reported no usage, and a served
+  model the table does not cover. A run is priced only when EVERY model has an entry and EVERY call
+  reported usage — a partially priced run is not priced, because a total lower than the run's real
+  cost wearing a currency symbol is worse than an absent figure. Nine tests in `ModelPricingTests`,
+  most of them about the refusals.
 - ◻ **The runs themselves.** Ollama, an OpenAI-compatible provider, and an agent CLI.
 
 > **Exit gate.** A recorded run per provider with complete telemetry, and `QUALIFICATION.md` updated
-> from "never happened" to the run's own evidence. The recorder is ✅ at v0.3.8.89; the gate stays
-> open on the runs, and on cost, which no run can supply until pricing is configuration.
+> from "never happened" to the run's own evidence. The recorder is ✅ at v0.3.8.89 and cost ✅ at
+> v0.3.8.90; **the gate is now open on nothing but the runs themselves.**
 
 ---
 
@@ -454,6 +460,55 @@ Everything above, pointed at a real repository with a real pull request at the e
   `ActionExecutor` instead. Each is recorded in `CapabilityGrant.DeliberatelyUngranted` with its
   reason, and a new capability can no longer join the vocabulary and quietly reach nobody. Wiring or
   removing them is R6/R10 work, not cleanup.
+
+- ◻ **The rest of the v0.3.8.90 sweep, with its sites.** Sweeping "a filter that could not match"
+  across every vocabulary in the tree found ten instances. Six are closed in v0.3.8.90 (the four
+  builder handoffs, the failure-event set, the console's mission notifications, the autonomy dedupe,
+  the category switch, and the diagnostics counters). Four are recorded here rather than half-fixed,
+  because each needs a decision and not an edit:
+  - **`AntEvidence.Kind == "tool"` matches nothing** — `SqliteMemory.TaskResults.cs:127` and
+    `ExecutionService.cs:1710`. No ant emits a `tool` citation (the kinds are `check`, `file_path`,
+    `policy_rule`, `mission_id`, `failure_id`, `revision`, `workspace`, `failure_signature`), so
+    `ArtifactProvenance.Tool` and `FailureContext.Tool` are null in every row ever written — reading
+    as "no tool was involved" rather than "unknown". The decision is which side is wrong: producers
+    should cite the tool, or the field should go.
+  - **`ArtifactSchemas.ForAntKind` has no arm for `patch_json`** — `Evidence.cs:248`. The coder emits
+    `patch_json`; the switch has an arm for `patch_set`, which nothing produces, and six other dead
+    arms. The coder's artifact therefore maps to null and `BridgeArtifactsToStore` skips it. It is
+    NOT simply a rename: `ExecutionService.cs:951` already `Put`s the patch set directly, so adding
+    the arm may double-store. That has to be understood before it is touched. Related:
+    `AntExecution.cs:358` declares the coder's `ProducedArtifactTypes` as `patch_set` — a name the
+    coder does not produce.
+  - **`EvidenceKinds.Reproducible.Contains(e.Kind)`** — `ExecutionService.cs:1479` — tests ADR-004
+    verdict kinds against citation kinds. The disjunct is dead; only `e.Kind == "check"` ever fires.
+    The file one directory over states the distinction being violated: an `AntEvidence` is a
+    CITATION, ADR-004 evidence is a VERDICT.
+  - **`VerificationPolicy` keys no task type can reach** — `Verification.cs:79-82, 110-111`:
+    `code_patch_full`, `config_change`, `artifact_production`, and the aliases `docs_update` and
+    `documentation`. Lower confidence than the others (they are table keys, and the type is public),
+    but `DeterministicBlockTests` asserts against one of them directly — the same shape the file's
+    own v3.8.21 note says caused a defect.
+- ◻ **The emitter detector still has a blind spot, and it is wider than its comment admits.**
+  v0.3.8.86's sweep reads event names handed to `LogEvent` as a literal first argument. A name passed
+  through a wrapper is invisible — v0.3.8.89 named that — and so is one built by a ternary
+  (`Queen.cs:1074` emits all three mission terminals that way) or one whose first argument contains a
+  call, which the `[^,()]+` in the pattern rejects. v0.3.8.90 declared six of the affected names by
+  hand because two consumers needed to reference them; roughly a dozen remain emitted and undeclared.
+  Widening the detector is the fix, and it is a sweep of its own rather than a line in another
+  release.
+- ◻ **The operator's configuration surface disagrees with itself.** A second sweep, over config
+  rather than vocabularies, found: 25 parsed keys `config.example.json` never documents — including
+  `roster_profile` and `disabled_roles`, which are the ONLY working off-switches for the seven
+  specialist ants the example file shows as `false` and the roster profile then forces to `true`;
+  `config_version`, `logs_dir` and `exports_dir`, which are documented and read by nothing;
+  `AnthillRuntime.LastConfigMigration`, whose own doc comment says two endpoints surface it and
+  neither does; nine `RuntimeOptions` fields nobody reads, against that file's own stated rule; an
+  `api_token_env` whose fallback is the static's prior value rather than a config value, so
+  redirecting it to an unset variable silently keeps authenticating against `ANTHILL_API_TOKEN`; and
+  three env overrides that use `??`, so an empty string set in a compose file wins over the file.
+  **This is a release, not a cleanup line** — the token precedence is security-adjacent and the
+  roster one is a safety claim the file gets wrong. v0.3.8.90 fixed only the piece it touched
+  (`ResetConfig` silently discarding the operator's priority route, now also the price table).
 
 **Not a tail.** Fully async execution, ~166 runtime statics, VRAM scheduling, multi-platform QA,
 event-loss accounting and deployment verification are independent workstreams. The statics in
@@ -1034,6 +1089,26 @@ reads — turns every consumer that does not check into a consumer testing the d
 were affected and neither looked wrong; both asserted true things about a mission the fallback plan
 produced. The fix is not "read the log": it is that a caller who supplies an input must be able to
 assert the input was used.
+
+**A filter that could not match, swept.** Named at v0.3.8.89 for `memory_candidate_archived` — an
+event five assertions watched for and nothing has ever emitted. The v0.3.8.90 sweep looked for the
+shape in every vocabulary in the tree and found ten more, and the distribution is the lesson: they
+cluster wherever a producer and a consumer are far apart and a string is the only thing joining them.
+The most expensive was not an empty panel but an ACTIVE harm — four handoffs to the builder asked for
+task type `build` against a contract declaring `build_answer`, and because three were `Required`, the
+gate's refusal set `DeterministicBlock` on the source task. The two routes whose purpose is to reach a
+human marked the mission unverifiable and reached nobody, for as long as they have existed. Two
+generalisations worth keeping: *a near-miss survives because the other arms of the same filter keep
+working*, so the feature never looks broken; and the direction nothing was checking each time was
+consumer→vocabulary, because the guards that existed all ran vocabulary→producer.
+
+**A rule implemented twice, where the second copy is a list of strings.** `SummarizeEvents` spelled
+the failure vocabulary as seven SQL literals while `GetRecentFailureEvents` built the same query from
+the shared set; three literals had drifted onto names nothing emits. `ResetConfig` carries one list as
+an object initializer and a second as the names it reports to the operator, and the priority route had
+fallen out of both. Both now derive or are pinned to each other. The general form: *when a rule is
+data, the second copy is invisible to the compiler and therefore drifts silently* — which is why the
+fix is to make one derive from the other rather than to correct the copy.
 
 **A degradation that outlives the reason for it.** Every model-calling role answers an unavailable
 provider with a fallback, correctly. Cancellation entered through the same status, so the fallback

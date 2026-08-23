@@ -4,6 +4,7 @@ using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
 using Anthill.Core.Memory;
 using Anthill.Core.Models;
+using Anthill.Core.Outcomes;   // MissionOutcome — the vocabulary the mission_status column holds
 
 namespace Anthill.Core.Autonomy;
 
@@ -137,8 +138,28 @@ public sealed class Strategist
         var goalKeywords = TextUtil.ExtractKeywords(goal);
         if (goalKeywords.Count == 0) return false;
 
+        // THE FILTER THAT COULD NOT MATCH A SUCCESS. v0.3.8.90.
+        //
+        // This read `is "complete" or "partial"`. The `autonomy_runs.mission_status` column holds
+        // `MissionOutcome` codes — `completed_verified`, `completed_unverified`, `partial`, … — and
+        // has never held "complete". So `"partial"` matched, `"complete"` never did, and the dedupe
+        // guard was blind to precisely the runs it exists to compare against: the ones that
+        // SUCCEEDED. The reason string three lines below says "a recent completed run", which is the
+        // case that could not be seen. `ObjectiveProgress.Assess` reads the same column through
+        // `MissionOutcome.IsPositiveSuccess` — two consumers, one column, one of them wrong.
+        //
+        // Not `IsPositiveSuccess` here, deliberately, and the class comment on `MissionOutcome` is
+        // why: that predicate answers "was this a success", and dedupe asks a different question —
+        // "did a comparable run already happen". A run that finished its work without producing the
+        // required evidence still produced a goal, and regenerating it would be the same waste.
+        // Spelled through the vocabulary so it cannot drift off the column again.
+        var comparable = new[]
+        {
+            MissionOutcome.CompletedVerified, MissionOutcome.CompletedUnverified, MissionOutcome.Partial,
+        };
         var recent = _memory.ListAutonomyRuns(objectiveId, limit: 10)
-            .Where(r => r.GetValueOrDefault("mission_status")?.ToString() is "complete" or "partial");
+            .Where(r => comparable.Contains(
+                r.GetValueOrDefault("mission_status")?.ToString() ?? "", StringComparer.Ordinal));
         foreach (var run in recent)
         {
             var priorGoal = run.GetValueOrDefault("generated_goal")?.ToString() ?? "";

@@ -61,6 +61,17 @@ public sealed class AnthillConfig
     [JsonPropertyName("model_priority_provider")] public string ModelPriorityProvider { get; set; } = "";
     [JsonPropertyName("model_priority_model")] public string ModelPriorityModel { get; set; } = "";
 
+    /// <summary>
+    /// v0.3.8.90 — what each provider's model costs, per million tokens. EMPTY BY DEFAULT.
+    ///
+    /// The colony ships with no prices on purpose: a rate compiled into the source is wrong for
+    /// somebody the day it ships, and R4's exit gate asks for cost in the OPERATOR's currency. Keys
+    /// are `provider/model`, and `provider/*` prices a whole provider — which is how a local Ollama
+    /// run becomes a measured zero rather than an assumed one. See <see cref="ModelPricing"/>.
+    /// </summary>
+    [JsonPropertyName("model_pricing")] public Dictionary<string, ModelPrice> ModelPricing { get; set; } = new();
+    [JsonPropertyName("model_pricing_currency")] public string ModelPricingCurrency { get; set; } = "USD";
+
     [JsonPropertyName("web_search_enabled")] public bool WebSearchEnabled { get; set; } = false;
     [JsonPropertyName("patch_application_enabled")] public bool PatchApplicationEnabled { get; set; } = false;
     [JsonPropertyName("file_writing_enabled")] public bool FileWritingEnabled { get; set; } = false;

@@ -6897,7 +6897,14 @@ document.getElementById('palette-input').addEventListener('keydown',e=>{
 });
 
 // ---- Notification center ----------------------------------------------------
-const NOTIF_NOTABLE=/^(mission_complete|mission_failed|patch_applied|patch_apply_failed|patch_alternative_created|patch_verified_approved|patch_verify_failed|approval_request_created|approval_request_approved|approval_request_rejected|autonomy_autoapply_\w+|jobs_cancel_all)$/;
+// v0.3.8.90: `mission_complete` -> `mission_completed`. The colony emits `mission_completed`,
+// `mission_partial` and `mission_failed` (Queen.cs); this pattern is anchored with ^...$, so the
+// shorter spelling could never match and the notification centre has never once announced a
+// SUCCESSFUL mission. Every other alternative here has a real producer, which is why it looked like
+// a working feature: failures, patches and approvals all arrived. `mission_partial` added at the
+// same time — a mission that half-worked is exactly as notable as one that did not.
+// Guarded now by UiShellTests, against the event vocabulary rather than against this list.
+const NOTIF_NOTABLE=/^(mission_completed|mission_partial|mission_failed|patch_applied|patch_apply_failed|patch_alternative_created|patch_verified_approved|patch_verify_failed|approval_request_created|approval_request_approved|approval_request_rejected|autonomy_autoapply_\w+|jobs_cancel_all)$/;
 const NOTIF_BAD=/failed|reverted|rejected|cancel/;
 const NOTIF_GOOD=/complete|applied|approved|verified|kept/;
 let notifStore=[];

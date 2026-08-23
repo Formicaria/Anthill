@@ -493,7 +493,7 @@ public sealed class SoldierAnt : BaseAnt
             Handoffs =
             {
                 blocked.Count > 0
-                    ? new AntHandoff("soldier", "builder", "blocking findings need operator explanation", "build", new[] { "security_review" }, true, 1, $"soldier-block:{mission.Id}:{task.Id}")
+                    ? new AntHandoff("soldier", "builder", "blocking findings need operator explanation", "build_answer", new[] { "security_review" }, true, 1, $"soldier-block:{mission.Id}:{task.Id}")
                     : new AntHandoff("soldier", "verifier", "review passed — verify", "verification", new[] { "security_review" }, false, 1, $"soldier-ok:{mission.Id}:{task.Id}"),
             },
             // v3.8.22: the marker leads, then the rule ids. Until this release the soldier's block
@@ -840,12 +840,37 @@ public sealed class MedicAnt : BaseAnt
     }
 
     /// <summary>§1D — the routing table, from structure. Never from words in error prose.</summary>
+    ///
+    /// THE BUILDER'S TASK TYPE IS `build_answer`, NOT `build`. v0.3.8.90.
+    ///
+    /// Every route to the builder in this file asked for task type "build" for as long as the routes
+    /// have existed. The builder's contract declares `SupportedTaskTypes: S("build_answer",
+    /// "synthesis")`, and `HandoffGate.Evaluate` refuses a handoff whose `RequiredTaskType` the
+    /// destination does not support — exact set membership, no normalisation. So every escalation to
+    /// the operator, from both the soldier's block and the medic's environmental diagnosis, was
+    /// refused 100% of the time. Because three of the four are `Required: true`, the refusal did not
+    /// merely drop the handoff: it set `DeterministicBlock` on the source task and logged
+    /// `required_handoff_refused`, so the paths that exist to REACH a human instead marked the
+    /// mission unverifiable and reached nobody.
+    ///
+    /// Found by the v0.3.8.90 sweep for "a filter that could not match" — the class v0.3.8.89 named
+    /// for `memory_candidate_archived`. Same shape, one layer up: a string compared against a
+    /// vocabulary that never contained it.
+    ///
+    /// Renaming the CONTRACT to accept "build" was considered and rejected. `build_answer` is what
+    /// the planner emits, what `RosterContractTests` pins, and what the builder's worker is named
+    /// for; "build" is also a verifier name (`VerificationResult.Verifier == "build"`), so admitting
+    /// it here would put one string in two vocabularies. The call sites were wrong, not the contract.
+    ///
+    /// `HandoffTaskTypeTests` now checks every declared handoff against its destination's contract,
+    /// which is the direction no existing test read: `RosterContractTests` covers planner-emitted
+    /// types and `RoleCancellationTests` covers the harness map.
     internal static (string Role, string TaskType, string Reason) SelectSpecialist(
         FailureClass cls, Task failed, Anthill.SDK.Artifacts.FailureContext? context, bool retryable)
     {
         // Policy and security say NO — recovery escalates to the operator, never routes around.
         if (FailureClassify.MustEscalate(cls))
-            return ("builder", "build", "policy/security/authorization denial — never routed around");
+            return ("builder", "build_answer", "policy/security/authorization denial — never routed around");
 
         // Transient classes retry the same deterministic surface.
         if (retryable)
@@ -869,7 +894,7 @@ public sealed class MedicAnt : BaseAnt
 
         // Provider/model/dependency/tool problems are environmental: no repair specialist can fix
         // them by editing code. Escalate with the classification visible.
-        return ("builder", "build", "environmental failure — operator/provider recovery, not a code repair");
+        return ("builder", "build_answer", "environmental failure — operator/provider recovery, not a code repair");
     }
 
     private AntExecutionResult Escalation(Mission mission, Task task, string message, string dedupeKey, string? signature = null)
@@ -879,7 +904,7 @@ public sealed class MedicAnt : BaseAnt
             Summary = message,
             Narrative = message + (signature is not null ? $"\nfailure_signature: {signature}" : ""),
             Artifacts = { new AntArtifact("failure_diagnosis", "Escalation", message) },
-            Handoffs = { new AntHandoff("medic", "builder", "escalation to operator", "build",
+            Handoffs = { new AntHandoff("medic", "builder", "escalation to operator", "build_answer",
                 new[] { "failure_diagnosis" }, true, 1, dedupeKey) },
             Warnings = { "escalated" },
         };
