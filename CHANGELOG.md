@@ -39,6 +39,18 @@ no collection, no roster snapshot and no globals. The recorder asks and prints t
 when the answer is a refusal; a guard asserts the recorder contains no arithmetic of its own, which
 is PLAN.md's own condition on this change.
 
+### And the first run caught the refusals in the wrong order
+
+The release's own first full run failed on one assertion, and the assertion was right. `Quote` asked
+"is there a price table" before "did the provider report anything", so a scripted run — no table, and
+a provider that reports no usage — was told to go and configure `model_pricing`. An operator who does
+that gets the same unmeasured field back, because pricing cannot recover usage nobody recorded.
+
+The binding constraint is now reported first: when two refusals are true, the one the operator
+**cannot** clear is the honest answer, and it is one round trip instead of two. Naming a gate that is
+not the one holding the door is the precise failure these three messages exist to prevent, and it had
+crept into the feature built to prevent it.
+
 **R4's exit gate is now open on nothing but the runs themselves.**
 
 ### The sweep: a filter that could not match

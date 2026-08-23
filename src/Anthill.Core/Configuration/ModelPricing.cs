@@ -120,16 +120,19 @@ public static class ModelPricing
                 "no model call was made in this mission, so there is nothing to price",
                 Array.Empty<string>());
 
-        if (table is null || table.Count == 0)
-            return new(false, 0m, money,
-                "no price table is configured. The runtime measured this run's tokens; converting "
-              + "them to currency needs `model_pricing` in config.json, and a rate assumed here "
-              + "would be a fabricated figure in an operator-facing report",
-                Array.Empty<string>());
-
+        // THE UNFIXABLE REFUSAL IS CHECKED FIRST, and the order is the message.
+        //
         // A provider that reports nothing is UNKNOWN, not zero — the same rule the tokens field
         // holds. Summing absent usage to zero would turn "this provider does not report usage" into
         // "this run was free", and the second is a claim an operator would act on.
+        //
+        // This ran AFTER the empty-table check in the first draft, and its first live run showed why
+        // that was wrong: a run with no table and a silent provider was told to configure
+        // `model_pricing`. An operator who does that gets the same unmeasured field back, because
+        // configuring prices cannot recover usage nobody recorded. The message named a gate that was
+        // not the binding one — the exact defect these three refusals exist to avoid. When both are
+        // true, the one the operator CANNOT clear is the honest answer, and it is one round trip
+        // instead of two.
         var silent = seen
             .Where(c => c.PromptTokens is null && c.CompletionTokens is null)
             .Select(c => Key(c.Provider, c.Model))
@@ -143,6 +146,13 @@ public static class ModelPricing
               + "priced from measurement: " + string.Join(", ", silent)
               + ". Unknown usage is not zero usage",
                 silent);
+
+        if (table is null || table.Count == 0)
+            return new(false, 0m, money,
+                "no price table is configured. The runtime measured this run's tokens; converting "
+              + "them to currency needs `model_pricing` in config.json, and a rate assumed here "
+              + "would be a fabricated figure in an operator-facing report",
+                Array.Empty<string>());
 
         var unpriced = seen
             .Where(c => For(table, c.Provider, c.Model) is null)

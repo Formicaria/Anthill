@@ -230,6 +230,30 @@ public class ModelPricingTests
         Assert.NotEqual(noTable, missing);
     }
 
+    /// <summary>
+    /// WHEN TWO REFUSALS ARE TRUE AT ONCE, THE ONE THE OPERATOR CANNOT CLEAR WINS.
+    ///
+    /// The first live run of this release caught the opposite ordering. A run with no price table AND
+    /// a provider that reported nothing was told to configure `model_pricing` — advice that changes
+    /// nothing, because pricing cannot recover usage nobody recorded. The operator does the work and
+    /// gets the same unmeasured field back.
+    ///
+    /// So the binding constraint is reported. Naming a gate that is not the one holding the door is
+    /// the precise failure these three messages exist to prevent, and it had crept into the feature
+    /// that exists to prevent it.
+    /// </summary>
+    [Fact]
+    public void WithNoTableAndASilentProvider_TheNoteNamesTheProvider_NotTheConfiguration()
+    {
+        var quote = ModelPricing.Quote(
+            new Dictionary<string, ModelPrice>(), "USD",
+            new[] { Call("ollama", "llama3.1:8b", null, null) });
+
+        Assert.False(quote.Measured);
+        Assert.Contains("reported no token usage", quote.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("model_pricing", quote.Reason, StringComparison.Ordinal);
+    }
+
     /// <summary>An unset currency falls back to USD rather than rendering a bare number.</summary>
     [Fact]
     public void AnEmptyCurrency_FallsBackRatherThanRenderingANumberWithNoUnit()
