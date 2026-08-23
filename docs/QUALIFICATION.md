@@ -118,12 +118,45 @@ plus an argument about whether its telemetry was complete.
 `LiveQualificationRecordTests` reads the table above and requires a one-to-one match with the fields
 the recorder produces — a row nobody produces fails, and a field nobody asked for fails too.
 
-**Cost has no producer and is recorded as a gap.** `ModelRouter` records prompt and completion tokens
-per call; nothing converts them to currency, because that needs a per-provider price table that does
-not exist as configuration. The recorder reports `cost: unmeasured` with that reason rather than
-assuming a rate — a fabricated figure in an operator-facing report would be worse than an absent one.
-**R4's exit gate therefore cannot be read as met on this field**, and closing it means adding pricing
-as operator configuration, not changing the recorder.
+### Cost has a producer now, and it is the operator *(v0.3.8.90)*
+
+At v0.3.8.89 cost was the one field on this table with no producer at all: `ModelRouter` recorded
+tokens and nothing converted them to currency. `ModelPricing` is that converter, and it is
+configuration rather than code because a rate compiled into this repository would be wrong for
+somebody on the day it shipped and wrong for everybody eventually.
+
+Set it in `config.json`:
+
+```json
+"model_pricing_currency": "USD",
+"model_pricing": {
+  "ollama/*":            { "input_per_million": 0,    "output_per_million": 0 },
+  "openai/gpt-4o-mini":  { "input_per_million": 0.15, "output_per_million": 0.60 }
+}
+```
+
+Keys are `provider/model`; `provider/*` prices a whole provider and is how a LOCAL run becomes a
+measured zero rather than an unknown. The colony does not assume that itself — "local models are
+free" is a claim about somebody's hardware and electricity, not a fact this process can observe, so
+the operator states it and the record then reports it as measured.
+
+**A run is priced only when every model it used has an entry and every call reported usage.** The
+three refusals are distinguishable on purpose, because they are three different things to do about
+it:
+
+| what the record says | what it means | what to do |
+|---|---|---|
+| no price table is configured | `model_pricing` is empty | write one |
+| provider X reported no token usage | the provider is silent; unknown is not zero | nothing — a provider fact |
+| the table does not cover: X | one model served calls and has no entry | add an entry, or `provider/*` |
+
+The rule underneath all three: **a partially priced run is not priced.** Pricing the covered models
+and omitting the rest produces a total lower than the run's real cost, wearing a decimal point and a
+currency symbol, with nothing to tell the reader it is partial. An absent figure prompts a question;
+an understated one does not.
+
+**R4's exit gate can now be met on this field** — for a run whose provider reports usage and whose
+models the operator has priced. It is not met by the recorder existing.
 
 Two other fields stay unmeasured in a scripted run and are expected to be measured live: token counts
 (the scripted provider reports no usage, which several real providers also do — absent stays absent,

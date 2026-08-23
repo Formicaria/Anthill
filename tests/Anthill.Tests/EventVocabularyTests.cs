@@ -189,4 +189,85 @@ public class EventVocabularyTests
             $"only {logged} distinct event literals were found at LogEvent call sites. The runtime "
           + "emits more than that; the pattern this guard matches has moved.");
     }
+
+    // -----------------------------------------------------------------------------------------------
+    // v0.3.8.90 — the CONSUMER side, for consumers that are sets rather than single queries
+    // -----------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// EVERY EVENT TYPE THE FAILURES PANEL FILTERS ON IS ONE THE VOCABULARY DECLARES.
+    ///
+    /// `AnthillRuntime.FailureEventTypes` is the operator's "recent failures" query and the
+    /// `failure_event_count` on `/status`. Three of its seven members named nothing:
+    /// `task_timeout` (the real name is `task_failed_timeout`), `model_call_failed` (never existed —
+    /// the router emits one `model_call` per call and carries the outcome in metadata), and
+    /// `mission_timeout`, which is real as a STOP REASON and not as an event type. So a timed-out
+    /// mission and a dead provider — the two failures an operator most needs — were the two that
+    /// could not appear, while the four working members returned enough rows that the panel never
+    /// looked broken.
+    ///
+    /// This is the direction v0.3.8.89's `EveryEventTypeQueriedByName_IsDeclared` does not cover: that
+    /// one reads `GetRecentEvents(n, "name")`, a single name in a call position. A SET of names built
+    /// once and reused by two queries is a different shape and needed its own check.
+    /// </summary>
+    [Fact]
+    public void EveryFailureEventType_IsOneTheVocabularyDeclares()
+    {
+        var values = Declared().Values.ToHashSet(StringComparer.Ordinal);
+
+        var phantoms = Anthill.Core.Configuration.AnthillRuntime.FailureEventTypes
+            .Where(t => !values.Contains(t))
+            .OrderBy(t => t, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(phantoms.Count == 0,
+            "these members of AnthillRuntime.FailureEventTypes are not declared event types: "
+          + string.Join(", ", phantoms)
+          + ". The failures panel and the /status failure count are both built from this set, so a "
+          + "member nothing emits is an arm of the operator's diagnostics that can never fire — and "
+          + "the other arms keep returning rows, so the panel goes on looking healthy.");
+
+        Assert.True(Anthill.Core.Configuration.AnthillRuntime.FailureEventTypes.Count >= 4,
+            "the failure set has almost nothing in it; this guard would pass over an empty set.");
+    }
+
+    /// <summary>
+    /// AND THE CONSOLE'S NOTIFICATION FILTER NAMES REAL MISSION EVENTS.
+    ///
+    /// `app.js`'s `NOTIF_NOTABLE` is anchored `^(...)$` and listed `mission_complete`. The colony
+    /// emits `mission_completed`. One missing letter, and the notification centre has never once
+    /// announced a successful mission — while every other alternative in the same pattern (failures,
+    /// patches, approvals) had a real producer and arrived normally. A feature that works for bad
+    /// news and silently not for good news is the hardest kind of broken to notice.
+    ///
+    /// SCOPED TO THE `mission_` PREFIX on purpose. The pattern also carries UI-side names and a
+    /// `\w+` wildcard, and a guard that demanded every alternative be a declared event type would be
+    /// asserting something that is not true. Narrow and honest beats broad and wrong — the whole
+    /// pattern is a job for the sweep that widens the emitter detector, which PLAN.md now names.
+    /// </summary>
+    [Fact]
+    public void EveryMissionEventTheConsoleNotifiesOn_IsOneTheVocabularyDeclares()
+    {
+        var app = Path.Combine(SourceText.RepoRoot(), "src", "Anthill.UI", "app.js");
+        var line = File.ReadLines(app).FirstOrDefault(l => l.Contains("NOTIF_NOTABLE", StringComparison.Ordinal));
+
+        Assert.NotNull(line);
+
+        var named = Regex.Matches(line!, @"mission_[a-z_]+")
+            .Select(m => m.Value)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(named.Count >= 2,
+            "the console's notification filter no longer names any mission events by the shape this "
+          + "guard reads. It found: " + string.Join(", ", named));
+
+        var values = Declared().Values.ToHashSet(StringComparer.Ordinal);
+        var phantoms = named.Where(n => !values.Contains(n)).OrderBy(n => n, StringComparer.Ordinal).ToList();
+
+        Assert.True(phantoms.Count == 0,
+            "the console notifies on mission events that do not exist: " + string.Join(", ", phantoms)
+          + ". The pattern is anchored, so a near-miss spelling matches nothing at all and the "
+          + "notification simply never appears.");
+    }
 }

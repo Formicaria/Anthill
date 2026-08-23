@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Anthill.Core.Common;
+using Anthill.SDK.Events;   // FailureEventTypes names the vocabulary rather than re-spelling it
 
 namespace Anthill.Core.Configuration;
 
@@ -14,7 +15,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "0.3.8.89";
+    public const string Version = "0.3.8.90";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -217,6 +218,16 @@ public static class AnthillRuntime
     /// </summary>
     public static string ModelPriorityProvider = "";
     public static string ModelPriorityModel = "";
+
+    /// <summary>
+    /// v0.3.8.90 — the operator's price table, `provider/model` → per-million rates, and the currency
+    /// those rates are quoted in. EMPTY until an operator writes one; see <see cref="ModelPricing"/>
+    /// for why nothing here ships with a rate and why an empty table produces an unmeasured cost
+    /// rather than a zero one.
+    /// </summary>
+    public static IReadOnlyDictionary<string, ModelPrice> ModelPricingTable =
+        new Dictionary<string, ModelPrice>(StringComparer.OrdinalIgnoreCase);
+    public static string ModelPricingCurrency = "USD";
 
     /// <summary>A priority route counts only when BOTH halves are named — a provider without a model
     /// is not a route, and silently completing it from defaults would route work somewhere nobody chose.</summary>
@@ -625,10 +636,30 @@ public static class AnthillRuntime
     // ---- Observability ----------------------------------------------------
     public const int EventListLimitDefault = 30;
     public const int DiagnosticEventLimit = 12;
+    /// <summary>
+    /// The event types the operator's "recent failures" panel is built from. v0.3.8.90 — three of the
+    /// seven arms named nothing.
+    ///
+    /// WHAT WAS WRONG. `task_timeout` is spelled `task_failed_timeout` in the vocabulary.
+    /// `model_call_failed` has never existed: the router emits one `model_call` event per call and
+    /// carries the outcome in its metadata, so a dead provider produced no matching row.
+    /// `mission_timeout` is real — as a STOP REASON (`MissionStopReasons.Timeout`), not an event
+    /// type — which is the most expensive kind of near-miss, a correct string from the wrong
+    /// vocabulary. Net effect: a timed-out mission and a dead provider, the two failures an operator
+    /// most needs to see, were the two that could not appear in the failures panel, while the four
+    /// working arms returned enough rows that the panel never looked broken.
+    ///
+    /// Found by the v0.3.8.90 sweep for "a filter that could not match" (the class v0.3.8.89 named).
+    /// `EventVocabularyTests.EveryFailureEventType_IsOneTheVocabularyDeclares` now pins every member
+    /// of this set to a declared constant, in the one direction nothing was checking.
+    ///
+    /// Spelled through <see cref="EventTypes"/> rather than as literals, deliberately: a set of
+    /// strings that names a vocabulary should be unable to disagree with it.
+    /// </summary>
     public static readonly HashSet<string> FailureEventTypes = new()
     {
-        "task_failed", "tool_failed", "patch_apply_failed", "patch_proposal_parse_failed",
-        "mission_timeout", "task_timeout", "model_call_failed",
+        EventTypes.TaskFailed, EventTypes.ToolFailed, EventTypes.PatchApplyFailed,
+        EventTypes.PatchProposalParseFailed, EventTypes.TaskFailedTimeout,
     };
 
     // ---- File limits ------------------------------------------------------
@@ -1029,6 +1060,14 @@ public static class AnthillRuntime
 
         ModelPriorityProvider = (config.ModelPriorityProvider ?? "").Trim();
         ModelPriorityModel = (config.ModelPriorityModel ?? "").Trim();
+
+        // Rebuilt rather than mutated, and case-insensitive on the key, because the operator writes
+        // "OpenAI/gpt-4o" or "openai/gpt-4o" as the mood takes them and a table that matched only one
+        // spelling would report the run unpriced while the price sat in the file.
+        ModelPricingTable = new Dictionary<string, ModelPrice>(
+            config.ModelPricing ?? new(), StringComparer.OrdinalIgnoreCase);
+        ModelPricingCurrency = string.IsNullOrWhiteSpace(config.ModelPricingCurrency)
+            ? "USD" : config.ModelPricingCurrency.Trim();
     }
 
     // ---- Live settings editing (web console) ------------------------------
@@ -1133,6 +1172,18 @@ public static class AnthillRuntime
         lock (InitLock)
         {
             var old = Config;
+            // WHAT SURVIVES A RESET, and the two settings that did not until v0.3.8.90.
+            //
+            // The rule this list implements is "a reset returns TUNABLES to their defaults and never
+            // destroys something only the operator knows". Two settings had drifted out of it simply
+            // by being added later than the method:
+            //   - the priority route (v3.8.1), which is the operator's answer to "which model do I
+            //     actually want", and
+            //   - the price table (v0.3.8.90), which is typed-in reference data this process cannot
+            //     rediscover — losing it silently turns every later cost report back into a gap.
+            // Neither is a tunable with a safe default; both are things the operator wrote down.
+            // `ConfigResetTests` now pins the initializer and the returned list to each other, since
+            // they are two hand-maintained copies of one rule and that is a defect class here.
             var fresh = new AnthillConfig
             {
                 SafetyProfile = old.SafetyProfile,
@@ -1140,13 +1191,17 @@ public static class AnthillRuntime
                 UseOllama = old.UseOllama, OllamaHost = old.OllamaHost, OllamaModel = old.OllamaModel,
                 ModelRoutes = old.ModelRoutes, ApiHost = old.ApiHost, ApiPort = old.ApiPort,
                 AgentWorkspaceDir = old.AgentWorkspaceDir,
+                ModelPriorityProvider = old.ModelPriorityProvider, ModelPriorityModel = old.ModelPriorityModel,
+                ModelPricing = old.ModelPricing, ModelPricingCurrency = old.ModelPricingCurrency,
             };
             AnthillConfig.ApplySafetyProfile(fresh, fresh.SafetyProfile ?? "SAFE_LOCAL");
             Config = fresh;
             ProjectConfig(Config);
             SaveConfig();
             return new List<string> { "safety_profile", "use_ollama", "ollama_host", "ollama_model",
-                "model_routes", "api_host", "api_port", "agent_workspace_dir" };
+                "model_routes", "api_host", "api_port", "agent_workspace_dir",
+                "model_priority_provider", "model_priority_model",
+                "model_pricing", "model_pricing_currency" };
         }
     }
 
@@ -1171,6 +1226,17 @@ public static class AnthillRuntime
         // Reported rather than left for the console to recompute, so what the colony believes about
         // its own precedence and what an operator is shown cannot drift apart.
         ["model_priority_active"] = HasModelPriority,
+        // Rendered as the operator wrote it. The console shows WHETHER a run can be priced, which is
+        // a different question from what the rate is, so the count is reported alongside it.
+        ["model_pricing"] = ModelPricingTable.ToDictionary(
+            kv => kv.Key,
+            kv => (object?)new Dictionary<string, decimal>
+            {
+                ["input_per_million"] = kv.Value.InputPerMillion,
+                ["output_per_million"] = kv.Value.OutputPerMillion,
+            }),
+        ["model_pricing_currency"] = ModelPricingCurrency,
+        ["model_pricing_configured"] = ModelPricingTable.Count > 0,
         ["web_search_enabled"] = EnableWebSearch,
         ["patch_application_enabled"] = EnablePatchApplication,
         ["homelab_enabled"] = EnableHomelab,

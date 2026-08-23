@@ -259,4 +259,56 @@ public class PheromoneVocabularyTests
         }
         finally { try { File.Delete(path); } catch { } }
     }
+
+    /// <summary>
+    /// THE FOURTH DIRECTION: every arm of the category switch names a kind that can arrive. v0.3.8.90.
+    ///
+    /// Three guards in this file already check declared→written, written→declared and
+    /// declared→categorised. `SqliteMemory.SignalCategoryFor` had four arms — "objective",
+    /// "objective_pattern", "model_provider", "provider" — for kinds `TrailKind` does not declare and
+    /// nothing writes, so they were unreachable and the `_ => "operational_telemetry"` fallback made
+    /// them invisible. That is the v0.3.8.89 class ("a filter that could not match") in a switch
+    /// rather than a query: unreachable arms read as coverage, and the next person adding a kind
+    /// looks at the switch, sees a plausible-looking arm, and assumes it is wired.
+    ///
+    /// Reads the SOURCE because switch arms are not enumerable at runtime — and reads the arms only,
+    /// not the fallback, which is exactly what a `_` is for.
+    /// </summary>
+    [Fact]
+    public void EverySignalCategoryArm_NamesADeclaredTrailKind()
+    {
+        var file = Path.Combine(SourceText.RepoRoot(),
+            "src", "Anthill.Core", "Memory", "SqliteMemory.Operations.cs");
+        var code = SourceText.CodeOnly(File.ReadAllText(file));
+
+        var start = code.IndexOf("SignalCategoryFor", StringComparison.Ordinal);
+        Assert.True(start >= 0, "SignalCategoryFor has moved or been renamed; this guard reads it by name.");
+
+        var end = code.IndexOf("};", start, StringComparison.Ordinal);
+        Assert.True(end > start, "the category switch no longer ends where this guard expects.");
+
+        // The LEFT sides only. A switch arm's kind is always followed by `or` or `=>`; the category
+        // it returns is followed by a comma. Matching every quoted string in the region would sweep
+        // the categories in as well and report `procedural_learning` as an undeclared trail kind —
+        // a guard failing on its own right-hand side, which is this repository's favourite mistake.
+        var arms = Regex.Matches(code[start..end], @"""(?<kind>[a-z][a-z0-9_]*)""(?=\s*(?:or\s|=>))")
+            .Select(m => m.Groups["kind"].Value)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(arms.Count >= 8,
+            $"this guard found only {arms.Count} arm(s) in the category switch; the shape it reads "
+          + "has changed and it would pass over almost nothing.");
+
+        var unreachable = arms
+            .Where(kind => !TrailKind.All.Contains(kind))
+            .OrderBy(kind => kind, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(unreachable.Count == 0,
+            "SignalCategoryFor has arms for trail kinds nothing can write: "
+          + string.Join(", ", unreachable)
+          + ". TrailKind.All is the whole population — an arm outside it is unreachable, and the "
+          + "`_` fallback means it fails silently rather than visibly.");
+    }
 }

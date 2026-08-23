@@ -55,6 +55,19 @@ public static class EventTypes
     public const string TaskFailed = "task_failed";
     public const string TaskFailedTimeout = "task_failed_timeout";
     public const string TaskBlocked = "task_blocked";
+    // v0.3.8.90 — the three mission terminals, emitted from one ternary in `Queen.cs` and therefore
+    // invisible to the literal sweep since the day they were written. Declared because a consumer
+    // has to be able to name them: the console's notification centre filtered on `mission_complete`
+    // (no trailing "d") and so has never announced a successful mission, while every other name in
+    // its pattern worked. A vocabulary that cannot be referenced by name gets re-spelled by hand,
+    // and a hand-spelled name is one keystroke from matching nothing.
+    public const string MissionCompleted = "mission_completed";
+    public const string MissionPartial = "mission_partial";
+    public const string MissionFailed = "mission_failed";
+    // v0.3.8.90, same reason as the patch pair below: emitted through a wrapper the literal sweep
+    // cannot read, and needed by name so the failures panel can be built from the vocabulary.
+    public const string ToolCompleted = "tool_completed";
+    public const string ToolFailed = "tool_failed";
     public const string TaskDrained = "task_drained";
 
     /// <summary>
@@ -111,6 +124,13 @@ public static class EventTypes
     public const string PatchSetEmpty = "patch_set_empty";
     public const string PatchProposalCreated = "patch_proposal_created";
     public const string PatchProposalParseFailed = "patch_proposal_parse_failed";
+    // v0.3.8.90: emitted since the apply path existed and declared here for the first time. The
+    // publication sweep could not see them — the event type reaches `LogEvent` through a wrapper
+    // whose first argument contains a call, which `LoggedLiteral`'s `[^,()]+` rejects — and
+    // `AnthillRuntime.FailureEventTypes` needed to name them through the vocabulary rather than as
+    // loose strings, which is what let three of its seven arms drift onto names nothing emits.
+    public const string PatchApplied = "patch_applied";
+    public const string PatchApplyFailed = "patch_apply_failed";
     public const string PatchAlternativeCreated = "patch_alternative_created";
     public const string PatchReverted = "patch_reverted";
     public const string PatchRevertFailed = "patch_revert_failed";
