@@ -233,6 +233,9 @@ public static class EventTypes
     public const string PatchSetApplyRefused = "patch_set_apply_refused";
     public const string PatchSetRolledBack = "patch_set_rolled_back";
     public const string PatchSetRollbackIncomplete = "patch_set_rollback_incomplete";
+    // v0.3.8.91 — startup reconciliation of an apply a crash interrupted.
+    public const string PatchApplyReconciled = "patch_apply_reconciled";
+    public const string PatchApplyUnreconciled = "patch_apply_unreconciled";
     public const string PatchSetMaterializationFailed = "patch_set_materialization_failed";
     public const string PatchSetVerificationFaulted = "patch_set_verification_faulted";
     public const string PatchSetVerified = "patch_set_verified";

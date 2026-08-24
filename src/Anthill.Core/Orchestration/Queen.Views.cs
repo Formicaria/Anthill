@@ -132,10 +132,28 @@ public sealed partial class Queen
                 $"Patch cannot be applied.\nPatch ID: {patchId}\nRefused by: {verdict.Layer}\n{verdict.Reason}");
         }
 
+        // THE INTENT IS RECORDED BEFORE THE DISK IS TOUCHED. v0.3.8.91.
+        //
+        // Below this point the old code wrote the file and then made four separate, un-transacted
+        // database updates. A crash between them left the change on disk and the patch still
+        // `approved` — and the next Apply then refused on a stale base, marked it FAILED, and revert
+        // refused because only an applied patch can be reverted. A change that really landed,
+        // recorded as never having happened.
+        //
+        // The intent carries the target's bytes as they are right now, so startup reconciliation can
+        // decide from hashes rather than from belief. See `PatchApplyReconciler`.
+        var intent = Memory.BeginApplyIntent(
+            patchId, approvalId, Str(patch, "patch_set_id"), Str(approval, "mission_id"),
+            Str(patch, "file_path"), Verification.PatchApplyIntentHash.Of(Str(patch, "file_path")));
+
+        Memory.AdvanceApplyIntent(intent.Id, Verification.PatchApplyPhase.Mutating);
+
         var result = Tools.RunTool("apply_patch", Str(approval, "mission_id"), Str(approval, "task_id"), "queen",
             new() { ["patch"] = patch });
         if (!result.Success)
         {
+            // Nothing landed, so there is nothing for reconciliation to finish.
+            Memory.CloseApplyIntent(intent.Id);
             Memory.UpdatePatchStatus(patchId, PatchStatus.Failed, lastError: result.Error);
             Memory.LogEvent(Str(approval, "mission_id"), "patch_apply_failed", $"Patch application failed: {patchId}",
                 Str(approval, "task_id"), "queen", new() { ["approval_request_id"] = approvalId, ["patch_id"] = patchId, ["error"] = result.Error });
@@ -145,6 +163,11 @@ public sealed partial class Queen
         string? backupPath = null;
         try { backupPath = JsonDocument.Parse(string.IsNullOrEmpty(result.Output) ? "{}" : result.Output).RootElement.TryGetProperty("backup_path", out var bp) ? bp.GetString() : null; }
         catch { /* tolerate */ }
+        // The bytes are down. From here the database is behind the disk, and the intent says so
+        // until the records catch up — which is exactly the window a crash used to make permanent.
+        Memory.AdvanceApplyIntent(intent.Id, Verification.PatchApplyPhase.Applied,
+            Verification.PatchApplyIntentHash.Of(Str(patch, "file_path")));
+
         Memory.UpdatePatchStatus(patchId, PatchStatus.Applied, AnthillTime.NowUtc().ToIso(), backupPath, null);
         Memory.UpdateApprovalStatus(approvalId, ApprovalStatus.Consumed, "Approval consumed by successful patch application.");
         Memory.LogEvent(Str(approval, "mission_id"), "patch_applied", $"Patch applied successfully: {patchId}",
@@ -152,6 +175,9 @@ public sealed partial class Queen
             new() { ["approval_request_id"] = approvalId, ["patch_id"] = patchId, ["file_path"] = Str(patch, "file_path"), ["change_type"] = Str(patch, "change_type"), ["backup_path"] = backupPath });
         Memory.UpdatePheromoneTrail("capability:controlled_file_writing", "capability", true, 0.03,
             new() { ["approval_request_id"] = approvalId, ["patch_id"] = patchId, ["file_path"] = Str(patch, "file_path") });
+
+        // Disk and records agree. The intent has nothing left to say.
+        Memory.CloseApplyIntent(intent.Id);
 
         return new(PatchApplyOutcome.Applied,
             $"Patch applied successfully.\nApproval ID: {approvalId}\nPatch ID: {patchId}\nFile: {Str(patch, "file_path")}\nBackup: {backupPath ?? "n/a"}\nApproval Status: consumed\nPatch Status: applied");
@@ -251,6 +277,15 @@ public sealed partial class Queen
         var changeType = Str(patch, "change_type");
         var filePath = Str(patch, "file_path");
 
+        // Same intent journal as the operator's Apply button. v0.3.8.91 — one lane having crash
+        // recovery and the other not is how the manual path became the one that could strand a
+        // change on disk with no record of it.
+        var intent = Memory.BeginApplyIntent(
+            patchId, approvalId: null, Str(patch, "patch_set_id"), missionId,
+            filePath, Verification.PatchApplyIntentHash.Of(filePath));
+
+        Memory.AdvanceApplyIntent(intent.Id, Verification.PatchApplyPhase.Mutating);
+
         var result = Tools.RunTool("apply_patch", missionId, taskId, "director",
             new() { ["patch"] = patch });
 
@@ -272,13 +307,23 @@ public sealed partial class Queen
 
         if (!result.Success)
         {
+            // Nothing landed; the intent has nothing to reconcile.
+            Memory.CloseApplyIntent(intent.Id);
             Memory.UpdatePatchStatus(patchId, PatchStatus.Failed, lastError: result.Error, backupPath: backupPath);
             return new AutoApplyOutcome(false, patchId, result.Error, resolvedPath, backupPath, changeType, filePath, resolvedDestination);
         }
 
+        // The bytes are down and the records are not yet written — the window a crash used to make
+        // permanent. `appliedHash` is what the tool says it left, which is exactly what
+        // reconciliation compares the file against.
+        Memory.AdvanceApplyIntent(intent.Id, Verification.PatchApplyPhase.Applied,
+            appliedHash ?? Verification.PatchApplyIntentHash.Of(filePath));
+
         Memory.UpdatePatchStatus(patchId, PatchStatus.Applied, AnthillTime.NowUtc().ToIso(), backupPath, null, appliedHash);
         Memory.LogEvent(missionId, "autonomy_autoapply_applied", $"Director auto-applied patch: {filePath}", taskId, "director",
             new() { ["patch_id"] = patchId, ["file_path"] = filePath, ["change_type"] = changeType, ["backup_path"] = backupPath, ["destination_path"] = resolvedDestination, ["applied_hash"] = appliedHash, ["verified"] = false });
+
+        Memory.CloseApplyIntent(intent.Id);
         return new AutoApplyOutcome(true, patchId, null, resolvedPath, backupPath, changeType, filePath, resolvedDestination, appliedHash);
     }
 

@@ -215,6 +215,22 @@ public static partial class ApiHost
         }
         catch (Exception e) { Console.Error.WriteLine($"[apply-recovery] recovery scan failed: {e.Message}"); }
 
+        // v0.3.8.91 (R0): finish or discard any apply a crash interrupted, BEFORE anything can apply
+        // another one. The filesystem half was already recovered above; this is the database half —
+        // a write that landed and whose records never caught up used to leave a patch `approved` on
+        // restart, refuse on a stale base, get marked FAILED, and then be unrevertable.
+        try
+        {
+            var reconciled = Anthill.Core.Verification.PatchApplyReconciler.Reconcile(Queen.Memory);
+            foreach (var note in reconciled.Notes) Console.WriteLine($"[apply-reconcile] {note}");
+            if (reconciled.NeedsOperator > 0)
+                Console.Error.WriteLine(
+                    $"[apply-reconcile] {reconciled.NeedsOperator} interrupted apply(s) need an operator: "
+                  + "the file matches neither its pre-apply nor its post-apply hash, so nothing was "
+                  + "completed or undone.");
+        }
+        catch (Exception e) { Console.Error.WriteLine($"[apply-reconcile] sweep failed: {e.Message}"); }
+
         // v0.3.8.91: mint the first-run bootstrap secret, BEFORE the listener opens. On a
         // network-reachable bind with no administrator yet, /auth/setup requires it — see
         // SetupAuthority for why the rule is written on the bind rather than the caller's address.

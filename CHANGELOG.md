@@ -169,6 +169,35 @@ and a sealed body handed to `PatchApply.Compute` would be compared against the l
 match, and refuse every proposal with "stale base": a correct-looking refusal for a reason that has
 nothing to do with the tree.
 
+### An interrupted apply is finished or discarded, never guessed at
+
+`ApplyApprovedPatch` wrote to disk and then made four separate, un-transacted database updates —
+patch status, approval status, event, pheromone. A crash between them left the file changed and the
+patch still `approved`. On restart the Patch Center offered Apply again, the recompute found the file
+no longer matching its base hash, the patch was marked **failed**, and `RevertAppliedPatch` then
+refused because only an *applied* patch can be reverted. A change that really landed, recorded as
+never having happened, and unrevertable.
+
+`ApplyTransaction.Recover` could not help. It replays the FILESYSTEM journal, which the manual lane
+never wrote, and it knows nothing about database rows. What existed was a recoverable filesystem
+transaction, not a recoverable system one.
+
+An **apply intent journal** now records what a write is about to do, before it does it, with the
+target's current bytes: Prepared → Mutating → Applied → Recorded, one row per attempted apply, on
+both lanes. Startup reconciliation reads it and decides **from hashes rather than from belief**:
+
+- **Prepared** — nothing was touched; discard.
+- **Applied** — the bytes landed and the records did not; finish the records. This is the case that
+  became the unrevertable phantom.
+- **Mutating** — the ambiguous one, and why the hashes exist. Still the pre-apply bytes? The write
+  never landed; discard. Exactly the post-apply bytes? Complete it. **Neither?** Left for an
+  operator, loudly. Completing an apply whose result nothing verified is the failure this whole
+  release exists to remove, and doing it during recovery — where nobody is watching — would be the
+  worst possible place.
+
+Reconciliation never re-runs an apply and never rolls one back. It makes the record match what the
+disk already says; it is not a second applier.
+
 ### The live tree must still be the one verification read
 
 Verification binds evidence to the base revision, the patch-set content hash, and `AppliedTreeHash` —
