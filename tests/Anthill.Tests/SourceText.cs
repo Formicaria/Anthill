@@ -26,8 +26,27 @@ public static class SourceText
     /// their contents are skipped for delimiter purposes, so a <c>"//"</c> inside a URL does not
     /// start a comment and a quote inside a verbatim string does not end one.
     /// </summary>
+    /// <remarks>
+    /// LINE ENDINGS ARE NORMALISED FIRST. v0.3.8.92.
+    ///
+    /// Every guard built on this reads by CHARACTER OFFSET — `code[start..start + 4000]`, an index
+    /// comparison, a slice to the next marker. On a Windows checkout with `core.autocrlf` the same
+    /// file is one character longer per line, so a window that fits on Linux does not fit there, and
+    /// a guard passes on one platform and fails on the other for a reason that has nothing to do
+    /// with what it is checking.
+    ///
+    /// That is exactly what v0.3.8.91 shipped: `TheBypassLane_IsGatedBeforeItSynthesizesItsOwnApproval`
+    /// read a 4,000-character window, which held on Linux and ran out three lines short on
+    /// windows-latest — and comments are BLANKED here rather than removed, so a long explanatory
+    /// block spends that budget without contributing anything the guard reads. Every local run was
+    /// green and main went red.
+    ///
+    /// Normalising here rather than at each call site, because the call sites are the population
+    /// that keeps growing.
+    /// </remarks>
     public static string CodeOnly(string source)
     {
+        source = (source ?? "").Replace("\r\n", "\n");
         var sb = new System.Text.StringBuilder(source.Length);
         bool inLine = false, inBlock = false, inString = false, inChar = false, verbatim = false;
 
