@@ -1651,6 +1651,36 @@ public sealed class ExecutionService : IExecutionService
             var who = $"bypass-policy({conversation.PolicySetBy ?? "operator"})";
             foreach (var proposal in patchSet.Proposals)
             {
+                // THE GATE, AS BYPASS. v0.3.8.91.
+                //
+                // Without this the bypass lane reached the apply path having checked two things —
+                // the block and the policy — and the apply path then satisfied its own human gate
+                // with an approval row this very call had just created and approved. A synthesized
+                // approval is not a human, so the human gate was answering nobody.
+                //
+                // Evaluating as `Bypass` is what makes the reviewer's sentence true here: the human
+                // is skipped by policy, and every other condition — reviews complete, no blocking
+                // security finding, evidence about THIS revision, no rollback halt — applies exactly
+                // as it does to anyone else. This is also the lane that runs before the tester and
+                // soldier tasks it just inserted have executed, which the review check now catches.
+                var verdict = Verification.PatchPromotionGate.Evaluate(
+                    _memory, (Anthill.SDK.Artifacts.IEvidenceStore)_memory, proposal.Id,
+                    Verification.PromotionActor.Bypass);
+
+                if (!verdict.Promotable)
+                {
+                    _memory.LogEvent(mission.Id, "patch_bypass_apply_refused",
+                        $"Skip-all-approvals did not apply {proposal.FilePath} — refused at "
+                      + $"{verdict.Layer}: {verdict.Reason}",
+                        task.Id, task.AssignedAnt,
+                        new()
+                        {
+                            ["patch_id"] = proposal.Id, ["file"] = proposal.FilePath, ["ok"] = false,
+                            ["refusal"] = verdict.Refusal.ToString(), ["layer"] = verdict.Layer,
+                        });
+                    continue;
+                }
+
                 var (ok, message) = _approveApplyPatch(proposal.Id, who);
                 _memory.LogEvent(mission.Id, ok ? "patch_bypass_applied" : "patch_bypass_apply_refused",
                     $"Skip-all-approvals {(ok ? "applied" : "did not apply")} {proposal.FilePath}: {message}",

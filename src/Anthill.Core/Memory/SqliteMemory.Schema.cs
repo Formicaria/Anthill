@@ -583,6 +583,16 @@ public sealed partial class SqliteMemory : IDisposable
         }
 
         AddMissing("missions", new() { ["user_result"] = "TEXT", ["debug_result"] = "TEXT", ["best_output_task_id"] = "TEXT" });
+        // v0.3.8.91: `Task.DeterministicBlock` had NO COLUMN. It has gated the most consequential
+        // decision in the system since v3.8.21 — `ApplyUnderBypass` refuses on it, the finalizer
+        // reads it — and it lived only in the in-memory object. A restart forgot every block, and a
+        // gate that reads persisted state could not see one at all. Found while building
+        // `PatchPromotionGate`, which needs exactly this fact.
+        //
+        // Legacy rows read as NULL, which is "nothing blocked" — correct, because a block that was
+        // never written down cannot be reconstructed and inventing one would refuse work nobody
+        // refused.
+        AddMissing("tasks", new() { ["deterministic_block"] = "TEXT" });
         // v0.3.8.57 (AUTONOMY-10 Phase 3): evidence identifies the revision it judged. Legacy rows
         // read as NULL — "not about a materialized revision" — which `Evidence.IdentifiesARevision`
         // reports as false, so an old row can never be mistaken for one that matches.

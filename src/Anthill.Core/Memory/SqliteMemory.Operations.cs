@@ -134,10 +134,10 @@ public sealed partial class SqliteMemory
                 parent_task_id, parent_task_ids_json, depends_on_json, input_artifact_ids_json, status, result, result_summary,
                 result_chars, estimated_tokens, created_at, started_at, finished_at, completed_at, failed_at,
                 skipped_at, elapsed_seconds, attempt_count, max_attempts, failure_reason, failure_type,
-                skipped_reason, blocked_reason, skill_id, critical, cancellation_reason)
+                skipped_reason, blocked_reason, skill_id, critical, cancellation_reason, deterministic_block)
               VALUES (@id, @mid, @title, @desc, @ant, @worker, @tt, @pid, @pids, @deps, @inputs, @status, @result, @summary,
                 @rc, @et, @created, @started, @finished, @completed, @failed, @skipped, @elapsed, @attempts,
-                @max, @freason, @ftype, @sreason, @breason, @skill, @critical, @cancel)",
+                @max, @freason, @ftype, @sreason, @breason, @skill, @critical, @cancel, @dblock)",
             ("@id", task.Id), ("@mid", missionId), ("@title", task.Title), ("@desc", task.Description),
             ("@ant", task.AssignedAnt), ("@worker", task.AssignedWorker), ("@tt", task.TaskType), ("@pid", task.ParentTaskId),
             ("@pids", Json.SafeDumps(task.ParentTaskIds)), ("@deps", Json.SafeDumps(task.DependsOn)),
@@ -154,7 +154,12 @@ public sealed partial class SqliteMemory
             // v2.26.0: criticality persisted so row-based evaluation can never disagree with the
             // live mission object about which failures fail the mission; cancellation reason so a
             // drained task's terminal state survives restart.
-            ("@critical", task.Critical ? 1 : 0), ("@cancel", task.CancellationReason));
+            // v0.3.8.91: the deterministic block, which had no column at all. It gates the bypass
+            // apply path and the finalizer, and it lived only on the in-memory object — so a restart
+            // forgot every refusal and `PatchPromotionGate`, which reads persisted state, could not
+            // see one. A safety decision that does not survive a process is not a safety decision.
+            ("@critical", task.Critical ? 1 : 0), ("@cancel", task.CancellationReason),
+            ("@dblock", task.DeterministicBlock));
 
     public void SavePatchSet(PatchSet patchSet)
     {
@@ -896,7 +901,7 @@ public sealed partial class SqliteMemory
                   parent_task_ids_json, depends_on_json, input_artifact_ids_json, status, result, result_summary, result_chars,
                   estimated_tokens, created_at, started_at, finished_at, completed_at, failed_at, skipped_at,
                   elapsed_seconds, attempt_count, max_attempts, failure_reason, failure_type, skipped_reason, blocked_reason,
-                  skill_id, critical, outcome_code, cancellation_reason
+                  skill_id, critical, outcome_code, cancellation_reason, deterministic_block
                 FROM tasks WHERE mission_id = @mid ORDER BY COALESCE(started_at, finished_at, id) ASC LIMIT @lim",
             ("@mid", missionId), ("@lim", limit));
 

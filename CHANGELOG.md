@@ -98,6 +98,46 @@ highest-consequence action in the system.
 string-returning method is now a formatter over it with no decision of its own. The approval step
 reads the stored status. The commit follows the outcome, so "already applied" no longer re-commits.
 
+### One promotion gate
+
+Five code paths could put a proposal's bytes on the operator's tree, and each carried its own idea of
+what to check first. The Apply button checked an approval row, its status, its type, and the patch's
+status — **five facts, none about whether anything had verified the change**. The bypass lane checked
+two, then reached the apply path and satisfied its human gate with an approval row it had *just
+created and approved itself*. Auto-apply checked nine. One capability, five answers, and the
+strictest was the only one with no human on it.
+
+`PatchPromotionGate` is now the authority, and the Apply button and the bypass lane consult it.
+
+**The actor changes exactly one condition — the human.** A `Human` needs an approved approval row; a
+`Bypass` needs an attributed Bypass policy; `Automation` needs the canonical `completed_verified`
+evaluation. Everything else — patch status, write gates, the rollback halt marker, the producing
+task's deterministic block, required reviews complete, no blocking soldier finding, evidence that
+judges *this* revision — applies to all of them. A test asserts those conditions sit above the actor
+switch, because moving one inside it would silently exempt a lane. That is the reviewer's sentence
+made mechanical: *Skip All Approvals skips the human, not the colony's safety system.*
+
+Absence is not pass, with one deliberate exception that is stated rather than hidden: a mission whose
+evidence predates v0.3.8.57 carries no revision identity at all, and refusing every such mission
+would turn a schema addition into a retroactive freeze. That matches `AutoApplyRunner`'s existing
+rule rather than inventing a second one.
+
+Auto-apply keeps its own nine checks for now — it is stricter than the gate on every axis. Folding it
+in belongs with making the set apply as a unit, which is the next commit.
+
+### The deterministic block had no column
+
+Found while building the gate, and it is the sharper half of this section. **`Task.DeterministicBlock`
+was never persisted.** No column in the `tasks` table, nothing in the upsert. It has gated the most
+consequential decision in the system since v3.8.21 — `ApplyUnderBypass` refuses on it, the finalizer
+reads it — and it lived only on the in-memory object. A restart forgot every block.
+
+Which also means the verification-fault fix earlier in this same release was, for a few hours, not
+what its own comment claimed: *"The block must outlive this process."* It could not. It does now —
+column added, written on every task save, read back by `GetTasksForMission`, and consumed by the
+gate. A safety decision that does not survive a process is not a safety decision, and a comment that
+says it does is worse than one that does not.
+
 ### What this release does NOT fix, and the order it comes in
 
 The review named 22 items. This one is the front door. The rest are sequenced rather than rushed,

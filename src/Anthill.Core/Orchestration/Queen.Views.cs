@@ -101,6 +101,37 @@ public sealed partial class Queen
         if (Str(patch, "status") is var ps && (ps == PatchStatus.Rejected.Value() || ps == PatchStatus.Failed.Value()))
             return new(PatchApplyOutcome.RefusedStatus, $"Patch cannot be applied because status is {ps}.\nPatch ID: {patchId}");
 
+        // THE PROMOTION GATE. v0.3.8.91.
+        //
+        // Everything above this line is what the Apply button used to check on its own: an approval
+        // row, its status, its type, the patch's own status. Five facts, none of them about whether
+        // anything had VERIFIED the change. Meanwhile the auto-apply lane checked nine things — so
+        // the strictest path was the one with no human on it and the loosest was the one a person
+        // clicks. One capability, five different answers to "may this happen".
+        //
+        // The gate is now the authority for all of them and this call is what makes that true for
+        // the manual path. The checks above are left in place deliberately: they produce the
+        // specific, long-standing operator messages, and a duplicated check that AGREES with the
+        // authority is harmless where a second, different answer would not be.
+        var verdict = Anthill.Core.Verification.PatchPromotionGate.Evaluate(
+            Memory, (Anthill.SDK.Artifacts.IEvidenceStore)Memory, patchId,
+            Anthill.Core.Verification.PromotionActor.Human);
+
+        if (!verdict.Promotable)
+        {
+            Memory.LogEvent(Str(approval, "mission_id"), "patch_promotion_refused",
+                $"Promotion refused at {verdict.Layer}: {verdict.Reason}",
+                Str(approval, "task_id"), "queen",
+                new()
+                {
+                    ["patch_id"] = patchId, ["approval_request_id"] = approvalId,
+                    ["refusal"] = verdict.Refusal.ToString(), ["layer"] = verdict.Layer,
+                });
+
+            return new(PatchApplyOutcome.RefusedStatus,
+                $"Patch cannot be applied.\nPatch ID: {patchId}\nRefused by: {verdict.Layer}\n{verdict.Reason}");
+        }
+
         var result = Tools.RunTool("apply_patch", Str(approval, "mission_id"), Str(approval, "task_id"), "queen",
             new() { ["patch"] = patch });
         if (!result.Success)
