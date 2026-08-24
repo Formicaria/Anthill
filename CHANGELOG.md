@@ -1,3 +1,359 @@
+## v0.3.8.91 - the window before the first administrator
+
+**An external review of the repository found a remotely claimable administrator account on a fresh
+install. It was right, and it was the first of several places where a document promised a guarantee
+the runtime did not enforce. The roadmap stops until those are closed.**
+
+Every claim in this entry was verified against the code before it was fixed. Nothing here is taken
+on the reviewer's word, and two findings were revised in the process: one was worse than reported,
+one had a narrower trigger.
+
+### The front door
+
+A fresh install binds `0.0.0.0:8713` — every shipped safety profile forces it — and `/auth/setup`
+was gated on `CountUsers() == 0` and nothing else, because somebody has to be able to create the
+first account. On a server or LXC that meant the administrator account belonged to whoever reached
+the port first. `operator_shell_enabled` shipped **true**, and its own configuration comment calls it
+host command execution for administrators.
+
+Reach the port → win the race → open a shell on the host.
+
+`DEPLOYMENT.md` had argued the wildcard bind was safe because *"the actual security boundary was
+already the operator login … and not network isolation"*. That is true from the second account
+onward and false for exactly the window the paragraph was describing: before the first login exists,
+there is no login to be the boundary. The paragraph is corrected in this release rather than quietly
+rewritten.
+
+**`SetupAuthority`** mints a single-use bootstrap secret at startup when no administrator exists,
+prints it to the service log, writes it to `SETUP-TOKEN.txt` under the workspace directory, and
+`/auth/setup` requires it. Setup spends it permanently.
+
+**The rule reads the BIND, not the caller's address**, and that is the load-bearing decision. Behind
+a reverse proxy every request arrives from loopback, so a rule written on the remote IP would
+authorise the entire internet through one hop. `Admit` takes no address parameter at all — a test
+asserts that, because the mistake should be unavailable rather than merely avoided. A loopback bind
+needs no token (reaching the port already proves local access, and the desktop app must not send its
+user hunting for a file). The one shape the bind cannot describe — a proxy in front of a loopback
+bind — gets `setup_token_required: true`, and the docs say so next to the proxy instructions.
+
+**The operator terminal now ships off**, in the defaults and in every safety profile. It is arbitrary
+host command execution; it belongs with patch application and the shell tool, which the same method
+already forces off. An existing `config.json` carrying `true` keeps it — the raw overlay wins over
+the profile — so this changes new installations rather than revoking a live feature.
+
+### Exactly one first administrator
+
+Underneath the exposure, a plain read-then-write race. The endpoint asked `CountUsers()`, then called
+`CreateUser` as a separate operation. Two concurrent setup requests with **different** usernames both
+saw zero users and both inserted an administrator; different names meant no primary-key collision to
+save it. `CreateUser`'s own lock does not help — it wraps the INSERT, the question was asked outside
+it, and it is an instance lock with no meaning across processes sharing a colony database.
+
+`CreateInitialAdministrator` puts the count and the insert in ONE transaction, which is the shape
+`TryClaimTask` already uses and for the same reason it states: *a precondition checked outside the
+transaction is not a precondition.* Sixteen threads released together now produce exactly one
+administrator; a two-thread race reproduces this too rarely to be a guard.
+
+### Failed to run is not the same as ran and passed
+
+`VerifyPatchSet`'s catch logged `patch_set_verification_faulted` and returned. It set no
+`DeterministicBlock` — and `ApplyUnderBypass`'s first gate is exactly that field. So a fault in
+materialisation, workspace scope, the evidence store or revision registration produced no block, and
+under a Bypass conversation the patch was written to the operator's tree with nothing verified behind
+it.
+
+The method's own doc says *"the approval pipeline still owns whether anything is applied"*. That was
+true when it was written and stopped being true when the bypass lane was added — a guarantee stated
+in one file and revoked in another. The fault now raises the block, persists it, and records
+`promotable: false` so the operator's view can tell a verifier that CRASHED from one that said no.
+
+**Narrower than reported, and worth stating:** per-verifier exceptions are already caught inside the
+framework and converted to failed results, so the outer catch fires only on those four dependency
+faults, and reaching the write also needs a Bypass conversation with the write gates on. It still
+failed open. It is still a release blocker. It is not "any verification error".
+
+### A rejected patch that reported success and committed to git
+
+The reviewer filed this as style. It is not.
+
+`ApproveAndApplyPatch` decided whether a patch had landed by reading the English sentence the apply
+helper returned:
+
+```csharp
+applied = result.Contains("applied") && !result.Contains("not applied")
+```
+
+Three of that helper's REFUSAL sentences satisfy it. **"Patch cannot be applied because status is
+rejected"** contains `applied`, does not contain `not applied` — so a patch an operator had
+explicitly rejected was reported as applied, returned HTTP 200, and fired a real `git commit` over a
+file nothing had written. "Patch is already applied" did the same and re-committed. The approval half
+had the same hole: "Approval request is not pending. Current Status: approved".
+
+The comment above the check asserted that no refusal sentence contains those words. The
+counterexamples were in the same file, eighty lines up. `architecture.md` already states the rule
+this broke — *"it never reconstructs failure state from prose"* — and the violation sat on the
+highest-consequence action in the system.
+
+`ApplyApprovedPatchTyped` returns a `PatchApplyResult` whose OUTCOME is the decision; the
+string-returning method is now a formatter over it with no decision of its own. The approval step
+reads the stored status. The commit follows the outcome, so "already applied" no longer re-commits.
+
+### One promotion gate
+
+Five code paths could put a proposal's bytes on the operator's tree, and each carried its own idea of
+what to check first. The Apply button checked an approval row, its status, its type, and the patch's
+status — **five facts, none about whether anything had verified the change**. The bypass lane checked
+two, then reached the apply path and satisfied its human gate with an approval row it had *just
+created and approved itself*. Auto-apply checked nine. One capability, five answers, and the
+strictest was the only one with no human on it.
+
+`PatchPromotionGate` is now the authority, and the Apply button and the bypass lane consult it.
+
+**The actor changes exactly one condition — the human.** A `Human` needs an approved approval row; a
+`Bypass` needs an attributed Bypass policy; `Automation` needs the canonical `completed_verified`
+evaluation. Everything else — patch status, write gates, the rollback halt marker, the producing
+task's deterministic block, required reviews complete, no blocking soldier finding, evidence that
+judges *this* revision — applies to all of them. A test asserts those conditions sit above the actor
+switch, because moving one inside it would silently exempt a lane. That is the reviewer's sentence
+made mechanical: *Skip All Approvals skips the human, not the colony's safety system.*
+
+Absence is not pass, with one deliberate exception that is stated rather than hidden: a mission whose
+evidence predates v0.3.8.57 carries no revision identity at all, and refusing every such mission
+would turn a schema addition into a retroactive freeze. That matches `AutoApplyRunner`'s existing
+rule rather than inventing a second one.
+
+Auto-apply keeps its own nine checks for now — it is stricter than the gate on every axis. Folding it
+in belongs with making the set apply as a unit, which is the next commit.
+
+### A patch set applies as a unit on every path
+
+Six places in this repository state that guarantee — PLAN.md lists it under *Done and load-bearing*,
+`ApplyTransaction`'s header frames it as the v0.3.8.57 guarantee, `AutoApplyAtomicityTests` is named
+for it. Every one was true of exactly one lane.
+
+The bypass path looped `foreach (var proposal in patchSet.Proposals)` calling a single-patch apply,
+and **continued past a failure**. A three-file set whose second proposal hit a stale base left files
+one and three written: a tree nothing verified, described by a verification record that judged the
+set as a whole — and under the git-commit policy, one commit per file, any prefix of which could be
+the final state. `AutoApplyAtomicityTests` could not have caught it; that guard reads
+`AutoApplyRunner`, and this lived in `ExecutionService`.
+
+`PatchSetApply` gives the ordinary path the shape auto-apply already had: compute every proposal
+against the live tree before writing any of them, open a durable journal before the first mutation,
+stage each file's pre-state and backup before its write, and roll the **whole** set back on any
+failure under the hash rule. The bypass lane now evaluates the gate for every proposal, refuses the
+entire set if any one is refused, and hands the rest to one transaction.
+
+Verification always reasoned about the set as a unit and said why — `PatchSetMaterializer` "FAILS
+CLOSED AND AS A UNIT", `ExecutionService` that "a patch is applied as a unit, so it must be judged as
+one". Application is the half that was not holding up its end.
+
+The move also failed three guards, which was those guards working. That file
+keeps a hand-written list of every file that DECIDES whether a patch applies, precisely so no file
+quietly becomes an applier and none quietly stops being one — and a decider that relocates has to be
+re-declared. The entry moved from `AutoApplyRunner` to `PatchSetApply`, and the conformance matrix
+(base hash passed, destination passed, occupancy passed, `requireBaseHash: true` for a live-tree
+lane, containment through the shared resolver) now runs against the new home.
+
+`AutoApplyAtomicityTests.ThePreflight_UsesTheRealApplyEngine` was the third, and it is now asserted
+in two parts rather than relaxed: the runner must still REACH the shared preflight — a lane that
+stops preflighting is exactly the defect that test was written for — and the shared preflight must
+still ask the real engine at the real strictness. Collapsing it to "somebody somewhere calls Compute"
+would have left a guard that passes while the property it names is gone, which is this repository's
+most-found defect class wearing a green tick.
+
+Two smaller things fell out of it. `AutoApplyRunner`'s preflight was a second implementation of one
+rule living in `Anthill.Api`, where Core could not reach it even to agree; it now delegates to the
+one in Core. And the new set read has to **unseal** the patch bodies — they are encrypted at rest,
+and a sealed body handed to `PatchApply.Compute` would be compared against the live file, fail to
+match, and refuse every proposal with "stale base": a correct-looking refusal for a reason that has
+nothing to do with the tree.
+
+### An interrupted apply is finished or discarded, never guessed at
+
+`ApplyApprovedPatch` wrote to disk and then made four separate, un-transacted database updates —
+patch status, approval status, event, pheromone. A crash between them left the file changed and the
+patch still `approved`. On restart the Patch Center offered Apply again, the recompute found the file
+no longer matching its base hash, the patch was marked **failed**, and `RevertAppliedPatch` then
+refused because only an *applied* patch can be reverted. A change that really landed, recorded as
+never having happened, and unrevertable.
+
+`ApplyTransaction.Recover` could not help. It replays the FILESYSTEM journal, which the manual lane
+never wrote, and it knows nothing about database rows. What existed was a recoverable filesystem
+transaction, not a recoverable system one.
+
+An **apply intent journal** now records what a write is about to do, before it does it, with the
+target's current bytes: Prepared → Mutating → Applied → Recorded, one row per attempted apply, on
+both lanes. Startup reconciliation reads it and decides **from hashes rather than from belief**:
+
+- **Prepared** — nothing was touched; discard.
+- **Applied** — the bytes landed and the records did not; finish the records. This is the case that
+  became the unrevertable phantom.
+- **Mutating** — the ambiguous one, and why the hashes exist. Still the pre-apply bytes? The write
+  never landed; discard. Exactly the post-apply bytes? Complete it. **Neither?** Left for an
+  operator, loudly. Completing an apply whose result nothing verified is the failure this whole
+  release exists to remove, and doing it during recovery — where nobody is watching — would be the
+  worst possible place.
+
+Reconciliation never re-runs an apply and never rolls one back. It makes the record match what the
+disk already says; it is not a second applier.
+
+**And its own first run found defect class 6 in it — verbatim.** `events` carries
+`FOREIGN KEY (mission_id) REFERENCES missions(id)`, so logging an event for a mission whose row does
+not exist throws. After a crash that is not an odd case, it is a likely one: the mission may be
+precisely what failed to be written. The sweep called `LogEvent` inline, the throw was caught by the
+outer handler, and a SUCCESSFUL status update was reported as "needs an operator" — while the intent
+stayed open, so every restart retried it forever. The patch status had already changed; only the
+record of why had not.
+
+That is this repository's own sixth named defect class, *a diagnostic that breaks what it describes*,
+found before through this same foreign key when the artifact schema check turned "this payload is the
+wrong shape" into "the artifact was never stored". Same table, same key, same shape — this time in
+the code written to make recovery dependable. The status updates ARE the reconciliation; the event is
+a record of it, and a record that cannot be written is now a note rather than a failure.
+
+### The live tree must still be the one verification read
+
+Verification binds evidence to the base revision, the patch-set content hash, and `AppliedTreeHash` —
+which, despite the name, iterates only the paths the patch touched. Files the patch did not touch are
+not in it. So a build proven against a tree could be applied to a different one and nothing noticed:
+verification compiles a sandbox with A.cs and B.cs, the patch modifies only A.cs, somebody edits
+B.cs, and the apply finds A.cs still hashing to its recorded base and writes. Every hash the system
+held was about A.cs; the thing that changed was B.cs.
+
+`WorkspaceFingerprint` captures the whole working tree at the moment the sandbox is built from it —
+`git rev-parse HEAD` **plus** the full `git status --porcelain -uall` listing, hashed together —
+persisted on the patch set, and compared by the promotion gate before any lane writes.
+
+**HEAD alone would have been the wrong check**, and it was the first design. HEAD does not move when
+somebody edits a file without committing, which is precisely the case this exists for. A check named
+for a property it does not deliver is this repository's most-found defect, and it would have been
+especially bad here: an operator reading "workspace unchanged since verification" would believe it.
+
+Three states, not two. A non-git workspace or a set from before this release was never measured and
+is not refused — the same non-retroactive rule the evidence check follows. But a fingerprint that
+WAS recorded and cannot be read back now is `Unmeasurable`, and that IS refused. Unknown is not
+unchanged.
+
+### A refused lease now means the task is not run here
+
+`TryClaimTask` is genuinely atomic — guard and insert in one transaction, with a comment saying why
+— so "another worker holds a live lease" was a trustworthy signal. The caller logged it and executed
+the task anyway. The lease was telemetry, not mutual exclusion.
+
+The reason given was honest and correct about the consequence: the in-process scheduler had already
+called `MarkRunning`, so refusing at that point would strand the task in Running with nothing
+executing it. **Committing first is what created the trap.** The claim is now taken before anything
+is committed, and a refusal returns — there is nothing to strand.
+
+The new ordering opens a window the old one did not have: the claim succeeds and the scheduler then
+declines to start the task. That claim is released as `Abandoned` rather than held, or a scheduler
+decision would leave a live lease no worker is honouring and a task nobody may claim until it
+expires. `Abandoned` and not `Failed` because nothing executed and nothing failed — which is what
+that enum member's own comment reserves it for.
+
+On one process this was nearly unobservable. With two processes against one colony database it is
+duplicate model calls, duplicate tool calls, duplicate patch proposals and two writers racing the
+same workspace, which is why it is a prerequisite for distributed workers rather than a follow-up.
+The storage layer was already well covered; the CALLER had no test at all — `attempt_claim_refused`
+appeared nowhere in the suite.
+
+### A name that had been emitted for forty releases, made visible
+
+The gate's first full run failed on one assertion: `patch_bypass_apply_refused` is emitted and not
+declared. It has been emitted since v0.3.8.51 — from a ternary,
+`ok ? "patch_bypass_applied" : "patch_bypass_apply_refused"`, which is a shape v0.3.8.86's emitter
+sweep cannot read. Adding the promotion gate's refusal put the same name in a plain first-argument
+position, the sweep saw it for the first time, and the guard fired on a name the runtime had been
+writing all along.
+
+Both bypass outcomes are now declared, along with the gate's own `patch_promotion_refused`. This does
+not fix the detector — PLAN.md still carries that as its own sweep — but it is worth recording how
+the gap behaves in practice: *a detector that reads one syntactic shape measures that shape, not the
+runtime*, and it reports silence as health until something unrelated moves a literal into view.
+
+### The deterministic block had no column
+
+Found while building the gate, and it is the sharper half of this section. **`Task.DeterministicBlock`
+was never persisted.** No column in the `tasks` table, nothing in the upsert. It has gated the most
+consequential decision in the system since v3.8.21 — `ApplyUnderBypass` refuses on it, the finalizer
+reads it — and it lived only on the in-memory object. A restart forgot every block.
+
+Which also means the verification-fault fix earlier in this same release was, for a few hours, not
+what its own comment claimed: *"The block must outlive this process."* It could not. It does now —
+column added, written on every task save, read back by `GetTasksForMission`, and consumed by the
+gate. A safety decision that does not survive a process is not a safety decision, and a comment that
+says it does is worse than one that does not.
+
+### One configuration authority
+
+The v0.3.8.90 sweep plus the external review found a control plane that disagreed with itself. Fixed
+here, with the generated schema itself named in PLAN.md as its own piece of work rather than
+half-built:
+
+**The API token's fallback was itself.** `ApiAuthToken = GetEnvironmentVariable(config.ApiTokenEnv)
+?? ApiAuthToken` — and that static's own initialiser reads `ANTHILL_API_TOKEN`. So an operator who
+repointed `api_token_env` at a variable they had not yet set kept authenticating against the one they
+had just told the colony to stop using. Because the fallback was self-referential and `ProjectConfig`
+re-runs on every settings update, the value was **sticky**: once set it could never be cleared. The
+named variable is now the only source, and unset means unset — a safe state, since operator accounts
+are the real boundary.
+
+**An env var set to the empty string was winning.** Four overrides used `??`, which tests for null.
+`ANTHILL_OLLAMA_MODEL=` in a compose file's `environment:` block is the most common way to write "I
+am not setting this", and it produced an empty model, host or bind address. The docs promised
+"highest precedence"; the code delivered precedence for a value the operator had not set. `ANTHILL_PORT`
+also took any integer — 0 and 70000 reached Kestrel unclamped, and an unparseable value fell back to
+the file silently.
+
+**An unreadable config no longer starts the colony.** It printed a warning and ran on SAFE_LOCAL
+defaults, which bind `0.0.0.0` and enable a different capability set than the operator's file
+describes. An operator can fix a trailing comma in seconds; they cannot notice a colony quietly
+running somebody else's configuration. `ANTHILL_ALLOW_INVALID_CONFIG=1` is the named escape for
+recovering a corrupt file through the console.
+
+**The example file stopped lying about the roster.** It showed seven specialist-ant flags as `false`.
+A file with no `config_schema_version` and present-but-false flags is treated as unmigrated, adopts
+the `full` roster profile, and every one of them is forced **true** at runtime — and
+`config.example.json` is exactly that file. The two settings that would actually have turned those
+ants off, `roster_profile` and `disabled_roles`, appeared nowhere in it. Both are documented now,
+next to a note saying plainly what the seven flags do and do not do.
+
+**And `LastConfigMigration` reaches an operator.** Its own doc comment has claimed since it was
+written that `/config/health` and `/status` surface it. Neither did; the answer to "why did six roles
+switch on when I upgraded" was one line of stderr they had already scrolled past. It is on
+`/config/health` now, with the config load error beside it.
+
+`ConfigurationSurfaceTests` pins both directions — every documented key is one the runtime parses,
+and every parsed key is documented or on an explicit ledger with a reason. Twenty-four settings are
+on that ledger. The point is that an omission is now a decision somebody made rather than a gap
+nobody noticed.
+
+### What this release does NOT fix, and the order it comes in
+
+The review named 22 items. This one is the front door. The rest are sequenced rather than rushed,
+and PLAN.md now carries them as named gates:
+
+- **.92 — one promotion gate.** Five code paths can write a proposed patch and each checks a
+  different set of preconditions; `ApplyApprovedPatch` checks five things and consults no evidence at
+  all. Patch sets are documented as applying "as a unit or not at all" in six places, and that is
+  true only of the auto-apply lane — the ordinary path applies one proposal at a time, continues past
+  a failure, and commits each separately. Verification binds to a tree hash covering only the files
+  the patch touched, so an edit to any other file between verify and apply is invisible.
+- **.93 — crash-safe state.** The filesystem write happens before the database updates, un-journaled,
+  with no startup reconciliation: a crash between them leaves a patch applied on disk and `approved`
+  in the database, where retrying marks it *failed* and revert refuses because only an applied patch
+  can be reverted. And a refused durable task lease currently logs and executes anyway, because the
+  scheduler commits the task to Running before the claim is attempted.
+- **.94 — one configuration authority.** Including the `api_token_env` fallback that keeps
+  authenticating against `ANTHILL_API_TOKEN` after an operator redirects it.
+- **.95 — enforcement.** Warnings as errors, analyzers, complexity budget, and the agent rules as a
+  document rather than a habit.
+
+R4's live runs come after those. The reviewer's closing judgement is recorded in PLAN.md because it
+is the right frame for the next five releases: the foundations are sound, and the work is deleting
+the alternate paths around them.
+
 ## v0.3.8.90 - the operator's price table, and four routes that could not be taken
 
 **R4's last non-run item closes, and a sweep for v0.3.8.89's defect class finds ten more — including

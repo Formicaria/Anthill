@@ -40,22 +40,58 @@ public static partial class ApiHost
         app.MapGet("/auth/status", () => ApiJson.Ok(new Dictionary<string, object?>
         {
             ["setup_required"] = Queen.Memory.CountUsers() == 0,
+            // v0.3.8.91: whether the first-run token is needed, so the console can ask for it. Says
+            // only WHETHER, never the value — this endpoint is public by necessity.
+            ["setup_token_required"] = SetupAuthority.SecretRequired,
             ["auth_enabled"] = AnthillRuntime.EnableApiAuth,
             ["user_count"] = Queen.Memory.CountUsers(),
         }));
 
-        // Public, first-run only: create the initial administrator and log them straight in.
+        // First-run only: create the initial administrator and log them straight in.
+        //
+        // NOT PUBLIC ANY MORE, on any deployment that can be reached from off-box. v0.3.8.91.
+        //
+        // This endpoint used to be gated on `CountUsers() == 0` and nothing else, while every safety
+        // profile forces the listener onto 0.0.0.0. On a server or LXC that made the administrator
+        // account a race won by whoever reached the port first — and `operator_shell_enabled` shipped
+        // true, so winning it meant a shell on the host. `SetupAuthority` mints a single-use secret
+        // at startup for exactly the window where no account exists yet to be the boundary; see that
+        // class for why the rule is written on the BIND and not on the caller's address.
+        //
+        // The zero-user check now lives INSIDE the insert transaction
+        // (`CreateInitialAdministrator`). Asking it here as well would be the read-then-write gap
+        // this release closed, reintroduced one line above the fix.
         app.MapPost("/auth/setup", async (HttpContext ctx) =>
         {
-            if (Queen.Memory.CountUsers() > 0)
-                return ApiJson.Error("Setup already complete. An administrator already exists.", "bad_request");
             if (!AuthLimiter_TryConsume(ctx)) return ApiJson.Error("Too many attempts. Try again later.", "rate_limited");
-            LoginRequest? body;
-            try { body = await ctx.Request.ReadFromJsonAsync<LoginRequest>(); }
+            SetupRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<SetupRequest>(); }
             catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+
+            var presented = body?.SetupToken ?? ctx.Request.Headers["X-Anthill-Setup-Token"].FirstOrDefault();
+            switch (SetupAuthority.Admit(presented))
+            {
+                case SetupAdmission.SecretRequired:
+                    return ApiJson.Error(
+                        "This installation is reachable from the network, so first-run setup needs "
+                      + "the token this process printed at startup. It is in the service log and in "
+                      + $"{SetupAuthority.SecretFileName} under the workspace directory. Send it as "
+                      + "the 'setup_token' field.", "forbidden");
+                case SetupAdmission.SecretWrong:
+                    return ApiJson.Error("Setup token is not correct.", "forbidden");
+                case SetupAdmission.AlreadyComplete:
+                    return ApiJson.Error("Setup already complete. An administrator already exists.", "bad_request");
+            }
+
             var username = string.IsNullOrWhiteSpace(body?.Username) ? "admin" : body!.Username!.Trim();
-            var err = Queen.Memory.CreateUser(username, body?.Password ?? "", UserRoles.Admin);
-            if (err.Length > 0) return ApiJson.Error(err, "bad_request");
+            var created = Queen.Memory.CreateInitialAdministrator(username, body?.Password ?? "");
+            if (created.Outcome != InitialAdminOutcome.Created)
+                return ApiJson.Error(created.Error, "bad_request");
+
+            // AFTER the row is committed, never before: a secret spent on a failed insert would
+            // leave a deployment with no administrator and no way to make one.
+            SetupAuthority.Consume();
+
             var token = AuthSessions.Issue(SqliteMemory.NormalizeUsername(username), UserRoles.Admin);
             return ApiJson.Ok(new Dictionary<string, object?>
             {

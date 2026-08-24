@@ -187,6 +187,22 @@ public static partial class ApiHost
             return ApiJson.Ok(new Dictionary<string, object?>
             {
                 ["healthy"] = findings.Count == 0,
+                // v0.3.8.91: the migration, which this endpoint's own doc comment on
+                // `LastConfigMigration` has claimed to surface since it was written and did not.
+                // "Why did six roles switch on when I upgraded" is an operator question, and the
+                // answer was reaching one line of stderr they had already scrolled past.
+                ["config_migration"] = AnthillRuntime.LastConfigMigration is { } migration
+                    ? new Dictionary<string, object?>
+                    {
+                        ["from_version"] = migration.FromVersion,
+                        ["to_version"] = migration.ToVersion,
+                        ["roster_profile"] = migration.RosterProfile,
+                        ["changed_the_roster"] = migration.ChangedTheRoster,
+                    }
+                    : null,
+                // Empty is healthy. Non-empty means a config file exists and could not be read —
+                // and this process is running on defaults nobody chose.
+                ["config_load_error"] = AnthillRuntime.ConfigLoadError,
                 ["findings"] = findings.Select(f => new Dictionary<string, object?>
                 {
                     ["severity"] = f.Severity, ["combination"] = f.Combination, ["detail"] = f.Detail,
