@@ -169,6 +169,29 @@ and a sealed body handed to `PatchApply.Compute` would be compared against the l
 match, and refuse every proposal with "stale base": a correct-looking refusal for a reason that has
 nothing to do with the tree.
 
+### A refused lease now means the task is not run here
+
+`TryClaimTask` is genuinely atomic — guard and insert in one transaction, with a comment saying why
+— so "another worker holds a live lease" was a trustworthy signal. The caller logged it and executed
+the task anyway. The lease was telemetry, not mutual exclusion.
+
+The reason given was honest and correct about the consequence: the in-process scheduler had already
+called `MarkRunning`, so refusing at that point would strand the task in Running with nothing
+executing it. **Committing first is what created the trap.** The claim is now taken before anything
+is committed, and a refusal returns — there is nothing to strand.
+
+The new ordering opens a window the old one did not have: the claim succeeds and the scheduler then
+declines to start the task. That claim is released as `Abandoned` rather than held, or a scheduler
+decision would leave a live lease no worker is honouring and a task nobody may claim until it
+expires. `Abandoned` and not `Failed` because nothing executed and nothing failed — which is what
+that enum member's own comment reserves it for.
+
+On one process this was nearly unobservable. With two processes against one colony database it is
+duplicate model calls, duplicate tool calls, duplicate patch proposals and two writers racing the
+same workspace, which is why it is a prerequisite for distributed workers rather than a follow-up.
+The storage layer was already well covered; the CALLER had no test at all — `attempt_claim_refused`
+appeared nowhere in the suite.
+
 ### A name that had been emitted for forty releases, made visible
 
 The gate's first full run failed on one assertion: `patch_bypass_apply_refused` is emitted and not

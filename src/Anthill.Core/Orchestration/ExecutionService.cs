@@ -430,34 +430,68 @@ public sealed class ExecutionService : IExecutionService
         Mission missionSnapshot;
         lock (_executionLock)
         {
+            // THE DURABLE CLAIM IS TAKEN FIRST, AND A REFUSAL MEANS THIS PROCESS DOES NOT RUN IT.
+            // v0.3.8.91 — the ordering, not the symptom.
+            //
+            // The claim used to be taken AFTER `MarkRunning`, and a refusal was logged and then
+            // ignored, with a comment giving the honest reason: the in-process scheduler had already
+            // committed the task to Running, so refusing would strand it in Running with nothing
+            // executing it. The reasoning was right about the consequence and wrong about the fix.
+            // Committing first is what created the trap; claim first and there is nothing to strand.
+            //
+            // What the old order cost: `TryClaimTask` is genuinely atomic — its guard and insert are
+            // one transaction, deliberately — so "another worker holds a live lease" was a
+            // trustworthy signal that the caller then discarded. The lease was telemetry rather than
+            // mutual exclusion. On a single process that is nearly unobservable. The moment two
+            // processes share a colony database it is duplicate model calls, duplicate tool calls,
+            // duplicate patch proposals and two writers racing the same workspace — and this is a
+            // prerequisite for any distributed-worker work, not a follow-up to it.
+            //
+            // Also fixed by the reordering: `_liveAttempts[task.Id]` was never set on the refused
+            // path, so lease renewal and the terminal attempt state were lost for exactly the runs
+            // that most needed a record.
+            var claim = _memory.TryClaimTask(task.Id, mission.Id, LocalWorker.Id, ClaimLease);
+            if (claim is null)
+            {
+                _memory.LogEvent(mission.Id, "attempt_claim_refused",
+                    "Task NOT run here: another worker holds a live lease on it. The durable claim is "
+                  + "mutual exclusion, so this process yields rather than executing a second copy.",
+                    task.Id, runtimeSelection.RuntimeNodeId,
+                    new() { ["worker_id"] = LocalWorker.Id, ["executed"] = false });
+                return;
+            }
+
             if (scheduler is not null)
             {
-                if (!scheduler.MarkRunning(task.Id)) return;
+                if (!scheduler.MarkRunning(task.Id))
+                {
+                    // The claim is real and this invocation is not going to use it. Release it, or
+                    // the task carries a live lease no worker is honouring until it expires —
+                    // which would turn a scheduler decision into a task nobody may claim.
+                    _memory.FinishAttempt(claim.Id, AttemptState.Abandoned,
+                        failureReason: "the in-process scheduler declined to start this task after "
+                                     + "the durable claim was taken");
+                    return;
+                }
                 taskStartedAt = task.StartedAt ?? taskStartedAt;
             }
             else
             {
-                if (task.Status is not (TaskStatus.Pending or TaskStatus.Ready)) return;
+                if (task.Status is not (TaskStatus.Pending or TaskStatus.Ready))
+                {
+                    _memory.FinishAttempt(claim.Id, AttemptState.Abandoned,
+                        failureReason: $"task was {task.Status.Value()} when execution reached it, "
+                                     + "after the durable claim was taken");
+                    return;
+                }
                 task.Status = TaskStatus.Running;
                 task.AttemptCount += 1;
                 task.StartedAt = taskStartedAt;
                 task.FinishedAt = null;
                 task.ElapsedSeconds = null;
             }
-            // v3.8.0: the durable claim, taken at the moment the task actually becomes this
-            // invocation's to run — after MarkRunning has already decided nobody else has it.
-            //
-            // The claim can legitimately return null: another process holds a live lease on this
-            // task. Execution continues anyway, because the in-process scheduler has ALREADY
-            // committed this task to running and refusing here would strand it in Running with
-            // nothing executing it. What is lost is the durable record, not the work — and that
-            // record's absence is itself visible, rather than a task that silently stops.
-            var claim = _memory.TryClaimTask(task.Id, mission.Id, LocalWorker.Id, ClaimLease);
-            if (claim is not null) _liveAttempts[task.Id] = claim.Id;
-            else
-                _memory.LogEvent(mission.Id, "attempt_claim_refused",
-                    "Task ran without a durable attempt: another worker holds a live lease on it.",
-                    task.Id, runtimeSelection.RuntimeNodeId, new() { ["worker_id"] = LocalWorker.Id });
+
+            _liveAttempts[task.Id] = claim.Id;
 
             var runtimeMetadata = AntRuntime.Metadata(runtimeSelection);
             Console.WriteLine($"Task {index}/{total} -> {runtimeSelection.RuntimeNodeId} worker via {task.AssignedAnt} ant: {task.Title}");
