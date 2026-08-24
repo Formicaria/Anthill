@@ -552,8 +552,22 @@ public sealed partial class SqliteMemory : IDisposable
             enabled INTEGER NOT NULL DEFAULT 1,
             last_verified_at TEXT, last_verify_ok INTEGER, last_verify_message TEXT,
             created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
+        // v0.3.8.91 (R0): the apply intent journal. The filesystem write happened BEFORE four
+        // un-transacted database updates, so a crash between them left the patch on disk and
+        // `approved` in the database — where retrying refused on a stale base, marked the patch
+        // FAILED, and revert then refused because only an applied patch can be reverted. A change
+        // that really landed, recorded as never having happened, with no way back.
+        //
+        // One row per attempted apply, carrying the phase and the hashes that let startup
+        // reconciliation decide what actually happened. Deleted once disk and database agree.
+        @"CREATE TABLE IF NOT EXISTS patch_apply_intents (
+            id TEXT PRIMARY KEY, patch_id TEXT NOT NULL, approval_id TEXT, patch_set_id TEXT,
+            mission_id TEXT NOT NULL, target_path TEXT, pre_hash TEXT, post_hash TEXT,
+            phase TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
+
         // Helpful indexes for the hot lookups the colony performs constantly.
         "CREATE INDEX IF NOT EXISTS idx_tasks_mission ON tasks(mission_id)",
+        "CREATE INDEX IF NOT EXISTS idx_apply_intents_phase ON patch_apply_intents(phase)",
         "CREATE INDEX IF NOT EXISTS idx_events_mission ON events(mission_id)",
         "CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type)",
         "CREATE INDEX IF NOT EXISTS idx_sources_mission ON source_records(mission_id)",
@@ -583,6 +597,20 @@ public sealed partial class SqliteMemory : IDisposable
         }
 
         AddMissing("missions", new() { ["user_result"] = "TEXT", ["debug_result"] = "TEXT", ["best_output_task_id"] = "TEXT" });
+        // v0.3.8.91: `Task.DeterministicBlock` had NO COLUMN. It has gated the most consequential
+        // decision in the system since v3.8.21 — `ApplyUnderBypass` refuses on it, the finalizer
+        // reads it — and it lived only in the in-memory object. A restart forgot every block, and a
+        // gate that reads persisted state could not see one at all. Found while building
+        // `PatchPromotionGate`, which needs exactly this fact.
+        //
+        // Legacy rows read as NULL, which is "nothing blocked" — correct, because a block that was
+        // never written down cannot be reconstructed and inventing one would refuse work nobody
+        // refused.
+        AddMissing("tasks", new() { ["deterministic_block"] = "TEXT" });
+        // v0.3.8.91: what the operator's working tree looked like when verification read it. Legacy
+        // sets read as NULL — "never captured" — which the promotion gate treats as unmeasurable
+        // rather than as unchanged, the same non-retroactive rule the evidence check follows.
+        AddMissing("patch_sets", new() { ["base_fingerprint"] = "TEXT" });
         // v0.3.8.57 (AUTONOMY-10 Phase 3): evidence identifies the revision it judged. Legacy rows
         // read as NULL — "not about a materialized revision" — which `Evidence.IdentifiesARevision`
         // reports as false, so an old row can never be mistaken for one that matches.

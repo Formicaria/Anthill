@@ -3,6 +3,21 @@ using Anthill.Core.Security;
 
 namespace Anthill.Core.Memory;
 
+/// <summary>What happened when the first administrator was requested. Typed, never inferred.</summary>
+public enum InitialAdminOutcome
+{
+    Created,
+    /// <summary>An administrator already existed when the transaction ran. Not an error the caller
+    /// caused — it is the race being won by somebody else, and the caller must be told which.</summary>
+    AlreadyInitialised,
+    /// <summary>The username or password did not pass validation.</summary>
+    Rejected,
+}
+
+/// <param name="Error">Operator-facing text. Empty when <see cref="InitialAdminOutcome.Created"/>.
+/// It is a MESSAGE, never the thing a caller branches on — see the typed outcome beside it.</param>
+public sealed record InitialAdminResult(InitialAdminOutcome Outcome, string Error);
+
 /// <summary>
 /// Operator-account storage: create/list/update/delete users plus the credential check used at
 /// login. Usernames are stored lower-cased so logins are case-insensitive. Password hashes are
@@ -41,6 +56,68 @@ public sealed partial class SqliteMemory
                 ("@u", u), ("@h", PasswordHasher.Hash(password)), ("@r", normalizedRole), ("@c", AnthillTime.NowUtc().ToIso()));
         }
         return "";
+    }
+
+    /// <summary>
+    /// Create the FIRST administrator, or refuse because one already exists. One transaction.
+    /// v0.3.8.91.
+    ///
+    /// WHY THIS IS NOT `CreateUser`. `/auth/setup` used to ask `CountUsers() > 0` and then, as a
+    /// separate operation, call `CreateUser`. Two concurrent setup requests with different usernames
+    /// both saw zero users and both inserted an administrator — the read-then-write gap, on the one
+    /// account that has no prior authority to check. `CreateUser`'s own `_writeLock` does not help:
+    /// it wraps the INSERT, the zero-user question was asked outside it, and it is an instance lock
+    /// with no meaning across processes sharing a colony database.
+    ///
+    /// The count and the insert are now ONE transaction, which is the same shape `TryClaimTask`
+    /// already uses and for the same stated reason: a precondition checked outside the transaction
+    /// is not a precondition.
+    ///
+    /// Validation stays outside the transaction deliberately — a bad password is not a race, and
+    /// holding a write transaction open across hashing (which is intentionally slow) would serialise
+    /// every writer behind it.
+    /// </summary>
+    public InitialAdminResult CreateInitialAdministrator(string username, string password)
+    {
+        var u = NormalizeUsername(username);
+        if (u.Length < 3) return new(InitialAdminOutcome.Rejected, "Username must be at least 3 characters.");
+        if (!System.Text.RegularExpressions.Regex.IsMatch(u, "^[a-z0-9_.-]+$"))
+            return new(InitialAdminOutcome.Rejected, "Username may only contain letters, numbers, '.', '_' and '-'.");
+        var pwError = PasswordHasher.Validate(password);
+        if (pwError.Length > 0) return new(InitialAdminOutcome.Rejected, pwError);
+
+        var hash = PasswordHasher.Hash(password);
+
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using var tx = conn.BeginTransaction();
+
+            using (var guard = conn.CreateCommand())
+            {
+                guard.Transaction = tx;
+                guard.CommandText = "SELECT COUNT(*) FROM users";
+                if (Convert.ToInt64(guard.ExecuteScalar() ?? 0L) > 0)
+                    return new(InitialAdminOutcome.AlreadyInitialised,
+                        "Setup already complete. An administrator already exists.");
+            }
+
+            using (var insert = conn.CreateCommand())
+            {
+                insert.Transaction = tx;
+                insert.CommandText =
+                    "INSERT INTO users (username, password_hash, role, active, created_at) " +
+                    "VALUES (@u, @h, @r, 1, @c)";
+                insert.Parameters.AddWithValue("@u", u);
+                insert.Parameters.AddWithValue("@h", hash);
+                insert.Parameters.AddWithValue("@r", UserRoles.Admin);
+                insert.Parameters.AddWithValue("@c", AnthillTime.NowUtc().ToIso());
+                insert.ExecuteNonQuery();
+            }
+
+            tx.Commit();
+            return new(InitialAdminOutcome.Created, "");
+        }
     }
 
     public Dictionary<string, object?>? GetUser(string username) =>

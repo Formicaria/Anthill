@@ -118,22 +118,28 @@ public sealed class ExecutionService : IExecutionService
     /// </summary>
     public ExecutionService(SqliteMemory memory, IReadOnlyDictionary<string, BaseAnt> ants,
         Tools.ToolRegistry? tools = null, Models.ModelRouter? router = null,
-        Func<string, string, (bool Ok, string Message)>? approveApplyPatch = null)
+        Func<string, string, Verification.SetApplyOutcome>? applyPatchSet = null)
     {
         _memory = memory;
         _ants = ants;
         _tools = tools;
         _router = router;
-        _approveApplyPatch = approveApplyPatch;
+        _applyPatchSet = applyPatchSet;
     }
 
     /// <summary>
-    /// v0.3.8.51 (field report): the audited approve-and-apply transition, injected by the Queen —
-    /// how "Skip all approvals" applies a verified patch without asking. Null (tests, CLI shapes
-    /// without a Queen) means bypass conversations keep the manual card, which is the safe
-    /// direction to degrade.
+    /// v0.3.8.91 — apply a whole patch set inside one durable transaction, injected by the Queen.
+    ///
+    /// Null (tests and CLI shapes without a Queen) degrades to the manual card, the same safe
+    /// direction the per-patch delegate it replaced degraded in. What it does NOT degrade to
+    /// is the old per-proposal loop: a set that cannot be applied atomically is not applied.
     /// </summary>
-    private readonly Func<string, string, (bool Ok, string Message)>? _approveApplyPatch;
+    private readonly Func<string, string, Verification.SetApplyOutcome>? _applyPatchSet;
+
+    // v0.3.8.51's per-patch approve-and-apply delegate was REMOVED in v0.3.8.91. It existed so the
+    // bypass lane could apply proposals one at a time, which is the behaviour that release deleted:
+    // a set is applied as a unit or not at all. `Queen.ApproveAndApplyPatch` is unchanged and still
+    // serves the operator's Apply button; nothing injects it here any more.
 
     private readonly Tools.ToolRegistry? _tools;
 
@@ -424,34 +430,68 @@ public sealed class ExecutionService : IExecutionService
         Mission missionSnapshot;
         lock (_executionLock)
         {
+            // THE DURABLE CLAIM IS TAKEN FIRST, AND A REFUSAL MEANS THIS PROCESS DOES NOT RUN IT.
+            // v0.3.8.91 — the ordering, not the symptom.
+            //
+            // The claim used to be taken AFTER `MarkRunning`, and a refusal was logged and then
+            // ignored, with a comment giving the honest reason: the in-process scheduler had already
+            // committed the task to Running, so refusing would strand it in Running with nothing
+            // executing it. The reasoning was right about the consequence and wrong about the fix.
+            // Committing first is what created the trap; claim first and there is nothing to strand.
+            //
+            // What the old order cost: `TryClaimTask` is genuinely atomic — its guard and insert are
+            // one transaction, deliberately — so "another worker holds a live lease" was a
+            // trustworthy signal that the caller then discarded. The lease was telemetry rather than
+            // mutual exclusion. On a single process that is nearly unobservable. The moment two
+            // processes share a colony database it is duplicate model calls, duplicate tool calls,
+            // duplicate patch proposals and two writers racing the same workspace — and this is a
+            // prerequisite for any distributed-worker work, not a follow-up to it.
+            //
+            // Also fixed by the reordering: `_liveAttempts[task.Id]` was never set on the refused
+            // path, so lease renewal and the terminal attempt state were lost for exactly the runs
+            // that most needed a record.
+            var claim = _memory.TryClaimTask(task.Id, mission.Id, LocalWorker.Id, ClaimLease);
+            if (claim is null)
+            {
+                _memory.LogEvent(mission.Id, "attempt_claim_refused",
+                    "Task NOT run here: another worker holds a live lease on it. The durable claim is "
+                  + "mutual exclusion, so this process yields rather than executing a second copy.",
+                    task.Id, runtimeSelection.RuntimeNodeId,
+                    new() { ["worker_id"] = LocalWorker.Id, ["executed"] = false });
+                return;
+            }
+
             if (scheduler is not null)
             {
-                if (!scheduler.MarkRunning(task.Id)) return;
+                if (!scheduler.MarkRunning(task.Id))
+                {
+                    // The claim is real and this invocation is not going to use it. Release it, or
+                    // the task carries a live lease no worker is honouring until it expires —
+                    // which would turn a scheduler decision into a task nobody may claim.
+                    _memory.FinishAttempt(claim.Id, AttemptState.Abandoned,
+                        failureReason: "the in-process scheduler declined to start this task after "
+                                     + "the durable claim was taken");
+                    return;
+                }
                 taskStartedAt = task.StartedAt ?? taskStartedAt;
             }
             else
             {
-                if (task.Status is not (TaskStatus.Pending or TaskStatus.Ready)) return;
+                if (task.Status is not (TaskStatus.Pending or TaskStatus.Ready))
+                {
+                    _memory.FinishAttempt(claim.Id, AttemptState.Abandoned,
+                        failureReason: $"task was {task.Status.Value()} when execution reached it, "
+                                     + "after the durable claim was taken");
+                    return;
+                }
                 task.Status = TaskStatus.Running;
                 task.AttemptCount += 1;
                 task.StartedAt = taskStartedAt;
                 task.FinishedAt = null;
                 task.ElapsedSeconds = null;
             }
-            // v3.8.0: the durable claim, taken at the moment the task actually becomes this
-            // invocation's to run — after MarkRunning has already decided nobody else has it.
-            //
-            // The claim can legitimately return null: another process holds a live lease on this
-            // task. Execution continues anyway, because the in-process scheduler has ALREADY
-            // committed this task to running and refusing here would strand it in Running with
-            // nothing executing it. What is lost is the durable record, not the work — and that
-            // record's absence is itself visible, rather than a task that silently stops.
-            var claim = _memory.TryClaimTask(task.Id, mission.Id, LocalWorker.Id, ClaimLease);
-            if (claim is not null) _liveAttempts[task.Id] = claim.Id;
-            else
-                _memory.LogEvent(mission.Id, "attempt_claim_refused",
-                    "Task ran without a durable attempt: another worker holds a live lease on it.",
-                    task.Id, runtimeSelection.RuntimeNodeId, new() { ["worker_id"] = LocalWorker.Id });
+
+            _liveAttempts[task.Id] = claim.Id;
 
             var runtimeMetadata = AntRuntime.Metadata(runtimeSelection);
             Console.WriteLine($"Task {index}/{total} -> {runtimeSelection.RuntimeNodeId} worker via {task.AssignedAnt} ant: {task.Title}");
@@ -1288,6 +1328,17 @@ public sealed class ExecutionService : IExecutionService
             var revision = Workspaces.MissionRevisionRegistry.Register(mission.Id, task.Id, materialized);
             unregistered = null;   // the registry owns it now
             task.ProducedRevisionId = revision.RevisionId;
+
+            // v0.3.8.91: fingerprint the LIVE tree at the moment the sandbox that verification reads
+            // was built from it. Everything else the colony binds evidence to describes the patch —
+            // the base revision, the patch-set content hash, and `AppliedTreeHash`, which despite
+            // its name covers only the files the patch touched. None of them notices an edit to a
+            // file the patch did NOT touch, which is the one the build might actually depend on.
+            //
+            // Captured here rather than at apply time for the obvious reason: later would fingerprint
+            // a tree that had already had time to move.
+            var fingerprint = Workspaces.WorkspaceFingerprint.Capture(AnthillRuntime.AllowedWorkspaceRoot);
+            _memory.SetPatchSetBaseFingerprint(patchSet.Id, fingerprint);
             _memory.LogEvent(mission.Id, "mission_revision_registered",
                 $"Revision {revision.RevisionId} registered: patch set {patchSet.Id} materialized at {revision.Root}",
                 task.Id, task.AssignedAnt, new()
@@ -1301,9 +1352,47 @@ public sealed class ExecutionService : IExecutionService
         {
             try { unregistered?.Dispose(); } catch { }
             Console.Error.WriteLine($"Verification faulted for task {task.Id}: {error.Message}");
+
+            // FAILED TO RUN IS NOT THE SAME AS RAN AND PASSED, and until v0.3.8.91 this path treated
+            // them alike. The catch logged and returned; `DeterministicBlock` stayed null; and
+            // `ProcessPatchProposals` continued straight into `InsertPolicyReviewTasks` and
+            // `ApplyUnderBypass`, whose FIRST gate is `task.DeterministicBlock is not null`. So a
+            // fault in materialisation, workspace scope, the evidence store or revision registration
+            // produced no block, and under a Bypass conversation the patch was written to the
+            // operator's tree with no verification behind it at all.
+            //
+            // This method's own doc says "the approval pipeline still owns whether anything is
+            // applied". That was true when it was written and stopped being true when the bypass
+            // lane was added — a guarantee stated in one file and revoked in another. The block is
+            // the mechanism that makes the sentence true again.
+            //
+            // `??=` rather than `=`: an earlier in-band refusal already wrote a more specific
+            // reason, and overwriting it would replace "the build failed" with "verification
+            // crashed" for an operator trying to understand which.
+            task.DeterministicBlock ??=
+                $"verification could not run for patch set {patchSet.Id}: {error.Message}. A patch "
+              + "is promotable only on evidence that verification PASSED; a verifier that failed to "
+              + "execute produced no evidence, which is not the same as producing none needed.";
+
             _memory.LogEvent(mission.Id, "patch_set_verification_faulted",
                 $"Verification could not run: {error.Message}", task.Id, task.AssignedAnt,
-                new() { ["patch_set_id"] = patchSet.Id });
+                new()
+                {
+                    ["patch_set_id"] = patchSet.Id,
+                    // Named so the operator's failure view can distinguish this from a verifier that
+                    // ran and said no — different diagnosis, different fix.
+                    ["promotable"] = false,
+                    ["deterministic_block"] = task.DeterministicBlock,
+                });
+
+            try { _memory.SaveTask(mission.Id, task); }
+            catch (Exception save)
+            {
+                // The block must outlive this process. If it cannot be persisted, say so loudly
+                // rather than proceeding with an in-memory-only refusal that a restart forgets.
+                Console.Error.WriteLine(
+                    $"Could not persist the verification-fault block for task {task.Id}: {save.Message}");
+            }
         }
     }
 
@@ -1593,11 +1682,13 @@ public sealed class ExecutionService : IExecutionService
         Console.WriteLine($"Task {execution.StatusCode}: {task.Title} ({elapsed}s) — {TextUtil.Truncate(decision.Reason, 160)}");
     }
 
-    /// <summary>v0.3.8.51 — the Bypass path's unprompted apply. Refuses without a delegate, without
-    /// a Bypass conversation, or with a deterministic block standing; logs every outcome.</summary>
+    /// <summary>v0.3.8.51 — the Bypass path's unprompted apply. Refuses without a Bypass
+    /// conversation, with a deterministic block standing, with any proposal the promotion gate
+    /// refuses, or without a transactional set applier; logs every outcome. v0.3.8.91 applies the
+    /// set as ONE unit rather than one proposal at a time.</summary>
     private void ApplyUnderBypass(Mission mission, Task task, PatchSet patchSet)
     {
-        if (_approveApplyPatch is null || patchSet.Proposals.Count == 0) return;
+        if (patchSet.Proposals.Count == 0) return;
         try
         {
             if (task.DeterministicBlock is not null)
@@ -1611,14 +1702,71 @@ public sealed class ExecutionService : IExecutionService
             if (conversation?.EffectivePolicy != Conversations.EscalationPolicy.Bypass) return;
 
             var who = $"bypass-policy({conversation.PolicySetBy ?? "operator"})";
+
+            // THE GATE, AS BYPASS, FOR EVERY PROPOSAL — AND THEN THE SET AS ONE UNIT. v0.3.8.91.
+            //
+            // Two defects lived in the loop this replaces. It reached the apply path having checked
+            // only the block and the policy, and that path then satisfied its own human gate with an
+            // approval row this very call had just created and approved — a synthesized approval is
+            // not a human, so the human gate was answering nobody. And it applied `foreach
+            // (proposal)` and CONTINUED past a failure, so a three-file set whose second proposal hit
+            // a stale base left files one and three written: a tree nothing verified, described by a
+            // verification record that judged the set as a whole.
+            //
+            // Now every proposal faces the gate as `Bypass` — the human is skipped by policy and
+            // nothing else is — and the set is refused entirely if any one of them is refused. Then
+            // the whole set goes through one transaction that preflights every target, journals, and
+            // rolls everything back on any failure.
+            var refusals = new List<string>();
             foreach (var proposal in patchSet.Proposals)
             {
-                var (ok, message) = _approveApplyPatch(proposal.Id, who);
-                _memory.LogEvent(mission.Id, ok ? "patch_bypass_applied" : "patch_bypass_apply_refused",
-                    $"Skip-all-approvals {(ok ? "applied" : "did not apply")} {proposal.FilePath}: {message}",
-                    task.Id, task.AssignedAnt,
-                    new() { ["patch_id"] = proposal.Id, ["file"] = proposal.FilePath, ["ok"] = ok });
+                var verdict = Verification.PatchPromotionGate.Evaluate(
+                    _memory, (Anthill.SDK.Artifacts.IEvidenceStore)_memory, proposal.Id,
+                    Verification.PromotionActor.Bypass);
+
+                if (!verdict.Promotable)
+                    refusals.Add($"{proposal.FilePath} [{verdict.Layer}]: {verdict.Reason}");
             }
+
+            if (refusals.Count > 0)
+            {
+                _memory.LogEvent(mission.Id, "patch_bypass_apply_refused",
+                    $"Skip-all-approvals did not apply patch set {patchSet.Id}: "
+                  + $"{refusals.Count} of {patchSet.Proposals.Count} proposal(s) were refused, so none "
+                  + "were applied. " + string.Join(" | ", refusals.Take(5)),
+                    task.Id, task.AssignedAnt,
+                    new()
+                    {
+                        ["patch_set_id"] = patchSet.Id, ["ok"] = false,
+                        ["refused_count"] = refusals.Count, ["refusals"] = refusals,
+                    });
+                return;
+            }
+
+            if (_applyPatchSet is null)
+            {
+                // No set-level applier wired (CLI shapes, tests without a Queen). The old behaviour
+                // here was a per-proposal loop; degrading to that would reintroduce the partial-set
+                // write this release removed, so it degrades to the manual card instead.
+                _memory.LogEvent(mission.Id, "patch_bypass_apply_refused",
+                    $"Skip-all-approvals did not apply patch set {patchSet.Id}: no transactional "
+                  + "set applier is wired in this host, and a set is not applied one file at a time.",
+                    task.Id, task.AssignedAnt,
+                    new() { ["patch_set_id"] = patchSet.Id, ["ok"] = false, ["reason"] = "no_set_applier" });
+                return;
+            }
+
+            var outcome = _applyPatchSet(patchSet.Id, who);
+            _memory.LogEvent(mission.Id,
+                outcome.Applied ? "patch_bypass_applied" : "patch_bypass_apply_refused",
+                $"Skip-all-approvals {(outcome.Applied ? "applied" : "did not apply")} patch set "
+              + $"{patchSet.Id}: {outcome.Message}",
+                task.Id, task.AssignedAnt,
+                new()
+                {
+                    ["patch_set_id"] = patchSet.Id, ["ok"] = outcome.Applied,
+                    ["applied_count"] = outcome.Count, ["refusals"] = outcome.Refusals,
+                });
         }
         catch (Exception error)
         {

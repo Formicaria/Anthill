@@ -166,8 +166,15 @@ public class PatchConformanceTests
     {
         ("src/Anthill.Modules/Anthill.Modules.Tools/ApplyPatchTool.cs", true,
             "the operator's own tree, through the approved apply path"),
-        ("src/Anthill.Api/AutoApplyRunner.cs", true,
-            "the Director's auto-apply preflight, which gates writes to the same tree"),
+        // v0.3.8.91: this entry MOVED. It read `src/Anthill.Api/AutoApplyRunner.cs` — the Director's
+        // preflight — until the ordinary apply path needed the same preflight and could not reach it
+        // in Anthill.Api. There is now ONE preflight, in Core, serving both lanes; the runner
+        // delegates to it and no longer calls the engine itself. Two of this file's guards failed on
+        // the move, which is the ledger doing its job: a decider that relocates has to be re-declared,
+        // because the whole point is that no file quietly becomes an applier and none quietly stops.
+        ("src/Anthill.Core/Verification/PatchSetApply.cs", true,
+            "the one preflight for every live apply lane — the operator's Apply button, the bypass "
+          + "lane, and the Director's auto-apply, which now delegates here"),
         ("src/Anthill.Core/Verification/PatchSetMaterializer.cs", false,
             "materialises a patch set into a disposable tree so it can be verified"),
         ("src/Anthill.Core/Sandbox/SandboxedCoderRunner.cs", false,

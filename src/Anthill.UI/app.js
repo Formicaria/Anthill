@@ -316,7 +316,13 @@ async function bootAuth(){
   let status;
   try { status = await (await fetch(url('/auth/status'))).json(); }
   catch(e){ showAuth('login','Cannot reach API. Check the API Base URL and try again.'); return; }
-  if(status?.data?.setup_required){ showAuth('setup'); return; }
+  if(status?.data?.setup_required){
+    // v0.3.8.91: the token row appears only when the API says one is needed, so the loopback and
+    // desktop cases keep the two-field form they have always had.
+    const row=document.getElementById('setup-token-row');
+    if(row) row.style.display = status?.data?.setup_token_required ? '' : 'none';
+    showAuth('setup'); return;
+  }
   if(TOKEN){
     try{
       const me=await api('/auth/me');
@@ -399,8 +405,9 @@ async function doSetup(){
   if(p.length<8){ err.textContent='Password must be at least 8 characters.'; return; }
   if(p!==p2){ err.textContent='Passwords do not match.'; return; }
   setApiBase(base||'');
+  const tok=(document.getElementById('setup-token')||{}).value;
   try{
-    const r=await rawPost('/auth/setup',{username:u,password:p});
+    const r=await rawPost('/auth/setup',{username:u,password:p,setup_token:(tok||'').trim()});
     if(r.success){ setSession(r.data.token,r.data.role,r.data.username); enterApp(); }
     else err.textContent=r.message||'Setup failed.';
   }catch(e){ err.textContent='Cannot reach API: '+e.message; }

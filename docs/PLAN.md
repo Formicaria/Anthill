@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.90**.
+Shipping release: **v0.3.8.91**.
 
 ---
 
@@ -317,6 +317,80 @@ outcome.
 > medic's reason rewritten at v0.3.8.87 from a claim about the planner to a proof about the
 > scheduler, pinned by a source guard. **The graduation record — ✅ complete at v0.3.8.81. Acceptance
 > gates 1 and 2 — ✅ closed at v0.3.8.80.**
+
+---
+
+### R0 — Correctness before capability · *4–6 releases* · **in progress, gates everything**
+
+Inserted at v0.3.8.91 after an external repository review, and placed FIRST because its findings are
+not stylistic: several documents promise guarantees the runtime does not enforce, and two of them
+were reachable. Every claim was verified against the code before being accepted; two were revised
+(one worse than reported, one narrower). The reviewer's frame is the right one for this whole group:
+*the foundations are sound, and the work is deleting the alternate paths around them.*
+
+**Nothing below R0 proceeds until it closes.** No new ant, no memory feature, no broader autonomy, no
+connectors. R4's live runs wait too — a qualification report is only as true as the instrumentation
+under it.
+
+- ✅ **The window before the first administrator** *(v0.3.8.91)*. `/auth/setup` was unauthenticated
+  while `CountUsers() == 0`, on a listener every profile forces to `0.0.0.0`, with
+  `operator_shell_enabled` shipping true — reach the port, win the race, get a host shell. Closed by
+  `SetupAuthority` (single-use bootstrap token, rule written on the BIND not the caller's address),
+  a transactional `CreateInitialAdministrator`, and the operator terminal shipping off. The
+  `DEPLOYMENT.md` paragraph that argued the bind was safe is corrected rather than deleted.
+- ✅ **A verification fault fails closed** *(v0.3.8.91)*. The catch left `DeterministicBlock` null and
+  `ApplyUnderBypass` gates on exactly that, so a crashed verifier let an unverified patch reach the
+  operator's tree under a Bypass conversation.
+- ✅ **No control decision is read out of prose** *(v0.3.8.91)*. A REJECTED patch satisfied
+  `Contains("applied") && !Contains("not applied")`, returned HTTP 200 and fired a real git commit.
+- ✅ **One promotion gate** *(v0.3.8.91)*. `PatchPromotionGate` is the single authority and the Apply
+  button and bypass lane consult it. The actor changes exactly ONE condition — who satisfies the
+  human; a test pins every other condition above the actor switch so no lane can be silently
+  exempted. Found while building it: `Task.DeterministicBlock` had no database column, so the block
+  that gates bypass application has never survived a restart. **Auto-apply still runs its own nine
+  checks** — stricter than the gate on every axis, and folding it in is left as a named follow-up
+  rather than done blind.
+- ✅ **Patch sets apply as a unit on every path** *(v0.3.8.91)*. `PatchSetApply` preflights every
+  target, journals before the first mutation, stages each file's pre-state, and rolls the whole set
+  back on any failure. The bypass lane's `foreach (proposal) => apply` — which continued past a
+  failure — is gone. `AutoApplyRunner`'s duplicate preflight now delegates to the one in Core.
+- ✅ **The live tree must match the verified tree** *(v0.3.8.91)*. `WorkspaceFingerprint` — HEAD plus
+  the full `git status --porcelain -uall` listing — captured when the sandbox is built and compared
+  by the gate before any lane writes. HEAD alone was the first design and would have been wrong: it
+  does not move on an uncommitted edit, which is the case the check exists for. Three states, and
+  `NotCaptured` (non-git, or a set predating this) is deliberately not a refusal.
+- ✅ **File mutation and database state, one recoverable transaction** *(v0.3.8.91)*. An apply intent
+  journal — Prepared → Mutating → Applied → Recorded, on both lanes, written before the write — plus
+  startup reconciliation that decides from hashes: prepared discards, applied completes the records,
+  and a mid-write state matching neither hash is left for an operator rather than resolved in favour
+  of success. It never re-applies and never rolls back.
+  ◻ **The crash-injection matrix is NOT done** — killing the process at each of the six transitions
+  and proving one deterministic recovered state. `Anthill.CrashHelper` already drives this shape for
+  the auto-apply journal and is where it belongs. Named here rather than left implied by the word
+  "crash-safe".
+- ✅ **A refused lease prevents execution** *(v0.3.8.91)*. The claim is taken before anything is
+  committed and a refusal returns. Committing first was what forced the old code to ignore the
+  refusal; there is now nothing to strand. A claim the scheduler then declines is released as
+  `Abandoned` rather than held.
+- ✅ **The configuration surface agrees with the runtime** *(v0.3.8.91)*. The `api_token_env`
+  self-referential fallback (sticky, and kept using the variable the operator had abandoned); four
+  `??` env overrides an empty string won; `ANTHILL_PORT` unclamped and silently falling back; an
+  unreadable config running on defaults that bind `0.0.0.0`; `config.example.json` showing seven
+  roster flags as `false` that the migration forces `true`, with the two real controls undocumented;
+  and `LastConfigMigration`, which its own doc comment claimed two endpoints surfaced and neither did.
+  `ConfigurationSurfaceTests` pins both directions against an explicit undocumented-on-purpose ledger.
+  ◻ **The GENERATED schema is not built** — one declaration per key carrying type, default, env
+  override, range, security class, aliases and UI exposure, with the example file and the docs
+  generated from it. That is the end state; this release stopped the drift getting worse.
+- ◻ **The evidence and artifact vocabulary mismatches** carried from v0.3.8.90, because R4 must
+  measure reality rather than an instrumentation layer with known dead mappings.
+- ◻ **Enforcement.** Warnings as errors, analyzers, dependency and secret scanning, a complexity
+  budget, module auto-discovery, typed database rows instead of `Dictionary<string, object?>`, and
+  the agent rules written down rather than remembered.
+
+> **Exit gate.** Every write to the operator's tree passes one gate; every externally visible
+> mutation is recoverable after a crash; no security decision reads prose or falls back to a broader
+> source when its authoritative input is missing; and the configuration surface has one authority.
 
 ---
 
