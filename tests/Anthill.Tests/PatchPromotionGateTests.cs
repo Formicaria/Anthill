@@ -147,7 +147,12 @@ public class PatchPromotionGateTests
         var start = code.IndexOf("private void ApplyUnderBypass", StringComparison.Ordinal);
         Assert.True(start > 0, "ApplyUnderBypass has moved or been renamed.");
 
-        var body = code[start..Math.Min(code.Length, start + 4000)];
+        // The WHOLE method, brace-matched, rather than a character window. v0.3.8.92: the window
+        // was 4,000 characters, which fitted on Linux and ran three lines short on a Windows
+        // checkout where CRLF makes every line one character longer — so this guard passed locally
+        // and failed on main. A guard whose verdict depends on the reader's line endings is not
+        // checking what it says it checks.
+        var body = MethodBody(code, start);
 
         var gateAt = body.IndexOf("PatchPromotionGate.Evaluate", StringComparison.Ordinal);
         var applyAt = body.IndexOf("_applyPatchSet(", StringComparison.Ordinal);
@@ -159,6 +164,29 @@ public class PatchPromotionGateTests
           + "approves its own approval row, so asking afterwards means the only thing standing "
           + "between a bypass and the operator's tree is a human gate satisfied by a synthesized "
           + "human.");
+    }
+
+    /// <summary>
+    /// One method's body, from its signature to its closing brace.
+    ///
+    /// Brace-matched rather than sliced to a character budget: a budget has to be guessed, the guess
+    /// is invisible when it is wrong, and it silently means something different on a checkout with
+    /// different line endings. Falls back to the rest of the file if the braces do not balance,
+    /// which reads as "too much" rather than "too little" — a guard that over-reads reports a
+    /// false pass on a neighbour, and one that under-reads reports a false failure on itself.
+    /// </summary>
+    private static string MethodBody(string code, int signatureAt)
+    {
+        var open = code.IndexOf('{', signatureAt);
+        if (open < 0) return code[signatureAt..];
+
+        var depth = 0;
+        for (var i = open; i < code.Length; i++)
+        {
+            if (code[i] == '{') depth++;
+            else if (code[i] == '}' && --depth == 0) return code[signatureAt..(i + 1)];
+        }
+        return code[signatureAt..];
     }
 
     /// <summary>
