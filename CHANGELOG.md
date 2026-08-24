@@ -198,6 +198,20 @@ both lanes. Startup reconciliation reads it and decides **from hashes rather tha
 Reconciliation never re-runs an apply and never rolls one back. It makes the record match what the
 disk already says; it is not a second applier.
 
+**And its own first run found defect class 6 in it — verbatim.** `events` carries
+`FOREIGN KEY (mission_id) REFERENCES missions(id)`, so logging an event for a mission whose row does
+not exist throws. After a crash that is not an odd case, it is a likely one: the mission may be
+precisely what failed to be written. The sweep called `LogEvent` inline, the throw was caught by the
+outer handler, and a SUCCESSFUL status update was reported as "needs an operator" — while the intent
+stayed open, so every restart retried it forever. The patch status had already changed; only the
+record of why had not.
+
+That is this repository's own sixth named defect class, *a diagnostic that breaks what it describes*,
+found before through this same foreign key when the artifact schema check turned "this payload is the
+wrong shape" into "the artifact was never stored". Same table, same key, same shape — this time in
+the code written to make recovery dependable. The status updates ARE the reconciliation; the event is
+a record of it, and a record that cannot be written is now a note rather than a failure.
+
 ### The live tree must still be the one verification read
 
 Verification binds evidence to the base revision, the patch-set content hash, and `AppliedTreeHash` —

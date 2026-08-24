@@ -73,7 +73,7 @@ public static class PatchApplyReconciler
                         break;
 
                     case PatchApplyPhase.Applied:
-                        Complete(memory, intent);
+                        Complete(memory, intent, notes);
                         completed++;
                         notes.Add($"patch {intent.PatchId}: the write had landed and the records had not — "
                                 + "completed them");
@@ -94,7 +94,7 @@ public static class PatchApplyReconciler
 
                         if (intent.PostHash is not null && string.Equals(current, intent.PostHash, StringComparison.Ordinal))
                         {
-                            Complete(memory, intent);
+                            Complete(memory, intent, notes);
                             completed++;
                             notes.Add($"patch {intent.PatchId}: the file holds exactly what the apply wrote — "
                                     + "completed the records");
@@ -105,11 +105,10 @@ public static class PatchApplyReconciler
                         notes.Add($"patch {intent.PatchId} ({intent.TargetPath}): interrupted mid-write and the "
                                 + "file matches neither its pre-apply nor its post-apply hash. Left for an "
                                 + "operator — this process will not decide whose bytes those are.");
-                        memory.LogEvent(intent.MissionId, EventTypes.PatchApplyUnreconciled,
+                        Announce(memory, intent, notes, EventTypes.PatchApplyUnreconciled,
                             $"An interrupted apply of patch {intent.PatchId} left {intent.TargetPath} in a state "
                           + "matching neither hash. It has NOT been completed or undone.",
-                            antName: "queen",
-                            metadata: new()
+                            new()
                             {
                                 ["patch_id"] = intent.PatchId, ["intent_id"] = intent.Id,
                                 ["target_path"] = intent.TargetPath, ["severity"] = "critical",
@@ -140,7 +139,7 @@ public static class PatchApplyReconciler
     /// closed LAST, so a crash during reconciliation leaves the row and the next start tries again.
     /// Every step is idempotent — a status set twice is the same status.
     /// </summary>
-    private static void Complete(SqliteMemory memory, PatchApplyIntent intent)
+    private static void Complete(SqliteMemory memory, PatchApplyIntent intent, List<string> notes)
     {
         memory.UpdatePatchStatus(intent.PatchId, PatchStatus.Applied,
             AnthillTime.NowUtc().ToIso(), null, null);
@@ -149,17 +148,49 @@ public static class PatchApplyReconciler
             memory.UpdateApprovalStatus(intent.ApprovalId!, ApprovalStatus.Consumed,
                 "Approval consumed by an apply that startup reconciliation completed.");
 
-        memory.LogEvent(intent.MissionId, EventTypes.PatchApplyReconciled,
+        Announce(memory, intent, notes, EventTypes.PatchApplyReconciled,
             $"Patch {intent.PatchId} was written to disk by an apply that did not finish recording it. "
           + "Startup reconciliation completed the records to match the tree.",
-            antName: "queen",
-            metadata: new()
+            new()
             {
                 ["patch_id"] = intent.PatchId, ["intent_id"] = intent.Id,
                 ["approval_request_id"] = intent.ApprovalId, ["target_path"] = intent.TargetPath,
             });
 
         memory.CloseApplyIntent(intent.Id);
+    }
+
+    /// <summary>
+    /// Log the reconciliation, and NEVER let the logging break it. v0.3.8.91.
+    ///
+    /// The `events` table carries `FOREIGN KEY (mission_id) REFERENCES missions(id)`, so writing an
+    /// event for a mission whose row does not exist throws — and after a crash that is not a strange
+    /// case, it is a likely one: the mission may be exactly what failed to be written.
+    ///
+    /// The first version of this sweep called `LogEvent` inline. A throw was caught by the outer
+    /// handler, which turned a SUCCESSFUL status update into "needs an operator" and — worse — left
+    /// the intent open, so every restart retried it forever. The patch status had already changed;
+    /// only the record of why had not.
+    ///
+    /// That is defect class 6 in this repository's own record, verbatim: *a diagnostic that breaks
+    /// what it describes.* It was found there in the artifact schema check, which logged a violation
+    /// through this same foreign key and turned "this payload is the wrong shape" into "the artifact
+    /// was never stored". Same table, same key, same shape, in the code written to make recovery
+    /// dependable.
+    ///
+    /// The status updates ARE the reconciliation. The event is a record of it, and a record that
+    /// cannot be written is a note rather than a failure.
+    /// </summary>
+    private static void Announce(
+        SqliteMemory memory, PatchApplyIntent intent, List<string> notes,
+        string eventType, string message, Dictionary<string, object?> metadata)
+    {
+        try { memory.LogEvent(intent.MissionId, eventType, message, antName: "queen", metadata: metadata); }
+        catch (Exception error)
+        {
+            notes.Add($"patch {intent.PatchId}: reconciled, but the '{eventType}' event could not be "
+                    + $"written ({error.Message}). The records were still updated.");
+        }
     }
 
     /// <summary>The target's current bytes, or null when it is absent or unreadable.</summary>
