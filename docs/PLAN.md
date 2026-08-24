@@ -343,35 +343,45 @@ under it.
   operator's tree under a Bypass conversation.
 - ✅ **No control decision is read out of prose** *(v0.3.8.91)*. A REJECTED patch satisfied
   `Contains("applied") && !Contains("not applied")`, returned HTTP 200 and fired a real git commit.
-- ◻ **One promotion gate.** Five paths can write a proposed patch and each checks a different set of
-  preconditions; `ApplyApprovedPatch` checks five things and reads no evidence. `PatchPromotionGate`
-  becomes the single authority: patch-set id and hash, current revision, deterministic verification
-  Passed, required tester and soldier work finished with no blocking finding, evidence bound to this
-  revision, mission not cancelled, no deterministic block, and human approval satisfied OR
-  deliberately bypassed. **Bypass skips the human, never the colony's safety system.**
-- ◻ **Patch sets apply as a unit on EVERY path.** Six places in this repository state that guarantee;
-  it is true only of the auto-apply lane. The ordinary path applies one proposal at a time, continues
-  past a failure, and git-commits each separately — so a three-file set can leave a tree that was
-  never verified plus two commits. Needs one `ApplyPatchSetTransaction`: validate every target, stage
-  every mutation, journal, apply as one, roll the set back on any failure.
-- ◻ **The live tree must match the verified tree.** `AppliedTreeHash` covers only the files the patch
-  touched, so an edit to any other file between verify and apply is invisible to both the manual and
-  the auto-apply lane. Either fingerprint the workspace against the verified base before applying, or
-  re-run the required checks against the live result with transactional rollback.
-- ◻ **File mutation and database state, one recoverable transaction.** The write happens first,
-  un-journaled, followed by four separate database updates. A crash between them leaves the patch on
-  disk and `approved` in the database — where retrying marks it *failed* on a stale base and revert
-  refuses, because only an applied patch can be reverted. Needs Prepared → Mutating → Applied →
-  Recorded with startup reconciliation, and crash injection at every transition.
-- ◻ **A refused lease must prevent execution.** `TryClaimTask` is correctly atomic and the caller
-  ignores it: the scheduler commits the task to Running BEFORE the claim is attempted, so a refusal
-  logs `attempt_claim_refused` and runs anyway. Harmless in one process and a duplicate-side-effects
-  bug the moment two share a database. Fix the ordering, not the symptom.
-- ◻ **One configuration authority.** The v0.3.8.90 sweep plus the review: a generated schema (key,
-  type, default, env override, range, security class, aliases, UI exposure, restart) with the example
-  file and docs generated FROM it. Includes the `api_token_env` fallback, which keeps authenticating
-  against `ANTHILL_API_TOKEN` after an operator redirects it; the `??` env overrides an empty string
-  wins; and invalid config starting with defaults instead of refusing.
+- ✅ **One promotion gate** *(v0.3.8.91)*. `PatchPromotionGate` is the single authority and the Apply
+  button and bypass lane consult it. The actor changes exactly ONE condition — who satisfies the
+  human; a test pins every other condition above the actor switch so no lane can be silently
+  exempted. Found while building it: `Task.DeterministicBlock` had no database column, so the block
+  that gates bypass application has never survived a restart. **Auto-apply still runs its own nine
+  checks** — stricter than the gate on every axis, and folding it in is left as a named follow-up
+  rather than done blind.
+- ✅ **Patch sets apply as a unit on every path** *(v0.3.8.91)*. `PatchSetApply` preflights every
+  target, journals before the first mutation, stages each file's pre-state, and rolls the whole set
+  back on any failure. The bypass lane's `foreach (proposal) => apply` — which continued past a
+  failure — is gone. `AutoApplyRunner`'s duplicate preflight now delegates to the one in Core.
+- ✅ **The live tree must match the verified tree** *(v0.3.8.91)*. `WorkspaceFingerprint` — HEAD plus
+  the full `git status --porcelain -uall` listing — captured when the sandbox is built and compared
+  by the gate before any lane writes. HEAD alone was the first design and would have been wrong: it
+  does not move on an uncommitted edit, which is the case the check exists for. Three states, and
+  `NotCaptured` (non-git, or a set predating this) is deliberately not a refusal.
+- ✅ **File mutation and database state, one recoverable transaction** *(v0.3.8.91)*. An apply intent
+  journal — Prepared → Mutating → Applied → Recorded, on both lanes, written before the write — plus
+  startup reconciliation that decides from hashes: prepared discards, applied completes the records,
+  and a mid-write state matching neither hash is left for an operator rather than resolved in favour
+  of success. It never re-applies and never rolls back.
+  ◻ **The crash-injection matrix is NOT done** — killing the process at each of the six transitions
+  and proving one deterministic recovered state. `Anthill.CrashHelper` already drives this shape for
+  the auto-apply journal and is where it belongs. Named here rather than left implied by the word
+  "crash-safe".
+- ✅ **A refused lease prevents execution** *(v0.3.8.91)*. The claim is taken before anything is
+  committed and a refusal returns. Committing first was what forced the old code to ignore the
+  refusal; there is now nothing to strand. A claim the scheduler then declines is released as
+  `Abandoned` rather than held.
+- ✅ **The configuration surface agrees with the runtime** *(v0.3.8.91)*. The `api_token_env`
+  self-referential fallback (sticky, and kept using the variable the operator had abandoned); four
+  `??` env overrides an empty string won; `ANTHILL_PORT` unclamped and silently falling back; an
+  unreadable config running on defaults that bind `0.0.0.0`; `config.example.json` showing seven
+  roster flags as `false` that the migration forces `true`, with the two real controls undocumented;
+  and `LastConfigMigration`, which its own doc comment claimed two endpoints surfaced and neither did.
+  `ConfigurationSurfaceTests` pins both directions against an explicit undocumented-on-purpose ledger.
+  ◻ **The GENERATED schema is not built** — one declaration per key carrying type, default, env
+  override, range, security class, aliases and UI exposure, with the example file and the docs
+  generated from it. That is the end state; this release stopped the drift getting worse.
 - ◻ **The evidence and artifact vocabulary mismatches** carried from v0.3.8.90, because R4 must
   measure reality rather than an instrumentation layer with known dead mappings.
 - ◻ **Enforcement.** Warnings as errors, analyzers, dependency and secret scanning, a complexity
