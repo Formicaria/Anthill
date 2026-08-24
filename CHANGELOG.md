@@ -148,12 +148,19 @@ Verification always reasoned about the set as a unit and said why — `PatchSetM
 CLOSED AND AS A UNIT", `ExecutionService` that "a patch is applied as a unit, so it must be judged as
 one". Application is the half that was not holding up its end.
 
-The move also failed two guards in `PatchConformanceTests`, which was the ledger working. That file
+The move also failed three guards, which was those guards working. That file
 keeps a hand-written list of every file that DECIDES whether a patch applies, precisely so no file
 quietly becomes an applier and none quietly stops being one — and a decider that relocates has to be
 re-declared. The entry moved from `AutoApplyRunner` to `PatchSetApply`, and the conformance matrix
 (base hash passed, destination passed, occupancy passed, `requireBaseHash: true` for a live-tree
 lane, containment through the shared resolver) now runs against the new home.
+
+`AutoApplyAtomicityTests.ThePreflight_UsesTheRealApplyEngine` was the third, and it is now asserted
+in two parts rather than relaxed: the runner must still REACH the shared preflight — a lane that
+stops preflighting is exactly the defect that test was written for — and the shared preflight must
+still ask the real engine at the real strictness. Collapsing it to "somebody somewhere calls Compute"
+would have left a guard that passes while the property it names is gone, which is this repository's
+most-found defect class wearing a green tick.
 
 Two smaller things fell out of it. `AutoApplyRunner`'s preflight was a second implementation of one
 rule living in `Anthill.Api`, where Core could not reach it even to agree; it now delegates to the
