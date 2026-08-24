@@ -211,6 +211,22 @@ public static class EventTypes
 
     // ---- patch verification and materialization ----------------------------------
     public const string PatchBypassBlocked = "patch_bypass_blocked";
+    // v0.3.8.91 — the bypass lane's two outcomes, declared because one of them just became VISIBLE.
+    //
+    // Both have been emitted since v0.3.8.51, from a ternary
+    // (`ok ? "patch_bypass_applied" : "patch_bypass_apply_refused"`), which is a shape the emitter
+    // sweep cannot read — so neither was declared and nothing complained. Adding the promotion
+    // gate's refusal put `patch_bypass_apply_refused` in a plain first-argument position, the sweep
+    // saw it for the first time, and the vocabulary guard failed on a name the runtime had been
+    // writing for forty releases.
+    //
+    // Exactly the blind spot PLAN.md already records: a detector that reads one syntactic shape
+    // measures that shape, not the runtime. Declaring these does not fix the detector; it removes
+    // two of the dozen or so names still hiding behind it.
+    public const string PatchBypassApplied = "patch_bypass_applied";
+    public const string PatchBypassApplyRefused = "patch_bypass_apply_refused";
+    // The promotion gate's own refusal, new in v0.3.8.91 and declared with its producer.
+    public const string PatchPromotionRefused = "patch_promotion_refused";
     public const string PatchSetMaterializationFailed = "patch_set_materialization_failed";
     public const string PatchSetVerificationFaulted = "patch_set_verification_faulted";
     public const string PatchSetVerified = "patch_set_verified";

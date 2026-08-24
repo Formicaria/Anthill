@@ -125,6 +125,20 @@ rule rather than inventing a second one.
 Auto-apply keeps its own nine checks for now — it is stricter than the gate on every axis. Folding it
 in belongs with making the set apply as a unit, which is the next commit.
 
+### A name that had been emitted for forty releases, made visible
+
+The gate's first full run failed on one assertion: `patch_bypass_apply_refused` is emitted and not
+declared. It has been emitted since v0.3.8.51 — from a ternary,
+`ok ? "patch_bypass_applied" : "patch_bypass_apply_refused"`, which is a shape v0.3.8.86's emitter
+sweep cannot read. Adding the promotion gate's refusal put the same name in a plain first-argument
+position, the sweep saw it for the first time, and the guard fired on a name the runtime had been
+writing all along.
+
+Both bypass outcomes are now declared, along with the gate's own `patch_promotion_refused`. This does
+not fix the detector — PLAN.md still carries that as its own sweep — but it is worth recording how
+the gap behaves in practice: *a detector that reads one syntactic shape measures that shape, not the
+runtime*, and it reports silence as health until something unrelated moves a literal into view.
+
 ### The deterministic block had no column
 
 Found while building the gate, and it is the sharper half of this section. **`Task.DeterministicBlock`
