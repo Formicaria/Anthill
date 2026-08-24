@@ -1,3 +1,51 @@
+## v0.3.8.92 - a guard that measured characters, not code
+
+**v0.3.8.91 was green on every local run and turned main red on windows-latest. The guard that failed
+was mine, and what it actually measured was the reader's line endings.**
+
+### 27 characters
+
+`TheBypassLane_IsGatedBeforeItSynthesizesItsOwnApproval` read the bypass lane like this:
+
+```csharp
+var body = code[start..Math.Min(code.Length, start + 4000)];
+```
+
+On a Linux checkout the marker it looks for sits at offset **3,973** — twenty-seven characters inside
+the window. On a Windows checkout with `core.autocrlf`, every line is one character longer, the
+method is about ninety lines, and the marker lands outside. The guard then reports *"the bypass
+lane's set-apply call has moved"*, which is a true sentence about a thing that had not happened.
+
+Two things made the margin that thin, and both are worth naming because both look harmless:
+
+- **`SourceText.CodeOnly` blanks comments to spaces rather than removing them**, deliberately, so
+  reported line numbers stay true. That means a long explanatory comment — and v0.3.8.91 added a
+  twenty-line one directly inside this method — spends the character budget without contributing a
+  single character the guard reads.
+- **A character budget has to be guessed**, and a wrong guess is invisible until the day it isn't.
+
+Fixed in both places rather than by enlarging the number. `CodeOnly` normalises `\r\n` to `\n`
+first, which fixes every offset-based guard built on it at once; and this one now brace-matches the
+method instead of slicing to a budget. The fallback when braces do not balance is the rest of the
+file — over-reading gives a false pass on a neighbour, under-reading gives a false failure on
+itself, and of the two, failing loudly for the wrong reason is worse here.
+
+### What this says about the guards
+
+The external review's point 19 was that source-regex invariants belong last, after runtime tests,
+typed registries and compiled inspection. This release is a small, concrete argument for it. The
+property being checked — *the bypass lane consults the gate before it applies* — is real and worth
+pinning. The mechanism spent a release measuring how the file was checked out.
+
+It also cost the thing that matters most: a red `main`, which is the one signal that has to stay
+trustworthy. **Every local run was green.** The only reason this surfaced at all is that CI builds on
+windows-latest as well as Linux — the platform matrix earning its keep on a defect that had nothing
+to do with the platform.
+
+Recorded in `PLAN.md` under R0's enforcement item, which already carries the reviewer's rule: prefer
+a runtime black-box test, then a typed registry, then compiled inspection, and reach for source
+scanning last — and when reaching for it, never on a character count.
+
 ## v0.3.8.91 - the window before the first administrator
 
 **An external review of the repository found a remotely claimable administrator account on a fresh
