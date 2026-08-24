@@ -149,10 +149,10 @@ public class PatchPromotionGateTests
         var body = code[start..Math.Min(code.Length, start + 4000)];
 
         var gateAt = body.IndexOf("PatchPromotionGate.Evaluate", StringComparison.Ordinal);
-        var applyAt = body.IndexOf("_approveApplyPatch(", StringComparison.Ordinal);
+        var applyAt = body.IndexOf("_applyPatchSet(", StringComparison.Ordinal);
 
         Assert.True(gateAt > 0, "the bypass lane no longer consults the promotion gate.");
-        Assert.True(applyAt > 0, "the bypass lane's apply call has moved.");
+        Assert.True(applyAt > 0, "the bypass lane's set-apply call has moved.");
         Assert.True(gateAt < applyAt,
             "the bypass lane applies before it asks the gate. The apply path it calls creates and "
           + "approves its own approval row, so asking afterwards means the only thing standing "

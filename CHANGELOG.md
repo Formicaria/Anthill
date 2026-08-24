@@ -125,6 +125,36 @@ rule rather than inventing a second one.
 Auto-apply keeps its own nine checks for now — it is stricter than the gate on every axis. Folding it
 in belongs with making the set apply as a unit, which is the next commit.
 
+### A patch set applies as a unit on every path
+
+Six places in this repository state that guarantee — PLAN.md lists it under *Done and load-bearing*,
+`ApplyTransaction`'s header frames it as the v0.3.8.57 guarantee, `AutoApplyAtomicityTests` is named
+for it. Every one was true of exactly one lane.
+
+The bypass path looped `foreach (var proposal in patchSet.Proposals)` calling a single-patch apply,
+and **continued past a failure**. A three-file set whose second proposal hit a stale base left files
+one and three written: a tree nothing verified, described by a verification record that judged the
+set as a whole — and under the git-commit policy, one commit per file, any prefix of which could be
+the final state. `AutoApplyAtomicityTests` could not have caught it; that guard reads
+`AutoApplyRunner`, and this lived in `ExecutionService`.
+
+`PatchSetApply` gives the ordinary path the shape auto-apply already had: compute every proposal
+against the live tree before writing any of them, open a durable journal before the first mutation,
+stage each file's pre-state and backup before its write, and roll the **whole** set back on any
+failure under the hash rule. The bypass lane now evaluates the gate for every proposal, refuses the
+entire set if any one is refused, and hands the rest to one transaction.
+
+Verification always reasoned about the set as a unit and said why — `PatchSetMaterializer` "FAILS
+CLOSED AND AS A UNIT", `ExecutionService` that "a patch is applied as a unit, so it must be judged as
+one". Application is the half that was not holding up its end.
+
+Two smaller things fell out of it. `AutoApplyRunner`'s preflight was a second implementation of one
+rule living in `Anthill.Api`, where Core could not reach it even to agree; it now delegates to the
+one in Core. And the new set read has to **unseal** the patch bodies — they are encrypted at rest,
+and a sealed body handed to `PatchApply.Compute` would be compared against the live file, fail to
+match, and refuse every proposal with "stale base": a correct-looking refusal for a reason that has
+nothing to do with the tree.
+
 ### A name that had been emitted for forty releases, made visible
 
 The gate's first full run failed on one assertion: `patch_bypass_apply_refused` is emitted and not

@@ -158,6 +158,72 @@ public sealed partial class Queen
     }
 
     /// <summary>
+    /// APPLY A WHOLE PATCH SET AS ONE UNIT. v0.3.8.91.
+    ///
+    /// The ordinary lanes applied a set one proposal at a time and continued past a failure, so a
+    /// three-file set whose second proposal hit a stale base left files one and three written — a
+    /// tree nothing had verified, described by a verification record that judged the set as a whole.
+    /// Six places in this repository already stated the guarantee this makes true: *a patch set
+    /// applies as a unit, or not at all.*
+    ///
+    /// Preflight every target first, journal before the first mutation, and roll the entire set back
+    /// on any failure. The promotion gate is the caller's job — the bypass lane evaluates every
+    /// proposal before calling this, so a set that reaches here is one the gate already admitted.
+    /// </summary>
+    public Verification.SetApplyOutcome ApplyPatchSetTransactionally(string patchSetId, string requestedBy)
+    {
+        var set = Verification.PatchSetApply.LoadSet(Memory, patchSetId);
+        if (set.Count == 0)
+            return Verification.SetApplyOutcome.Refused(
+                $"patch set {patchSetId} has no proposals", Array.Empty<string>());
+
+        var first = Memory.GetPatchProposal(set[0].PatchId);
+        var missionId = first?.GetValueOrDefault("mission_id")?.ToString() ?? "";
+        var taskId = first?.GetValueOrDefault("task_id")?.ToString();
+
+        var outcome = Verification.PatchSetApply.ApplySet(
+            Memory, patchSetId, set,
+            applyOne: patchId => ApplyPatchForAutomation(patchId, missionId, taskId),
+            rollBack: (applied, tx, reason) =>
+            {
+                var report = tx.Rollback();
+
+                foreach (var one in applied)
+                    Memory.UpdatePatchStatus(one.PatchId, PatchStatus.Failed,
+                        lastError: $"patch set rolled back: {reason}");
+
+                Memory.LogEvent(missionId,
+                    report.Clean ? "patch_set_rolled_back" : "patch_set_rollback_incomplete",
+                    report.Clean
+                        ? $"Rolled back {report.Restored} file change(s) because {reason}. "
+                          + "The set is applied as a unit or not at all."
+                        : $"CRITICAL: rollback INCOMPLETE after {reason} — restored {report.Restored}, "
+                          + $"conflicts {report.Conflicts.Count}, failures {report.Failures.Count}. "
+                          + "A durable ROLLBACK_FAILED marker now halts further application until an "
+                          + "operator resolves it.",
+                    taskId, "queen",
+                    new()
+                    {
+                        ["patch_set_id"] = patchSetId, ["transaction"] = tx.Id, ["reason"] = reason,
+                        ["restored"] = report.Restored,
+                        ["severity"] = report.Clean ? "warning" : "critical",
+                        ["conflicts"] = string.Join(" | ", report.Conflicts),
+                        ["failures"] = string.Join(" | ", report.Failures),
+                    });
+            });
+
+        Memory.LogEvent(missionId, outcome.Applied ? "patch_set_applied" : "patch_set_apply_refused",
+            outcome.Message, taskId, "queen",
+            new()
+            {
+                ["patch_set_id"] = patchSetId, ["requested_by"] = requestedBy,
+                ["applied_count"] = outcome.Count, ["refusals"] = outcome.Refusals,
+            });
+
+        return outcome;
+    }
+
+    /// <summary>
     /// Structured outcome of an automated patch apply, carrying what rollback needs.
     ///
     /// <paramref name="ResolvedDestination"/> (v0.3.8.52) is where a RENAME put the file, and is null

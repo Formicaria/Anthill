@@ -905,6 +905,38 @@ public sealed partial class SqliteMemory
                 FROM tasks WHERE mission_id = @mid ORDER BY COALESCE(started_at, finished_at, id) ASC LIMIT @lim",
             ("@mid", missionId), ("@lim", limit));
 
+    /// <summary>
+    /// Every proposal in one patch set. v0.3.8.91 — the read a set-level apply needs.
+    ///
+    /// It did not exist: there is no `GetPatchSet` anywhere, and every caller that wanted "the whole
+    /// set" either had the in-memory `PatchSet` in hand or worked one proposal at a time. That is not
+    /// a coincidence — it is the shape that let the ordinary apply path be per-proposal while the
+    /// documents said the set applies as a unit.
+    ///
+    /// Same projection as <see cref="GetPatchProposal"/> minus the joins, so a caller can build the
+    /// domain object without a second read per row.
+    /// </summary>
+    public List<Dictionary<string, object?>> GetPatchProposalsForSet(string patchSetId)
+    {
+        var rows = Query(@"SELECT id, patch_set_id, mission_id, task_id, file_path, change_type, reason, risk,
+                  old_content, new_content, base_hash, destination_path, requires_approval, status,
+                  created_at, applied_at, backup_path, applied_hash, last_error
+                FROM patch_proposals WHERE patch_set_id = @sid ORDER BY id ASC",
+            ("@sid", patchSetId ?? ""));
+
+        // UNSEAL, exactly as GetPatchProposal does. The bodies are encrypted at rest, and a caller
+        // that received the sealed text would hand ciphertext to `PatchApply.Compute` — which would
+        // compare it against the live file, find no match, and refuse with "stale base". A perfectly
+        // correct-looking refusal for a reason that has nothing to do with the tree.
+        foreach (var row in rows)
+        {
+            if (row.TryGetValue("old_content", out var oc)) row["old_content"] = _cipher.Unprotect(oc as string);
+            if (row.TryGetValue("new_content", out var nc)) row["new_content"] = _cipher.Unprotect(nc as string);
+        }
+
+        return rows;
+    }
+
     public List<Dictionary<string, object?>> GetRecentMissions(int limit = 5) =>
         CacheRead($"recent_missions::{limit}", () =>
             Query(@"SELECT id, goal, status, user_result, debug_result, final_result, best_output_task_id,

@@ -227,6 +227,12 @@ public static class EventTypes
     public const string PatchBypassApplyRefused = "patch_bypass_apply_refused";
     // The promotion gate's own refusal, new in v0.3.8.91 and declared with its producer.
     public const string PatchPromotionRefused = "patch_promotion_refused";
+    // v0.3.8.91 — the set-level apply and its rollback, declared with their producer so the
+    // vocabulary never trails the runtime again.
+    public const string PatchSetApplied = "patch_set_applied";
+    public const string PatchSetApplyRefused = "patch_set_apply_refused";
+    public const string PatchSetRolledBack = "patch_set_rolled_back";
+    public const string PatchSetRollbackIncomplete = "patch_set_rollback_incomplete";
     public const string PatchSetMaterializationFailed = "patch_set_materialization_failed";
     public const string PatchSetVerificationFaulted = "patch_set_verification_faulted";
     public const string PatchSetVerified = "patch_set_verified";

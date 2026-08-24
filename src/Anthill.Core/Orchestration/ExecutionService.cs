@@ -118,22 +118,28 @@ public sealed class ExecutionService : IExecutionService
     /// </summary>
     public ExecutionService(SqliteMemory memory, IReadOnlyDictionary<string, BaseAnt> ants,
         Tools.ToolRegistry? tools = null, Models.ModelRouter? router = null,
-        Func<string, string, (bool Ok, string Message)>? approveApplyPatch = null)
+        Func<string, string, Verification.SetApplyOutcome>? applyPatchSet = null)
     {
         _memory = memory;
         _ants = ants;
         _tools = tools;
         _router = router;
-        _approveApplyPatch = approveApplyPatch;
+        _applyPatchSet = applyPatchSet;
     }
 
     /// <summary>
-    /// v0.3.8.51 (field report): the audited approve-and-apply transition, injected by the Queen —
-    /// how "Skip all approvals" applies a verified patch without asking. Null (tests, CLI shapes
-    /// without a Queen) means bypass conversations keep the manual card, which is the safe
-    /// direction to degrade.
+    /// v0.3.8.91 — apply a whole patch set inside one durable transaction, injected by the Queen.
+    ///
+    /// Null (tests and CLI shapes without a Queen) degrades to the manual card, the same safe
+    /// direction the per-patch delegate it replaced degraded in. What it does NOT degrade to
+    /// is the old per-proposal loop: a set that cannot be applied atomically is not applied.
     /// </summary>
-    private readonly Func<string, string, (bool Ok, string Message)>? _approveApplyPatch;
+    private readonly Func<string, string, Verification.SetApplyOutcome>? _applyPatchSet;
+
+    // v0.3.8.51's per-patch approve-and-apply delegate was REMOVED in v0.3.8.91. It existed so the
+    // bypass lane could apply proposals one at a time, which is the behaviour that release deleted:
+    // a set is applied as a unit or not at all. `Queen.ApproveAndApplyPatch` is unchanged and still
+    // serves the operator's Apply button; nothing injects it here any more.
 
     private readonly Tools.ToolRegistry? _tools;
 
@@ -1631,11 +1637,13 @@ public sealed class ExecutionService : IExecutionService
         Console.WriteLine($"Task {execution.StatusCode}: {task.Title} ({elapsed}s) — {TextUtil.Truncate(decision.Reason, 160)}");
     }
 
-    /// <summary>v0.3.8.51 — the Bypass path's unprompted apply. Refuses without a delegate, without
-    /// a Bypass conversation, or with a deterministic block standing; logs every outcome.</summary>
+    /// <summary>v0.3.8.51 — the Bypass path's unprompted apply. Refuses without a Bypass
+    /// conversation, with a deterministic block standing, with any proposal the promotion gate
+    /// refuses, or without a transactional set applier; logs every outcome. v0.3.8.91 applies the
+    /// set as ONE unit rather than one proposal at a time.</summary>
     private void ApplyUnderBypass(Mission mission, Task task, PatchSet patchSet)
     {
-        if (_approveApplyPatch is null || patchSet.Proposals.Count == 0) return;
+        if (patchSet.Proposals.Count == 0) return;
         try
         {
             if (task.DeterministicBlock is not null)
@@ -1649,44 +1657,71 @@ public sealed class ExecutionService : IExecutionService
             if (conversation?.EffectivePolicy != Conversations.EscalationPolicy.Bypass) return;
 
             var who = $"bypass-policy({conversation.PolicySetBy ?? "operator"})";
+
+            // THE GATE, AS BYPASS, FOR EVERY PROPOSAL — AND THEN THE SET AS ONE UNIT. v0.3.8.91.
+            //
+            // Two defects lived in the loop this replaces. It reached the apply path having checked
+            // only the block and the policy, and that path then satisfied its own human gate with an
+            // approval row this very call had just created and approved — a synthesized approval is
+            // not a human, so the human gate was answering nobody. And it applied `foreach
+            // (proposal)` and CONTINUED past a failure, so a three-file set whose second proposal hit
+            // a stale base left files one and three written: a tree nothing verified, described by a
+            // verification record that judged the set as a whole.
+            //
+            // Now every proposal faces the gate as `Bypass` — the human is skipped by policy and
+            // nothing else is — and the set is refused entirely if any one of them is refused. Then
+            // the whole set goes through one transaction that preflights every target, journals, and
+            // rolls everything back on any failure.
+            var refusals = new List<string>();
             foreach (var proposal in patchSet.Proposals)
             {
-                // THE GATE, AS BYPASS. v0.3.8.91.
-                //
-                // Without this the bypass lane reached the apply path having checked two things —
-                // the block and the policy — and the apply path then satisfied its own human gate
-                // with an approval row this very call had just created and approved. A synthesized
-                // approval is not a human, so the human gate was answering nobody.
-                //
-                // Evaluating as `Bypass` is what makes the reviewer's sentence true here: the human
-                // is skipped by policy, and every other condition — reviews complete, no blocking
-                // security finding, evidence about THIS revision, no rollback halt — applies exactly
-                // as it does to anyone else. This is also the lane that runs before the tester and
-                // soldier tasks it just inserted have executed, which the review check now catches.
                 var verdict = Verification.PatchPromotionGate.Evaluate(
                     _memory, (Anthill.SDK.Artifacts.IEvidenceStore)_memory, proposal.Id,
                     Verification.PromotionActor.Bypass);
 
                 if (!verdict.Promotable)
-                {
-                    _memory.LogEvent(mission.Id, "patch_bypass_apply_refused",
-                        $"Skip-all-approvals did not apply {proposal.FilePath} — refused at "
-                      + $"{verdict.Layer}: {verdict.Reason}",
-                        task.Id, task.AssignedAnt,
-                        new()
-                        {
-                            ["patch_id"] = proposal.Id, ["file"] = proposal.FilePath, ["ok"] = false,
-                            ["refusal"] = verdict.Refusal.ToString(), ["layer"] = verdict.Layer,
-                        });
-                    continue;
-                }
-
-                var (ok, message) = _approveApplyPatch(proposal.Id, who);
-                _memory.LogEvent(mission.Id, ok ? "patch_bypass_applied" : "patch_bypass_apply_refused",
-                    $"Skip-all-approvals {(ok ? "applied" : "did not apply")} {proposal.FilePath}: {message}",
-                    task.Id, task.AssignedAnt,
-                    new() { ["patch_id"] = proposal.Id, ["file"] = proposal.FilePath, ["ok"] = ok });
+                    refusals.Add($"{proposal.FilePath} [{verdict.Layer}]: {verdict.Reason}");
             }
+
+            if (refusals.Count > 0)
+            {
+                _memory.LogEvent(mission.Id, "patch_bypass_apply_refused",
+                    $"Skip-all-approvals did not apply patch set {patchSet.Id}: "
+                  + $"{refusals.Count} of {patchSet.Proposals.Count} proposal(s) were refused, so none "
+                  + "were applied. " + string.Join(" | ", refusals.Take(5)),
+                    task.Id, task.AssignedAnt,
+                    new()
+                    {
+                        ["patch_set_id"] = patchSet.Id, ["ok"] = false,
+                        ["refused_count"] = refusals.Count, ["refusals"] = refusals,
+                    });
+                return;
+            }
+
+            if (_applyPatchSet is null)
+            {
+                // No set-level applier wired (CLI shapes, tests without a Queen). The old behaviour
+                // here was a per-proposal loop; degrading to that would reintroduce the partial-set
+                // write this release removed, so it degrades to the manual card instead.
+                _memory.LogEvent(mission.Id, "patch_bypass_apply_refused",
+                    $"Skip-all-approvals did not apply patch set {patchSet.Id}: no transactional "
+                  + "set applier is wired in this host, and a set is not applied one file at a time.",
+                    task.Id, task.AssignedAnt,
+                    new() { ["patch_set_id"] = patchSet.Id, ["ok"] = false, ["reason"] = "no_set_applier" });
+                return;
+            }
+
+            var outcome = _applyPatchSet(patchSet.Id, who);
+            _memory.LogEvent(mission.Id,
+                outcome.Applied ? "patch_bypass_applied" : "patch_bypass_apply_refused",
+                $"Skip-all-approvals {(outcome.Applied ? "applied" : "did not apply")} patch set "
+              + $"{patchSet.Id}: {outcome.Message}",
+                task.Id, task.AssignedAnt,
+                new()
+                {
+                    ["patch_set_id"] = patchSet.Id, ["ok"] = outcome.Applied,
+                    ["applied_count"] = outcome.Count, ["refusals"] = outcome.Refusals,
+                });
         }
         catch (Exception error)
         {

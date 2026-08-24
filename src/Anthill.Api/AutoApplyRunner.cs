@@ -468,47 +468,15 @@ public static class AutoApplyRunner
     }
 
     private static List<string> Preflight(
-        List<(string PatchId, string? PatchSetId, string? TaskId, PatchProposal Proposal)> eligible)
-    {
-        var refusals = new List<string>();
-        var guard = new Anthill.Core.Security.WorkspacePathGuard(AnthillRuntime.AllowedWorkspaceRoot);
-
-        foreach (var (patchId, _, _, proposal) in eligible)
-        {
-            string? current;
-            string? safeDestination = null;
-            var destinationTaken = false;
-            try
-            {
-                var resolved = guard.ResolveSafePath(proposal.FilePath);
-                current = File.Exists(resolved) ? File.ReadAllText(resolved) : null;
-
-                if (!string.IsNullOrWhiteSpace(proposal.DestinationPath))
-                {
-                    safeDestination = guard.ResolveSafePath(proposal.DestinationPath!);
-                    destinationTaken = File.Exists(safeDestination) || Directory.Exists(safeDestination);
-                }
-            }
-            catch (Exception error)
-            {
-                // A path that will not resolve is a refusal, not a crash: the batch stops and says so.
-                refusals.Add($"{proposal.FilePath}: {error.Message}");
-                continue;
-            }
-
-            var outcome = PatchApply.Compute(
-                proposal.ChangeType.Value(), proposal.OldContent, proposal.NewContent, current,
-                proposal.BaseHash,
-                safeDestination is null ? null : proposal.DestinationPath,
-                destinationTaken,
-                requireBaseHash: true);
-
-            if (!outcome.Ok)
-                refusals.Add($"{proposal.FilePath} ({proposal.ChangeType.Value()}) [{patchId}]: {outcome.Reason}");
-        }
-
-        return refusals;
-    }
+        List<(string PatchId, string? PatchSetId, string? TaskId, PatchProposal Proposal)> eligible) =>
+        // v0.3.8.91: this body MOVED to `Anthill.Core.Verification.PatchSetApply.Preflight`, and this
+        // is now the one line that remains. It was a second implementation of a rule — "compute every
+        // proposal against the tree before writing any of them" — that the ordinary apply path did
+        // not have at all, which is how a set could be applied file by file on one lane while the
+        // other refused the whole batch. Two implementations of one rule is a named defect class
+        // here; one of them living in Anthill.Api meant Core could not reach it even to agree.
+        Anthill.Core.Verification.PatchSetApply.Preflight(
+            eligible.Select(e => (e.PatchId, e.Proposal)));
 
     /// <summary>
     /// Finalize a set of kept (not rolled-back) auto-applied patches: consume the human approvals that
