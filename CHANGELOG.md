@@ -285,6 +285,50 @@ column added, written on every task save, read back by `GetTasksForMission`, and
 gate. A safety decision that does not survive a process is not a safety decision, and a comment that
 says it does is worse than one that does not.
 
+### One configuration authority
+
+The v0.3.8.90 sweep plus the external review found a control plane that disagreed with itself. Fixed
+here, with the generated schema itself named in PLAN.md as its own piece of work rather than
+half-built:
+
+**The API token's fallback was itself.** `ApiAuthToken = GetEnvironmentVariable(config.ApiTokenEnv)
+?? ApiAuthToken` — and that static's own initialiser reads `ANTHILL_API_TOKEN`. So an operator who
+repointed `api_token_env` at a variable they had not yet set kept authenticating against the one they
+had just told the colony to stop using. Because the fallback was self-referential and `ProjectConfig`
+re-runs on every settings update, the value was **sticky**: once set it could never be cleared. The
+named variable is now the only source, and unset means unset — a safe state, since operator accounts
+are the real boundary.
+
+**An env var set to the empty string was winning.** Four overrides used `??`, which tests for null.
+`ANTHILL_OLLAMA_MODEL=` in a compose file's `environment:` block is the most common way to write "I
+am not setting this", and it produced an empty model, host or bind address. The docs promised
+"highest precedence"; the code delivered precedence for a value the operator had not set. `ANTHILL_PORT`
+also took any integer — 0 and 70000 reached Kestrel unclamped, and an unparseable value fell back to
+the file silently.
+
+**An unreadable config no longer starts the colony.** It printed a warning and ran on SAFE_LOCAL
+defaults, which bind `0.0.0.0` and enable a different capability set than the operator's file
+describes. An operator can fix a trailing comma in seconds; they cannot notice a colony quietly
+running somebody else's configuration. `ANTHILL_ALLOW_INVALID_CONFIG=1` is the named escape for
+recovering a corrupt file through the console.
+
+**The example file stopped lying about the roster.** It showed seven specialist-ant flags as `false`.
+A file with no `config_schema_version` and present-but-false flags is treated as unmigrated, adopts
+the `full` roster profile, and every one of them is forced **true** at runtime — and
+`config.example.json` is exactly that file. The two settings that would actually have turned those
+ants off, `roster_profile` and `disabled_roles`, appeared nowhere in it. Both are documented now,
+next to a note saying plainly what the seven flags do and do not do.
+
+**And `LastConfigMigration` reaches an operator.** Its own doc comment has claimed since it was
+written that `/config/health` and `/status` surface it. Neither did; the answer to "why did six roles
+switch on when I upgraded" was one line of stderr they had already scrolled past. It is on
+`/config/health` now, with the config load error beside it.
+
+`ConfigurationSurfaceTests` pins both directions — every documented key is one the runtime parses,
+and every parsed key is documented or on an explicit ledger with a reason. Twenty-four settings are
+on that ledger. The point is that an omission is now a decision somebody made rather than a gap
+nobody noticed.
+
 ### What this release does NOT fix, and the order it comes in
 
 The review named 22 items. This one is the front door. The rest are sequenced rather than rushed,

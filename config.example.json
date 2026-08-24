@@ -47,6 +47,10 @@
   "answer_synthesis_enabled": true,
   "dashboard_workspace_enabled": true,
   "sandbox_execution_enabled": false,
+  "_comment_roster": "READ THIS BEFORE TRUSTING THE SEVEN FLAGS BELOW. v0.3.8.91 correction. On a config file with no config_schema_version - which this example is - the migration treats present-but-false specialist flags as an UNMIGRATED file and adopts roster_profile 'full', which forces every one of them to TRUE at runtime. They looked like off switches and were not. The real controls are roster_profile ('full' | 'core') and disabled_roles, both of which were undocumented here until now. Set roster_profile to 'core' for the minimal roster, or list individual roles in disabled_roles. The seven flags remain for pre-migration files and are the reason the migration exists.",
+  "roster_profile": "full",
+  "disabled_roles": [],
+
   "specialist_ant_execution_enabled": false,
   "tester_ant_enabled": false,
   "soldier_ant_enabled": false,
@@ -98,6 +102,8 @@
     "web":        { "provider": "ollama", "model": "llama3.1:8b" },
     "fallback":   { "provider": "ollama", "model": "llama3.1:8b" }
   },
+
+  "_comment_token_env": "v0.3.8.91: api_token_env names the environment variable the optional programmatic bearer token is read from. It is now the ONLY source - it used to fall back to whatever ANTHILL_API_TOKEN held, so repointing this at a variable you had not set kept authenticating against the one you had just stopped using. Unset means no static token, which is a safe state: operator accounts are the real boundary.",
 
   "_comment_setup_token": "v0.3.8.91 first-run protection. Before the first administrator exists, /auth/setup has to be reachable without a login - so on any NON-LOOPBACK bind the process mints a single-use setup token at startup, prints it to the service log, writes it to SETUP-TOKEN.txt in the workspace directory, and requires it. Setup spends it permanently. The rule reads the BIND and not the caller's address: behind a reverse proxy every request arrives from localhost, so an address rule would authorise the internet through one hop. Set this true for the one shape the bind cannot describe - a reverse proxy in front of a 127.0.0.1 bind. Also ANTHILL_REQUIRE_SETUP_TOKEN=1.",
   "setup_token_required": false,

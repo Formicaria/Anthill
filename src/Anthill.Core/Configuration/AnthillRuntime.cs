@@ -761,7 +761,21 @@ public static class AnthillRuntime
             }
             catch (Exception error)
             {
-                Console.Error.WriteLine($"Warning: Could not parse ANTHILL config at {path}: {error.Message}. Using SAFE_LOCAL defaults.");
+                // AN UNREADABLE CONFIG IS RECORDED, NOT SHRUGGED OFF. v0.3.8.91.
+                //
+                // This printed a warning and carried on with defaults. Configuration is this
+                // colony's control plane — which capabilities are on, which host it binds, which
+                // roles exist — so "we could not read your settings, so we picked our own" is a
+                // worse outcome than not starting: the defaults bind 0.0.0.0, and an operator whose
+                // file had one trailing comma would be running a colony they did not describe.
+                //
+                // Recorded rather than thrown, because `Initialize` is called from the CLI and from
+                // tests where a hard throw is the wrong failure. The API host refuses to start on
+                // it; see `ApiHost.Run`. A library caller can still choose to proceed, and now has
+                // to choose.
+                ConfigLoadError = $"{path}: {error.Message}";
+                Console.Error.WriteLine(
+                    $"ERROR: could not parse the ANTHILL config at {path}: {error.Message}");
                 raw = new();
             }
         }
@@ -811,6 +825,28 @@ public static class AnthillRuntime
     /// </summary>
     public static ConfigMigrationResult? LastConfigMigration { get; private set; }
 
+    /// <summary>
+    /// Why the operator's configuration could not be read, or empty when it was. v0.3.8.91.
+    ///
+    /// Empty is the normal state, including when no file exists yet — an absent config is a fresh
+    /// install, not a broken one. A non-empty value means a file IS there and could not be parsed,
+    /// which the API host treats as a refusal to start rather than as permission to invent settings.
+    /// </summary>
+    public static string ConfigLoadError { get; private set; } = "";
+
+    /// <summary>
+    /// An environment variable, or null when it is unset OR blank. v0.3.8.91.
+    ///
+    /// The distinction `??` could not make. A variable set to the empty string is how every compose
+    /// file, systemd unit and CI runner spells "I am not setting this", and reading it as a VALUE
+    /// let an unset variable override a configured one with nothing.
+    /// </summary>
+    private static string? Env(string name)
+    {
+        var value = Environment.GetEnvironmentVariable(name);
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
     private static void EnsureWorkspace(AnthillConfig config)
     {
         WorkspaceRootPath = PathFromScript(config.WorkspaceRoot);
@@ -833,15 +869,51 @@ public static class AnthillRuntime
         // Program.cs sets these same env vars before calling ApiHost.Run(), which is what actually
         // invokes Initialize()/ProjectConfig() — a direct static-field set before that point would
         // otherwise be silently overwritten right here.
-        ApiHost = Environment.GetEnvironmentVariable("ANTHILL_HOST") ?? config.ApiHost;
-        ApiPort = int.TryParse(Environment.GetEnvironmentVariable("ANTHILL_PORT"), out var envPort)
-            ? envPort : config.ApiPort;
+        // AN ENV VAR SET TO THE EMPTY STRING IS AN OPERATOR SAYING NOTHING. v0.3.8.91.
+        //
+        // These four used `??`, which tests for NULL. `ANTHILL_OLLAMA_MODEL=` in a compose file's
+        // `environment:` block — the single most common way to write "leave this alone" — is not
+        // null, so the empty string won and produced an empty host, model or bind address. The docs
+        // promise "highest precedence"; the code delivered "highest precedence, including for a
+        // value the operator did not set". `Env` treats blank as absent, which is what the
+        // neighbouring homelab settings already do.
+        ApiHost = Env("ANTHILL_HOST") ?? config.ApiHost;
+
+        // And a port outside the legal range is refused rather than bound. The homelab ports are all
+        // clamped; this one was not, so ANTHILL_PORT=0 or 70000 reached Kestrel as-is. An
+        // unparseable value still falls back to the file, and now says so instead of doing it
+        // silently — a typo in a compose file that quietly serves a different port is a bad hour.
+        var portText = Env("ANTHILL_PORT");
+        if (portText is null) ApiPort = config.ApiPort;
+        else if (int.TryParse(portText, out var envPort) && envPort is >= 1 and <= 65535) ApiPort = envPort;
+        else
+        {
+            ApiPort = config.ApiPort;
+            Console.Error.WriteLine(
+                $"Warning: ANTHILL_PORT='{portText}' is not a port between 1 and 65535. "
+              + $"Using api_port={ApiPort} from configuration.");
+        }
+
         ApiJobWorkers = Math.Max(1, config.ApiJobWorkers);
-        ApiAuthToken = Environment.GetEnvironmentVariable(config.ApiTokenEnv) ?? ApiAuthToken;
+
+        // THE TOKEN'S FALLBACK WAS ITSELF. v0.3.8.91 — the security-adjacent one.
+        //
+        // This read `Environment.GetEnvironmentVariable(config.ApiTokenEnv) ?? ApiAuthToken`, and
+        // `ApiAuthToken`'s own initialiser reads ANTHILL_API_TOKEN. So an operator who repointed
+        // `api_token_env` at, say, MY_TOKEN and had not set it kept authenticating against
+        // ANTHILL_API_TOKEN — the variable they had just told the colony to stop using. Worse, the
+        // fallback is self-referential and `ProjectConfig` re-runs on every settings update, so the
+        // value was sticky: once set it could never be cleared.
+        //
+        // Now the named variable is the ONLY source. Unset means unset, which is a safe state —
+        // the static bearer token is optional and operator accounts are the real boundary.
+        var namedTokenVariable = string.IsNullOrWhiteSpace(config.ApiTokenEnv)
+            ? "ANTHILL_API_TOKEN" : config.ApiTokenEnv.Trim();
+        ApiAuthToken = Env(namedTokenVariable) ?? "";
 
         UseOllama = config.UseOllama;
-        OllamaModel = Environment.GetEnvironmentVariable("ANTHILL_OLLAMA_MODEL") ?? config.OllamaModel;
-        OllamaHost = Environment.GetEnvironmentVariable("ANTHILL_OLLAMA_HOST") ?? config.OllamaHost;
+        OllamaModel = Env("ANTHILL_OLLAMA_MODEL") ?? config.OllamaModel;
+        OllamaHost = Env("ANTHILL_OLLAMA_HOST") ?? config.OllamaHost;
         EnableWebSearch = config.WebSearchEnabled;
 
         // v0.3.8.73 — the operator's checks, validated once, here, where a refusal can still be

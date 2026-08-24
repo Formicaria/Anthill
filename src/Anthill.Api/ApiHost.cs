@@ -78,6 +78,26 @@ public static partial class ApiHost
     {
         AnthillRuntime.Initialize();
 
+        // v0.3.8.91: a config file that exists and cannot be parsed stops the server.
+        //
+        // It used to print a warning and run on SAFE_LOCAL defaults — which bind 0.0.0.0 and enable
+        // a different set of capabilities than the operator wrote down. Starting with settings
+        // nobody chose is worse than not starting: the operator can fix a syntax error in seconds,
+        // and cannot notice a colony quietly running someone else's configuration.
+        //
+        // The escape hatch is explicit and named, for the one case where refusing is worse than
+        // proceeding: recovering a host whose config file is corrupt and who needs the console to
+        // repair it.
+        if (AnthillRuntime.ConfigLoadError.Length > 0
+            && Environment.GetEnvironmentVariable("ANTHILL_ALLOW_INVALID_CONFIG") is not "1")
+        {
+            Console.Error.WriteLine(
+                $"REFUSING TO START: the configuration file could not be read ({AnthillRuntime.ConfigLoadError}).\n"
+              + "Fix the file, or set ANTHILL_ALLOW_INVALID_CONFIG=1 to start on defaults anyway — "
+              + "which binds 0.0.0.0 and enables a different capability set than your file describes.");
+            return 1;
+        }
+
         // Fail loudly at boot if the security posture is unsafe.
         try { TokenSecurity.ValidateApiRuntimeSecurity(); }
         catch (AnthillSecurityException ex) { Console.Error.WriteLine(ex.Message); return 1; }
