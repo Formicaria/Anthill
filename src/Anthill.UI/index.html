@@ -1612,6 +1612,17 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       </div>
       <label class="auth-label" for="setup-apibase">API Base URL <span style="font-weight:400;color:var(--dim)">(leave blank for local)</span></label>
       <input class="auth-input" id="setup-apibase" type="url" placeholder="http://host:8713" autocomplete="off">
+      <!-- v0.3.8.91: shown only when the API says a first-run token is required, which it is on any
+           network-reachable bind. The token is printed to the service log at startup and written to
+           SETUP-TOKEN.txt in the workspace directory. -->
+      <div id="setup-token-row" style="display:none">
+        <label class="auth-label" for="setup-token">First-run Setup Token</label>
+        <input class="auth-input" id="setup-token" type="text" placeholder="from the server log or SETUP-TOKEN.txt" autocomplete="off">
+        <div style="font-size:12px;color:var(--dim);margin:-4px 0 10px">
+          This instance is reachable from the network, so creating the first administrator needs the
+          token printed in the server log at startup.
+        </div>
+      </div>
       <label class="auth-label" for="setup-user">Admin Username</label>
       <input class="auth-input" id="setup-user" type="text" placeholder="admin" value="admin" autocomplete="username">
       <label class="auth-label">Password <span style="font-weight:400;color:var(--dim)">(min 8 characters)</span></label>

@@ -78,6 +78,26 @@ public static partial class ApiHost
     {
         AnthillRuntime.Initialize();
 
+        // v0.3.8.91: a config file that exists and cannot be parsed stops the server.
+        //
+        // It used to print a warning and run on SAFE_LOCAL defaults — which bind 0.0.0.0 and enable
+        // a different set of capabilities than the operator wrote down. Starting with settings
+        // nobody chose is worse than not starting: the operator can fix a syntax error in seconds,
+        // and cannot notice a colony quietly running someone else's configuration.
+        //
+        // The escape hatch is explicit and named, for the one case where refusing is worse than
+        // proceeding: recovering a host whose config file is corrupt and who needs the console to
+        // repair it.
+        if (AnthillRuntime.ConfigLoadError.Length > 0
+            && Environment.GetEnvironmentVariable("ANTHILL_ALLOW_INVALID_CONFIG") is not "1")
+        {
+            Console.Error.WriteLine(
+                $"REFUSING TO START: the configuration file could not be read ({AnthillRuntime.ConfigLoadError}).\n"
+              + "Fix the file, or set ANTHILL_ALLOW_INVALID_CONFIG=1 to start on defaults anyway — "
+              + "which binds 0.0.0.0 and enables a different capability set than your file describes.");
+            return 1;
+        }
+
         // Fail loudly at boot if the security posture is unsafe.
         try { TokenSecurity.ValidateApiRuntimeSecurity(); }
         catch (AnthillSecurityException ex) { Console.Error.WriteLine(ex.Message); return 1; }
@@ -214,6 +234,45 @@ public static partial class ApiHost
                 Console.WriteLine($"[apply-recovery] {line}");
         }
         catch (Exception e) { Console.Error.WriteLine($"[apply-recovery] recovery scan failed: {e.Message}"); }
+
+        // v0.3.8.91 (R0): finish or discard any apply a crash interrupted, BEFORE anything can apply
+        // another one. The filesystem half was already recovered above; this is the database half —
+        // a write that landed and whose records never caught up used to leave a patch `approved` on
+        // restart, refuse on a stale base, get marked FAILED, and then be unrevertable.
+        try
+        {
+            var reconciled = Anthill.Core.Verification.PatchApplyReconciler.Reconcile(Queen.Memory);
+            foreach (var note in reconciled.Notes) Console.WriteLine($"[apply-reconcile] {note}");
+            if (reconciled.NeedsOperator > 0)
+                Console.Error.WriteLine(
+                    $"[apply-reconcile] {reconciled.NeedsOperator} interrupted apply(s) need an operator: "
+                  + "the file matches neither its pre-apply nor its post-apply hash, so nothing was "
+                  + "completed or undone.");
+        }
+        catch (Exception e) { Console.Error.WriteLine($"[apply-reconcile] sweep failed: {e.Message}"); }
+
+        // v0.3.8.91: mint the first-run bootstrap secret, BEFORE the listener opens. On a
+        // network-reachable bind with no administrator yet, /auth/setup requires it — see
+        // SetupAuthority for why the rule is written on the bind rather than the caller's address.
+        // The console line is the primary channel: a service or LXC operator reads it in the log,
+        // and it is the only channel that works when the workspace is read-only.
+        var setupSecret = SetupAuthority.Arm(
+            AnthillRuntime.ApiHost,
+            AnthillRuntime.RequireSetupToken,
+            Queen.Memory.CountUsers() > 0,
+            AnthillRuntime.WorkspaceRootPath);
+
+        if (setupSecret.Length > 0)
+        {
+            Console.WriteLine("");
+            Console.WriteLine("  ANTHILL FIRST-RUN SETUP TOKEN");
+            Console.WriteLine($"    {setupSecret}");
+            Console.WriteLine("  No administrator exists yet and this instance is reachable from the");
+            Console.WriteLine("  network, so creating the first account requires this token. Single use.");
+            if (SetupAuthority.SecretPath.Length > 0)
+                Console.WriteLine($"  Also written to: {SetupAuthority.SecretPath}");
+            Console.WriteLine("");
+        }
 #if MICROMOUND
         if (AnthillRuntime.EnableMicromound)
             InitMicromound(); // MICROMOUND M1 (read-only; see Micromound/ApiHost.Micromound.cs)
@@ -545,6 +604,21 @@ public sealed class TurnRequest
     public bool Stream { get; set; }
 }
 public sealed class LoginRequest { public string? Username { get; set; } public string? Password { get; set; } }
+
+/// <summary>
+/// First-run setup: credentials plus the bootstrap token. v0.3.8.91.
+///
+/// A separate type from <see cref="LoginRequest"/> on purpose. The token is meaningful on exactly
+/// one endpoint, and putting it on the login shape would offer every caller a field that does
+/// nothing — which is how a credential ends up in a log line somebody thought was a login.
+/// </summary>
+public sealed class SetupRequest
+{
+    public string? Username { get; set; }
+    public string? Password { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("setup_token")]
+    public string? SetupToken { get; set; }
+}
 public sealed class UserRequest { public string? Username { get; set; } public string? Password { get; set; } public string? Role { get; set; } }
 public sealed class UserPatch { public string? Password { get; set; } public string? Role { get; set; } public bool? Active { get; set; } }
 public sealed class RejectBody { public string? Reason { get; set; } }

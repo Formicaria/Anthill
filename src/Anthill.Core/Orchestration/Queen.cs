@@ -208,8 +208,12 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // declared, because it was self-reported and two of twelve ants report anything at all.
         // v0.3.8.51: the approve-and-apply transition rides in so "Skip all approvals" can apply a
         // verified patch without a prompt — through the same audited path the chat card uses.
+        // v0.3.8.91: the bypass lane no longer applies a set one proposal at a time. It hands the
+        // whole set to `ApplyPatchSetTransactionally`, which preflights every target, journals, and
+        // rolls the set back on any failure — so "a patch set applies as a unit or not at all" is
+        // true of this path too, and not only of auto-apply.
         Execution = new ExecutionService(Memory, _ants, Tools, Router,
-            approveApplyPatch: (patchId, who) => ApproveAndApplyPatch(patchId, who));
+            applyPatchSet: (patchSetId, who) => ApplyPatchSetTransactionally(patchSetId, who));
 
         // v3.8.0: this process registers as a worker, and startup reconciles what the last one left
         // behind. Both halves are needed for the phase's first gate — "no accepted task is silently
