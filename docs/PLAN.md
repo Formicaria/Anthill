@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.91**.
+Shipping release: **v0.3.8.92**.
 
 ---
 
@@ -387,6 +387,11 @@ under it.
 - ◻ **Enforcement.** Warnings as errors, analyzers, dependency and secret scanning, a complexity
   budget, module auto-discovery, typed database rows instead of `Dictionary<string, object?>`, and
   the agent rules written down rather than remembered.
+  **Including the guard hierarchy**, which v0.3.8.92 paid for: a runtime black-box test first, then
+  a typed registry, then compiled/Roslyn inspection, and a source scan last. When a source scan IS
+  the right tool it may never depend on a character count — v0.3.8.91 shipped a guard reading a
+  4,000-character window whose marker sat 27 characters inside it on Linux and outside it on a CRLF
+  checkout, and main went red on a property that had not changed.
 
 > **Exit gate.** Every write to the operator's tree passes one gate; every externally visible
 > mutation is recoverable after a crash; no security decision reads prose or falls back to a broader
