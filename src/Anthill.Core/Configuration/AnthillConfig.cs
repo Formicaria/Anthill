@@ -120,7 +120,24 @@ public sealed class AnthillConfig
     /// enable this. An execute path nobody has watched run is not something to switch on for them.
     /// </summary>
     [JsonPropertyName("docker_execute_enabled")] public bool DockerExecuteEnabled { get; set; } = false;
-    [JsonPropertyName("operator_shell_enabled")] public bool OperatorShellEnabled { get; set; } = true;
+    // v0.3.8.91: DEFAULT FLIPPED TO FALSE. This grants an authenticated administrator arbitrary
+    // command execution on the host, which the comment above already said. Shipping it on meant a
+    // fresh, network-reachable install was one account-creation away from a host shell — and until
+    // this release that account could be created by anyone who reached the port. An operator who
+    // wants the terminal turns it on deliberately, like every other capability that reaches outside
+    // the colony. An existing config.json that already carries `true` keeps it: the raw overlay wins
+    // over the profile, so this changes new installations rather than revoking a live feature.
+    [JsonPropertyName("operator_shell_enabled")] public bool OperatorShellEnabled { get; set; } = false;
+
+    /// <summary>
+    /// v0.3.8.91 — force the first-run setup token even on a loopback bind.
+    ///
+    /// The default (`false`) means "decide from the bind": loopback needs no token, anything else
+    /// does. Set it true for the one shape this process cannot see — a reverse proxy in front of a
+    /// loopback bind, where every request arrives from localhost and the real boundary is the proxy.
+    /// Also settable as ANTHILL_REQUIRE_SETUP_TOKEN=1.
+    /// </summary>
+    [JsonPropertyName("setup_token_required")] public bool SetupTokenRequired { get; set; } = false;
     [JsonPropertyName("operator_shell_dir")] public string OperatorShellDir { get; set; } = "";
 
     // Homelab foundation (v1.9.0, NORTH_STAR Phase 4): read-only subsystem, everything off by default.
@@ -402,6 +419,10 @@ public sealed class AnthillConfig
         config.PatchApplicationEnabled = false;
         config.FileWritingEnabled = false;
         config.ShellToolEnabled = false;
+        // v0.3.8.91: the operator terminal is host RCE for administrators and now shares the fate of
+        // every other write capability in a shipped profile — off unless the operator says otherwise
+        // in their own config.json, which the raw overlay still honours.
+        config.OperatorShellEnabled = false;
         config.ApiAuthEnabled = true;
         config.ApiHost = "0.0.0.0";
         config.ApiJobWorkers = 1;

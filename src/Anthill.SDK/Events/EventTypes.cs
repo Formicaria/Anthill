@@ -211,6 +211,31 @@ public static class EventTypes
 
     // ---- patch verification and materialization ----------------------------------
     public const string PatchBypassBlocked = "patch_bypass_blocked";
+    // v0.3.8.91 — the bypass lane's two outcomes, declared because one of them just became VISIBLE.
+    //
+    // Both have been emitted since v0.3.8.51, from a ternary
+    // (`ok ? "patch_bypass_applied" : "patch_bypass_apply_refused"`), which is a shape the emitter
+    // sweep cannot read — so neither was declared and nothing complained. Adding the promotion
+    // gate's refusal put `patch_bypass_apply_refused` in a plain first-argument position, the sweep
+    // saw it for the first time, and the vocabulary guard failed on a name the runtime had been
+    // writing for forty releases.
+    //
+    // Exactly the blind spot PLAN.md already records: a detector that reads one syntactic shape
+    // measures that shape, not the runtime. Declaring these does not fix the detector; it removes
+    // two of the dozen or so names still hiding behind it.
+    public const string PatchBypassApplied = "patch_bypass_applied";
+    public const string PatchBypassApplyRefused = "patch_bypass_apply_refused";
+    // The promotion gate's own refusal, new in v0.3.8.91 and declared with its producer.
+    public const string PatchPromotionRefused = "patch_promotion_refused";
+    // v0.3.8.91 — the set-level apply and its rollback, declared with their producer so the
+    // vocabulary never trails the runtime again.
+    public const string PatchSetApplied = "patch_set_applied";
+    public const string PatchSetApplyRefused = "patch_set_apply_refused";
+    public const string PatchSetRolledBack = "patch_set_rolled_back";
+    public const string PatchSetRollbackIncomplete = "patch_set_rollback_incomplete";
+    // v0.3.8.91 — startup reconciliation of an apply a crash interrupted.
+    public const string PatchApplyReconciled = "patch_apply_reconciled";
+    public const string PatchApplyUnreconciled = "patch_apply_unreconciled";
     public const string PatchSetMaterializationFailed = "patch_set_materialization_failed";
     public const string PatchSetVerificationFaulted = "patch_set_verification_faulted";
     public const string PatchSetVerified = "patch_set_verified";

@@ -168,15 +168,36 @@ public class AutoApplyAtomicityTests
     /// The preflight asks the applier's own question — `PatchApply.Compute` — rather than
     /// reimplementing the rules. Two implementations of "can this patch apply" is how a preflight
     /// comes to pass where the apply refuses.
+    ///
+    /// v0.3.8.91 — THE PREFLIGHT MOVED, and this guard moved with it. It lived in
+    /// `AutoApplyRunner`, in `Anthill.Api`, where the ordinary apply path could not reach it; that
+    /// is why the Director's lane had a whole-set preflight and the operator's Apply button had
+    /// none. There is now one implementation, in `Anthill.Core.Verification.PatchSetApply`, and the
+    /// runner delegates to it.
+    ///
+    /// The assertion is deliberately in TWO parts rather than relaxed to "somebody somewhere calls
+    /// Compute". The runner must still reach the shared preflight — a lane that stops preflighting
+    /// is the defect this test was written for — and the shared preflight must still ask the real
+    /// engine with the real strictness. Dropping either half would leave a guard that passes while
+    /// the property it names is gone.
     /// </summary>
     [Fact]
     public void ThePreflight_UsesTheRealApplyEngine()
     {
-        var source = RunnerSource();
+        var runner = RunnerSource();
 
-        var start = source.IndexOf("private static List<string> Preflight(", StringComparison.Ordinal);
+        var start = runner.IndexOf("private static List<string> Preflight(", StringComparison.Ordinal);
         Assert.True(start >= 0, "Preflight is no longer recognisable");
-        var body = source[start..Math.Min(source.Length, start + 2000)];
+        var delegation = runner[start..Math.Min(runner.Length, start + 2000)];
+
+        Assert.Contains("PatchSetApply.Preflight(", delegation, StringComparison.Ordinal);
+
+        var shared = SourceText.CodeOnly(File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
+            "src", "Anthill.Core", "Verification", "PatchSetApply.cs")));
+
+        var sharedAt = shared.IndexOf("public static List<string> Preflight(", StringComparison.Ordinal);
+        Assert.True(sharedAt >= 0, "the shared preflight is no longer recognisable");
+        var body = shared[sharedAt..Math.Min(shared.Length, sharedAt + 2000)];
 
         Assert.Contains("PatchApply.Compute(", body, StringComparison.Ordinal);
         // And with the same strictness the live applier uses, or the batch would preflight green
