@@ -1328,6 +1328,17 @@ public sealed class ExecutionService : IExecutionService
             var revision = Workspaces.MissionRevisionRegistry.Register(mission.Id, task.Id, materialized);
             unregistered = null;   // the registry owns it now
             task.ProducedRevisionId = revision.RevisionId;
+
+            // v0.3.8.91: fingerprint the LIVE tree at the moment the sandbox that verification reads
+            // was built from it. Everything else the colony binds evidence to describes the patch —
+            // the base revision, the patch-set content hash, and `AppliedTreeHash`, which despite
+            // its name covers only the files the patch touched. None of them notices an edit to a
+            // file the patch did NOT touch, which is the one the build might actually depend on.
+            //
+            // Captured here rather than at apply time for the obvious reason: later would fingerprint
+            // a tree that had already had time to move.
+            var fingerprint = Workspaces.WorkspaceFingerprint.Capture(AnthillRuntime.AllowedWorkspaceRoot);
+            _memory.SetPatchSetBaseFingerprint(patchSet.Id, fingerprint);
             _memory.LogEvent(mission.Id, "mission_revision_registered",
                 $"Revision {revision.RevisionId} registered: patch set {patchSet.Id} materialized at {revision.Root}",
                 task.Id, task.AssignedAnt, new()

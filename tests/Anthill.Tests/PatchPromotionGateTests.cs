@@ -54,6 +54,7 @@ public class PatchPromotionGateTests
                      nameof(PromotionRefusal.SecurityReviewBlocked),
                      nameof(PromotionRefusal.ReviewIncomplete),
                      nameof(PromotionRefusal.EvidenceAboutAnotherRevision),
+                     nameof(PromotionRefusal.WorkspaceMoved),
                  })
             Assert.True(common.Contains(refusal, StringComparison.Ordinal),
                 $"{refusal} is no longer checked before the actor switch. Moving a condition inside "

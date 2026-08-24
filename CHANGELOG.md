@@ -169,6 +169,29 @@ and a sealed body handed to `PatchApply.Compute` would be compared against the l
 match, and refuse every proposal with "stale base": a correct-looking refusal for a reason that has
 nothing to do with the tree.
 
+### The live tree must still be the one verification read
+
+Verification binds evidence to the base revision, the patch-set content hash, and `AppliedTreeHash` —
+which, despite the name, iterates only the paths the patch touched. Files the patch did not touch are
+not in it. So a build proven against a tree could be applied to a different one and nothing noticed:
+verification compiles a sandbox with A.cs and B.cs, the patch modifies only A.cs, somebody edits
+B.cs, and the apply finds A.cs still hashing to its recorded base and writes. Every hash the system
+held was about A.cs; the thing that changed was B.cs.
+
+`WorkspaceFingerprint` captures the whole working tree at the moment the sandbox is built from it —
+`git rev-parse HEAD` **plus** the full `git status --porcelain -uall` listing, hashed together —
+persisted on the patch set, and compared by the promotion gate before any lane writes.
+
+**HEAD alone would have been the wrong check**, and it was the first design. HEAD does not move when
+somebody edits a file without committing, which is precisely the case this exists for. A check named
+for a property it does not deliver is this repository's most-found defect, and it would have been
+especially bad here: an operator reading "workspace unchanged since verification" would believe it.
+
+Three states, not two. A non-git workspace or a set from before this release was never measured and
+is not refused — the same non-retroactive rule the evidence check follows. But a fingerprint that
+WAS recorded and cannot be read back now is `Unmeasurable`, and that IS refused. Unknown is not
+unchanged.
+
 ### A refused lease now means the task is not run here
 
 `TryClaimTask` is genuinely atomic — guard and insert in one transaction, with a comment saying why

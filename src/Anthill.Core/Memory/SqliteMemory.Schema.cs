@@ -593,6 +593,10 @@ public sealed partial class SqliteMemory : IDisposable
         // never written down cannot be reconstructed and inventing one would refuse work nobody
         // refused.
         AddMissing("tasks", new() { ["deterministic_block"] = "TEXT" });
+        // v0.3.8.91: what the operator's working tree looked like when verification read it. Legacy
+        // sets read as NULL — "never captured" — which the promotion gate treats as unmeasurable
+        // rather than as unchanged, the same non-retroactive rule the evidence check follows.
+        AddMissing("patch_sets", new() { ["base_fingerprint"] = "TEXT" });
         // v0.3.8.57 (AUTONOMY-10 Phase 3): evidence identifies the revision it judged. Legacy rows
         // read as NULL — "not about a materialized revision" — which `Evidence.IdentifiesARevision`
         // reports as false, so an old row can never be mistaken for one that matches.

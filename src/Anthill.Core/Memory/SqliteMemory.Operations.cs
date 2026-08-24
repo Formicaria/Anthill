@@ -916,6 +916,29 @@ public sealed partial class SqliteMemory
     /// Same projection as <see cref="GetPatchProposal"/> minus the joins, so a caller can build the
     /// domain object without a second read per row.
     /// </summary>
+    /// <summary>
+    /// Record what the live tree looked like when this set was verified. v0.3.8.91.
+    ///
+    /// Written at the moment the revision is registered, because that is the moment the sandbox the
+    /// verifiers read was built from the live tree. Recording it later would fingerprint a tree that
+    /// had already had time to move.
+    /// </summary>
+    public void SetPatchSetBaseFingerprint(string patchSetId, string? fingerprint)
+    {
+        if (string.IsNullOrWhiteSpace(patchSetId)) return;
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            NonQuery(conn, null, "UPDATE patch_sets SET base_fingerprint = @f WHERE id = @id",
+                ("@f", fingerprint ?? ""), ("@id", patchSetId));
+        }
+    }
+
+    /// <summary>The recorded fingerprint, or null when this set never had one.</summary>
+    public string? GetPatchSetBaseFingerprint(string patchSetId) =>
+        Query("SELECT base_fingerprint FROM patch_sets WHERE id = @id", ("@id", patchSetId ?? ""))
+            .FirstOrDefault()?.GetValueOrDefault("base_fingerprint")?.ToString();
+
     public List<Dictionary<string, object?>> GetPatchProposalsForSet(string patchSetId)
     {
         var rows = Query(@"SELECT id, patch_set_id, mission_id, task_id, file_path, change_type, reason, risk,

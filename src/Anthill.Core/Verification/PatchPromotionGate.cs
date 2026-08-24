@@ -31,6 +31,8 @@ public enum PromotionRefusal
     SecurityReviewBlocked,
     ReviewIncomplete,
     EvidenceAboutAnotherRevision,
+    /// <summary>The live tree is not the one verification read. The evidence is about other bytes.</summary>
+    WorkspaceMoved,
     MissionNotVerified,
     HumanApprovalMissing,
 }
@@ -200,6 +202,32 @@ public static class PatchPromotionGate
                       + "is a true statement about the wrong bytes.");
             }
         }
+
+        // THE LIVE TREE MUST STILL BE THE ONE VERIFICATION READ. v0.3.8.91.
+        //
+        // Every other binding describes the PATCH — the base revision, the patch-set content hash,
+        // and `AppliedTreeHash`, which despite its name covers only the files the patch touched. So
+        // the tree could change underneath a verified set and nothing would notice: verification
+        // builds and tests a sandbox containing A.cs and B.cs, the patch changes only A.cs, somebody
+        // edits B.cs, and the apply still finds A.cs hashing to its recorded base. The build was
+        // proven against a tree that no longer exists.
+        //
+        // NotCaptured is not a refusal — a non-git workspace, or a set from before this existed, was
+        // never measured, and refusing every such set would turn a schema addition into a
+        // retroactive freeze. Unmeasurable IS a refusal: something WAS captured and cannot be read
+        // back now, which is a different statement and one the operator should see.
+        var recorded = memory.GetPatchSetBaseFingerprint(patchSetId);
+        var freshness = Workspaces.WorkspaceFingerprint.Compare(recorded, AnthillRuntime.AllowedWorkspaceRoot);
+
+        if (freshness is Workspaces.FreshnessVerdict.Moved or Workspaces.FreshnessVerdict.Unmeasurable)
+            return PromotionVerdict.Refuse(PromotionRefusal.WorkspaceMoved, "workspace-freshness",
+                freshness == Workspaces.FreshnessVerdict.Moved
+                    ? "the workspace has changed since this patch set was verified. The evidence "
+                    + "describes a tree that no longer exists — re-run verification against the tree "
+                    + "as it stands rather than writing into one nothing has checked."
+                    : "a workspace fingerprint was recorded for this patch set and cannot be read "
+                    + "back now, so whether the tree still matches what verification read is "
+                    + "unknown. Unknown is not unchanged.");
 
         // The human, and the only condition the actor changes.
         switch (actor)
