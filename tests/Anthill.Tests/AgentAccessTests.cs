@@ -160,6 +160,88 @@ public class AgentAccessTests : IDisposable
             new AgentAccessScope.Context("bypass", new[] { "/anywhere" })));
     }
 
+    // ---- v0.3.8.93: the role's contract clamps before the policy grants -------------------------
+
+    /// <summary>
+    /// SKIP ALL APPROVALS SKIPS THE OPERATOR'S PROMPTS, NOT THE ROLE'S CONTRACT. Until v0.3.8.93
+    /// the scope carried only the conversation policy, so a read-only researcher routed to Claude
+    /// Code under Bypass was handed <c>--dangerously-skip-permissions</c> — full vendor write
+    /// authority for a role whose registry contract can neither propose patches nor touch the
+    /// workspace. The clamp: a non-writing role gets NO permission flags under any policy, and its
+    /// materialized settings carry no Edit/Write/Bash. Directory gates survive as reach — a reader
+    /// with reach is what the operator opened the gate for.
+    /// </summary>
+    [Theory]
+    [InlineData("bypass")]
+    [InlineData("autoapprove")]
+    [InlineData("ask")]
+    public void AReadOnlyRole_GetsNoPermissionFlags_UnderAnyPolicy(string policy)
+    {
+        var scope = new AgentAccessScope.Context(policy, Array.Empty<string>(),
+            ConfinedWorkspace: true, RoleMayWrite: false);
+
+        Assert.Empty(AgentCliCatalog.BuildAccessArgs(ClaudeCode(), scope));
+
+        var settings = AgentCliCatalog.BuildLocalSettingsJson(scope);
+        // No grants at all → null, which DELETES a previously materialized file: a downgrade that
+        // closes a gate an earlier writing role legitimately opened in the same workspace.
+        Assert.Null(settings);
+    }
+
+    [Fact]
+    public void AReadOnlyRole_KeepsDirectoryReach_AndNothingElse()
+    {
+        var scope = new AgentAccessScope.Context("bypass", new[] { "/srv/data" },
+            ConfinedWorkspace: true, RoleMayWrite: false);
+
+        var args = AgentCliCatalog.BuildAccessArgs(ClaudeCode(), scope);
+        Assert.Equal(new[] { "--add-dir", "/srv/data" }, args);
+        Assert.DoesNotContain("--dangerously-skip-permissions", args);
+
+        var settings = AgentCliCatalog.BuildLocalSettingsJson(scope);
+        Assert.NotNull(settings);
+        Assert.Contains("/srv/data", settings);
+        Assert.DoesNotContain("\"Edit\"", settings);
+        Assert.DoesNotContain("\"Write\"", settings);
+        Assert.DoesNotContain("Bash(", settings);
+    }
+
+    /// <summary>A writing role under the same scope keeps exactly the pre-.93 translation — the
+    /// clamp narrows, it never widens, and the default (no flag passed) is the writing shape so
+    /// the operator's own direct agent lane is untouched.</summary>
+    [Fact]
+    public void AWritingRole_IsUnchangedByTheClamp()
+    {
+        var clamped = AgentCliCatalog.BuildAccessArgs(ClaudeCode(),
+            new AgentAccessScope.Context("bypass", Array.Empty<string>(), RoleMayWrite: true));
+        var defaulted = AgentCliCatalog.BuildAccessArgs(ClaudeCode(),
+            new AgentAccessScope.Context("bypass", Array.Empty<string>()));
+
+        Assert.Equal(new[] { "--dangerously-skip-permissions" }, clamped);
+        Assert.Equal(clamped, defaulted);
+    }
+
+    /// <summary>
+    /// The registry is the authority on which roles write: every role whose contract has neither
+    /// ProposePatches nor WriteWorkspace is a reader at the CLI boundary. Derived from the
+    /// registry rather than listed, so a contract change moves this test with it.
+    /// </summary>
+    [Fact]
+    public void TheRegistrysReadOnlyRoles_AreExactlyTheClampedOnes()
+    {
+        var readers = Anthill.Core.Agents.AntRegistry.Roles
+            .Where(r => !r.Permissions.ProposePatches && !r.Permissions.WriteWorkspace)
+            .Select(r => r.RoleId).ToList();
+
+        // The claim this release depends on: the researcher/builder/verifier trio are readers,
+        // and the coder is not. If a registry change moves one of these, the CLI clamp moves too —
+        // this test is where that becomes a conscious decision instead of a silent widening.
+        Assert.Contains("researcher", readers);
+        Assert.Contains("builder", readers);
+        Assert.Contains("verifier", readers);
+        Assert.DoesNotContain("coder", readers);
+    }
+
     [Fact]
     public void TheScope_IsAmbient_AndRestoresOnDispose()
     {

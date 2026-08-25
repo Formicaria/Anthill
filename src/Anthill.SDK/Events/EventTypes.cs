@@ -139,6 +139,10 @@ public static class EventTypes
     // ---- learning and memory -----------------------------------------------
 
     public const string PheromoneScored = "pheromone_scored";
+    /// <summary>v0.3.8.93: a verified worker trail replaced the registry's declaration-order
+    /// tie-break for a task whose text did not decide the worker — the pheromone layer's first
+    /// deterministic decision, evented so the steering is auditable rather than silent.</summary>
+    public const string WorkerSelectedByTrail = "worker_selected_by_trail";
     public const string SkillCandidateRegistered = "skill_candidate_registered";
     public const string SkillOutcomeRecorded = "skill_outcome_recorded";
     public const string LearningReset = "learning_reset";
@@ -148,6 +152,9 @@ public static class EventTypes
     public const string WorkspaceReady = "workspace_ready";
     public const string WorkspaceUnavailable = "workspace_unavailable";
     public const string WorkspaceChangeSet = "workspace_change_set";
+    /// <summary>v0.3.8.93: a harvested change set saved WITHOUT the review pipeline — no completed
+    /// task existed to attribute it to. The evidence survives; the gap is named, not hidden.</summary>
+    public const string WorkspaceChangeSetUnanchored = "workspace_change_set_unanchored";
     public const string WorkspaceNoChanges = "workspace_no_changes";
     public const string WorkspaceHarvestFailed = "workspace_harvest_failed";
 

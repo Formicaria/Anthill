@@ -53,6 +53,26 @@ public static class ToolAuthorization
         public static Decision Deny(string reason) => new(false, reason);
     }
 
+    /// <summary>
+    /// v0.3.8.93 — the REAL tools a role may dispatch, as this class would actually authorize them:
+    /// the specialist contract's allowlist when the role has a contract (the contract
+    /// short-circuits), else the built-in role table, else nothing. Exposed so the worker prompt
+    /// can tell a worker its true reach instead of the registry's duty descriptors — names like
+    /// `read_workspace_docs` that LOOK like tools, exist nowhere, and were being presented as
+    /// "Allowed worker tools" on every dispatched task. A worker that asks for a phantom is denied
+    /// here and reads as a weak model; a worker told only real names has nothing false to ask for.
+    /// </summary>
+    public static IReadOnlyCollection<string> DispatchAllowlistFor(string roleId)
+    {
+        if (string.IsNullOrWhiteSpace(roleId)) return Array.Empty<string>();
+        var contract = AntExecutionCatalog.ContractFor(roleId.Trim());
+        if (contract is not null)
+            return contract.AllowedTools.Where(t => !MissionAgentForbidden.Contains(t)).ToList();
+        return RoleAllowedTools.TryGetValue(roleId.Trim(), out var allowed)
+            ? allowed.Where(t => !MissionAgentForbidden.Contains(t)).ToList()
+            : Array.Empty<string>();
+    }
+
     /// <summary>Authorization for the legacy string-identity dispatch path. Stage D moves
     /// specialist execution to full <see cref="ToolExecutionContext"/> evaluation.</summary>
     public static Decision Evaluate(string? antName, string toolName)

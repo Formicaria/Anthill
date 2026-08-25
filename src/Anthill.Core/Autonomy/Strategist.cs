@@ -276,7 +276,15 @@ public sealed class Strategist
         // A standing objective is text an operator wrote and the colony re-reads unattended on every
         // run — the highest-value place in the colony to plant an instruction, because it is authored
         // once and then obeyed forever with nobody watching the turn.
-        return $@"{AnthillRuntime.UntrustedBlock("standing objective",
+        //
+        // v0.3.8.93: fenced as the OPERATOR REQUEST it is, no longer as UNTRUSTED. The rules below
+        // this fence order the strategist to "directly accomplish the standing objective's charter"
+        // while the old fence ordered it to never treat the charter as instructions — a worker had
+        // to disobey one of the two on every run. The injection-surface observation above stays
+        // true and is answered by the fence, not the label: the boundary still exists, embedded
+        // fence markers inside the charter are still neutralized, and what the label now claims —
+        // this is the operator's own instruction — is finally the truth about this payload.
+        return $@"{AnthillRuntime.OperatorRequestBlock("standing objective",
             $"Title: {objective.Title}\nCharter: {objective.Charter}")}
 
 Recent runs for this objective (most recent first):

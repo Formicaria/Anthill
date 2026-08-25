@@ -69,6 +69,15 @@ public interface IExecutionService
 
     void IngestHandoffs(Mission mission, MissionContext context, Task sourceTask,
         AntExecutionResult execution, AntRuntimeSelection runtimeSelection, TaskScheduler? scheduler);
+
+    /// <summary>
+    /// v0.3.8.93 — run a change set harvested from a mission workspace through the SAME patch
+    /// pipeline a coder's structured proposal takes: save, artifact, verification, approval cards,
+    /// bypass gate. On the interface because the Queen calls it at finalization, outside the task
+    /// graph — the same reason <see cref="IngestMemoryCandidatesFor"/> is here, and the same rule:
+    /// a second copy of the pipeline beside the first is how two write paths for one fact begin.
+    /// </summary>
+    void ProcessHarvestedPatchSet(Mission mission, Task anchorTask, PatchSet patchSet);
 }
 
 public sealed class ExecutionService : IExecutionService
@@ -597,7 +606,9 @@ public sealed class ExecutionService : IExecutionService
                     // both ride to the reasoning provider as ambient scope, where an agent CLI
                     // translates them into its own flags. A mission no conversation started runs
                     // with "ask" and no grants — absence is not consent.
-                    using var access = EnterAgentAccess(mission);
+                    // v0.3.8.93: the ROLE rides along too, so the CLI translation can clamp on its
+                    // contract — a read-only role under Skip-all-approvals must not become a writer.
+                    using var access = EnterAgentAccess(mission, ant.Name);
 
                     // Structural repair §3: a deterministic check role runs INSIDE the mission's
                     // current materialized revision when one exists — the patched tree, kept alive
@@ -1428,8 +1439,46 @@ public sealed class ExecutionService : IExecutionService
             // workspace when a scope is active, so the hash records the tree the coder was actually
             // looking at rather than the live checkout.
             var patchSet = _patchParser.Parse(task.Result, mission.Id, task.Id, ReadForBaseHash);
+            ProcessPatchSet(mission, context, task, patchSet, scheduler);
+        }
+        catch (Exception error)
+        {
+            _memory.LogEvent(mission.Id, "patch_proposal_parse_failed", $"Patch proposal parsing failed: {error.Message}", task.Id, task.AssignedAnt,
+                new() { ["error"] = error.Message, ["raw_preview"] = TextUtil.Truncate(task.Result, 1000) });
+            _memory.UpdatePheromoneTrail("capability:structured_patch_proposals", "capability", false, -0.03,
+                new() { ["mission_id"] = mission.Id, ["task_id"] = task.Id, ["error"] = error.Message });
+        }
+    }
+
+    /// <summary>
+    /// v0.3.8.93 — THE ONE PIPELINE EVERY PATCH SET GOES THROUGH, whoever produced it.
+    ///
+    /// Two producers exist: the coder's structured-JSON path (parsed from a model turn, above) and
+    /// the acting-CLI path, whose filesystem diff <c>WorkspaceChangeSet.Create</c> turns into the
+    /// same <c>PatchSet</c> type at mission finalization. Until this release only the FIRST reached
+    /// verification, review insertion, approval cards and the bypass gate — a harvested change set
+    /// was saved to the store and stopped there: no evidence, no approval request, no card, so work
+    /// an acting agent produced in its isolated worktree was reviewable in principle and unreachable
+    /// in practice. Same capability, two pipelines, one of them a stub — the divergence shape the
+    /// promotion gate was built to end, one layer earlier.
+    ///
+    /// <paramref name="context"/> and <paramref name="scheduler"/> are null for the harvested lane,
+    /// which runs at finalization — after the plan's last task, when nothing can dispatch an
+    /// inserted review task. The policy-review insertion is therefore SKIPPED there, and skipped
+    /// LOUDLY: the event records that tester/soldier review did not run for this set, so the
+    /// promotion gate's evidence requirements (which still stand — nothing here waives them) read
+    /// against an honest record rather than a silent gap.
+    /// </summary>
+    internal void ProcessPatchSet(Mission mission, MissionContext? context, Task task, PatchSet patchSet,
+        TaskScheduler? scheduler)
+    {
+        // Indentation note: the body below kept its original depth when it moved out of
+        // ProcessPatchProposals' try block, so the diff stays reviewable as a move rather than a
+        // rewrite. The extra brace pair is that move's scar, not a scope with meaning.
+        {
             _memory.SavePatchSet(patchSet);
-            var patchArtifactId = RecordPatchArtifact(mission, task, patchSet, context.EnvironmentFingerprint);
+            var patchArtifactId = RecordPatchArtifact(mission, task, patchSet,
+                context?.EnvironmentFingerprint ?? "");
             VerifyPatchSet(mission, task, patchSet);
 
             // v3.8.26: the review roles are INSERTED here, not planned.
@@ -1441,7 +1490,18 @@ public sealed class ExecutionService : IExecutionService
             // AFTER RecordPatchArtifact deliberately: the soldier reads the patch-set artifact
             // (v3.8.25), so inserting its task before the artifact exists would schedule a review of
             // something not yet written. The ordering here IS the contract between the two.
-            InsertPolicyReviewTasks(mission, context, task, patchSet, scheduler, patchArtifactId);
+            if (context is not null && scheduler is not null)
+                InsertPolicyReviewTasks(mission, context, task, patchSet, scheduler, patchArtifactId);
+            else if (patchSet.Proposals.Count > 0)
+                // The harvested lane, at finalization: the mission's task graph is closed, so an
+                // inserted tester/soldier task would sit unscheduled forever. Saying so is the
+                // record the operator reads when the promotion gate refuses on missing review.
+                _memory.LogEvent(mission.Id, "policy_review_skipped",
+                    $"Policy review tasks were not inserted for patch set {patchSet.Id}: the set was "
+                  + "harvested at mission finalization, after the task graph closed. The promotion "
+                  + "gate's evidence requirements still apply to every proposal.",
+                    task.Id, task.AssignedAnt,
+                    new() { ["patch_set_id"] = patchSet.Id, ["reason"] = "harvested_at_finalization" });
             _memory.LogEvent(mission.Id, "patch_set_created", $"Patch set created with {patchSet.Proposals.Count} proposal(s).", task.Id, task.AssignedAnt,
                 new() { ["patch_set_id"] = patchSet.Id, ["proposal_count"] = patchSet.Proposals.Count, ["summary"] = patchSet.Summary, ["saved"] = true });
 
@@ -1484,14 +1544,16 @@ public sealed class ExecutionService : IExecutionService
             _memory.UpdatePheromoneTrail("capability:approval_gate", "capability", true, 0.02,
                 new() { ["mission_id"] = mission.Id, ["task_id"] = task.Id, ["approval_requests_created"] = patchSet.Proposals.Count });
         }
-        catch (Exception error)
-        {
-            _memory.LogEvent(mission.Id, "patch_proposal_parse_failed", $"Patch proposal parsing failed: {error.Message}", task.Id, task.AssignedAnt,
-                new() { ["error"] = error.Message, ["raw_preview"] = TextUtil.Truncate(task.Result, 1000) });
-            _memory.UpdatePheromoneTrail("capability:structured_patch_proposals", "capability", false, -0.03,
-                new() { ["mission_id"] = mission.Id, ["task_id"] = task.Id, ["error"] = error.Message });
-        }
     }
+
+    /// <summary>
+    /// v0.3.8.93 — the harvested lane's entry into <see cref="ProcessPatchSet"/>: a change set built
+    /// from a mission workspace's filesystem diff at finalization. Called by the Queen, which owns
+    /// the harvest moment; anchored to the task whose work produced the changes so verification
+    /// faults and approval cards attribute to real work rather than to a synthetic row.
+    /// </summary>
+    public void ProcessHarvestedPatchSet(Mission mission, Task anchorTask, PatchSet patchSet) =>
+        ProcessPatchSet(mission, context: null, anchorTask, patchSet, scheduler: null);
 
     private static ApprovalRequest CreatePatchApprovalRequest(Mission mission, Task task, PatchSet patchSet, PatchProposal proposal) => new()
     {
@@ -1781,11 +1843,19 @@ public sealed class ExecutionService : IExecutionService
     /// per call rather than per mission on purpose: a policy change mid-mission should govern the
     /// tasks dispatched after it, exactly as the escalation gate already behaves.
     /// </summary>
-    private IDisposable EnterAgentAccess(Mission mission)
+    private IDisposable EnterAgentAccess(Mission mission, string roleId)
     {
         var policy = "ask";
         IReadOnlyList<string> grants = Array.Empty<string>();
         string? workingDirectory = null;
+
+        // v0.3.8.93 — the role's write capability, read from ITS OWN contract in the registry.
+        // Fail closed: an unknown role gets no write translation, for the same reason
+        // ToolAuthorization denies an unknown identity — a name the registry cannot vouch for
+        // must never widen access. ProposePatches OR WriteWorkspace, because both are "this role's
+        // contract contemplates changing files"; everything else is a reader however it is routed.
+        var roleMayWrite = AntRegistry.ByRole.TryGetValue(roleId ?? "", out var roleDef)
+            && (roleDef.Permissions.ProposePatches || roleDef.Permissions.WriteWorkspace);
         try
         {
             var conversation = _memory.FindConversationForMission(mission.Id);
@@ -1812,7 +1882,8 @@ public sealed class ExecutionService : IExecutionService
         }
         // confinedWorkspace: mission tasks run in disposable sandboxes/worktrees, never the live tree.
         return Anthill.SDK.Reasoning.AgentAccessScope.Enter(
-            policy, grants, confinedWorkspace: true, workingDirectory: workingDirectory);
+            policy, grants, confinedWorkspace: true, workingDirectory: workingDirectory,
+            roleMayWrite: roleMayWrite);
     }
 
     /// <summary>

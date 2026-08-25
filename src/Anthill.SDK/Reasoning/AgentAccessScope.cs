@@ -36,25 +36,46 @@ public static class AgentAccessScope
     /// provider's static default — the shared agent workspace root — which is the old behaviour
     /// and still right for callers with no project in hand.
     /// </summary>
+    /// <summary>
+    /// <paramref name="RoleMayWrite"/> — v0.3.8.93: whether the ROLE this flow is executing is one
+    /// whose contract permits producing changes at all (<c>ProposePatches</c> or
+    /// <c>WriteWorkspace</c> in the ant registry).
+    ///
+    /// The operator's policy and the role's contract answer DIFFERENT questions and both must say
+    /// yes. Until this release the scope carried only the policy, so "Skip all approvals" handed
+    /// <c>--dangerously-skip-permissions</c> to whatever role happened to be routed to an agent
+    /// CLI — a read-only researcher included. The operator's bypass skips the operator's own
+    /// prompts; it was never a grant of write capability to a role whose contract has none, and
+    /// the translation layer (<c>AgentCliCatalog.BuildAccessArgs</c> /
+    /// <c>BuildLocalSettingsJson</c>) now clamps on this flag before consulting the policy.
+    ///
+    /// Defaults TRUE, deliberately: the flows that do not set it are the operator's own direct
+    /// agent lane, where the actor is the operator's agent under the operator's policy and there
+    /// is no role contract to project. Mission dispatch, which DOES act under a contract, sets it
+    /// from the registry on every task. The default preserves those callers exactly; the flag only
+    /// ever narrows.
+    /// </summary>
     public sealed record Context(
         string PolicyWire,
         IReadOnlyList<string> GrantedDirectories,
         bool ConfinedWorkspace = false,
-        string? WorkingDirectory = null);
+        string? WorkingDirectory = null,
+        bool RoleMayWrite = true);
 
     private static readonly AsyncLocal<Context?> Ambient = new();
 
     public static Context? Current => Ambient.Value;
 
     public static IDisposable Enter(string policyWire, IReadOnlyList<string>? grantedDirectories = null,
-        bool confinedWorkspace = false, string? workingDirectory = null)
+        bool confinedWorkspace = false, string? workingDirectory = null, bool roleMayWrite = true)
     {
         var previous = Ambient.Value;
         Ambient.Value = new Context(
             string.IsNullOrWhiteSpace(policyWire) ? "ask" : policyWire.ToLowerInvariant(),
             grantedDirectories ?? Array.Empty<string>(),
             confinedWorkspace,
-            string.IsNullOrWhiteSpace(workingDirectory) ? null : workingDirectory);
+            string.IsNullOrWhiteSpace(workingDirectory) ? null : workingDirectory,
+            roleMayWrite);
         return new Scope(previous);
     }
 

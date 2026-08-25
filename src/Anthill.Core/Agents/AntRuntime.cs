@@ -26,19 +26,31 @@ public static class AntRuntime
         return new(role, worker, role.RoleId, worker.WorkerId, BuildAuditWarnings(role, worker));
     }
 
+    /// <summary>
+    /// v0.3.8.93 — THE SNAPSHOT NAMES REAL TOOLS OR NONE. It used to present the registry's duty
+    /// descriptors as "Allowed worker tools": names like `read_workspace_docs` and
+    /// `read_task_outputs` that are worded as tools and implemented by nothing — the phantom-tool
+    /// defect (ADR-006) reproduced inside every dispatched task's own prompt. A worker that asked
+    /// for one was denied at dispatch and read as a weak model. The line now carries the role's
+    /// actual dispatch allowlist from <see cref="Tools.ToolAuthorization.DispatchAllowlistFor"/> —
+    /// the same table the denial would come from, so the prompt and the gate cannot disagree —
+    /// and a role with no dispatchable tools is told so in words rather than handed fictions.
+    /// The registry descriptors survive as what they always were, a duty description.
+    /// </summary>
     public static Task PrepareWorkerTaskSnapshot(Task task, AntRuntimeSelection selection)
     {
         var copy = task.DeepCopy();
-        var allowed = selection.Worker.AllowedTools.Count == 0 ? "none" : string.Join(", ", selection.Worker.AllowedTools);
-        var forbidden = selection.Worker.ForbiddenTools.Count == 0 ? "none" : string.Join(", ", selection.Worker.ForbiddenTools);
+        var dispatchable = Tools.ToolAuthorization.DispatchAllowlistFor(selection.ExecutorRoleId);
+        var tools = dispatchable.Count == 0
+            ? "none — this worker reasons over the context it is given and dispatches no tools"
+            : string.Join(", ", dispatchable.OrderBy(t => t, StringComparer.Ordinal));
         var context = $"""
 Worker Runtime Context:
 Selected worker: {selection.Worker.WorkerId} ({selection.Worker.DisplayName})
 Parent role executor: {selection.ExecutorRoleId}
 Worker purpose: {selection.Worker.Purpose}
-Allowed worker tools: {allowed}
-Forbidden worker tools: {forbidden}
-Permission boundary: worker permissions cannot exceed parent role permissions; apply_patch is forbidden.
+Dispatchable tools: {tools}
+Permission boundary: worker permissions cannot exceed parent role permissions; apply_patch is forbidden to every mission agent, as are shell_command and write_text_file.
 
 Original task:
 """;
