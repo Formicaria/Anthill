@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.93**.
+Shipping release: **v0.3.8.94**.
 
 ---
 
@@ -364,10 +364,11 @@ under it.
   startup reconciliation that decides from hashes: prepared discards, applied completes the records,
   and a mid-write state matching neither hash is left for an operator rather than resolved in favour
   of success. It never re-applies and never rolls back.
-  ◻ **The crash-injection matrix is NOT done** — killing the process at each of the six transitions
-  and proving one deterministic recovered state. `Anthill.CrashHelper` already drives this shape for
-  the auto-apply journal and is where it belongs. Named here rather than left implied by the word
-  "crash-safe".
+  ✅ **The crash-injection matrix** *(v0.3.8.94)* — `Anthill.CrashHelper` gained an intent-journal
+  mode that drives the live apply sequence to a chosen phase and blocks; `PatchApplyCrashMatrixTests`
+  really kills it at each window (prepared / mutating-unwritten / mutating-written / applied) and
+  reconciles in the parent process: discard, discard-by-hash, needs-operator-with-intent-open, and
+  the database catching up with the disk — one deterministic recovered state per row.
 - ✅ **A refused lease prevents execution** *(v0.3.8.91)*. The claim is taken before anything is
   committed and a refusal returns. Committing first was what forced the old code to ignore the
   refusal; there is now nothing to strand. A claim the scheduler then declines is released as
@@ -382,8 +383,22 @@ under it.
   ◻ **The GENERATED schema is not built** — one declaration per key carrying type, default, env
   override, range, security class, aliases and UI exposure, with the example file and the docs
   generated from it. That is the end state; this release stopped the drift getting worse.
-- ◻ **The evidence and artifact vocabulary mismatches** carried from v0.3.8.90, because R4 must
-  measure reality rather than an instrumentation layer with known dead mappings.
+- ✅ **The evidence and artifact vocabulary mismatches** *(v0.3.8.94)*. `AntEvidenceKinds` is the
+  closed vocabulary for what an ant reports (disjoint from the store's `EvidenceKinds`, on purpose);
+  the kind-"tool" filter both `FailureContext.Tool` and `TaskResult.Tool` waited on for six releases
+  finally has a producer (the registry records dispatched tool names; the measurement boundary turns
+  them into evidence); `deterministic_work_completed` stopped consulting the wrong witness's
+  vocabulary; `patch_json` and `text` are DECLARED transport-only at the artifact bridge instead of
+  falling into the null arm beside typos; and `VerificationPolicyReachabilityTests` is the dormant-
+  keys ledger (`code_patch_full`, `config_change`, `artifact_production` — real policies, recorded
+  as dormant, failing the ledger when either fact changes).
+- ✅ **Auto-apply consults the one gate** *(v0.3.8.94)*. The Director evaluates every eligible
+  proposal as `PromotionActor.Automation` — the actor v0.3.8.91 declared and nothing used — and its
+  private copies of the evaluation / write-gates / rollback-marker checks are deleted. The fold
+  STRENGTHENS the lane (deterministic block, incomplete or blocking policy review, moved workspace —
+  conditions the runner never checked); what stays runner-side is exactly the set-level part a
+  per-proposal gate cannot own: the evidence content hash, mixed deterministic rows, patch-set
+  identity, whole-set preflight, the durable transaction.
 - ◻ **Enforcement.** Warnings as errors, analyzers, dependency and secret scanning, a complexity
   budget, module auto-discovery, typed database rows instead of `Dictionary<string, object?>`, and
   the agent rules written down rather than remembered.

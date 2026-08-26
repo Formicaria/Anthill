@@ -180,8 +180,28 @@ public sealed class ExecutionService : IExecutionService
         var modelCalls = _router?.TakeModelCallCount(task.Id) ?? 0;
         var reported = execution.Metrics;
 
+        // v0.3.8.94 — the tools the task ACTUALLY DISPATCHED become evidence rows, from the same
+        // chokepoint record the count comes from. `FailureContext.Tool` and the persisted
+        // `TaskResult.Tool` have filtered on kind "tool" since they were written, and no producer
+        // ever existed — the fields were null for every task of every mission. Measured rather than
+        // asked for, at the same boundary and for the same reason as ToolCalls: self-reporting is
+        // what produced the zeros. The ant's own rows are kept; this fills the gap, it does not
+        // overwrite work.
+        var dispatchedTools = _tools?.TakeDispatchedTools(task.Id) ?? Array.Empty<string>();
+        var evidence = execution.Evidence;
+        var unreported = dispatchedTools
+            .Where(n => !evidence.Any(e =>
+                e.Kind == AntEvidenceKinds.Tool && string.Equals(e.Value, n, StringComparison.Ordinal)))
+            .ToList();
+        if (unreported.Count > 0)
+            evidence = evidence
+                .Concat(unreported.Select(n =>
+                    new AntEvidence(AntEvidenceKinds.Tool, n, "dispatched through the tool registry")))
+                .ToList();
+
         return execution with
         {
+            Evidence = evidence,
             Metrics = reported with
             {
                 ToolCalls = reported.ToolCalls > 0 ? reported.ToolCalls : dispatches,
@@ -1626,8 +1646,13 @@ public sealed class ExecutionService : IExecutionService
                 ["model_executed"] = execution.Metrics.ModelCalls > 0 && !task.GenerationDegraded,
                 ["fallback_used"] = task.GenerationDegraded,
                 ["generation_degraded"] = task.GenerationDegraded,
+                // v0.3.8.94: read with the ANT evidence vocabulary, not the verification store's.
+                // The old expression tested `EvidenceKinds.Reproducible` — build/test_run/hash_match,
+                // kinds the STORE records and ant evidence has never carried — so half of it was
+                // dead the day it was written and only the "check" literal ever decided. One
+                // vocabulary per witness; AntEvidenceKinds.Deterministic is this witness's.
                 ["deterministic_work_completed"] = execution.Evidence.Any(e =>
-                    Anthill.SDK.Artifacts.EvidenceKinds.Reproducible.Contains(e.Kind) || e.Kind == "check"),
+                    AntEvidenceKinds.Deterministic.Contains(e.Kind)),
                 // v3.8.32: wire form, matching every other failure_class in the tree. An event
                 // stream that spells a class differently from the tables is a query that silently
                 // returns nothing.
@@ -1906,10 +1931,10 @@ public sealed class ExecutionService : IExecutionService
             var rawError = execution.Failure?.Reason ?? task.FailureReason ?? execution.Summary ?? "";
 
             var failingChecks = execution.Evidence
-                .Where(e => e.Kind == "check" && (e.Detail?.Contains("success=False") ?? false))
+                .Where(e => e.Kind == AntEvidenceKinds.Check && (e.Detail?.Contains("success=False") ?? false))
                 .Select(e => e.Value).ToList();
             var affectedPaths = execution.Evidence
-                .Where(e => e.Kind == "file_path").Select(e => e.Value).ToList();
+                .Where(e => e.Kind == AntEvidenceKinds.FilePath).Select(e => e.Value).ToList();
 
             var scope = Workspaces.MissionWorkspaceScope.Current;
             var context = new Anthill.SDK.Artifacts.FailureContext
@@ -1926,7 +1951,10 @@ public sealed class ExecutionService : IExecutionService
                 NormalizedError = Anthill.SDK.Artifacts.FailureContext.NormalizeError(rawError),
                 Provider = runtimeSelection.RuntimeNodeId,
                 FailingChecks = failingChecks,
-                Tool = execution.Evidence.FirstOrDefault(e => e.Kind == "tool")?.Value,
+                // v0.3.8.94: this filter finally has a producer — WithMeasuredMetrics writes the
+                // registry's dispatch record as kind-"tool" evidence. It matched nothing for six
+                // releases (defect class 9: a filter that could not match).
+                Tool = execution.Evidence.FirstOrDefault(e => e.Kind == AntEvidenceKinds.Tool)?.Value,
                 ArtifactKinds = execution.Artifacts.Select(a => a.Kind).Distinct().ToList(),
                 AffectedPaths = affectedPaths,
                 PatchSetId = scope?.MaterializedPatchSetId,
