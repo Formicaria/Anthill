@@ -1,3 +1,81 @@
+## v0.3.8.95 - the acting colony: the mission works where the project lives
+
+Driven by a live qualification attempt, which found its first defect before the first route was
+set. Six changes, one aim: a real Claude Code mission, acting inside a worktree of the project's
+own repository, judged by the tree, reviewed in a revision, and reported in the conversation.
+
+**Per-project mission worktrees.** The conversation's project now crosses into the pipeline AS
+DATA — `Mission.ProjectId` (persisted, migrated), a `projectId` parameter on `RunMission`, and a
+widened start-mission delegate — where before it travelled only as prose inside the goal string,
+which a workspace cannot be cut from. `MissionWorkspaceManager.Prepare` takes the project's
+working directory as a source override, resolved through the same repository walk as the
+configured root; a project path that is not a git checkout is Rejected BY NAME, never silently
+swapped for the wrong repository. The workspace row records which source its worktree was
+actually taken from, and patch-set verification materialises revisions from that same source —
+applying a project's patch onto the configured global tree and verifying THAT was the
+"adjacent question" defect one repository over.
+
+**The agent CLI acts in the mission worktree, and only there.** `EnterAgentAccess` declared
+`confinedWorkspace: true` while handing the CLI the project's LIVE path as its working directory
+— the comment and the runtime disagreeing on the one property that decides where an acting
+agent's edits land, and the harvest diffed a pristine worktree while the real edits sat in the
+operator's checkout, invisible. When a mission workspace exists it now IS the working directory,
+and the live-tree directory grants are withheld with it: reach into the real checkout is
+precisely what a disposable workspace exists to deny. Missions without a workspace keep the
+previous behaviour, stated by the scope's own fields.
+
+**The acting Coder.** `acting_coder_enabled` (default off, and the default means it): a coder
+task whose mission holds a usable worktree AND whose route resolves to an agent CLI does the work
+directly — no patch JSON, real edits, in the tree the provider is confined to. Success is
+classified from the TREE, never the narrative: changes on disk succeed, a clean tree succeeds
+only with the declared `NO_CHANGES_NEEDED` marker, and a clean tree with a story about edits
+fails saying so. A model-routed coder keeps proposing JSON — it has no hands, and prose graded
+as work is the defect class this repository keeps finding. Propose-only remains the default and
+the fallback whenever any of the three conditions is absent.
+
+**The diff is captured while the task graph is still open.** The moment an acting coder task
+completes, its workspace diff becomes a patch set (stamped with its workspace id — new column)
+and enters THE ONE PIPELINE with a live scheduler: verification materialises a revision, tester
+and soldier are inserted to judge that revision, the promotion gate reads real evidence, and
+approval cards attribute to the task that did the work. This is everything the finalization
+harvest cannot do — by then the graph is closed and v0.3.8.93's honest `policy_review_skipped`
+is the best it can say. The dispatch discriminator is the producer's own artifact kind
+(`workspace_edit_report`), never a re-derivation of config and routing by the consumer. The
+finalization harvest survives as the safety net for stray edits, now idempotent per workspace
+(`workspace_already_captured`) so one workspace's changes become one patch set, not two.
+
+**The bypass flag never crosses into a confined workspace.** `--dangerously-skip-permissions`
+removes the vendor's entire permission layer — every tool, any shell, with the host's
+environment and credentials inherited — and a disposable cwd is not an argument for any of that.
+Inside a mission worktree, the operator's Skip-all now maps to the bounded autoapprove posture
+(edits plus the build/test tool set, no prompts — which is what Skip-all promised about PROMPTS),
+and the patch pipeline's gates, which Skip-all never claimed to skip, judge the result. The
+role-contract clamp stays above everything: a read-only role gets no permission flags under any
+policy. The unrestricted flag remains reachable only outside confinement — a road no mission
+takes.
+
+**The mission record reaches the conversation.** v0.3.8.73 built the compiled report — every
+value a projection of a row, no model able to contribute a figure — and nothing ever read it
+back to the operator: writers, no reader. The settled mission's conversation turn is now the
+reader: the answer (final_result first — chat had the preference inverted relative to every
+other surface and led with the raw dump), then the full `=== MISSION RECORD ===` block: outcome
+code, verification basis, every task with status and duration, every check with its exit code,
+the role census, patch and evidence counts. Composed by the same compiler the artifact uses, and
+honest about absence — "none persisted" is a sentence it can say.
+
+**And the 403 that started it.** `POST /routes/{role}` has required `manage_models` since routes
+became writable, but the key was never added to `ApiPermissions` — absent keys answer false, so
+every route write was refused for everyone, admin included, and the Roles page rendered a
+selector nobody could save. Found live: the first attempt to route the coder to Claude Code for
+the qualification run was denied by a permission that could not be granted. The key exists now
+and ships granted, like its read twin.
+
+Sixteen tests pin the release: per-project worktrees against two real repositories, the
+bypass-under-confinement bounding built by the real translator from real access contexts, acting
+classification from real trees, the workspace stamp and its idempotence guard, the project-id
+crossing asserted from the pipeline delegate's own captured argument, the pipeline discriminator,
+and the permission that must never go missing again.
+
 ## v0.3.8.94 - the filter that could not match, and the actor nobody used
 
 **Three closures from the R0 residual list, one theme: promises the code made and never kept. Two

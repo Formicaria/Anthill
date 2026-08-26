@@ -143,7 +143,7 @@ public class ChatSpeaksToTheColonyTests
 
             var goals = new List<string>();
             var runner = new Anthill.Core.Conversations.ConversationRunner(memory,
-                (goal, onCreated, _) => { goals.Add(goal); onCreated("m1"); return "m1"; });
+                (goal, _, onCreated, _) => { goals.Add(goal); onCreated("m1"); return "m1"; });
 
             // No mode argument at all — the default is what an un-updated caller sends.
             var outcome = runner.Run(conversation, "what does this repository do?");

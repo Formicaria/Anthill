@@ -651,6 +651,13 @@ public sealed partial class SqliteMemory : IDisposable
         AddMissing("conversation_turns", new() { ["prompt_tokens"] = "INTEGER", ["completion_tokens"] = "INTEGER" });
         // v0.3.8.47: which project a conversation belongs to. Null for legacy conversations.
         AddMissing("conversations", new() { ["project_id"] = "TEXT" });
+        // v0.3.8.95: which project a MISSION belongs to, carried from the conversation that
+        // started it. Null for legacy rows and for missions started outside a project.
+        AddMissing("missions", new() { ["project_id"] = "TEXT" });
+        // v0.3.8.95: which mission workspace a patch set was diffed from. Only workspace-derived
+        // sets carry it; model-proposed sets stay null. Attribution, and the idempotence key that
+        // stops finalization re-harvesting a workspace already captured mid-mission.
+        AddMissing("patch_sets", new() { ["workspace_id"] = "TEXT" });
         // v0.3.8.48: project-level defaults. The policy is ATTRIBUTED like the conversation's —
         // a standing permission with no author reads as Ask, fail closed, same rule everywhere.
         AddMissing("projects", new()
