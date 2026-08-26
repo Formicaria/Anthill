@@ -336,6 +336,15 @@ public static class AgentCliCatalog
         if (access is null) return Array.Empty<string>();
         var args = new List<string>();
 
+        // v0.3.8.93 — THE ROLE'S CONTRACT CLAMPS BEFORE THE POLICY GRANTS. A read-only role
+        // (researcher, builder, verifier — anything whose contract neither proposes patches nor
+        // writes the workspace) gets NO permission flags whatever the operator's policy says:
+        // bypass skips the operator's own prompts, it does not turn a reader into a writer.
+        // Directory gates below still apply — they are reach, not write capability, and a reader
+        // with reach is exactly what the operator opened the gate for.
+        if (!access.RoleMayWrite)
+            return AddDirectoryGates(agent, access, args);
+
         switch (access.PolicyWire)
         {
             case "bypass" when agent.BypassArgs is { Count: > 0 }:
@@ -353,6 +362,14 @@ public static class AgentCliCatalog
                 break;
         }
 
+        return AddDirectoryGates(agent, access, args);
+    }
+
+    /// <summary>Every granted directory becomes one AddDirArgs expansion. Shared by the writing and
+    /// the role-clamped read-only paths, so the two cannot disagree about what a gate means.</summary>
+    private static IReadOnlyList<string> AddDirectoryGates(AgentCli agent,
+        Anthill.SDK.Reasoning.AgentAccessScope.Context access, List<string> args)
+    {
         if (agent.AddDirArgs is { Count: > 0 })
             foreach (var dir in access.GrantedDirectories.Where(d => !string.IsNullOrWhiteSpace(d)))
                 args.AddRange(agent.AddDirArgs.Select(a => a.Replace("{dir}", dir, StringComparison.Ordinal)));
@@ -378,7 +395,12 @@ public static class AgentCliCatalog
     {
         if (access is null) return null;
 
-        var allow = access.PolicyWire switch
+        // v0.3.8.93 — same clamp as BuildAccessArgs, same reason, second channel: a role whose
+        // contract cannot write gets NO Edit/Write/Bash in the materialized settings either.
+        // Directory gates survive as additionalDirectories (reach for a reader), and when there
+        // are none the method returns null below — which DELETES a previously materialized file,
+        // closing a gate an earlier writing role legitimately opened in the same workspace.
+        var allow = !access.RoleMayWrite ? new List<string>() : access.PolicyWire switch
         {
             "bypass" or "autoapprove" => new List<string>
             {

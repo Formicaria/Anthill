@@ -73,22 +73,50 @@ public static class AntRegistry
         }
     }
 
-    public static AntWorkerDefinition? DefaultWorkerFor(string roleId, string taskType = "", string goal = "")
+    public static AntWorkerDefinition? DefaultWorkerFor(string roleId, string taskType = "", string goal = "") =>
+        ResolveWorker(roleId, taskType, goal).Worker;
+
+    /// <summary>
+    /// v0.3.8.93 — the same resolution, and WHETHER THE TASK'S OWN TEXT DECIDED IT.
+    ///
+    /// The keyword branches are the registry's capability map: "ui" means the ui_coder because that
+    /// is what the ui_coder is FOR, and no amount of accumulated reputation makes a docs specialist
+    /// the right worker for a canvas change. The else-branches are different in kind — they are a
+    /// tie-break by declaration order, chosen when the text says nothing. That distinction was
+    /// invisible in the old boolean-free signature, and it is exactly what pheromone-guided
+    /// selection needs: a KEYWORD decision is a compatibility fact and outranks any trail; an
+    /// order-of-declaration default is a guess, and a verified track record may replace a guess.
+    /// See <see cref="Pheromones.TrailGuidedSelection"/> for the consumer.
+    /// </summary>
+    internal static (AntWorkerDefinition? Worker, bool KeywordDecided) ResolveWorker(
+        string roleId, string taskType = "", string goal = "")
     {
-        if (!ByRole.TryGetValue(roleId, out var role)) return null;
+        if (!ByRole.TryGetValue(roleId, out var role)) return (null, false);
         var text = $"{taskType} {goal}".ToLowerInvariant();
+
+        (AntWorkerDefinition? Worker, bool KeywordDecided) Pick(bool decided, string suffix) =>
+            (role.Workers.FirstOrDefault(w => w.WorkerId.EndsWith(suffix)), decided);
+
         return role.RoleId switch
         {
-            "researcher" => role.Workers.FirstOrDefault(w => text.Contains("mission") || text.Contains("history") ? w.WorkerId.EndsWith("mission_researcher") : w.WorkerId.EndsWith("repo_researcher")),
-            "web" => role.Workers.FirstOrDefault(w => text.Contains("verify") || text.Contains("source quality") ? w.WorkerId.EndsWith("source_verifier") : w.WorkerId.EndsWith("source_finder")),
-            "file" => role.Workers.FirstOrDefault(w => text.Contains("read") || text.Contains("snippet") ? w.WorkerId.EndsWith("file_reader") : w.WorkerId.EndsWith("file_scout")),
-            "coder" => role.Workers.FirstOrDefault(w =>
-                (text.Contains("ui") || text.Contains("frontend") || text.Contains("canvas") || text.Contains("html") || text.Contains("css") || text.Contains("javascript")) ? w.WorkerId.EndsWith("ui_coder") :
-                (text.Contains("doc") || text.Contains("readme") || text.Contains("changelog") || text.Contains(".md")) ? w.WorkerId.EndsWith("docs_coder") :
-                w.WorkerId.EndsWith("backend_coder")),
-            "builder" => role.Workers.FirstOrDefault(w => text.Contains("compile") || text.Contains("data") ? w.WorkerId.EndsWith("result_compiler") : w.WorkerId.EndsWith("response_builder")),
-            "verifier" => role.Workers.FirstOrDefault(w => text.Contains("safety") || text.Contains("risk") ? w.WorkerId.EndsWith("safety_verifier") : w.WorkerId.EndsWith("result_verifier")),
-            _ => role.Workers.FirstOrDefault()
+            "researcher" => text.Contains("mission") || text.Contains("history")
+                ? Pick(true, "mission_researcher") : Pick(false, "repo_researcher"),
+            "web" => text.Contains("verify") || text.Contains("source quality")
+                ? Pick(true, "source_verifier") : Pick(false, "source_finder"),
+            "file" => text.Contains("read") || text.Contains("snippet")
+                ? Pick(true, "file_reader") : Pick(false, "file_scout"),
+            "coder" =>
+                text.Contains("ui") || text.Contains("frontend") || text.Contains("canvas")
+                    || text.Contains("html") || text.Contains("css") || text.Contains("javascript")
+                ? Pick(true, "ui_coder")
+                : text.Contains("doc") || text.Contains("readme") || text.Contains("changelog") || text.Contains(".md")
+                ? Pick(true, "docs_coder")
+                : Pick(false, "backend_coder"),
+            "builder" => text.Contains("compile") || text.Contains("data")
+                ? Pick(true, "result_compiler") : Pick(false, "response_builder"),
+            "verifier" => text.Contains("safety") || text.Contains("risk")
+                ? Pick(true, "safety_verifier") : Pick(false, "result_verifier"),
+            _ => (role.Workers.FirstOrDefault(), false),
         };
     }
 
