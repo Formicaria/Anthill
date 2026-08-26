@@ -16,6 +16,66 @@ using Anthill.SDK.Common;
 // deterministic: by the time it appears, the journal is durable and the files are patched.
 //
 // Usage: <workspace-root> <sentinel-path> <file=content> [<file=content> …]
+//    or: intent <db-path> <workspace-root> <sentinel-path> <phase> <relative-target> <new-content> <mission-id>
+//
+// The second mode is v0.3.8.94's crash-injection matrix for the PATCH APPLY INTENT journal — the
+// database half of crash safety, where scenario 17 covered the filesystem half. It drives the
+// journal to a chosen phase using the EXACT sequence the live apply path uses
+// (BeginApplyIntent → AdvanceApplyIntent(Mutating) → write → AdvanceApplyIntent(Applied, postHash)),
+// stops at the requested boundary, signals durability, and blocks to be killed. The parent then
+// runs PatchApplyReconciler in its own process against the same database, which is precisely the
+// restart the journal exists for. Same sentinel discipline, same reason: killing on start would
+// race the writes, and "reconciled nothing" is a pass that means nothing happened.
+//
+// Phases: prepared | mutating-unwritten | mutating-written | applied
+//   prepared           — intent row only; nothing touched. Reconciler must discard.
+//   mutating-unwritten — phase advanced, write never issued; file still holds pre-apply bytes.
+//                        Reconciler must discard (hash-decided).
+//   mutating-written   — bytes changed mid-write with no post-hash on record. Reconciler must
+//                        refuse to guess: needs-operator, intent left OPEN.
+//   applied            — bytes and post-hash recorded; database effects never happened. Reconciler
+//                        must FINISH them (the case that used to become an unrevertable phantom).
+
+if (args.Length >= 1 && args[0] == "intent")
+{
+    if (args.Length < 8)
+    {
+        Console.Error.WriteLine("usage: intent <db-path> <workspace-root> <sentinel-path> <phase> <relative-target> <new-content> <mission-id>");
+        return 2;
+    }
+
+    var dbPath = args[1];
+    var workspace = args[2];
+    var intentSentinel = args[3];
+    var phase = args[4];
+    var relativeTarget = args[5];
+    var newContent = args[6];
+    var missionId = args[7];
+
+    using var memory = new Anthill.Core.Memory.SqliteMemory(dbPath);
+    var target = Path.Combine(workspace, relativeTarget);
+    var preHash = File.Exists(target) ? ApplyTransaction.HashFile(target) : null;
+
+    // The live sequence, verbatim — the matrix characterizes production, not an approximation.
+    var intent = memory.BeginApplyIntent(
+        patchId: "crash-patch", approvalId: "crash-approval", patchSetId: "crash-set",
+        missionId: missionId, targetPath: relativeTarget, preHash: preHash);
+
+    if (phase != "prepared")
+        memory.AdvanceApplyIntent(intent.Id, Anthill.Core.Verification.PatchApplyPhase.Mutating);
+
+    if (phase is "mutating-written" or "applied")
+        File.WriteAllText(target, newContent);
+
+    if (phase == "applied")
+        memory.AdvanceApplyIntent(intent.Id, Anthill.Core.Verification.PatchApplyPhase.Applied,
+            ApplyTransaction.HashFile(target));
+
+    // Durable before the signal; the kill lands on committed rows and flushed bytes.
+    File.WriteAllText(intentSentinel, intent.Id);
+    Thread.Sleep(Timeout.Infinite);
+    return 0;
+}
 
 if (args.Length < 3)
 {

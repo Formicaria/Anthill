@@ -30,30 +30,21 @@ public static class AutoApplyRunner
     {
         if (!AnthillRuntime.AutonomyAutoApplyEnabled) return;
 
-        // v2.26.0 pre-V3 hardening: auto-apply consumes the CANONICAL persisted evaluation, at the
-        // writing site itself — not only the Director's flag. A mission without a persisted
-        // completed_verified evaluation cannot have its patches auto-applied, whatever any caller
-        // believed. Defence in depth around the one action that changes the operator's files.
-        var evaluation = queen.Memory.LoadMissionEvaluation(missionId);
-        if (evaluation is null || !evaluation.IsPositive)
-        {
-            queen.Memory.LogEvent(SystemMissionId, "autonomy_autoapply_skipped",
-                $"Auto-apply refused: mission {missionId} has no canonical completed_verified evaluation "
-                + $"(outcome: {evaluation?.OutcomeCode ?? "none persisted"}).",
-                antName: "director",
-                metadata: new() { ["reason"] = "not_canonically_verified", ["mission_id"] = missionId,
-                                  ["outcome_code"] = evaluation?.OutcomeCode });
-            return;
-        }
-
-        // Auto-apply writes to disk — it can't do anything unless the write gates are also on.
-        if (!AnthillRuntime.EnablePatchApplication || !AnthillRuntime.EnableFileWriting)
-        {
-            queen.Memory.LogEvent(SystemMissionId, "autonomy_autoapply_skipped",
-                "Auto-apply is enabled but the write gates (patch_application_enabled / file_writing_enabled) are off.",
-                antName: "director", metadata: new() { ["reason"] = "write_gates_off", ["mission_id"] = missionId });
-            return;
-        }
+        // v0.3.8.94 — THE FOLD THE GATE'S OWN DOCS PROMISED. Three of this method's opening checks
+        // — the canonical evaluation, the write gates, and the rollback-failure marker — moved into
+        // `PatchPromotionGate.Evaluate`, which is consulted below for every eligible proposal as
+        // `PromotionActor.Automation`. They were exact duplicates of the gate's
+        // MissionNotVerified / WriteGatesOff / RollbackHalted conditions — two implementations of
+        // one rule, this repository's defect class 5, and the gate header itself listed this
+        // runner's "nine checks" as the divergence to end. Folding also STRENGTHENS this lane: the
+        // gate additionally refuses on a producing task's deterministic block, an incomplete or
+        // blocking policy review, and a moved workspace — conditions this runner never checked.
+        //
+        // What deliberately stays here, because it is about the SET or the ENVIRONMENT rather than
+        // one proposal's promotability: the writable-workspace probe, the AutoApplyPolicy
+        // allowlist, the set-level evidence CONTENT check (the bytes about to be applied must be
+        // the bytes the evidence judged — a per-proposal gate cannot answer that), the whole-set
+        // preflight, and the durable transaction.
 
         // Preflight: if the workspace root isn't writable (e.g. the source tree is read-only under
         // systemd ProtectSystem=strict), every apply would fail one-by-one. Surface it once, clearly.
@@ -105,26 +96,52 @@ public static class AutoApplyRunner
         }
         if (eligible.Count == 0) return;
 
+        // v0.3.8.94 — THE GATE, AS AUTOMATION, FOR EVERY PROPOSAL. One refusal refuses the set:
+        // it applies as a unit, so it is gated as one. The gate's verdict is typed and names its
+        // layer, and the halted case keeps its own event — an operator must be able to tell "this
+        // run was refused" from "auto-apply is halted until someone resolves the tree".
+        var gateRefusals = new List<string>();
+        var halted = false;
+        foreach (var (patchId, _, _, proposal) in eligible)
+        {
+            var verdict = Anthill.Core.Verification.PatchPromotionGate.Evaluate(
+                queen.Memory, (Anthill.SDK.Artifacts.IEvidenceStore)queen.Memory, patchId,
+                Anthill.Core.Verification.PromotionActor.Automation);
+            if (verdict.Promotable) continue;
+            gateRefusals.Add($"{proposal.FilePath} [{verdict.Layer}]: {verdict.Reason}");
+            halted |= verdict.Refusal == Anthill.Core.Verification.PromotionRefusal.RollbackHalted;
+        }
+        if (gateRefusals.Count > 0)
+        {
+            if (halted)
+                queen.Memory.LogEvent(SystemMissionId, "autonomy_autoapply_halted",
+                    "CRITICAL: auto-apply is halted — a previous batch's rollback did not complete "
+                  + $"(promotion gate, mission {missionId}): " + string.Join(" | ", gateRefusals.Take(3))
+                  + " Inspect the tree, resolve, and delete the marker to re-enable.",
+                    antName: "director",
+                    metadata: new() { ["mission_id"] = missionId, ["severity"] = "critical",
+                                      ["reason"] = "rollback_failed_marker", ["refusals"] = gateRefusals });
+            else
+                queen.Memory.LogEvent(SystemMissionId, "autonomy_autoapply_skipped",
+                    $"Auto-apply refused by the promotion gate for mission {missionId}: "
+                  + $"{gateRefusals.Count} of {eligible.Count} proposal(s) were refused, so none were "
+                  + "applied. " + string.Join(" | ", gateRefusals.Take(5)),
+                    antName: "director",
+                    metadata: new() { ["mission_id"] = missionId, ["reason"] = "promotion_gate_refused",
+                                      ["refused_count"] = gateRefusals.Count, ["refusals"] = gateRefusals });
+            return;
+        }
+
         var verifyCmdConfigured = !string.IsNullOrWhiteSpace(AnthillRuntime.AutonomyAutoApplyVerifyCmd);
         var verifyDescription = verifyCmdConfigured ? AnthillRuntime.AutonomyAutoApplyVerifyCmd
             : (AnthillRuntime.AutonomyAutoApplyKeepWithoutVerify ? "(none — keep without verify)" : "dotnet build && dotnet test");
         var workspace = Directory.Exists(AnthillRuntime.AllowedWorkspaceRoot)
             ? Path.GetFullPath(AnthillRuntime.AllowedWorkspaceRoot) : AnthillRuntime.AllowedWorkspaceRoot;
 
-        // v0.3.8.62 (S4): a previous batch ended in an INCOMPLETE rollback — the tree may hold a
-        // partial apply. That state is durable (a marker file, not a log line) and it is a HALT:
-        // writing more patches on top of a tree in an unknown state converts one incident into a
-        // compound one. An operator inspects, resolves, and deletes the marker to re-enable.
-        if (Anthill.SDK.Common.ApplyTransaction.HasRollbackFailure(workspace))
-        {
-            queen.Memory.LogEvent(SystemMissionId, "autonomy_autoapply_halted",
-                "CRITICAL: auto-apply is halted — a previous batch's rollback did not complete "
-                + $"(ROLLBACK_FAILED marker present under {Anthill.SDK.Common.ApplyTransaction.JournalDirectoryName}). "
-                + "Inspect the tree, resolve, and delete the marker to re-enable.",
-                antName: "director",
-                metadata: new() { ["mission_id"] = missionId, ["severity"] = "critical", ["reason"] = "rollback_failed_marker" });
-            return;
-        }
+        // v0.3.8.94: the rollback-failure HALT moved into the promotion gate (RollbackHalted),
+        // which every proposal above just passed — the durable-marker rule is unchanged, its
+        // checker is now the same one the Apply button and the bypass lane consult, and the
+        // dedicated `autonomy_autoapply_halted` event survives on the gate-refusal path above.
         queen.Memory.LogEvent(missionId, "autonomy_autoapply_started",
             $"Director auto-applying {eligible.Count} eligible patch(es), then verifying with: {verifyDescription}.", antName: "director",
             metadata: new() { ["mission_id"] = missionId, ["eligible_count"] = eligible.Count, ["verify_cmd"] = verifyDescription, ["workspace"] = workspace });
@@ -324,6 +341,15 @@ public static class AutoApplyRunner
     /// no longer matches the hash and is refused, which is the "applies as a unit" rule enforcing
     /// itself. Legacy unidentified evidence stays readable for history and the manual apply path;
     /// what it can no longer do is authorise an unattended write.
+    ///
+    /// v0.3.8.94, its relationship to <c>PatchPromotionGate</c>: the gate (consulted above, per
+    /// proposal, as Automation) is the FLOOR — its evidence-identity condition was written to match
+    /// this method's, deliberately. This method stays because three of its rules are about the SET
+    /// AS A UNIT and a per-proposal gate cannot answer them: every proposal must carry a patch-set
+    /// identity; a deterministic FAILURE beside a pass refuses (mixed rows need a human — the gate
+    /// requires a pass, this additionally forbids a standing objection); and the content hash binds
+    /// the exact bytes about to be written to the exact bytes the evidence judged. Deleting this in
+    /// favour of the gate would silently widen live auto-apply on all three.
     /// </summary>
     internal static List<string> RefuseEvidenceAboutAnotherRevision(
         Anthill.SDK.Artifacts.IEvidenceStore store, string missionId,

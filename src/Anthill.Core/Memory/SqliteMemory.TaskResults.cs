@@ -123,8 +123,9 @@ public sealed partial class SqliteMemory
             Provider = result.Metrics?.Provider,
             Model = result.Metrics?.Model,
             // Same read the failure path uses, so the two agree about what "the tool" means rather
-            // than each deciding for itself.
-            Tool = result.Evidence?.FirstOrDefault(e => e.Kind == "tool")?.Value,
+            // than each deciding for itself. v0.3.8.94: both reads finally have a producer — the
+            // measurement boundary writes the registry's dispatch record as kind-"tool" evidence.
+            Tool = result.Evidence?.FirstOrDefault(e => e.Kind == Agents.AntEvidenceKinds.Tool)?.Value,
             ModelCalls = result.Metrics?.ModelCalls ?? 0,
             ToolCalls = result.Metrics?.ToolCalls ?? 0,
             // From the CALL COUNT, not from whether a model name survived. A model call that happened

@@ -1309,27 +1309,27 @@ public sealed class VerifierAnt : BaseAnt
     {
         var rows = new List<AntEvidence>
         {
-            new("verification_verdict", verdict, Outcomes.VerificationVerdict.Explain(verdict)),
+            new(AntEvidenceKinds.VerificationVerdict, verdict, Outcomes.VerificationVerdict.Explain(verdict)),
         };
         if (storeFailed)
         {
             // The source row says WHY there is no basis, so an operator reading the report can tell
             // "the store was down" from "nobody produced evidence" — the second is a mission
             // property, the first is an incident.
-            rows.Add(new("verdict_source", "evidence_store_unavailable",
+            rows.Add(new(AntEvidenceKinds.VerdictSource, "evidence_store_unavailable",
                 $"the evidence store exists and could not be read: {storeError}"));
             return rows;
         }
         if (fromEvidence is null) return rows;
 
-        rows.Add(new("verdict_source", "evidence_store", fromEvidence.Explanation));
+        rows.Add(new(AntEvidenceKinds.VerdictSource, "evidence_store", fromEvidence.Explanation));
 
         // The model's own reading, kept and explicitly subordinate. Discarding it would lose the one
         // thing a model is genuinely good at here — explaining WHY something looks wrong — and
         // recording it as an override makes the disagreement auditable rather than invisible.
         var modelRead = Outcomes.VerificationVerdict.Parse(modelText);
         if (modelRead != verdict)
-            rows.Add(new("model_verdict_overridden", modelRead,
+            rows.Add(new(AntEvidenceKinds.ModelVerdictOverridden, modelRead,
                 $"the model read '{modelRead}'; the evidence supports '{verdict}', and the evidence decides"));
 
         return rows;

@@ -83,6 +83,16 @@ public class ProcessDeathMidApplyTests : IDisposable
             UseShellExecute = false, CreateNoWindow = true,
         };
         start.ArgumentList.Add("exec");
+        // v0.3.8.94 — the helper resolves its assemblies from the TEST SUITE's dependency closure.
+        // The helper now references Anthill.Core (the intent-journal crash mode drives the real
+        // SqliteMemory API), and `dotnet exec` against the helper's own deps.json failed to load
+        // Core's transitive packages from the test output directory — on every OS, killing both
+        // this matrix and scenario 17 in the same run. The tests' deps.json describes exactly the
+        // closure sitting in this directory, so the helper runs under it.
+        start.ArgumentList.Add("--depsfile");
+        start.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "Anthill.Tests.deps.json"));
+        start.ArgumentList.Add("--runtimeconfig");
+        start.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "Anthill.Tests.runtimeconfig.json"));
         start.ArgumentList.Add(HelperPath());
         start.ArgumentList.Add(_root);
         start.ArgumentList.Add(sentinel);
@@ -165,6 +175,16 @@ public class ProcessDeathMidApplyTests : IDisposable
             UseShellExecute = false, CreateNoWindow = true,
         };
         start.ArgumentList.Add("exec");
+        // v0.3.8.94 — the helper resolves its assemblies from the TEST SUITE's dependency closure.
+        // The helper now references Anthill.Core (the intent-journal crash mode drives the real
+        // SqliteMemory API), and `dotnet exec` against the helper's own deps.json failed to load
+        // Core's transitive packages from the test output directory — on every OS, killing both
+        // this matrix and scenario 17 in the same run. The tests' deps.json describes exactly the
+        // closure sitting in this directory, so the helper runs under it.
+        start.ArgumentList.Add("--depsfile");
+        start.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "Anthill.Tests.deps.json"));
+        start.ArgumentList.Add("--runtimeconfig");
+        start.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "Anthill.Tests.runtimeconfig.json"));
         start.ArgumentList.Add(HelperPath());
         start.ArgumentList.Add(_root);
         start.ArgumentList.Add(sentinel);
