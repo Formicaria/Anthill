@@ -95,13 +95,23 @@ public class StructuredOutputTests
           + "fitness row will have warned anyone that it mattered.");
     }
 
-    /// <summary>The schema constant is actually passed at the call site, on every path.</summary>
+    /// <summary>
+    /// The schema constant is actually passed at the call site, on every path that parses.
+    ///
+    /// v0.3.8.95 — the coder gained a third call path, and it is EXEMPT by design rather than by
+    /// oversight: the ACTING turn (ExecuteActing) drives an agent CLI that edits the worktree, its
+    /// reply is a narrative nothing parses, and success is classified from the tree
+    /// (ClassifyActingOutcome), not the text. Forcing PatchSetSchema onto that turn would demand
+    /// JSON from a call whose output is deliberately not consumed as structure. So the two counts
+    /// are now separate parameters: every call path is still counted (a NEW one still fails here
+    /// and must be classified as parsing or acting), and every PARSING path must carry the schema.
+    /// </summary>
     [Theory]
-    [InlineData("coder", "Anthill.Core|Agents|Ants.cs", "PatchSetSchema", 2)]
-    [InlineData("planner", "Anthill.Core|Planning|Planner.cs", "PlanSchema", 1)]
-    [InlineData("strategist", "Anthill.Core|Autonomy|Strategist.cs", "ObjectiveProposalSchema", 1)]
+    [InlineData("coder", "Anthill.Core|Agents|Ants.cs", "PatchSetSchema", 3, 2)]
+    [InlineData("planner", "Anthill.Core|Planning|Planner.cs", "PlanSchema", 1, 1)]
+    [InlineData("strategist", "Anthill.Core|Autonomy|Strategist.cs", "ObjectiveProposalSchema", 1, 1)]
     public void TheSchemaIsPassed_OnEveryCallPathOfTheRoute(
-        string route, string path, string constant, int callPaths)
+        string route, string path, string constant, int callPaths, int schemaPaths)
     {
         var source = Src(path.Split('|'));
 
@@ -113,8 +123,9 @@ public class StructuredOutputTests
           + "wrong once.");
 
         var withSchema = Regex.Matches(source, $@"schema:\s*{constant}").Count;
-        Assert.True(withSchema == callPaths,
-            $"'{route}' passes `schema: {constant}` on {withSchema} of its {callPaths} call path(s).");
+        Assert.True(withSchema == schemaPaths,
+            $"'{route}' passes `schema: {constant}` on {withSchema} of its {callPaths} call path(s); "
+          + $"this test expects exactly {schemaPaths} parsing path(s).");
     }
 
     // -----------------------------------------------------------------------------------------------

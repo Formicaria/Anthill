@@ -168,6 +168,13 @@ public sealed class AnthillConfig
     [JsonPropertyName("answer_synthesis_enabled")] public bool AnswerSynthesisEnabled { get; set; } = true;
     [JsonPropertyName("sandbox_execution_enabled")] public bool SandboxExecutionEnabled { get; set; } = false;
     /// <summary>
+    /// v0.3.8.95: the acting coder — a coder task routed to an agent CLI edits the mission's
+    /// isolated worktree directly instead of emitting patch JSON. The diff is captured into the
+    /// one patch pipeline while the task graph is open; the promotion gate still owns the live
+    /// checkout. Default off — acting is the operator's decision.
+    /// </summary>
+    [JsonPropertyName("acting_coder_enabled")] public bool ActingCoderEnabled { get; set; } = false;
+    /// <summary>
     /// The roster profile: one switch instead of nine. v3.8.26.
     ///
     /// Turning the colony on required setting `specialist_ant_execution_enabled`, an activation

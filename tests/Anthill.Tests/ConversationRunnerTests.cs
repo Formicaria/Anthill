@@ -25,6 +25,10 @@ public class ConversationRunnerTests : IDisposable
     private readonly SqliteMemory _memory;
     private int _missionsStarted;
     private CancellationToken _lastToken;
+    /// <summary>v0.3.8.95: what the pipeline was told about the conversation's project —
+    /// captured from the delegate itself, so a test asserts what the producer actually
+    /// delivered across the boundary rather than what the caller intended to deliver.</summary>
+    private string? _lastProjectId;
 
     /// <summary>
     /// Holds the fake mission OPEN until a test lets it finish.
@@ -61,10 +65,11 @@ public class ConversationRunnerTests : IDisposable
     /// then keeps working, so the runner can record history without waiting for the work to finish.
     /// A fake that only returned the id would test a pipeline that does not exist.
     /// </summary>
-    private ConversationRunner Runner() => new(_memory, (_, onCreated, token) =>
+    private ConversationRunner Runner() => new(_memory, (_, projectId, onCreated, token) =>
     {
         var id = $"mission-{Interlocked.Increment(ref _missionsStarted)}";
         _lastToken = token;
+        _lastProjectId = projectId;
 
         // The id is reported IMMEDIATELY — that is the contract the runner depends on — and then the
         // mission keeps running, exactly as the real pipeline does.
@@ -90,6 +95,46 @@ public class ConversationRunnerTests : IDisposable
 
     private static Dictionary<string, string> Approve() =>
         new(StringComparer.OrdinalIgnoreCase) { [ConversationRunner.StartMissionAction] = "approve" };
+
+    // ---- the project crosses into the pipeline ----------------------------------------------
+
+    /// <summary>
+    /// v0.3.8.95 — the conversation's PROJECT reaches the mission pipeline as data. Asserted from
+    /// the pipeline delegate's own captured argument (the consumer's view of the producer's
+    /// value), because this crossing existed nowhere before: the handoff dropped the project on
+    /// the floor and every mission's workspace was cut from the one configured repository.
+    /// </summary>
+    [Fact]
+    public void TheConversationsProject_TravelsIntoTheMissionPipeline()
+    {
+        var conversation = new Conversation
+        {
+            Id = "c-proj", Role = "queen", Policy = EscalationPolicy.Bypass,
+            // Attributed, as Chat() attributes it — an unattributed standing policy fails closed
+            // to Ask, which would refuse this run and test the gate rather than the crossing.
+            PolicySetBy = "zwright", PolicySetAt = DateTime.UtcNow,
+            ProjectId = "proj-9",
+        };
+        _memory.SaveConversation(conversation);
+        var runner = Runner();
+
+        Assert.True(runner.Run(conversation, "work inside the project", ConversationMode.Mission).Started);
+        _release.Set();
+        Assert.Equal("proj-9", _lastProjectId);
+    }
+
+    /// <summary>And a conversation without one delivers null — never "" and never a guess.</summary>
+    [Fact]
+    public void AProjectlessConversation_DeliversNullToThePipeline()
+    {
+        var runner = Runner();
+        _lastProjectId = "sentinel-not-cleared";
+
+        Assert.True(runner.Run(Chat(EscalationPolicy.Bypass), "work with no project",
+            ConversationMode.Mission).Started);
+        _release.Set();
+        Assert.Null(_lastProjectId);
+    }
 
     // ---- every message is a mission ---------------------------------------------------------
 
@@ -138,7 +183,7 @@ public class ConversationRunnerTests : IDisposable
     public void TheOperatorsMessage_IsTheMissionGoal()
     {
         string? goal = null;
-        var runner = new ConversationRunner(_memory, (g, onCreated, _) => { goal = g; onCreated("m1"); return "m1"; });
+        var runner = new ConversationRunner(_memory, (g, _, onCreated, _) => { goal = g; onCreated("m1"); return "m1"; });
 
         runner.Run(Chat(EscalationPolicy.Bypass), "make the header sticky", ConversationMode.Mission);
 
@@ -155,7 +200,7 @@ public class ConversationRunnerTests : IDisposable
     public void AnAttachment_TravelsIntoTheMissionGoal()
     {
         string? goal = null;
-        var runner = new ConversationRunner(_memory, (g, onCreated, _) => { goal = g; onCreated("m1"); return "m1"; });
+        var runner = new ConversationRunner(_memory, (g, _, onCreated, _) => { goal = g; onCreated("m1"); return "m1"; });
 
         runner.Run(Chat(EscalationPolicy.Bypass), "implement this", ConversationMode.Mission,
             attachments: new[] { ("spec.md", "The header must stay pinned on scroll.") });
@@ -172,7 +217,7 @@ public class ConversationRunnerTests : IDisposable
     public void AnOversizedAttachment_IsTruncatedOutLoud()
     {
         string? goal = null;
-        var runner = new ConversationRunner(_memory, (g, onCreated, _) => { goal = g; onCreated("m1"); return "m1"; });
+        var runner = new ConversationRunner(_memory, (g, _, onCreated, _) => { goal = g; onCreated("m1"); return "m1"; });
 
         runner.Run(Chat(EscalationPolicy.Bypass), "read it", ConversationMode.Mission,
             attachments: new[] { ("big.txt", new string('x', 20_000)) });
@@ -528,7 +573,7 @@ public class ConversationRunnerTests : IDisposable
     [InlineData("a mission id with spaces")]
     public void AReportReportedWhereAnIdWasExpected_IsNotLinked(string notAnId)
     {
-        var runner = new ConversationRunner(_memory, (_, onCreated, _) =>
+        var runner = new ConversationRunner(_memory, (_, _, onCreated, _) =>
         {
             onCreated(notAnId);
             return notAnId;
@@ -550,7 +595,7 @@ public class ConversationRunnerTests : IDisposable
     public void ARealMissionId_IsStillLinked()
     {
         var id = Guid.NewGuid().ToString();
-        var runner = new ConversationRunner(_memory, (_, onCreated, _) => { onCreated(id); return id; });
+        var runner = new ConversationRunner(_memory, (_, _, onCreated, _) => { onCreated(id); return id; });
 
         Assert.Equal(id, runner.Run(Chat(EscalationPolicy.Bypass), "go", ConversationMode.Mission).MissionId);
     }
@@ -600,13 +645,18 @@ public class ConversationRunnerTests : IDisposable
     /// v0.3.8.48, found live: the mission settled, its answer sat in mission history, and the chat
     /// that started it showed nothing. When the pipeline finishes, the mission's result becomes the
     /// conversation's next turn — asked in chat, answered in chat.
+    ///
+    /// v0.3.8.95: the turn now leads with the answer and carries the COMPILED MISSION RECORD
+    /// beneath it — MissionReport's projection of the rows, the artifact that had writers and no
+    /// reader. This mission has no evaluation persisted, and the record must SAY so ("none
+    /// persisted") rather than invent one: honest absence is part of what is under test.
     /// </summary>
     [Fact]
     public void ASettledMissionsAnswer_LandsInTheConversation()
     {
         var conversation = Chat(EscalationPolicy.Bypass);
         var id = Guid.NewGuid().ToString();
-        var runner = new ConversationRunner(_memory, (_, onCreated, _) =>
+        var runner = new ConversationRunner(_memory, (_, _, onCreated, _) =>
         {
             onCreated(id);
             // The pipeline saves the settled mission BEFORE returning, as the Queen does.
@@ -630,7 +680,9 @@ public class ConversationRunnerTests : IDisposable
         }
 
         Assert.NotNull(answer);
-        Assert.Equal("OK", answer!.Content);
+        Assert.StartsWith("OK", answer!.Content, StringComparison.Ordinal);
+        Assert.Contains("=== MISSION RECORD", answer.Content, StringComparison.Ordinal);
+        Assert.Contains("outcome_code: none persisted", answer.Content, StringComparison.Ordinal);
         Assert.Equal(id, answer.MissionId);
     }
 
@@ -641,7 +693,7 @@ public class ConversationRunnerTests : IDisposable
         var conversation = Chat(EscalationPolicy.Bypass);
         var id = Guid.NewGuid().ToString();
         var pipelineDone = new ManualResetEventSlim(false);
-        var runner = new ConversationRunner(_memory, (_, onCreated, _) =>
+        var runner = new ConversationRunner(_memory, (_, _, onCreated, _) =>
         {
             onCreated(id);
             _memory.SaveMission(new Anthill.Core.Domain.Mission
