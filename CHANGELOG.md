@@ -1,3 +1,58 @@
+## v0.3.8.96 - what the live run taught, closed while the transcript was still warm
+
+Seven findings from the first passing acting-coder qualification run (mission 3bbbde32,
+`completed_verified`, 41.6s — and the six runs before it that each failed for a reason worth
+keeping). Every fix below is something the LIVE colony did that no test had asked about.
+
+**A route save now survives the restart it never survived before.** `POST /routes/{role}` mutated
+the live `ModelRouting` dictionary and then called `SaveConfig` — which serializes the `Config`
+OBJECT, whose `ModelRoutes` the handler never touched. Every save wrote the stale routes back to
+disk; a route lived exactly until the next restart, and no test noticed because the mutate and the
+save each worked. The house defect, one more time: two halves of one update that never meet.
+`AnthillRuntime.SetModelRoute` owns both halves under the settings lock now, the API calls it, and
+a source-position test holds the two writes and the save in order.
+
+**Editing a config file the host does not read is now a WARNING, not a mystery.** The operator
+enabled `acting_coder_enabled` in `data/anthill.json` — a file no current version loads — and
+spent a full mission with the flag true in the relic and false in the runtime. Startup now names
+every known legacy config location that still exists and says plainly: the active config is
+THIS path, changes in the old file do nothing. The relic itself is deleted from the operator's
+tree with this release.
+
+**The acting gate is on the settings surface.** `acting_coder_enabled` existed, the JSON key
+existed, and `EditableConfigKeys` did not include it — so turning the acting coder on took a
+manual file edit plus a restart, twice, live. It is an editable key now, and the settings
+snapshot reports it.
+
+**"ui" is a word, not a letter pair.** The UI gate's goal signal matched `ui` as a bare
+substring, which lives inside "b·ui·ld" — so the moment a conversation's transcript said "Build
+final response" (every mission's plan does), the composed goal of every LATER mission in that
+conversation tripped the gate, and a docs-file change was refused for having no frontend map.
+Two live runs, two different planners, same refusal, before the substring was suspected. `ui` is
+now a word-boundary match of its own; the other signal words keep their substring semantics,
+which are intended ("webpage", "pages").
+
+**The capture no longer proposes the colony's own scaffolding.** ANTHILL materializes the agent
+CLI's settings file into the mission worktree — and then diffed the worktree and proposed its own
+scaffolding to the operator as the mission's work, in every change set, where it tripped the
+soldier's script rule and would, on approval, have been applied into the operator's repository.
+`WorkspaceChangeSet` now excludes the materialized settings path in both discovery loops and in
+`ChangedPaths` — so scaffolding can neither ride a patch set nor make an idle acting turn look
+like work. Core cannot reference the provider module, so the path is duplicated with a test
+holding the two constants equal.
+
+**A refused check is readable where checks are declared.** The check resolver's refusals
+(`dotnet_build` collides with a built-in id — the rule is right) printed to a console nobody was
+watching while the settings surface showed nothing. The refusals are kept on the runtime now and
+reported in the settings snapshot beside the checks that actually govern
+(`workspace_checks_active`, `workspace_check_problems`).
+
+**Recorded, not changed, because they were the system working:** the suite failing the revision
+whose mission overwrote `docs/QUALIFICATION.md` (the goal's filename collided with the
+qualification spec itself — the guard caught the vandalism inside the revision, exactly as
+built); the promotion gate refusing to bypass-apply unverified work under Skip-all; and the
+built-in check-id collision rule that forced the operator's check to take its own name.
+
 ## v0.3.8.95 - the acting colony: the mission works where the project lives
 
 Driven by a live qualification attempt, which found its first defect before the first route was
