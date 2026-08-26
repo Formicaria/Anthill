@@ -32,9 +32,23 @@ public static class UiChangeGate
 {
     /// <summary>
     /// The goal-text signal. Shared with the planner rather than copied — see the class remarks.
+    ///
+    /// v0.3.8.96 — "ui" left this list for a word-boundary regex of its own. As a bare substring it
+    /// matched inside "b<b>ui</b>ld", "builder", "guide" and "quite" — so the moment a
+    /// conversation's transcript said "Build final response" (which every mission's plan does), the
+    /// composed goal of every LATER mission in that conversation tripped the gate, and a docs-file
+    /// change was refused for having no frontend map. Found live, twice, with two different
+    /// planners, before the substring was suspected: the goal that passed had an empty transcript
+    /// and the goals that failed carried one. The other words stay substring matches on purpose —
+    /// "page" is meant to catch "webpage" and "pages" — because none of them hides inside common
+    /// English the way "ui" does.
     /// </summary>
     private static readonly string[] GoalWords =
-        { "ui", "frontend", "page", "css", "html", "javascript", "dashboard", "canvas" };
+        { "frontend", "page", "css", "html", "javascript", "dashboard", "canvas" };
+
+    /// <summary>"ui" as a WORD — <c>\bui\b</c> — never as two letters inside another word.</summary>
+    private static readonly Regex UiWord = new(@"\bui\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     /// <summary>
     /// The PATH signal, which is the half that was missing. Matches paths a task names in its title
@@ -58,6 +72,7 @@ public static class UiChangeGate
     {
         var lowered = (goal ?? "").ToLowerInvariant();
         if (GoalWords.Any(lowered.Contains)) return true;
+        if (UiWord.IsMatch(lowered)) return true;
 
         var text = taskText ?? "";
         return UiPath.IsMatch(text);
