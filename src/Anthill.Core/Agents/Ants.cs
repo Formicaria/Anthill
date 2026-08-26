@@ -768,6 +768,17 @@ public sealed class CoderAnt : BaseAnt
             return AntExecutionResult.Failed(FailureClass.TransientProviderFailure,
                 "Coder cannot produce patch proposals: model routing/LLM generation is unavailable.");
 
+        // v0.3.8.95 — ACTING MODE. Three conditions, each load-bearing: the operator turned the
+        // gate on; the mission holds a usable isolated worktree (acting with nowhere isolated to
+        // act is the defect the workspace exists to prevent, so its absence falls through to
+        // propose-only rather than to a worse place); and the routed provider is an agent CLI —
+        // the only kind of provider with hands. A local model routed to coder keeps proposing
+        // JSON: it cannot edit a file, and pretending otherwise would classify its prose as work.
+        if (AnthillRuntime.EnableActingCoder
+            && Anthill.Core.Workspaces.MissionWorkspaceScope.CurrentRoot is { } actingTree
+            && _router.GetRoute("coder").Provider.StartsWith("agent:", StringComparison.OrdinalIgnoreCase))
+            return ExecuteActing(task, mission, codeContext, actingTree);
+
         // v2.11.1: when the sandbox gate is on, iterate inside a disposable sandbox (propose ->
         // apply IN THE SANDBOX -> build -> refine on failure) and return proposals that verified —
         // the same patch JSON the approval pipeline already consumes. The live workspace is never
@@ -786,6 +797,101 @@ public sealed class CoderAnt : BaseAnt
                 $"Coder could not reach the routed model ({call.Status.Name()}) — no patch proposals created. {TextUtil.Truncate(call.Content, 300)}");
         return ClassifyPatchJson(call.Content);
     }
+
+    /// <summary>
+    /// v0.3.8.95 — the artifact kind an acting turn carries. ExecutionService branches its coder
+    /// post-processing on exactly this: the producer states what kind of result it made, and the
+    /// consumer reads the statement rather than re-deriving config and routing on its own.
+    /// </summary>
+    public const string WorkspaceEditReportKind = "workspace_edit_report";
+
+    /// <summary>
+    /// v0.3.8.95 — the marker an acting coder uses to state, deliberately, that the task required
+    /// no change. A distinct token rather than inferred intent: "the tree is clean because nothing
+    /// was needed" and "the tree is clean because the agent did nothing" must never be the same
+    /// observation.
+    /// </summary>
+    public const string NoChangesMarker = "NO_CHANGES_NEEDED";
+
+    private const string ActingCoderRules =
+        "Your role:\nImplement the assigned task by editing files directly in your working directory.\n\n"
+      + "Your working directory is an ISOLATED git worktree prepared for this mission. Nothing you "
+      + "change here reaches the live checkout: ANTHILL diffs this tree afterwards, the diff becomes "
+      + "a reviewed patch set verified in its own revision, and the promotion gate owns the only "
+      + "road to the real repository.\n\n"
+      + "Rules:\n"
+      + "- Edit real files, in place, relative to the working directory. Create files where the task needs them.\n"
+      + "- Do not run builds, tests, or git — ANTHILL's tester runs the checks afterwards, against your changes.\n"
+      + "- Do not commit; leave your work as uncommitted changes for the diff.\n"
+      + "- When done, reply with a short factual summary of WHAT you changed and WHY.\n"
+      + "- If, after examining the code, the task genuinely requires no change, reply with the single "
+      + "marker " + NoChangesMarker + " followed by one sentence explaining why.";
+
+    /// <summary>
+    /// One acting turn: the routed agent CLI works directly in the mission worktree (it is already
+    /// confined there — the provider resolves its working directory from the ambient access scope),
+    /// and the outcome is judged from the TREE. The model call and the classification are separate
+    /// so the classifier stays a pure function a test can hold still.
+    /// </summary>
+    private AntExecutionResult ExecuteActing(Task task, Mission mission, string codeContext, string workspaceRoot)
+    {
+        var call = _router!.GenerateTyped("coder", BuildActingPrompt(task, mission, codeContext),
+            mission.Id, task.Id, Name,
+            system: AnthillRuntime.RoleSystemPrompt("coder", mission.Goal, ActingCoderRules));
+        if (!call.Ok)
+            return AntExecutionResult.Failed(FailureClass.TransientProviderFailure,
+                $"Acting coder could not reach the routed provider ({call.Status.Name()}) — no work performed. "
+                + TextUtil.Truncate(call.Content, 300));
+
+        var changed = Anthill.Core.Workspaces.WorkspaceChangeSet.ChangedPaths(workspaceRoot);
+        return ClassifyActingOutcome(call.Content, changed);
+    }
+
+    /// <summary>
+    /// v0.3.8.95 — classify an acting turn from the DISK, not the prose. Changes on disk are the
+    /// deliverable regardless of what was said; a clean tree succeeds only when the agent declared
+    /// <see cref="NoChangesMarker"/>, and a clean tree with a story about edits is a failure that
+    /// says so. The narrative rides along as the artifact either way — the reviewers read it, they
+    /// just never grade by it.
+    /// </summary>
+    internal static AntExecutionResult ClassifyActingOutcome(string response, IReadOnlyList<string> changedPaths)
+    {
+        var text = response ?? "";
+        if (changedPaths.Count > 0)
+            return AntExecutionResult.Succeeded(
+                $"Acting coder changed {changedPaths.Count} file(s) in the mission workspace.", text) with
+            {
+                Artifacts = new List<AntArtifact>
+                {
+                    new(WorkspaceEditReportKind, "acting coder report", text.Length > 0 ? text : "(no narrative)"),
+                },
+                Metrics = new AntMetrics { OutputChars = text.Length },
+            };
+
+        if (text.Contains(NoChangesMarker, StringComparison.Ordinal))
+            return AntExecutionResult.Succeeded(
+                "Acting coder examined the workspace and declared no changes were needed.", text) with
+            {
+                Artifacts = new List<AntArtifact> { new(WorkspaceEditReportKind, "acting coder report", text) },
+                Metrics = new AntMetrics { OutputChars = text.Length },
+            };
+
+        return AntExecutionResult.Failed(FailureClass.InternalDefect,
+            "Acting coder finished without changing any file and without declaring "
+            + NoChangesMarker + " — a clean tree with a work narrative is not a completed code task. "
+            + TextUtil.Truncate(text, 300));
+    }
+
+    private static string BuildActingPrompt(Task task, Mission mission, string codeContext) =>
+        $@"Mission goal:
+{mission.Goal}
+
+Assigned task:
+{task.Title}
+{task.Description}
+
+Prior context:
+{codeContext}";
 
     /// <summary>Classify the coder's own JSON artifact by its proposal count: proposals → success;
     /// well-formed but empty → failed (the deliverable does not exist — an intentionally empty
