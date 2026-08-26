@@ -303,7 +303,7 @@ public class AgentAccessTests : IDisposable
         var conversation = new Conversation { Id = "c-esc", Role = "queen", Policy = EscalationPolicy.Ask };
         _memory.SaveConversation(conversation);
         var runner = new ConversationRunner(_memory,
-            (_, onCreated, _) => { onCreated("m-should-not-run"); return "m-should-not-run"; });
+            (_, _, onCreated, _) => { onCreated("m-should-not-run"); return "m-should-not-run"; });
 
         var outcome = runner.Run(conversation, "run the self-check and fix what you find");
 
@@ -327,7 +327,7 @@ public class AgentAccessTests : IDisposable
         };
         _memory.SaveConversation(conversation);
         var missionId = Guid.NewGuid().ToString();
-        var runner = new ConversationRunner(_memory, (_, onCreated, _) => { onCreated(missionId); return missionId; });
+        var runner = new ConversationRunner(_memory, (_, _, onCreated, _) => { onCreated(missionId); return missionId; });
 
         var outcome = runner.Run(conversation, "fix the failing build");
 
@@ -357,7 +357,7 @@ public class AgentAccessTests : IDisposable
             PolicySetBy = "zwright", PolicySetAt = DateTime.UtcNow,
         };
         _memory.SaveConversation(conversation);
-        var runner = new ConversationRunner(_memory, (_, onCreated, _) => { onCreated("m-q"); return "m-q"; });
+        var runner = new ConversationRunner(_memory, (_, _, onCreated, _) => { onCreated("m-q"); return "m-q"; });
 
         var outcome = runner.Run(conversation, "what is the capital of France?");
 
@@ -379,7 +379,7 @@ public class AgentAccessTests : IDisposable
         _memory.SaveConversationTurn(new ConversationTurn("t2", "c-goal", 2, "assistant",
             "Two improvements: implement patch delete in PatchApply.cs, and add escaping tests."));
 
-        var runner = new ConversationRunner(_memory, (_, _, _) => "unused");
+        var runner = new ConversationRunner(_memory, (_, _, _, _) => "unused");
         var goal = runner.ComposeMissionGoal(conversation, "Make all of these changes");
 
         Assert.StartsWith("Make all of these changes", goal);
@@ -438,7 +438,7 @@ public class AgentAccessTests : IDisposable
 
         // The mission pipeline is faked, so nothing downstream runs either: the only thing that
         // could write here is the conversation lane itself, which is the thing being tested.
-        var runner = new ConversationRunner(_memory, (_, onCreated, _) => { onCreated("m-1"); return "m-1"; });
+        var runner = new ConversationRunner(_memory, (_, _, onCreated, _) => { onCreated("m-1"); return "m-1"; });
         Assert.True(runner.Run(conversation, "add colony.txt with a note").Started);
 
         var after = Anthill.Core.Projects.RepoOps.Describe(root);

@@ -15,7 +15,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "0.3.8.94";
+    public const string Version = "0.3.8.95";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -76,6 +76,13 @@ public static class AnthillRuntime
         ["read_tasks"] = true, ["read_messages"] = true, ["read_communication"] = true, ["read_graph"] = true,
         ["read_graph_results"] = false, ["read_selftest"] = true, ["read_config"] = true, ["read_schema"] = true,
         ["read_pheromones"] = true, ["read_models"] = true, ["read_sources"] = true, ["read_patches"] = true,
+        // v0.3.8.95 — manage_models EXISTS NOW. POST /routes/{role} has required it since routes
+        // became writable, but the key was never added here, and ApiPermissionAllowed answers
+        // false for any absent key — so every route write 403'd for everyone, admin included, and
+        // the Roles page could render a selector nobody could save. Found live, driving a real
+        // qualification run: the first attempt to route the coder to Claude Code was refused by a
+        // permission that could not be granted.
+        ["manage_models"] = true,
         ["read_approvals"] = true,
         // Autonomy (Phase 1). Control + management are gated again by autonomy_enabled at runtime.
         ["read_autonomy"] = true, ["read_objectives"] = true, ["manage_objectives"] = true, ["autonomy_control"] = true,
@@ -419,6 +426,16 @@ public static class AnthillRuntime
     /// output whenever the model is unavailable, so a mission is never left answerless.</summary>
     public static bool EnableAnswerSynthesis = true;
     public static bool EnableSandboxExecution = false;
+    /// <summary>
+    /// v0.3.8.95 — the ACTING coder. Off, the coder proposes patch JSON and nothing in a mission
+    /// edits a file (the shipped behaviour since v2.26.0). On, a coder task whose mission holds a
+    /// usable workspace AND whose route resolves to an agent CLI does the work directly IN that
+    /// worktree — the CLI is confined there by the access scope, success is classified from the
+    /// tree, the diff is captured into the one patch pipeline while the task graph is still open,
+    /// and the promotion gate still owns the only road to the live checkout. Default off: acting
+    /// is a posture the operator turns on, never one a release turns on for them.
+    /// </summary>
+    public static bool EnableActingCoder = false;
     public static bool EnableSpecialistAntExecution = false;
     /// <summary>
     /// v2.22.0 Phase D: the activation ceiling. Per-role flags apply on top of it.
@@ -1033,6 +1050,7 @@ public static class AnthillRuntime
         config.DashboardWorkspaceEnabled = EnableDashboardWorkspace;   // make it explicit on next save
         EnableAnswerSynthesis = config.AnswerSynthesisEnabled;
         EnableSandboxExecution = config.SandboxExecutionEnabled;
+        EnableActingCoder = config.ActingCoderEnabled;
         EnableSpecialistAntExecution = config.SpecialistAntExecutionEnabled;
         ActivationTier = Agents.ActivationTiers.Parse(config.ActivationTier);
         EnableObjectiveVerification = config.ObjectiveVerificationEnabled;
@@ -1378,6 +1396,7 @@ public static class AnthillRuntime
         ["model_pricing_configured"] = ModelPricingTable.Count > 0,
         ["web_search_enabled"] = EnableWebSearch,
         ["patch_application_enabled"] = EnablePatchApplication,
+        ["acting_coder_enabled"] = EnableActingCoder,
         ["homelab_enabled"] = EnableHomelab,
         ["homelab_scheduler_enabled"] = EnableHomelabScheduler,
         ["homelab_mock_providers_enabled"] = EnableHomelabMockProviders,

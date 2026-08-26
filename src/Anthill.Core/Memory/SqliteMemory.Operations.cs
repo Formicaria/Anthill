@@ -86,10 +86,11 @@ public sealed partial class SqliteMemory
             using var conn = Connect();
             using var tx = conn.BeginTransaction();
             NonQuery(conn, tx,
-                @"INSERT OR REPLACE INTO missions (id, goal, status, user_result, debug_result, final_result,
+                @"INSERT OR REPLACE INTO missions (id, goal, status, project_id, user_result, debug_result, final_result,
                     best_output_task_id, success_score, created_at, saved_at)
-                  VALUES (@id, @goal, @status, @ur, @dr, @fr, @best, @score, @created, @saved)",
+                  VALUES (@id, @goal, @status, @proj, @ur, @dr, @fr, @best, @score, @created, @saved)",
                 ("@id", mission.Id), ("@goal", mission.Goal), ("@status", mission.Status.Value()),
+                ("@proj", mission.ProjectId),
                 ("@ur", mission.UserResult), ("@dr", mission.DebugResult), ("@fr", mission.FinalResult),
                 ("@best", mission.BestOutputTaskId), ("@score", mission.SuccessScore),
                 ("@created", mission.CreatedAt.ToIso()), ("@saved", AnthillTime.NowUtc().ToIso()));
@@ -168,9 +169,10 @@ public sealed partial class SqliteMemory
             using var conn = Connect();
             using var tx = conn.BeginTransaction();
             NonQuery(conn, tx,
-                @"INSERT OR REPLACE INTO patch_sets (id, mission_id, task_id, summary, proposal_count, created_at)
-                  VALUES (@id, @mid, @tid, @summary, @count, @created)",
+                @"INSERT OR REPLACE INTO patch_sets (id, mission_id, task_id, workspace_id, summary, proposal_count, created_at)
+                  VALUES (@id, @mid, @tid, @wid, @summary, @count, @created)",
                 ("@id", patchSet.Id), ("@mid", patchSet.MissionId), ("@tid", patchSet.TaskId),
+                ("@wid", patchSet.WorkspaceId),
                 ("@summary", patchSet.Summary), ("@count", patchSet.Proposals.Count), ("@created", patchSet.CreatedAt.ToIso()));
 
             foreach (var p in patchSet.Proposals)
@@ -913,8 +915,19 @@ public sealed partial class SqliteMemory
     // ---- mission reads / memory views ------------------------------------
 
     public Dictionary<string, object?>? GetMission(string missionId) =>
-        Query(@"SELECT id, goal, status, user_result, debug_result, final_result, best_output_task_id,
+        Query(@"SELECT id, goal, status, project_id, user_result, debug_result, final_result, best_output_task_id,
                   success_score, created_at, saved_at FROM missions WHERE id = @id", ("@id", missionId)).FirstOrDefault();
+
+    /// <summary>
+    /// v0.3.8.95 — whether a workspace-derived patch set already exists for this mission and
+    /// workspace. The acting-coder path captures the workspace diff at coder-task completion
+    /// (while the task graph is still open, so reviewers can be inserted); finalization asks this
+    /// before harvesting again, so one workspace's changes become one patch set, not two.
+    /// </summary>
+    public bool HasPatchSetForWorkspace(string missionId, string workspaceId) =>
+        AsLong(Scalar(
+            "SELECT COUNT(*) FROM patch_sets WHERE mission_id = @m AND workspace_id = @w",
+            ("@m", missionId), ("@w", workspaceId))) > 0;
 
     public List<Dictionary<string, object?>> GetTasksForMission(string missionId, int limit = 200) =>
         Query(@"SELECT id, mission_id, title, description, assigned_ant, assigned_worker, task_type, parent_task_id,
