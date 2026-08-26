@@ -38,6 +38,10 @@ public static class WorkspaceChangeSet
         {
             MissionId = missionId ?? "",
             TaskId = taskId ?? "",
+            // v0.3.8.95: attribution — this producer diffs a workspace, so it is the one producer
+            // that can name it. Also the idempotence key finalization checks before re-harvesting
+            // a workspace the acting-coder path already captured mid-mission.
+            WorkspaceId = workspace?.Id,
             Summary = summary ?? "",
         };
 
@@ -121,6 +125,34 @@ public static class WorkspaceChangeSet
             // checkout; a change set that could apply itself would make the isolation pointless.
             RequiresApproval = true,
         };
+    }
+
+    /// <summary>
+    /// v0.3.8.95 — the paths the workspace's tree differs in, from porcelain status: tracked
+    /// modifications and untracked additions alike, one workspace-relative path each. Deterministic
+    /// and cheap, so the acting coder's success can be classified by what is ON DISK rather than by
+    /// what the model said it did. Empty on a clean tree, on a missing directory, and on git
+    /// failure — a caller that must distinguish those asks the workspace, not this.
+    /// </summary>
+    public static IReadOnlyList<string> ChangedPaths(string workspaceRoot)
+    {
+        if (string.IsNullOrWhiteSpace(workspaceRoot) || !Directory.Exists(workspaceRoot))
+            return Array.Empty<string>();
+
+        var (ok, output) = Git(workspaceRoot, "status --porcelain");
+        if (!ok) return Array.Empty<string>();
+
+        var paths = new List<string>();
+        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            // Porcelain v1: two status columns, a space, then the path ("R old -> new" for renames;
+            // the NEW path is the one that exists to review).
+            var entry = line.Length > 3 ? line[3..].Trim() : "";
+            var arrow = entry.IndexOf(" -> ", StringComparison.Ordinal);
+            if (arrow >= 0) entry = entry[(arrow + 4)..].Trim();
+            if (entry.Length > 0) paths.Add(entry.Trim('"'));
+        }
+        return paths;
     }
 
     private static string Short(string revision) => revision.Length > 12 ? revision[..12] : revision;

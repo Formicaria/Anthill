@@ -195,8 +195,11 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // The delegate is gone. Every operator message is a mission; the mission's own roles reason,
         // and the answer the operator reads is the scribe's, recorded back into the conversation by
         // RecordMissionAnswer. One voice, and it is downstream of verification rather than beside it.
+        // v0.3.8.95: the conversation's PROJECT rides along into the mission, so the mission's
+        // workspace can be a worktree of the project's own repository.
         Conversations = new Anthill.Core.Conversations.ConversationRunner(
-            Memory, (goal, onCreated, token) => RunMission(goal, onMissionCreated: onCreated, cancel: token));
+            Memory, (goal, missionProjectId, onCreated, token) =>
+                RunMission(goal, onMissionCreated: onCreated, cancel: token, projectId: missionProjectId));
 
         Scheduler = new Projects.ProjectScheduler(Memory, Conversations);
 
@@ -475,6 +478,21 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
 
         try
         {
+            // v0.3.8.95 — idempotent per workspace. The acting-coder path captures the workspace
+            // diff the moment the coder task completes — while the task graph is still open, so
+            // tester/soldier reviews CAN be inserted, which is the whole point of capturing early.
+            // Running the same capture again here would file the identical changes as a second
+            // patch set. One workspace, one change set; the skip is recorded so "already captured"
+            // can never be misread as "found nothing".
+            if (Memory.HasPatchSetForWorkspace(mission.Id, workspace.Id))
+            {
+                Memory.LogEvent(mission.Id, "workspace_already_captured",
+                    $"Workspace {workspace.Id} diff was already captured during execution — not harvesting again.",
+                    null, "queen", new() { ["workspace_id"] = workspace.Id });
+                Workspaces.Checkpoint(workspace.Id);
+                return;
+            }
+
             // v0.3.8.93 — anchored to the task whose work produced the changes, resolved the same
             // way the result assembler picks the best output (this runs BEFORE Assemble, so
             // mission.BestOutputTaskId is still null here — which is why the old code recorded
@@ -571,11 +589,11 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         }
     }
 
-    private Anthill.Core.Workspaces.MissionWorkspace? PrepareWorkspace(string missionId)
+    private Anthill.Core.Workspaces.MissionWorkspace? PrepareWorkspace(string missionId, string? projectSourceRoot = null)
     {
         try
         {
-            var workspace = Workspaces.Prepare(missionId);
+            var workspace = Workspaces.Prepare(missionId, projectSourceRoot);
             if (workspace.Usable)
             {
                 Workspaces.Activate(workspace.Id);
@@ -586,6 +604,9 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
                         ["workspace_id"] = workspace.Id,
                         ["base_revision"] = workspace.BaseRevision,
                         ["root"] = workspace.Root,
+                        // v0.3.8.95: which repository the worktree was taken from — per-project
+                        // when the mission's project has a working directory, configured otherwise.
+                        ["source_root"] = workspace.SourceRoot,
                     });
                 return workspace;
             }
@@ -618,7 +639,7 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
     /// dispatching. Without it a hung/slow model call could pin the single-writer queue for minutes.
     /// </summary>
     public string RunMission(string goal, Action<string>? onMissionCreated, CancellationToken cancel = default,
-        Action<MissionOutcome>? onMissionFinished = null)
+        Action<MissionOutcome>? onMissionFinished = null, string? projectId = null)
     {
         Console.WriteLine($"Queen received mission: {goal}");
         var missionStartedAt = AnthillTime.NowUtc();
@@ -630,7 +651,14 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         var profile = Profile;
         var options = profile.Options;
 
-        var mission = new Mission { Goal = goal, Status = MissionStatus.Running };
+        // v0.3.8.95 — the project travels with the mission from intake. Whitespace is null: an
+        // empty id recorded as "" would satisfy every is-not-null check while naming nothing.
+        var mission = new Mission
+        {
+            Goal = goal,
+            Status = MissionStatus.Running,
+            ProjectId = string.IsNullOrWhiteSpace(projectId) ? null : projectId!.Trim(),
+        };
         LastMissionId = mission.Id;
 
         // v3.1.0 (ADR-002): the mission's governing facts, resolved once at intake and passed
@@ -661,8 +689,26 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // directory per question. The scope is entered even when preparation FAILS to produce a
         // usable workspace — in which case CurrentRoot is null and the guard keeps its configured
         // root, which is exactly the pre-v3.5.0 behaviour rather than a silent widening.
-        var wantsWorkspace = AnthillRuntime.EnableFileWriting || AnthillRuntime.EnablePatchApplication;
-        var missionWorkspace = wantsWorkspace ? PrepareWorkspace(mission.Id) : null;
+        // v0.3.8.95 — acting-coder missions also want one: the routed agent CLI edits files even
+        // when ANTHILL's own write gates are off, and an edit with nowhere isolated to land is the
+        // exact defect the workspace exists to prevent.
+        var wantsWorkspace = AnthillRuntime.EnableFileWriting || AnthillRuntime.EnablePatchApplication
+                             || AnthillRuntime.EnableActingCoder;
+        // v0.3.8.95 — the workspace is a worktree of the PROJECT's repository when the mission has
+        // a project with a working directory. Resolved here, once, from the persisted project row;
+        // a project without a path (or a mission without a project) keeps the configured source.
+        string? projectSourceRoot = null;
+        if (mission.ProjectId is not null)
+        {
+            try
+            {
+                var missionProject = Memory.LoadProject(mission.ProjectId);
+                if (missionProject is not null && !string.IsNullOrWhiteSpace(missionProject.Path))
+                    projectSourceRoot = missionProject.Path;
+            }
+            catch { /* a project row that cannot be read falls back to the configured source */ }
+        }
+        var missionWorkspace = wantsWorkspace ? PrepareWorkspace(mission.Id, projectSourceRoot) : null;
         using var workspaceScope = Anthill.Core.Workspaces.MissionWorkspaceScope.Enter(missionWorkspace);
         Memory.LogEvent(mission.Id, "mission_context_resolved",
             "Mission constraints, capability grants, deadline and budgets resolved at intake.",

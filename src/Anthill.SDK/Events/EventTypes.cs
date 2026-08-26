@@ -157,6 +157,15 @@ public static class EventTypes
     public const string WorkspaceChangeSetUnanchored = "workspace_change_set_unanchored";
     public const string WorkspaceNoChanges = "workspace_no_changes";
     public const string WorkspaceHarvestFailed = "workspace_harvest_failed";
+    /// <summary>v0.3.8.95: the acting coder's workspace diff was captured into the patch pipeline
+    /// while the task graph was still open — reviewers can still be inserted to judge it.</summary>
+    public const string WorkspaceDiffCaptured = "workspace_diff_captured";
+    /// <summary>v0.3.8.95: finalization found this workspace's diff already captured mid-mission
+    /// and did not harvest a duplicate. "Already captured" is not "found nothing".</summary>
+    public const string WorkspaceAlreadyCaptured = "workspace_already_captured";
+    /// <summary>v0.3.8.95: the acting coder's changes could not be captured into a patch set.
+    /// The edits still exist in the worktree; the record names the failure instead of hiding it.</summary>
+    public const string WorkspaceCaptureFailed = "workspace_capture_failed";
 
     // ---- shadow mode -------------------------------------------------------
 

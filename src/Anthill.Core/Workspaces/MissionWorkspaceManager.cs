@@ -88,14 +88,27 @@ public sealed class MissionWorkspaceManager
     /// directory. Preparation that fails lands on <see cref="WorkspaceState.Rejected"/> with the
     /// reason, never on an exception thrown into a mission that was only asking for somewhere to
     /// work.
+    ///
+    /// v0.3.8.95 — <paramref name="sourceRootOverride"/> is the PROJECT's working directory, when
+    /// the mission belongs to a project that has one. Until this parameter existed every mission in
+    /// every project took its worktree from the single configured root — which resolves to the
+    /// repository enclosing <c>agent_workspace_dir</c>, usually ANTHILL's own checkout — so a
+    /// mission for project X worked in a worktree of the wrong repository. The override is resolved
+    /// through the same <see cref="ResolveRepositoryRoot"/> walk as the constructor argument, and an
+    /// override that is not a git checkout is Rejected with the path named, exactly as the
+    /// configured root would be. The workspace row records which source it was actually taken from.
     /// </summary>
-    public MissionWorkspace Prepare(string missionId)
+    public MissionWorkspace Prepare(string missionId, string? sourceRootOverride = null)
     {
+        var sourceRoot = string.IsNullOrWhiteSpace(sourceRootOverride)
+            ? _sourceRoot
+            : ResolveRepositoryRoot(sourceRootOverride);
+
         var workspace = new MissionWorkspace
         {
             Id = Guid.NewGuid().ToString("N")[..12],
             MissionId = missionId ?? "",
-            SourceRoot = _sourceRoot,
+            SourceRoot = sourceRoot,
             State = WorkspaceState.Requested,
         };
         _memory.SaveWorkspace(workspace);
@@ -105,10 +118,10 @@ public sealed class MissionWorkspaceManager
         // Captured BEFORE the worktree exists, from the source checkout — that is the revision the
         // work will be based on, and reading it later from inside the workspace would answer a
         // different question once an agent has committed anything.
-        var isGit = Directory.Exists(Path.Combine(_sourceRoot, ".git"));
-        var baseRevision = isGit ? GitOut(_sourceRoot, "rev-parse HEAD") : "";
-        var fingerprint = isGit ? RootCommit(_sourceRoot) : "";
-        var branch = isGit ? GitOut(_sourceRoot, "rev-parse --abbrev-ref HEAD") : "";
+        var isGit = Directory.Exists(Path.Combine(sourceRoot, ".git"));
+        var baseRevision = isGit ? GitOut(sourceRoot, "rev-parse HEAD") : "";
+        var fingerprint = isGit ? RootCommit(sourceRoot) : "";
+        var branch = isGit ? GitOut(sourceRoot, "rev-parse --abbrev-ref HEAD") : "";
 
         Directory.CreateDirectory(Root);
         var target = Path.Combine(Root, $"{workspace.MissionId}-{workspace.Id}");
@@ -118,7 +131,7 @@ public sealed class MissionWorkspaceManager
         {
             // Detached deliberately: a worktree on a named branch would move the live checkout's
             // branch pointer, which is exactly the "cannot modify the active checkout" gate.
-            var (ok, error) = Git(_sourceRoot, $"worktree add --detach \"{target}\" HEAD");
+            var (ok, error) = Git(sourceRoot, $"worktree add --detach \"{target}\" HEAD");
             if (!ok)
                 return Transition(workspace, WorkspaceState.Rejected,
                     note: $"git worktree failed: {error.Trim()}");
@@ -131,7 +144,7 @@ public sealed class MissionWorkspaceManager
             // base revision, and a copy of an unversioned directory has none to record. Refusing is
             // more useful than issuing a workspace whose provenance is a fiction.
             return Transition(workspace, WorkspaceState.Rejected,
-                note: $"source is not a git checkout, so no base revision can be recorded: {_sourceRoot}");
+                note: $"source is not a git checkout, so no base revision can be recorded: {sourceRoot}");
         }
 
         var ready = workspace with
