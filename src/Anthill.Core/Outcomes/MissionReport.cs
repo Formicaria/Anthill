@@ -91,7 +91,7 @@ public static class MissionReport
             var taskId = Str(row, "id");
             var result = memory.LoadTaskResult(taskId);
             if (result is null) continue;
-            foreach (var e in result.Evidence.Where(e => e.Kind == "check"))
+            foreach (var e in result.Evidence.Where(e => e.Kind == Agents.AntEvidenceKinds.Check))
             {
                 var detail = e.Detail ?? "";
                 var exit = System.Text.RegularExpressions.Regex.Match(detail, @"exit_code=(-?\d+|n/a)");

@@ -25,6 +25,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Anthill.SDK\Anthill.SDK.csproj" />
+    <!-- v0.3.8.94: the intent-journal crash matrix drives SqliteMemory's own journal API, so the
+         helper reproduces the live apply sequence rather than a transcription of it. -->
+    <ProjectReference Include="..\..\src\Anthill.Core\Anthill.Core.csproj" />
   </ItemGroup>
 
 </Project>

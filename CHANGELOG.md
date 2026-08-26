@@ -1,3 +1,70 @@
+## v0.3.8.94 - the filter that could not match, and the actor nobody used
+
+**Three closures from the R0 residual list, one theme: promises the code made and never kept. Two
+consumers filtered on evidence nothing emitted; the promotion gate declared an Automation actor no
+lane consulted; the apply journal called itself crash-safe on the strength of in-process tests. All
+three now do what they said.**
+
+### The evidence vocabulary tells the truth
+
+`FailureContext.Tool` and the persisted `TaskResult.Tool` have filtered ant evidence on kind
+`"tool"` since they were written — and nothing in the colony has ever emitted that kind. Both
+fields were null for every task of every mission, and "Tool: —" on a failure that died inside a
+tool call was indistinguishable from a toolless task. Beside them,
+`deterministic_work_completed` tested ant evidence against the VERIFICATION STORE's vocabulary —
+build / test_run / hash_match, kinds the store records and ant evidence has never carried — so
+half of that expression was dead the day it was written.
+
+`AntEvidenceKinds` is now the closed vocabulary for what an ant reports about its own execution,
+deliberately disjoint from the store's `EvidenceKinds`: one vocabulary per witness, because
+reading one witness with the other's meaning is exactly the mistake this closes. The registry —
+the chokepoint every dispatch already passes, for the same reason ToolCalls is counted there —
+records which tools each task dispatched, and the measurement boundary turns that record into
+kind-`tool` evidence rows. Every emission site now names its kind through the vocabulary (a bare
+literal is how "tool" got promised and never produced), and `AntEvidenceVocabularyTests` holds
+both directions.
+
+Two neighbouring accidents became decisions while the ground was open. The coder has declared a
+`patch_json` artifact on every patch task since the execution framework, and the artifact bridge
+silently dropped it into the same null arm as typos — correctly (the parsed, validated set is
+stored by `RecordPatchArtifact`; bridging the raw JSON would double-store the change under two
+schemas), but indistinguishably from a gap. `ArtifactSchemas.TransportOnly` names the two
+deliberate skips. And the verification policy table's unreachable keys — `code_patch_full`,
+`config_change`, `artifact_production`, real policies no production task type has ever selected —
+are now a LEDGER (`VerificationPolicyReachabilityTests`) that fails when a dormant key gains a
+producer or a reachable one goes dormant, instead of a fact recoverable only by archaeology.
+
+### Auto-apply consults the one gate
+
+v0.3.8.91 built `PatchPromotionGate` with three actors and its header promised the third lane:
+"folding it in is the next commit's work." The `Automation` actor has existed since — declared,
+tested, and consulted by nobody. The Director ran its own copies of the canonical-evaluation,
+write-gates and rollback-marker checks instead: two implementations of one rule (defect class 5),
+one of them in `Anthill.Api` where Core could not even see it to agree.
+
+The Director now evaluates every eligible proposal through the gate as `Automation`, and the three
+private copies are deleted. The fold STRENGTHENS the lane — the gate additionally refuses on a
+producing task's deterministic block, an incomplete or blocking policy review, and a moved
+workspace, none of which the runner ever checked. What stays runner-side is exactly the part a
+per-proposal gate cannot own, and the code now says so: the set-level evidence CONTENT check (the
+bytes about to be written must be the bytes the evidence judged), the mixed-deterministic-rows
+refusal, the patch-set identity requirement, the whole-set preflight, and the durable transaction.
+The `autonomy_autoapply_halted` event survives on the gate's RollbackHalted refusal, so "this run
+was refused" and "auto-apply is halted until a person resolves the tree" stay distinguishable.
+
+### The apply journal earns the word crash-safe
+
+The intent journal (Prepared → Mutating → Applied → Recorded) and its reconciler shipped in
+v0.3.8.91 proved by in-process tests — which share scenario 17's original weakness: an abandoned
+object is still a healthy process with flushed buffers and running finally blocks.
+`Anthill.CrashHelper` gained an intent-journal mode that drives the LIVE apply sequence verbatim
+to a chosen phase, signals durability, and blocks; `PatchApplyCrashMatrixTests` kills it — a real
+OS kill of a real process — at each crash window and runs `PatchApplyReconciler` in the parent,
+which is precisely the restart the journal exists for. One row per window, one deterministic
+recovered state per row: prepared discards; mutating-with-pre-apply-bytes discards by hash;
+mutating-with-moved-bytes is left for an operator with the intent OPEN and the bytes untouched;
+applied completes the records — the case that used to become an unrevertable phantom.
+
 ## v0.3.8.93 - the request is the instruction, and both roads lead to the one gate
 
 **Six corrections, one theme: places where the colony's words and its behaviour disagreed — a fence
