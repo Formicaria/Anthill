@@ -15,7 +15,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "0.3.8.95";
+    public const string Version = "0.3.8.96";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -645,6 +645,9 @@ public static class AnthillRuntime
     /// failure this whole area keeps producing.
     /// </summary>
     public static IReadOnlyList<Tools.CheckDefinition> WorkspaceChecks = Array.Empty<Tools.CheckDefinition>();
+    /// <summary>v0.3.8.96 — why declared checks were refused, kept for the settings surface.
+    /// Empty when every declared check resolved (or none were declared).</summary>
+    public static IReadOnlyList<string> WorkspaceCheckProblems = Array.Empty<string>();
 
     // ---- Web search -------------------------------------------------------
     // v3.8.16 — declared in Anthill.SDK.Tools.ToolLimits, which is where the tool that applies them
@@ -813,9 +816,38 @@ public static class AnthillRuntime
             : PathFromScript($"{DefaultWorkspace}/{DefaultConfigFile}");
     }
 
+    /// <summary>
+    /// v0.3.8.96 — config files this host does NOT read, from earlier layouts. An operator editing
+    /// one of these edits a relic: nothing loads it, nothing errors, and the setting silently fails
+    /// to take — which is how the live qualification run spent a mission with `acting_coder_enabled`
+    /// true in `data/anthill.json` and false in the runtime. The warning names both paths, because
+    /// "your change did nothing" must never be something an operator has to infer from behaviour.
+    /// </summary>
+    private static readonly string[] LegacyConfigLocations = { "data/anthill.json" };
+
+    private static void WarnAboutLegacyConfigs(string activePath)
+    {
+        foreach (var legacy in LegacyConfigLocations)
+        {
+            var candidate = PathFromScript(legacy);
+            try
+            {
+                if (File.Exists(candidate)
+                    && !string.Equals(Path.GetFullPath(candidate), Path.GetFullPath(activePath),
+                        StringComparison.OrdinalIgnoreCase))
+                    Console.Error.WriteLine(
+                        $"WARNING: {candidate} exists but is NOT read by this version. The active "
+                      + $"config is {activePath} — settings changed in the old file do nothing. "
+                      + "Move anything you still want into the active file and delete the old one.");
+            }
+            catch { /* a warning must never be able to stop a start-up */ }
+        }
+    }
+
     private static AnthillConfig LoadConfig()
     {
         var path = ConfigFilePath();
+        WarnAboutLegacyConfigs(path);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         Dictionary<string, JsonElement> raw = new();
         if (File.Exists(path))
@@ -987,6 +1019,12 @@ public static class AnthillRuntime
         // installation must not be discoverable only by noticing which commands ran.
         var checkConfig = WorkspaceCheckConfig.Resolve(config.WorkspaceChecks);
         WorkspaceChecks = checkConfig.Checks;
+        // v0.3.8.96 — the refusals are KEPT, not only printed. The console line was correct and
+        // invisible: the operator driving the live qualification run declared a check, the resolver
+        // refused it (built-in id collision), and the only record was a line in a terminal nobody
+        // was reading — the settings surface showed nothing. A configuration that did not take must
+        // be readable from the same place the configuration is written.
+        WorkspaceCheckProblems = checkConfig.Problems;
         foreach (var problem in checkConfig.Problems)
             Console.Error.WriteLine($"[workspace-checks] refused: {problem}");
         if (WorkspaceChecks.Count > 0)
@@ -1239,6 +1277,10 @@ public static class AnthillRuntime
         // require editing a file and restarting the colony.
         "model_priority_provider", "model_priority_model",
         "web_search_enabled", "patch_application_enabled", "file_writing_enabled",
+        // v0.3.8.96 — found live: the flag existed, the file key existed, and the settings surface
+        // could not write it, so enabling acting mode took a manual file edit plus a restart. A
+        // gate the operator is meant to turn on belongs on the surface operators turn things on.
+        "acting_coder_enabled",
         "shell_tool_enabled", "file_tools_enabled", "agent_workspace_dir", "parallel_execution_enabled",
         "max_parallel_workers", "max_web_searches_per_mission", "max_sources_per_mission",
         "max_context_packet_chars", "max_agent_message_content_chars",
@@ -1370,6 +1412,30 @@ public static class AnthillRuntime
         File.WriteAllText(path, JsonSerializer.Serialize(Config, AnthillConfig.JsonOptions));
     }
 
+    /// <summary>
+    /// v0.3.8.96 — set one role's route, in the live runtime AND the persisted config, atomically.
+    ///
+    /// The defect this closes was found by a restart during the live qualification run, and it is
+    /// this repository's most-named shape one more time: <c>POST /routes/{role}</c> mutated the
+    /// live <see cref="ModelRouting"/> dictionary and then called <see cref="SaveConfig"/> — which
+    /// serializes the <see cref="Config"/> OBJECT, whose <c>ModelRoutes</c> the handler never
+    /// touched. Every save wrote the stale routes back to disk, so a route survived exactly until
+    /// the next restart and no test noticed, because the mutate and the save each worked. The two
+    /// halves live in one method now, under the same lock the bulk settings path uses, so they
+    /// cannot be updated separately again.
+    /// </summary>
+    public static void SetModelRoute(string role, string provider, string model)
+    {
+        lock (InitLock)
+        {
+            var route = new Dictionary<string, string>
+                { ["provider"] = (provider ?? "").Trim(), ["model"] = (model ?? "").Trim() };
+            ModelRouting[role] = new Dictionary<string, string>(route);
+            Config.ModelRoutes[role] = new Dictionary<string, string>(route);
+            SaveConfig();
+        }
+    }
+
     /// <summary>A safe, secret-free projection of the live config for the settings UI to render.</summary>
     public static Dictionary<string, object?> SettingsSnapshot() => new()
     {
@@ -1378,6 +1444,11 @@ public static class AnthillRuntime
         ["ollama_host"] = OllamaHost,
         ["ollama_model"] = OllamaModel,
         ["model_routes"] = ModelRouting.ToDictionary(kv => kv.Key, kv => new Dictionary<string, string>(kv.Value)),
+        // v0.3.8.96 — the checks that actually govern this installation, and every declared check
+        // the resolver refused. The refusals were console-only; a configuration that did not take
+        // must be readable where configuration is written.
+        ["workspace_checks_active"] = WorkspaceChecks.Select(c => c.Id).ToList(),
+        ["workspace_check_problems"] = WorkspaceCheckProblems.ToList(),
         ["model_priority_provider"] = ModelPriorityProvider,
         ["model_priority_model"] = ModelPriorityModel,
         // Reported rather than left for the console to recompute, so what the colony believes about

@@ -4,8 +4,19 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: main carries **v0.3.8.95** — "the acting colony: the mission works where the project
-lives". 3,207 tests (2,939 core + 268 homelab), all green.
+State: main carries **v0.3.8.96** — the live qualification run's findings, closed. 3,213+ tests
+(core + homelab), all green.
+
+**THE LIVE MISSION PASSED.** Mission `3bbbde32` (2026-08-26): a real Claude Code acting-coder
+mission through the composed runtime — per-project worktree from the project's own clone, the CLI
+acting in that worktree, the diff captured while the task graph was open, tester and soldier
+judging the materialized revision by hash, `qual_build` exit 0 in the patched tree, and the
+compiled mission record landing in the conversation turn: `outcome_code: completed_verified`,
+41.6 seconds. Six runs failed before it, each for a real reason; v0.3.8.96 is those reasons
+fixed (route saves that survive restart, the legacy-config warning, `acting_coder_enabled` on
+the settings surface, the `\bui\b` gate fix, the capture excluding materialized scaffolding,
+check-refusals in the settings snapshot). The CHANGELOG entries for .95 and .96 carry the full
+account.
 
 FIRST, THE LESSON THIS SESSION PAID FOR: **verify the remote before trusting a fetch.** A prior
 session ran `git fetch` against a MOVED repository's old URL, got a frozen mirror, concluded
@@ -49,14 +60,13 @@ WHAT v0.3.8.95 SHIPPED, because the next session will be asked to run it live:
   `ApiPermissions`, so every route write 403'd for everyone. Found live, first minutes of the
   qualification attempt. Ships granted, like its read twin.
 
-NOT YET DONE, and honestly: **the live acting-coder mission has still not completed.** Everything
-above is verified by 3,207 tests, and tests check what their author told them to check. The next
-act is one real mission through the composed runtime: rebuild, restart the host, route
-`conversation` and `coder` to `agent:claude-code` (the Roles page can actually save now), a
-project whose `path` is a throwaway clone of a real dotnet repository, `acting_coder_enabled:
-true` (already in the operator's data/anthill.json), one small verifiable goal, and the chat
-turn's `=== MISSION RECORD ===` read back with `outcome_code: completed_verified`. Until that
-passes, ANTHILL is improved but not demonstrated.
+STILL OPEN, and honestly: `dotnet_test` run INSIDE a materialized revision of the qualification
+clone exited 1 on the operator's Windows machine while the same suite is green in CI and in a
+Linux revision-simulation — undiagnosed; the check evidence now captures output, so the next
+failing run can be read instead of guessed at. The deliverable evaluation layer ran
+`not_checked` during the qualification (objective verification disabled in the operator's
+config) — honest, but a passing run with that layer ON has not happened. And the operator-check
+declaration (`workspace_checks`) still is not on the editable-settings surface.
 
 THE FINDINGS THAT MUST KEEP TRAVELLING: (1) ask "does this have a call site on the path that
 matters", not "is it tested" — the operator report compiler had writers and no reader for
