@@ -91,7 +91,7 @@ public class ProjectTests : IDisposable
         // Dropping this test with the prompt would have quietly un-tested the project description,
         // and a description nothing reads is the reason for writing one, removed.
         string? seen = null;
-        new ConversationRunner(memory, (goal, onCreated, _) => { seen = goal; onCreated("m1"); return "m1"; })
+        new ConversationRunner(memory, (goal, _, onCreated, _) => { seen = goal; onCreated("m1"); return "m1"; })
             .Run(conversation with { Policy = EscalationPolicy.Bypass, PolicySetBy = "zwright", PolicySetAt = DateTime.UtcNow }, "what are we doing here?");
 
         Assert.Contains("release engineering", seen);
@@ -116,7 +116,7 @@ public class ProjectTests : IDisposable
         memory.SaveConversation(conversation);
 
         string? seen = null;
-        new ConversationRunner(memory, (goal, onCreated, _) => { seen = goal; onCreated("m1"); return "m1"; })
+        new ConversationRunner(memory, (goal, _, onCreated, _) => { seen = goal; onCreated("m1"); return "m1"; })
             .Run(conversation with { Policy = EscalationPolicy.Bypass, PolicySetBy = "zwright", PolicySetAt = DateTime.UtcNow }, "summarize this file",
                 attachments: new[] { ("notes.md", "# Notes\nthe colony hums") });
 

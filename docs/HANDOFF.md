@@ -1,54 +1,87 @@
 # ANTHILL session handoff
 
-**This file is a POINTER, not a snapshot.** Rewritten at v0.3.8.75 because it had been one, and the
-snapshot was forty releases old: it opened "The 3.8 line is CLOSED at v0.3.8.34" while the shipping
-release was v0.3.8.74. A handoff document is read by someone who knows nothing else yet, so a stale
-one does not merely age — it actively sends the next session in the wrong direction, which is the
-most expensive kind of wrong a document can be.
+Paste the block below into a fresh session. Overwrite this file when it goes stale.
 
-The fix is structural rather than an update. A snapshot has to be rewritten every release to stay
-true and will therefore be false most of the time. Pointers stay true on their own.
+---
 
-## Start here
+State: main carries **v0.3.8.95** — "the acting colony: the mission works where the project
+lives". 3,207 tests (2,939 core + 268 homelab), all green.
 
-| Question | Where the answer lives, always |
-|---|---|
-| What is done, what is left, in order | [`PLAN.md`](PLAN.md) — §1 is the current state, §2 the ordered work |
-| What shipped, and why | `CHANGELOG.md` at the repository root — newest entry first |
-| Which release is current | `AnthillRuntime.Version`, mirrored in `Directory.Build.props`, `README.md` and `PLAN.md`; four markers, pinned equal by tests |
-| How a role behaves | [`ANT_EXECUTION.md`](ANT_EXECUTION.md) |
-| What "qualified" means | [`QUALIFICATION.md`](QUALIFICATION.md), and the executable ledger in `tests/Anthill.Tests/QualificationMatrixTests.cs` |
-| What is still open | The same ledger — open scenarios say WHY, not just that they are open |
+FIRST, THE LESSON THIS SESSION PAID FOR: **verify the remote before trusting a fetch.** A prior
+session ran `git fetch` against a MOVED repository's old URL, got a frozen mirror, concluded
+"0 ahead, 0 behind — up to date", and built a whole release against a base 45 versions stale.
+The canonical remote is `https://github.com/formicaria/anthill.git` — confirm
+`git remote get-url origin` matches, and confirm the fetched tip's CHANGELOG heading matches the
+version markers before building anything on it.
 
-## Working rules that are not obvious from the code
+WHAT v0.3.8.95 SHIPPED, because the next session will be asked to run it live:
 
-- **Every release is branch → PR → squash-merge → tag.** Never push to `main`. CI builds the GitHub
-  release from the tag.
-- **`RELEASE_MSG.txt` is derived from the changelog's top entry**, not written twice. It becomes the
-  commit message and the release notes; a stale one shipped v0.3.8.67 under v0.3.8.60's name.
-- **A shipped changelog entry is frozen.** Corrections go in the NEXT entry, never by editing the
-  old one — `ShippedChangelogTests` enforces it against the tags.
-- **After a merge, `git fetch` + `git reset --hard origin/main`.** CI's squash commit differs from
-  your local one, so `git pull` tries to merge and opens an editor.
-- **Do not weaken a guard to make a test pass.** Several tests in this suite defend a decision rather
-  than describe the code, and they are right often enough that disagreeing with one is a reason to
-  re-read the decision.
+- **Per-project mission worktrees.** `Mission.ProjectId` (persisted, migrated) rides from the
+  conversation through `RunMission(… projectId:)` and the widened start-mission delegate;
+  `MissionWorkspaceManager.Prepare(missionId, sourceRootOverride)` cuts the worktree from the
+  project's own repository (non-git project path → Rejected by name). Patch verification
+  materialises revisions from the workspace's recorded `SourceRoot`.
+- **The agent CLI acts in the mission worktree.** `ExecutionService.EnterAgentAccess` hands the
+  ambient worktree to the access scope as the working directory and withholds the live-tree
+  `--add-dir` grants when one exists. Before this, `confinedWorkspace: true` was declared beside
+  the project's LIVE path — the CLI edited the operator's checkout while the harvest diffed a
+  pristine worktree.
+- **Acting Coder**, behind `acting_coder_enabled` (default off). Three conditions: flag on,
+  usable workspace ambient, coder route resolves to `agent:*`. The CLI edits the worktree;
+  `CoderAnt.ClassifyActingOutcome` grades from the TREE (changes succeed; clean tree passes only
+  with the declared `NO_CHANGES_NEEDED`; clean tree plus work narrative fails). Model-routed
+  coders keep proposing JSON.
+- **Capture while the graph is open.** `ProcessWorkspaceEdits` (dispatch discriminates on the
+  producer's own `workspace_edit_report` artifact kind) turns the diff into a patch set
+  (stamped `workspace_id`, new column) and feeds `ProcessPatchSet` WITH the live scheduler — so
+  a revision is materialised and tester/soldier are inserted to judge it, which the finalization
+  harvest can never do. The finalization harvest stays as the stray-edit net, idempotent per
+  workspace via `HasPatchSetForWorkspace` (`workspace_already_captured`).
+- **Bypass bounded.** In `BuildAccessArgs`, policy `bypass` inside a CONFINED workspace maps to
+  the autoapprove posture (acceptEdits + bounded tools); `--dangerously-skip-permissions` is
+  emitted only for an unconfined context — a road no mission takes. Role clamp unchanged and
+  still first. CliBoundaryCharacterizationTests carries the matrix;
+  ActingMissionPipelineTests pins both roads.
+- **The mission record reaches chat.** `RecordMissionAnswer` now leads with `final_result` (the
+  inversion is fixed) and appends `MissionReport.Render(Compile(...))` — v0.3.8.73's compiled
+  record finally has its reader. Honest about absence ("outcome_code: none persisted").
+- **`manage_models` exists.** It was required by `POST /routes/{role}` and absent from
+  `ApiPermissions`, so every route write 403'd for everyone. Found live, first minutes of the
+  qualification attempt. Ships granted, like its read twin.
 
-## The recurring defect classes this repository names
+NOT YET DONE, and honestly: **the live acting-coder mission has still not completed.** Everything
+above is verified by 3,207 tests, and tests check what their author told them to check. The next
+act is one real mission through the composed runtime: rebuild, restart the host, route
+`conversation` and `coder` to `agent:claude-code` (the Roles page can actually save now), a
+project whose `path` is a throwaway clone of a real dotnet repository, `acting_coder_enabled:
+true` (already in the operator's data/anthill.json), one small verifiable goal, and the chat
+turn's `=== MISSION RECORD ===` read back with `outcome_code: completed_verified`. Until that
+passes, ANTHILL is improved but not demonstrated.
 
-Written down because the same shapes keep recurring, and recognising one early has repeatedly been
-worth more than any individual fix:
+THE FINDINGS THAT MUST KEEP TRAVELLING: (1) ask "does this have a call site on the path that
+matters", not "is it tested" — the operator report compiler had writers and no reader for
+sixteen releases; (2) a cross-boundary value is obtained FROM THE PRODUCER, never constructed to
+match (`CrossBoundaryAgreementTests`); (3) checks that answer a question ADJACENT to the one
+asked are the house defect — the live qualification attempt added `manage_models` to the list.
 
-- **A check answering a question ADJACENT to the one asked, and passing.** The most common by far.
-- **Declared and reaching nobody** — a vocabulary, artifact or extension point nothing produces or
-  consumes.
-- **A declaration that disagrees with the runtime** — a comment, schema entry or stamp asserting
-  something the code does not do.
-- **Prose as a control channel** — a decision that depends on parsing text a model wrote.
-- **Two implementations of one rule**, which eventually disagree.
-- **A diagnostic that breaks what it describes.**
+Repo: `formicaria/anthill` in the operator's VSCode folder; remote
+`https://github.com/formicaria/anthill.git`. Build with `-c Release`. The operator's shell is
+PowerShell 5.1 — `&&` is a parse error; separate statements. A Linux sandbox CAN build and test
+everything except `Anthill.Desktop` (net9.0-windows ref packs): .NET 9 SDK tarball + the
+operator's NuGet cache as `NUGET_PACKAGES`, restore fully offline.
 
-## When this file needs changing
+Version bumps touch FIVE markers (RegressionGuardTests + the PLAN mention):
 
-Only when one of the pointers above stops being true — a document moves, or a working rule changes.
-If you find yourself wanting to paste the current state in here, that belongs in `PLAN.md` §1.
+1. `<AnthillVersion>` in `Directory.Build.props`
+2. `AnthillRuntime.Version`
+3. `**Current version:** vX.Y.Z` in README.md
+4. The TOP `## vX.Y.Z` entry in CHANGELOG.md (headings unique, DESCENDING; no file header line)
+5. The literal `vX.Y.Z` in docs/PLAN.md ("Shipping release")
+
+Release recipe — commit with explicit paths (`data/anthill.json` is live local config, never
+commit it), push, PR, watch checks, squash, pull main, `git log --oneline -1` MUST show the
+version's commit before tagging, then tag. PR #215 and the v3.8.13-tag-on-v3.8.12 incident are
+both that check skipped.
+
+If a session proposes something that contradicts docs/archive/v3/REFACTOR-PLAN.md, the plan is
+probably right — it is the record of what was measured rather than assumed.
