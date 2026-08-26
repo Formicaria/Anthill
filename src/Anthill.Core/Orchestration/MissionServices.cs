@@ -18,9 +18,12 @@ namespace Anthill.Core.Orchestration;
 /// </summary>
 public interface IMissionCoordinator
 {
-    /// <summary>Run a mission to completion and return the operator-facing result.</summary>
+    /// <summary>Run a mission to completion and return the operator-facing result.
+    /// v0.3.8.95 — <paramref name="projectId"/> carries the owning project from the conversation
+    /// that started the mission, so the mission's workspace can be a worktree of the project's own
+    /// repository. Null for missions started outside a project; behaviour is then unchanged.</summary>
     string RunMission(string goal, Action<string>? onMissionCreated, CancellationToken cancel = default,
-        Action<Queen.MissionOutcome>? onMissionFinished = null);
+        Action<Queen.MissionOutcome>? onMissionFinished = null, string? projectId = null);
 
     /// <summary>The plan a dispatch would run, without creating a mission.</summary>
     MissionPlan PlanPreview(string goal);

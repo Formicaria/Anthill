@@ -779,7 +779,15 @@ public sealed class ExecutionService : IExecutionService
                 FinalizeTaskResult(mission, task);
                 _memory.LogEvent(mission.Id, "task_completed", $"Task completed: {task.Title}", task.Id, runtimeSelection.RuntimeNodeId,
                     MergeMetadata(AntRuntime.Metadata(runtimeSelection), new() { ["task_type"] = task.TaskType, ["elapsed_seconds"] = elapsed, ["status_code"] = execution.StatusCode, ["result_preview"] = TextUtil.Truncate(task.Result ?? "", 500) }));
-                if (task.AssignedAnt == "coder") ProcessPatchProposals(mission, context, task, scheduler);
+                // v0.3.8.95 — the ACTING coder's result is a workspace, not a JSON document. The
+                // discriminator is the producer's own artifact kind (workspace_edit_report), never
+                // a re-derivation of config or routing here: the ant that acted says so in its
+                // typed result, and the consumer branches on exactly that. Parsing an acting
+                // narrative as patch JSON would file a parse failure against work that exists.
+                if (task.AssignedAnt == "coder"
+                    && execution.Artifacts.Any(a => a.Kind == Agents.CoderAnt.WorkspaceEditReportKind))
+                    ProcessWorkspaceEdits(mission, context, task, scheduler);
+                else if (task.AssignedAnt == "coder") ProcessPatchProposals(mission, context, task, scheduler);
                 // v0.3.8.41 — the informational branch of the lifecycle. A draft deliverable exists,
                 // so verification is inserted after it rather than left to the plan.
                 if (task.AssignedAnt == "builder") EnsureVerificationAfterDeliverable(mission, context, task, scheduler);
@@ -1203,8 +1211,16 @@ public sealed class ExecutionService : IExecutionService
             // repository as it already was and reported success about code the proposal never
             // touched. The gate ran; it just answered a question adjacent to the one asked, which is
             // the sixth instance of that shape in this codebase and the reason this release exists.
+            // v0.3.8.95 — materialise against the MISSION's source repository, which since
+            // per-project worktrees is the project's own checkout when the mission has one. The
+            // configured global root stays the fallback for missions without a workspace; using it
+            // for a project mission would apply the project's patch onto an unrelated tree and
+            // verify that instead — the "adjacent question" defect this method's own header names.
+            var materializationSource = Workspaces.MissionWorkspaceScope.Current?.SourceRoot;
+            if (string.IsNullOrWhiteSpace(materializationSource))
+                materializationSource = AnthillRuntime.AllowedWorkspaceRoot;
             var materialization = Verification.PatchSetMaterializer.Materialize(
-                patchSet, AnthillRuntime.AllowedWorkspaceRoot);
+                patchSet, materializationSource);
 
             if (!materialization.Ok)
             {
@@ -1447,6 +1463,63 @@ public sealed class ExecutionService : IExecutionService
             return File.Exists(resolved) ? File.ReadAllText(resolved) : null;
         }
         catch { return null; }
+    }
+
+    /// <summary>
+    /// v0.3.8.95 — the acting coder's post-processing: the workspace diff IS the patch set, and it
+    /// is captured WHILE THE TASK GRAPH IS STILL OPEN, then fed through the one pipeline
+    /// (<see cref="ProcessPatchSet"/>) with a live scheduler — so verification materialises a
+    /// revision, tester and soldier are inserted to judge THAT revision, the promotion gate reads
+    /// real evidence, and approval cards attribute to the coder task that did the work. This is
+    /// the whole difference from the finalization harvest, which by then can only record that
+    /// review never ran. Never throws into the completion path.
+    /// </summary>
+    private void ProcessWorkspaceEdits(Mission mission, MissionContext context, Task task, TaskScheduler? scheduler)
+    {
+        var workspace = Workspaces.MissionWorkspaceScope.Current;
+        if (workspace is null || !workspace.Usable)
+        {
+            // The acting branch requires an ambient workspace to run at all, so reaching here
+            // without one is a defect worth recording, not a silent no-op.
+            _memory.LogEvent(mission.Id, "workspace_capture_failed",
+                "Acting coder completed but no usable mission workspace is in scope — nothing to diff.",
+                task.Id, task.AssignedAnt);
+            return;
+        }
+
+        try
+        {
+            var changes = Workspaces.WorkspaceChangeSet.Create(
+                workspace, mission.Id, task.Id,
+                $"Acting coder changes from workspace {workspace.Id}");
+
+            if (changes.Proposals.Count == 0)
+            {
+                // Legitimate: the coder declared NO_CHANGES_NEEDED, or its edits were judged
+                // failed upstream. Recorded either way — an empty capture that said nothing would
+                // be indistinguishable from a capture that never ran.
+                _memory.LogEvent(mission.Id, "workspace_no_changes",
+                    $"Acting coder task finished with no file changes in workspace {workspace.Id}.",
+                    task.Id, task.AssignedAnt, new() { ["workspace_id"] = workspace.Id });
+                return;
+            }
+
+            _memory.LogEvent(mission.Id, "workspace_diff_captured",
+                $"Workspace diff captured before task-graph close: {changes.Proposals.Count} file(s) from workspace {workspace.Id}.",
+                task.Id, task.AssignedAnt, new()
+                {
+                    ["workspace_id"] = workspace.Id,
+                    ["base_revision"] = workspace.BaseRevision,
+                    ["files"] = changes.Proposals.Select(p => p.FilePath).ToList(),
+                });
+            ProcessPatchSet(mission, context, task, changes, scheduler);
+        }
+        catch (Exception error)
+        {
+            _memory.LogEvent(mission.Id, "workspace_capture_failed",
+                $"Could not capture the acting coder's workspace changes: {error.Message}", task.Id, task.AssignedAnt,
+                new() { ["workspace_id"] = workspace.Id, ["error"] = error.Message });
+        }
     }
 
     private void ProcessPatchProposals(Mission mission, MissionContext context, Task task, TaskScheduler? scheduler)
@@ -1904,6 +1977,21 @@ public sealed class ExecutionService : IExecutionService
         {
             // A failed lookup must degrade toward LESS access, never more — and must not fail the task.
             Console.Error.WriteLine($"[execution] agent access lookup failed for {mission.Id}: {error.Message}");
+        }
+        // v0.3.8.95 — THE COMMENT BELOW USED TO BE FALSE, and this is the line that made it true.
+        // "confinedWorkspace: mission tasks run in disposable worktrees, never the live tree" was
+        // declared while workingDirectory was the PROJECT's live path — so a routed agent CLI, the
+        // one actor whose writes ANTHILL cannot see, acted in the operator's real checkout while
+        // every in-process tool was narrowed to the worktree. The mission workspace is ambient for
+        // exactly this kind of consumer: when one exists, it IS the working directory, and the
+        // live-tree grants are withheld with it — reach into the real checkout is precisely what a
+        // disposable workspace exists to deny. Missions without a workspace (read-only runs, or
+        // preparation rejected) keep the previous behaviour, stated by the scope's own fields.
+        var missionWorktree = Workspaces.MissionWorkspaceScope.CurrentRoot;
+        if (missionWorktree is not null)
+        {
+            workingDirectory = missionWorktree;
+            grants = Array.Empty<string>();
         }
         // confinedWorkspace: mission tasks run in disposable sandboxes/worktrees, never the live tree.
         return Anthill.SDK.Reasoning.AgentAccessScope.Enter(

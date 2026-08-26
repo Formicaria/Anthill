@@ -140,6 +140,11 @@ public sealed class Mission
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();
     public string Goal { get; set; } = "";
+    /// <summary>v0.3.8.95 — the project this mission belongs to, carried from the conversation
+    /// that started it. Null for missions started outside a project (direct API / CLI). This is
+    /// what lets the mission's workspace be a worktree of the PROJECT's repository rather than of
+    /// whichever checkout encloses the configured agent workspace.</summary>
+    public string? ProjectId { get; set; }
     public List<Task> Tasks { get; set; } = new();
     public MissionStatus Status { get; set; } = MissionStatus.Created;
     public string? UserResult { get; set; }
@@ -151,7 +156,7 @@ public sealed class Mission
 
     public Mission DeepCopy() => new()
     {
-        Id = Id, Goal = Goal, Tasks = Tasks.Select(t => t.DeepCopy()).ToList(), Status = Status,
+        Id = Id, Goal = Goal, ProjectId = ProjectId, Tasks = Tasks.Select(t => t.DeepCopy()).ToList(), Status = Status,
         UserResult = UserResult, DebugResult = DebugResult, FinalResult = FinalResult,
         BestOutputTaskId = BestOutputTaskId, SuccessScore = SuccessScore, CreatedAt = CreatedAt,
     };
@@ -258,6 +263,11 @@ public sealed class PatchSet
     public string Id { get; set; } = Guid.NewGuid().ToString();
     public string MissionId { get; set; } = "";
     public string TaskId { get; set; } = "";
+    /// <summary>v0.3.8.95 — the mission workspace this set was diffed from, when it was produced
+    /// by <c>WorkspaceChangeSet</c> rather than parsed from model output. Attribution, and the
+    /// idempotence key that stops finalization re-harvesting a workspace the acting-coder path
+    /// already captured mid-mission. Null for model-proposed sets.</summary>
+    public string? WorkspaceId { get; set; }
     public string Summary { get; set; } = "";
     public List<PatchProposal> Proposals { get; set; } = new();
     public DateTime CreatedAt { get; set; } = AnthillTime.NowUtc();

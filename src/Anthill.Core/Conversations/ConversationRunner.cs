@@ -91,7 +91,14 @@ public sealed class ConversationRunner
         && !candidate.Any(char.IsWhiteSpace);
 
     private readonly SqliteMemory _memory;
-    private readonly Func<string, Action<string>, CancellationToken, string> _startMission;
+    /// <summary>
+    /// (goal, projectId, onMissionCreated, cancel) → mission report. v0.3.8.95 added the second
+    /// argument: the conversation's project travels into the pipeline AS DATA, so the mission's
+    /// workspace can be a worktree of the project's own repository. Before this the project reached
+    /// the mission only as prose inside the goal string — which a workspace cannot be cut from.
+    /// Null when the conversation has no project.
+    /// </summary>
+    private readonly Func<string, string?, Action<string>, CancellationToken, string> _startMission;
 
     /// <summary>
     /// Live work, by conversation. The exit gate says "cancelling a conversation cancels the work it
@@ -110,7 +117,7 @@ public sealed class ConversationRunner
     /// id to record history, and must not wait for the work to finish to get it.
     /// </summary>
     public ConversationRunner(SqliteMemory memory,
-        Func<string, Action<string>, CancellationToken, string> startMission)
+        Func<string, string?, Action<string>, CancellationToken, string> startMission)
     {
         _memory = memory;
         _startMission = startMission;
@@ -239,7 +246,7 @@ public sealed class ConversationRunner
         {
             try
             {
-                _startMission(missionGoal, id => idReady.TrySetResult(id), cts.Token);
+                _startMission(missionGoal, conversation.ProjectId, id => idReady.TrySetResult(id), cts.Token);
                 // v0.3.8.48, found live: the mission finished, its answer sat in mission history,
                 // and the conversation that started it showed nothing — an operator watching the
                 // chat never saw the result of the work they approved. The pipeline call above is
@@ -508,9 +515,14 @@ public sealed class ConversationRunner
             var mission = _memory.GetMission(missionId);
             if (mission is null) return;
             var status = mission.GetValueOrDefault("status")?.ToString() ?? "";
-            var answer = mission.GetValueOrDefault("user_result")?.ToString();
+            // v0.3.8.95 — final_result FIRST, then user_result. The old order was inverted
+            // relative to every other reader: the mission page and the console both lead with
+            // final_result, which ResultAssembler documents as the plain-English synthesis. Chat
+            // showed the raw best-task dump — possibly a JSON patch set — where the mission page
+            // showed the readable answer.
+            var answer = mission.GetValueOrDefault("final_result")?.ToString();
             if (string.IsNullOrWhiteSpace(answer))
-                answer = mission.GetValueOrDefault("final_result")?.ToString();
+                answer = mission.GetValueOrDefault("user_result")?.ToString();
 
             // v0.3.8.51, found live: a FAILED mission's user_result was the medic's escalation
             // prose — "Semantic duplicate: failure signature fsig:…" landed in chat as the
@@ -524,6 +536,22 @@ public sealed class ConversationRunner
                 ? answer!
                 : $"The mission finished with status \"{status}\" and recorded no result text — "
                   + "its task trail is in the mission history.";
+
+            // v0.3.8.95 — THE FACTUAL RECORD RIDES WITH THE ANSWER. v0.3.8.73 built the compiled
+            // mission report (every value a projection of a row, no model contribution possible)
+            // and nothing ever read it back to the operator: the operator_summary artifact had
+            // writers and no reader. The conversation turn is the reader — the operator asked for
+            // real work here, so what verifiably happened (outcome, verification basis, tasks,
+            // checks with exit codes, patch counts) lands beneath the answer, from the same
+            // compiler the artifact uses. Never throws into the announce path; a record that
+            // cannot be compiled leaves the answer standing alone, as before.
+            try
+            {
+                var record = Outcomes.MissionReport.Render(Outcomes.MissionReport.Compile(_memory, missionId));
+                if (!string.IsNullOrWhiteSpace(record))
+                    content = content.TrimEnd() + "\n\n" + record.TrimEnd();
+            }
+            catch { /* the answer without its record is still the answer */ }
 
             var ordinal = _memory.LoadConversationTurns(conversationId).Count + 1;
             _memory.SaveConversationTurn(new ConversationTurn(

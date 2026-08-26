@@ -38,7 +38,16 @@ public class CliBoundaryCharacterizationTests
             { "--permission-mode", "acceptEdits", "--allowedTools",
               "Edit,Write,Bash(dotnet:*),Bash(node:*),Bash(npm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*)",
               "--add-dir", "/repos/project" } },
-        { "bypass", true, new[] { "--dangerously-skip-permissions", "--add-dir", "/repos/project" } },
+        // v0.3.8.95 — BYPASS IS BOUNDED INSIDE A CONFINED WORKSPACE (this matrix's Mission context
+        // is confined, as every mission's is). The skip flag removes the vendor's entire
+        // permission layer while the process inherits the host's environment; Skip-all's promise
+        // is about PROMPTS, and the autoapprove posture already delivers promptless edits plus the
+        // bounded tool set. The unrestricted flag survives only for an UNCONFINED context — a road
+        // no mission takes — pinned by ActingMissionPipelineTests, not by this matrix.
+        { "bypass", true, new[]
+            { "--permission-mode", "acceptEdits", "--allowedTools",
+              "Edit,Write,Bash(dotnet:*),Bash(node:*),Bash(npm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*)",
+              "--add-dir", "/repos/project" } },
         // A read-only role (researcher/builder/verifier): reach only, under every policy.
         { "ask", false, new[] { "--add-dir", "/repos/project" } },
         { "autoapprove", false, new[] { "--add-dir", "/repos/project" } },
