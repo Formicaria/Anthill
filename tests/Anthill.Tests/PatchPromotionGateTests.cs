@@ -112,15 +112,23 @@ public class PatchPromotionGateTests
     }
 
     /// <summary>
-    /// THE TWO LANES THAT CHECKED ALMOST NOTHING NOW CONSULT THE GATE.
+    /// EVERY LANE THAT CAN WRITE A PROPOSED PATCH CONSULTS THE GATE.
     ///
-    /// The Apply button and the bypass lane. Auto-apply keeps its own nine checks for now — it is
-    /// stricter than the gate on every axis and folding it in is the next commit's work, alongside
-    /// making the set apply as a unit.
+    /// The Apply button and the bypass lane since v0.3.8.91; the auto-apply Director since
+    /// v0.3.8.94, which closed the "keeps its own nine checks for now" note this comment used to
+    /// carry. What the Director retains beside the gate is exactly the part a per-proposal gate
+    /// cannot own: the set-level evidence content check, the whole-set preflight, and the durable
+    /// transaction.
     /// </summary>
     [Theory]
     [InlineData("src/Anthill.Core/Orchestration/Queen.Views.cs", "PromotionActor.Human")]
     [InlineData("src/Anthill.Core/Orchestration/ExecutionService.cs", "PromotionActor.Bypass")]
+    // v0.3.8.94 — the third lane folded in, closing this file's own "auto-apply keeps its nine
+    // checks for now" note: the Director consults the gate as Automation for every eligible
+    // proposal, and its former private copies of the evaluation/write-gate/rollback checks are
+    // deleted. The set-level rules that stay in the runner (content hash, mixed deterministic
+    // rows, patch-set identity) are about the SET, which a per-proposal gate cannot answer.
+    [InlineData("src/Anthill.Api/AutoApplyRunner.cs", "PromotionActor.Automation")]
     public void TheApplyPaths_AskTheGate(string relativePath, string actor)
     {
         var code = SourceText.CodeOnly(File.ReadAllText(
