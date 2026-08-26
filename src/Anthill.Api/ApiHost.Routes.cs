@@ -212,9 +212,12 @@ public static partial class ApiHost
             if (string.IsNullOrWhiteSpace(body?.Provider) || string.IsNullOrWhiteSpace(body?.Model))
                 return ApiJson.Error("Both provider and model are required.", "bad_request");
 
-            AnthillRuntime.ModelRouting[role] = new Dictionary<string, string>
-                { ["provider"] = body!.Provider!.Trim(), ["model"] = body.Model!.Trim() };
-            AnthillRuntime.SaveConfig();
+            // v0.3.8.96 — write-through, in one call. This handler used to update the live
+            // ModelRouting dictionary and then SaveConfig — which serializes the Config OBJECT,
+            // whose ModelRoutes it never touched: every save persisted the stale routes, and a
+            // route lived exactly until the next restart. Found live, by restarting mid-
+            // qualification. The runtime owns both halves now.
+            AnthillRuntime.SetModelRoute(role, body!.Provider!, body.Model!);
             return ApiJson.Ok(new Dictionary<string, object?>
                 { ["role"] = role, ["provider"] = body.Provider, ["model"] = body.Model },
                 $"{role} now routes to {body.Model} ({body.Provider}).");
