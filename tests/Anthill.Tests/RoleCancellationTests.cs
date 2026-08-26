@@ -4,6 +4,7 @@ using Anthill.Core.Configuration;
 using Anthill.Core.Memory;
 using Anthill.Core.Modules;
 using Anthill.Core.Orchestration;
+using Anthill.Core.Planning;       // Planner.IsConsequential, for deriving the expected verifier
 using Anthill.Core.Security;
 using Anthill.Core.Tools;          // CheckDefinition, for pinning the tester's check selection
 using Anthill.Modules.Tools;
@@ -773,16 +774,20 @@ public class RoleCancellationTests : IDisposable
         //
         //   * `AntRegistry.ValidateTask` drops a `FailureTriggered` / `PostFinalization` role — the
         //     medic and the archivist — before dispatch;
-        //   * `Planner.TasksFromJson` appends a verifier task when the plan names none ("Final task
-        //     should usually be verifier" is a prompt rule; this is the runtime making it true);
+        //   * `Planner.TasksFromJson` appends a verifier task when a CONSEQUENTIAL plan names none —
+        //     v0.3.8.93 split the rule: a plan with patch-producing work always gets its verifier,
+        //     an informational plan keeps the shape the fixture wrote. This derivation reads
+        //     `Planner.IsConsequential` itself, so the expected set moves with the runtime's rule
+        //     instead of restating it;
         //   * everything else survives as written.
         //
         // Union rather than append, because a plan that already names the verifier gets no second
         // one — `ScriptedRolesFor` includes it whenever the role under test is not itself one of the
         // two fillers it displaces.
-        var expected = ScriptedRolesFor(role)
-            .Where(PlannerAssignable)
-            .Concat(new[] { "verifier" })
+        var scripted = ScriptedRolesFor(role).Where(PlannerAssignable).ToList();
+        var consequential = scripted.Any(r =>
+            Planner.IsConsequential(new Anthill.Core.Domain.Task { AssignedAnt = r, TaskType = "" }));
+        var expected = (consequential ? scripted.Concat(new[] { "verifier" }) : scripted)
             .Distinct(StringComparer.Ordinal)
             .OrderBy(r => r, StringComparer.Ordinal)
             .ToList();

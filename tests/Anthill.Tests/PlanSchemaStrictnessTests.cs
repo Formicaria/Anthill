@@ -118,14 +118,35 @@ public class PlanSchemaStrictnessTests
         Assert.All(plan.Tasks, t => Assert.False(string.IsNullOrWhiteSpace(t.Description)));
     }
 
-    /// <summary>A plan below the minimum is a rejection with a reason, not a silent empty list.</summary>
+    /// <summary>
+    /// v0.3.8.93 — the size minimum was SPLIT, and this pins both halves.
+    ///
+    /// Permanent: a small plan containing CONSEQUENTIAL work is rejected with a stated reason — a
+    /// lone coder task with no context before it and no verification after it is what the minimum
+    /// was for. Expired: a small INFORMATIONAL plan being rejected and silently replaced by the
+    /// static fallback, which answered the operator with a plan nobody wrote at three model calls
+    /// instead of one. A one-task informational plan is now a declared, accepted outcome; an EMPTY
+    /// plan is still a rejection, because no plan is not a small plan.
+    /// </summary>
     [Fact]
-    public void TooFewTasks_IsRejectedWithAStatedReason()
+    public void TooFewTasks_IsRejectedWithAStatedReason_OnlyWhenTheWorkIsConsequential()
     {
-        var plan = NewPlanner().TasksFromJson(Plan(TaskJson("researcher")), "goal", NoSkills);
+        // A lone coder task: still rejected, reason stated, and the reason names the split.
+        var consequential = NewPlanner().TasksFromJson(Plan(TaskJson("coder")), "goal", NoSkills);
+        Assert.False(consequential.Accepted);
+        Assert.Contains(consequential.Rejections, r => r.TaskIndex < 0 && r.Field == "tasks");
 
-        Assert.False(plan.Accepted);
-        Assert.Contains(plan.Rejections, r => r.TaskIndex < 0 && r.Field == "tasks");
+        // A lone informational task: accepted as the plan the model actually proposed.
+        var informational = NewPlanner().TasksFromJson(Plan(TaskJson("builder")), "goal", NoSkills);
+        Assert.True(informational.Accepted,
+            string.Join("; ", informational.Rejections.Select(r => r.Describe())));
+        Assert.Single(informational.Tasks);
+
+        // No tasks at all: rejected, with the reason on the tasks field.
+        var empty = NewPlanner().TasksFromJson(
+            JsonNode.Parse("{\"tasks\":[]}")!.AsObject(), "goal", NoSkills);
+        Assert.False(empty.Accepted);
+        Assert.Contains(empty.Rejections, r => r.Field == "tasks");
     }
 
     /// <summary>Malformed input is a rejection, never an exception the caller has to guess about.</summary>

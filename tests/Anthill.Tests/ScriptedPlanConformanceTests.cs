@@ -12,7 +12,8 @@ namespace Anthill.Tests;
 /// wrote: `Planner.TasksFromJson` rejects a plan with fewer than `AnthillRuntime.MinDynamicTasks`
 /// usable tasks, `Planner.Plan` then substitutes the static `FallbackTasks` graph, and a fixture
 /// that asserts on a role the fallback happens to contain passes anyway. The substitution is loud on
-/// stderr and invisible to the test.
+/// stderr and invisible to the test. (v0.3.8.93 narrowed the size rejection to plans containing
+/// consequential — patch-producing — work; the sweep below reads the narrowed rule.)
 ///
 /// THE SWEEP THAT FOUND THE SECOND ONE. `EarnedRepairLifecycleTests` scripted a two-task plan —
 /// researcher and coder — for the goal "Add a colony note to the documentation.", which contains
@@ -104,10 +105,14 @@ public class ScriptedPlanConformanceTests
         {
             var roles = AssignedAnt.Matches(plan.Json).Select(m => m.Groups["role"].Value).ToList();
 
-            if (roles.Count < AnthillRuntime.MinDynamicTasks)
-                problems.Add($"{plan.File}:{plan.Name} declares {roles.Count} task(s), below the "
-                           + $"minimum of {AnthillRuntime.MinDynamicTasks} — Planner rejects it and the "
-                           + "mission runs FallbackTasks instead");
+            // v0.3.8.93: the minimum binds CONSEQUENTIAL plans — the size rule was split, and this
+            // conformance check reads the same rule the Planner enforces (a coder task is what
+            // makes a fixture's plan consequential; scripted task types are role-typical, so the
+            // role is the honest discriminator here, exactly as in RoleCancellationTests).
+            if (roles.Count < AnthillRuntime.MinDynamicTasks && roles.Contains("coder"))
+                problems.Add($"{plan.File}:{plan.Name} declares {roles.Count} task(s) including "
+                           + $"consequential work, below the minimum of {AnthillRuntime.MinDynamicTasks} "
+                           + "— Planner rejects it and the mission runs FallbackTasks instead");
 
             foreach (var role in roles.Where(r => !AntRegistry.ExecutableRoleIds.Contains(r)).Distinct())
                 problems.Add($"{plan.File}:{plan.Name} assigns '{role}', which is not a "

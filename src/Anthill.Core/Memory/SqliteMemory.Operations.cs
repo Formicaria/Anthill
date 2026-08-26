@@ -753,6 +753,26 @@ public sealed partial class SqliteMemory
         _ => "operational_telemetry",
     };
 
+    /// <summary>
+    /// v0.3.8.93 — one trail's numbers, for the deterministic consumers. The trails have been
+    /// write-only since the layer existed (their one reader was a formatted prompt block);
+    /// <see cref="Pheromones.TrailGuidedSelection"/> is the first code path that decides on them,
+    /// and it reads through here. Legacy-flagged trails are invisible — a reset that quarantined
+    /// old learning must not keep steering new selections.
+    /// </summary>
+    public Pheromones.TrailView? GetPheromoneTrail(string trailKey)
+    {
+        var row = Query(
+            "SELECT strength, success_count, failure_count FROM pheromone_trails WHERE trail_key = @k AND legacy = 0",
+            ("@k", trailKey)).FirstOrDefault();
+        return row is null
+            ? null
+            : new Pheromones.TrailView(
+                Convert.ToDouble(row["strength"]),
+                (int)AsLong(row["success_count"]),
+                (int)AsLong(row["failure_count"]));
+    }
+
     public void UpdatePheromoneTrail(string trailKey, string trailType, bool success, double strengthDelta,
         Dictionary<string, object?>? metadata = null)
     {

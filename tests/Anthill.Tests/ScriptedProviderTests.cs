@@ -56,7 +56,16 @@ public class ScriptedProviderTests : IDisposable
 
         var queen = new Queen(new SqliteMemory(Path.Combine(_dir, "scripted.db")));
         string? missionId = null;
-        queen.RunMission("Summarize in one sentence what the ANTHILL framework does.",
+        // v0.3.8.93 — brief-sized on purpose (above Planner.SimpleAnswerGoalChars): proportional
+        // planning turned the old one-liner into a single-builder mission, and this proof needs the
+        // researcher AND the builder to be asked, so the scripted markers can land in both records.
+        queen.RunMission(
+            "Summarize in one sentence what the ANTHILL framework does. Ground the sentence in "
+          + "the colony's own context: how a mission travels from an operator's request through "
+          + "planning, execution and verification to a final answer, which roles take part at "
+          + "each stage and what each contributes, and whatever the colony's stored memory can "
+          + "supply about its own history. Close with the single-sentence version an operator "
+          + "would read first.",
             onMissionCreated: id => missionId = id);
         Assert.NotNull(missionId);
 

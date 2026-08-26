@@ -193,4 +193,33 @@ public class WorkspaceChangeSetTests : IDisposable
 
         Assert.Empty(set.Proposals);
     }
+
+    /// <summary>
+    /// v0.3.8.93, acceptance gate C — THE ORIGINAL IS BYTE-IDENTICAL UNTIL APPLY. An agent writing
+    /// in its worktree — edits, new files, everything short of apply — changes NOTHING in the
+    /// source checkout: same bytes in every tracked file, clean status, same HEAD. Harvesting the
+    /// change set is a read and must not move anything either. The only sanctioned route into the
+    /// source tree remains the patch/approval pipeline, and this is the test that says the
+    /// isolation half of that sentence is literally true, not approximately.
+    /// </summary>
+    [Fact]
+    public void TheSourceCheckout_IsByteIdentical_UntilApply()
+    {
+        var sourceFile = Path.Combine(_repo, "Existing.cs");
+        var bytesBefore = File.ReadAllBytes(sourceFile);
+        var headBefore = Git(_repo, "rev-parse HEAD");
+
+        // The agent works: an edit and a new file, in the worktree only.
+        File.WriteAllText(Path.Combine(_worktree, "Existing.cs"), "rewritten by the agent\n");
+        File.WriteAllText(Path.Combine(_worktree, "Created.cs"), "new work\n");
+
+        // Harvest is a read.
+        var set = Harvest();
+        Assert.Equal(2, set.Proposals.Count);
+
+        Assert.Equal(bytesBefore, File.ReadAllBytes(sourceFile));
+        Assert.False(File.Exists(Path.Combine(_repo, "Created.cs")));
+        Assert.Equal(headBefore, Git(_repo, "rev-parse HEAD"));
+        Assert.Equal("", Git(_repo, "status --porcelain"));
+    }
 }

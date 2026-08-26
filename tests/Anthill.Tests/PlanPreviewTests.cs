@@ -62,10 +62,23 @@ public class PlanPreviewTests : IDisposable
         Assert.Equal(before, _memory.GetRecentMissions(50).Count); // nothing persisted
     }
 
+    /// <summary>
+    /// v0.3.8.93 — "always ends with verifier" was SPLIT along the same line as the runtime
+    /// policy it previews: a plan containing consequential (patch-producing) work always carries
+    /// a verifier, and a brief informational request keeps the shape the planner chose — one
+    /// builder task, no grading step bolted onto an answer. Both directions pinned here, because
+    /// the preview's whole contract is showing the plan that will actually run.
+    /// </summary>
     [Fact]
-    public void PlanPreview_AlwaysEndsWithVerifier()
+    public void PlanPreview_GuaranteesAVerifier_ExactlyForConsequentialPlans()
     {
-        var tasks = _queen.PlanPreview("research the best approach and summarize").Tasks;
-        Assert.Contains(tasks, t => t.AssignedAnt == "verifier");
+        var consequential = _queen.PlanPreview("create a new file src/Foo.cs and add a class").Tasks;
+        Assert.Contains(consequential, t => t.AssignedAnt == "coder");
+        Assert.Contains(consequential, t => t.AssignedAnt == "verifier");
+
+        var informational = _queen.PlanPreview("research the best approach and summarize").Tasks;
+        Assert.DoesNotContain(informational, t => t.AssignedAnt == "verifier");
+        var only = Assert.Single(informational);
+        Assert.Equal("builder", only.AssignedAnt);
     }
 }
