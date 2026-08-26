@@ -234,6 +234,30 @@ public static class ArtifactSchemas
         };
 
     /// <summary>
+    /// Ant artifact kinds the bridge DELIBERATELY does not store as rows. v0.3.8.94.
+    ///
+    /// Until now these fell into <see cref="ForAntKind"/>'s null arm alongside typos and unknown
+    /// kinds, and "deliberately not bridged" was indistinguishable from "nobody wrote the arm" —
+    /// which is exactly how it read from outside: the coder has declared `patch_json` on every
+    /// patch task since the execution framework, the bridge silently dropped it, and whether that
+    /// was a decision or a gap could only be answered by archaeology. It was in fact correct both
+    /// times, for reasons worth a name each:
+    ///
+    ///   * `text` — the narrative an operator reads. It IS the task result, stored on the task row;
+    ///     a second copy as a schema-less artifact row would be the prose problem with extra steps.
+    ///   * `patch_json` — the coder's raw patch JSON. `ExecutionService.RecordPatchArtifact` stores
+    ///     the PARSED, validated patch set as the `patch_set` artifact — the authoritative record
+    ///     the soldier reviews. Bridging the raw string too would store the same change twice under
+    ///     two schemas, and every consumer asking "this mission's patch sets" would have to know
+    ///     which copy is real.
+    ///
+    /// A kind in this set is a decision; a kind in neither this set nor the map is a gap the
+    /// vocabulary test refuses.
+    /// </summary>
+    public static readonly IReadOnlySet<string> TransportOnly =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "text", "patch_json" };
+
+    /// <summary>
     /// What an ant's <c>AntArtifact.Kind</c> means in this vocabulary. v3.8.20.
     ///
     /// Ants have emitted typed artifacts since v2.19.0 — they were just serialised into a JSON blob
@@ -244,6 +268,8 @@ public static class ArtifactSchemas
     ///
     /// An unrecognised kind maps to NULL and is skipped rather than guessed at. A bridge that
     /// invented a schema for an unknown kind would fill the graph with rows whose type is a lie.
+    /// A kind in <see cref="TransportOnly"/> maps to null ON PURPOSE — see that set for the two
+    /// reasons.
     /// </summary>
     public static string? ForAntKind(string? antKind) => (antKind ?? "").ToLowerInvariant() switch
     {

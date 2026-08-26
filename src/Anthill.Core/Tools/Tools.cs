@@ -66,10 +66,32 @@ public sealed class ToolRegistry
     /// </summary>
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _dispatchCounts = new();
 
+    /// <summary>
+    /// The tool NAMES a task dispatched, beside the count and for the same reason. v0.3.8.94.
+    ///
+    /// `FailureContext.Tool` and the persisted `TaskResult.Tool` have filtered ant evidence on
+    /// kind "tool" since they were written, and no producer existed — both fields were null for
+    /// every task of every mission, and an operator reading "Tool: —" on a failure that died
+    /// inside a tool call had no way to know the blank was a missing producer rather than a
+    /// toolless task. Recorded here because this is the chokepoint every dispatch passes; asking
+    /// twelve handlers to remember is what produced the ToolCalls zeros.
+    ///
+    /// Ordered and DISTINCT — the record answers "which tools", the count answers "how many
+    /// dispatches". Bounded exactly like the counts: removed when read.
+    /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, List<string>> _dispatchedTools = new();
+
     /// <summary>Read and CLEAR the dispatch count for a task. Called once, when the execution
     /// record is persisted.</summary>
     public int TakeDispatchCount(string? taskId) =>
         taskId is not null && _dispatchCounts.TryRemove(taskId, out var n) ? n : 0;
+
+    /// <summary>Read and CLEAR the distinct tool names a task dispatched, in first-use order.
+    /// Called beside <see cref="TakeDispatchCount"/>, once, at the same measurement boundary.</summary>
+    public IReadOnlyList<string> TakeDispatchedTools(string? taskId) =>
+        taskId is not null && _dispatchedTools.TryRemove(taskId, out var names)
+            ? names
+            : Array.Empty<string>();
 
     public void Register(ITool tool) => _tools[tool.Name] = tool;
 
@@ -113,7 +135,15 @@ public sealed class ToolRegistry
         // exactly the behaviour a qualification review needs to see. Counting only successes would
         // make the metric agree with the role about how well it is doing.
         if (taskId is not null)
+        {
             _dispatchCounts.AddOrUpdate(taskId, 1, (_, n) => n + 1);
+            // The name too, distinct, first-use order — see _dispatchedTools. Same before-
+            // authorization timing, same reasoning: a denied dispatch is still an attempt the
+            // record should show.
+            _dispatchedTools.AddOrUpdate(taskId,
+                _ => new List<string> { name },
+                (_, names) => { lock (names) { if (!names.Contains(name, StringComparer.Ordinal)) names.Add(name); } return names; });
+        }
 
         if (missionId is not null)
             _memory.LogEvent(missionId, "tool_called", $"Tool called: {name}", taskId, antName,

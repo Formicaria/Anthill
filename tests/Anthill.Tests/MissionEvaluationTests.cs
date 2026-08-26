@@ -199,9 +199,17 @@ public class MissionEvaluationTests : IDisposable
         Assert.Contains("LoadMissionEvaluation", director);
         Assert.Contains("return (legacyOutcome, score, false)", director);   // legacy is never positive
 
+        // v0.3.8.94: auto-apply consumes the evaluation THROUGH the promotion gate — its private
+        // LoadMissionEvaluation copy folded into PatchPromotionGate's Automation arm, which is the
+        // same read for every unattended lane rather than one per caller. The chain is pinned in
+        // both links: the runner consults the gate as Automation, and the gate's Automation arm is
+        // where the persisted evaluation is consumed.
         var autoApply = CodeOnly(Read("src", "Anthill.Api", "AutoApplyRunner.cs"));
-        Assert.Contains("LoadMissionEvaluation", autoApply);
-        Assert.Contains("evaluation.IsPositive", autoApply);
+        Assert.Contains("PatchPromotionGate.Evaluate", autoApply);
+        Assert.Contains("PromotionActor.Automation", autoApply);
+        var gate = CodeOnly(Read("src", "Anthill.Core", "Verification", "PatchPromotionGate.cs"));
+        Assert.Contains("LoadMissionEvaluation", gate);
+        Assert.Contains("evaluation.IsPositive", gate);
 
         var queen = CodeOnly(Read("src", "Anthill.Core", "Orchestration", "Queen.cs"));
         Assert.Contains("SaveMissionEvaluation(evaluation)", queen);

@@ -122,7 +122,7 @@ public sealed class UiCartographerAnt : BaseAnt
             StatusCode = warnings.Count > 0 ? "succeeded_with_warnings" : "succeeded",
             Summary = $"UI map: {routes.Count} routes, {functions.Count} functions, {apiCalls.Count} API call sites across {examined.Count} file(s).",
             Artifacts = { new AntArtifact("ui_map", "Frontend structure map", mapJson) },
-            Evidence = examined.Select(f => new AntEvidence("file_path", f)).ToList(),
+            Evidence = examined.Select(f => new AntEvidence(AntEvidenceKinds.FilePath, f)).ToList(),
             Handoffs = { new AntHandoff("ui_cartographer", "coder", "UI map ready for implementation planning",
                 "code_change", new[] { "ui_map" }, Required: false, Depth: 1, DedupeKey: $"uimap:{mission.Id}") },
             Warnings = warnings,
@@ -210,7 +210,7 @@ public sealed class TesterAnt : BaseAnt
             var run = _tools.RunTool("run_allowlisted_check", mission.Id, task.Id, Name,
                 new() { ["check_id"] = checkId });
             var exit = System.Text.RegularExpressions.Regex.Match(run.Output, @"exit_code=(-?\d+)").Groups[1].Value;
-            evidence.Add(new AntEvidence("check", checkId, $"exit_code={(exit.Length > 0 ? exit : "n/a")} success={run.Success}"));
+            evidence.Add(new AntEvidence(AntEvidenceKinds.Check, checkId, $"exit_code={(exit.Length > 0 ? exit : "n/a")} success={run.Success}"));
             lines.Add($"{checkId}: {(run.Success ? "PASS" : "FAIL")}{(run.Success ? "" : $" — {run.Error}")}");
             if (!run.Success) allPassed = false;
         }
@@ -232,14 +232,14 @@ public sealed class TesterAnt : BaseAnt
         var tree = judged?.MaterializedPatchSetId is { } patched
             ? $"patched tree (patch set {patched})"
             : judged is not null ? "mission workspace — UNPATCHED" : "the configured workspace";
-        evidence.Add(new AntEvidence("workspace", "tree", tree));
+        evidence.Add(new AntEvidence(AntEvidenceKinds.Workspace, "tree", tree));
         lines.Add($"checked in: {tree}");
         // Structural repair §3: the FULL identity of what was judged, when a revision was ambient —
         // revision id, patch set hash and tree hash, so this report can be paired with (or refused
         // against) a candidate artifact by comparison rather than by trust.
         if (judged?.RevisionId is { } revId)
         {
-            evidence.Add(new AntEvidence("revision", revId,
+            evidence.Add(new AntEvidence(AntEvidenceKinds.Revision, revId,
                 $"patch_set={judged.MaterializedPatchSetId} patch_set_hash={judged.PatchSetHash} tree_hash={judged.TreeHash}"));
             lines.Add($"revision: {revId} patch_set_hash: {judged.PatchSetHash} tree_hash: {judged.TreeHash}");
         }
@@ -489,7 +489,7 @@ public sealed class SoldierAnt : BaseAnt
                 ? $"SECURITY REVIEW: {blocked.Count} BLOCKING finding(s), risk {risk} — deterministic block, not overridable."
                 : $"Security review passed: {findings.Count} advisory finding(s), risk {risk}.",
             Artifacts = { new AntArtifact("security_review", "Deterministic policy review", review) },
-            Evidence = findings.Select(f => new AntEvidence("policy_rule", f.RuleId, f.Detail)).ToList(),
+            Evidence = findings.Select(f => new AntEvidence(AntEvidenceKinds.PolicyRule, f.RuleId, f.Detail)).ToList(),
             Handoffs =
             {
                 blocked.Count > 0
@@ -665,7 +665,7 @@ public sealed class ScribeAnt : BaseAnt
             StatusCode = warnings.Count > 0 ? "succeeded_with_warnings" : "succeeded",
             Summary = $"Documentation produced: {artifacts.Count} artifact(s) from {priorResults.Count} mission result(s).",
             Artifacts = artifacts,
-            Evidence = changedFiles.Select(f => new AntEvidence("file_path", f)).ToList(),
+            Evidence = changedFiles.Select(f => new AntEvidence(AntEvidenceKinds.FilePath, f)).ToList(),
             Handoffs =
             {
                 sensitive
@@ -832,8 +832,8 @@ public sealed class MedicAnt : BaseAnt
                 new AntArtifact("failure_diagnosis", "Failure diagnosis", diagnosis),
                 new AntArtifact("repair_recommendation", "Bounded repair route", $"{targetRole}:{targetType} (single attempt, then fresh checks)"),
             },
-            Evidence = { new AntEvidence("failure_id", failed.Id, failed.FailureReason ?? "structured failure in result"),
-                         new AntEvidence("failure_signature", signature) },
+            Evidence = { new AntEvidence(AntEvidenceKinds.FailureId, failed.Id, failed.FailureReason ?? "structured failure in result"),
+                         new AntEvidence(AntEvidenceKinds.FailureSignature, signature) },
             Handoffs = { new AntHandoff("medic", targetRole, $"repair route for {Anthill.SDK.Contracts.FailureClassNames.Wire(cls)}",
                 targetType, new[] { "failure_diagnosis" }, true, 1, $"medic:{signature}") },
         };
@@ -1098,7 +1098,7 @@ public sealed class ArchivistAnt : BaseAnt
             Summary = $"Archived terminal outcome '{outcome}': {candidates.Count} memory candidate(s)"
                 + (outcome == "completed_verified" ? " (incl. positive procedural)" : outcome is "failed" or "partial" or "timed_out" ? " (incl. negative lesson)" : " (neutral)") + ".",
             Artifacts = { new AntArtifact("memory_candidate", "Memory candidates with provenance", payload) },
-            Evidence = { new AntEvidence("mission_id", mission.Id, $"outcome={outcome} verifier_passed={verifierPassed}") },
+            Evidence = { new AntEvidence(AntEvidenceKinds.MissionId, mission.Id, $"outcome={outcome} verifier_passed={verifierPassed}") },
             Narrative = narrative,
         };
     }

@@ -194,11 +194,21 @@ public class SoldierBlockLifecycleTests : IDisposable
           + "security block. The write gates were deliberately ON for this run, so this is the "
           + "block failing to stop the write rather than a disabled feature standing in for it.");
 
+        // v0.3.8.94 — the refusal now comes from the PROMOTION GATE, consulted as Automation, and
+        // it names the earliest layer the soldier's block reached rather than only the last one.
+        // The block travels three routes to the same refusal — the producing task's deterministic
+        // block, the soldier review's own blocking finding, and the mission's failed canonical
+        // evaluation — and which the gate names first is the gate's ordering, not this scenario's
+        // claim. The claim is: the write refused, and the reason traces to the security block.
         var skips = queen.Memory.GetRecentEvents(200, "autonomy_autoapply_skipped");
         Assert.Contains(skips, e =>
-            (e.GetValueOrDefault("message")?.ToString() ?? "").Contains(missionId!, StringComparison.Ordinal)
-            && (e.GetValueOrDefault("message")?.ToString() ?? "")
-                .Contains("no canonical completed_verified evaluation", StringComparison.Ordinal));
+        {
+            var message = e.GetValueOrDefault("message")?.ToString() ?? "";
+            return message.Contains(missionId!, StringComparison.Ordinal)
+                && (message.Contains("deterministic block", StringComparison.OrdinalIgnoreCase)
+                 || message.Contains("blocking finding", StringComparison.OrdinalIgnoreCase)
+                 || message.Contains("no canonical completed_verified evaluation", StringComparison.Ordinal));
+        });
     }
 
     // The defect this fixture uncovered — the soldier scanning a patch artifact's JSON
