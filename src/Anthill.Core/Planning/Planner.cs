@@ -148,12 +148,16 @@ Proven procedures (verified history — consider these routes first; they are no
 task you plan from one is still subject to every normal permission and contract check):
 {skillContext}
 
-{AnthillRuntime.UntrustedBlock("mission goal", goal)}
+{AnthillRuntime.OperatorRequestBlock("mission goal", goal)}
 {constraintDirective}
 Rules:
 - Return ONLY valid JSON.
 Do not wrap JSON in markdown code fences.
-- Create between {AnthillRuntime.MinDynamicTasks} and {AnthillRuntime.MaxDynamicTasks} tasks.
+- Create between 1 and {AnthillRuntime.MaxDynamicTasks} tasks — as few as the request actually
+  needs. A simple informational request is legitimately a SINGLE builder task; add researcher,
+  file, or web tasks only when the answer genuinely needs them. Any plan that changes files
+  (a coder task) must have at least {AnthillRuntime.MinDynamicTasks} tasks: context before the
+  change, verification after it.
 - assigned_ant must be one of the ants listed above.
 - assigned_worker is optional but, when present, must be a registered worker under assigned_ant.
   Prefer these worker IDs: researcher.repo_researcher, researcher.mission_researcher,
@@ -238,14 +242,22 @@ Required JSON:
     /// substituted so verification missions still actually look at the files. A verifier is always
     /// guaranteed. Missions without a no-patch constraint pass through unchanged.
     /// </summary>
+    /// <summary>
+    /// v0.3.8.93 — whether a task is CONSEQUENTIAL: it proposes changes rather than answering a
+    /// question. One definition, shared by the plan-size minimum (small consequential plans are
+    /// rejected), the constraint stripper (no-patch missions remove exactly these), and the
+    /// runtime verification policy (consequential plans always get a verifier). Three readers of
+    /// one rule, so they cannot disagree about what "consequential" means.
+    /// </summary>
+    internal static bool IsConsequential(Task t) =>
+        t.AssignedAnt == "coder" || t.TaskType is "patch_proposal" or "patch" or "code_change";
+
     internal static List<Task> EnforceConstraints(List<Task> tasks, string goal, MissionConstraints constraints)
     {
         if (!constraints.BlocksPatches || tasks.Count == 0) return tasks;
 
-        bool IsPatchTask(Task t) =>
-            t.AssignedAnt == "coder" || t.TaskType is "patch_proposal" or "patch" or "code_change";
-        var removedIds = tasks.Where(IsPatchTask).Select(t => t.Id).ToHashSet();
-        var kept = tasks.Where(t => !IsPatchTask(t)).ToList();
+        var removedIds = tasks.Where(IsConsequential).Select(t => t.Id).ToHashSet();
+        var kept = tasks.Where(t => !IsConsequential(t)).ToList();
 
         // Drop dependencies that pointed at removed tasks so the scheduler can't deadlock.
         foreach (var t in kept)
@@ -525,9 +537,24 @@ Required JSON:
         // already failed on a bad role would ALSO report "below the minimum" — a consequence of the
         // first problem presented as a second, co-equal one. The operator needs the cause, not the
         // count of symptoms it produced.
-        if (rejections.Count == 0 && tasks.Count < AnthillRuntime.MinDynamicTasks)
+        //
+        // v0.3.8.93 — THE MINIMUM APPLIES TO CONSEQUENTIAL PLANS, NOT TO EVERY PLAN. The guard was
+        // split, not weakened. What it permanently protects: a plan that CHANGES something must
+        // carry enough structure to be reviewed — a lone coder task with no research behind it and
+        // no verification after it is exactly what three-task minimum was for, and that half stays
+        // strict. What expired: forcing an informational request ("what does this constant do?")
+        // to ship three tasks. Below the minimum, a small informational plan used to be rejected
+        // here and silently replaced by FallbackTasks — the v0.3.8.82 defect shape: the operator's
+        // request answered by a plan nobody wrote, at three model calls instead of one. A one-task
+        // informational plan is now a legitimate DECLARED outcome; zero tasks is still a rejection,
+        // because an empty plan is not a small plan.
+        if (rejections.Count == 0 && tasks.Count == 0)
+            rejections.Add(new PlanRejection(-1, "tasks", "the plan contains no usable tasks"));
+        if (rejections.Count == 0 && tasks.Count < AnthillRuntime.MinDynamicTasks
+            && tasks.Any(IsConsequential))
             rejections.Add(new PlanRejection(-1, "tasks",
-                $"{tasks.Count} usable task(s), below the minimum of {AnthillRuntime.MinDynamicTasks}"));
+                $"{tasks.Count} usable task(s), below the minimum of {AnthillRuntime.MinDynamicTasks} "
+              + "for a plan containing consequential (patch-producing) work"));
 
         // ALL OR NOTHING. A plan is a graph, and a graph missing a node or an edge is not a smaller
         // version of the same plan — it is a different one that nothing reviewed. Executing it
@@ -535,7 +562,10 @@ Required JSON:
         // like success. Rejecting sends the mission to the static fallback, which is a plan someone
         // did review.
         if (rejections.Count > 0) return new PlanParse(Array.Empty<Task>(), rejections);
-        if (!tasks.Any(t => t.AssignedAnt == "verifier"))
+        // v0.3.8.93: the verifier is guaranteed for CONSEQUENTIAL plans only — same split as the
+        // size minimum above, and as PlanningService.EnsurePlanVerification, which is the runtime
+        // half of this same rule. An informational plan keeps the shape the model proposed.
+        if (tasks.Any(IsConsequential) && !tasks.Any(t => t.AssignedAnt == "verifier"))
             tasks.Add(new Task
             {
                 Title = "Verify mission output",
@@ -716,6 +746,19 @@ Required JSON:
                 new() { Title = "Verify result", Description = $"Check the result for accuracy, usefulness, missing steps, and risk: {goal}", AssignedAnt = "verifier", AssignedWorker = "verifier.result_verifier", TaskType = "verification" },
             };
 
+        // v0.3.8.93 — a SHORT informational goal gets a single-task static plan. The three-task
+        // generic fallback below predates proportional planning: for "what is X?" it spent a
+        // research call and a verification call to dress up one answer, and the verifier was
+        // grading prose, not protecting a change. Nothing consequential is planned here, so the
+        // proportionality rule the dynamic planner now follows applies to the static plan too.
+        // The bound is deliberately conservative: anything long enough to be a brief runs the
+        // full research→build→verify shape exactly as before.
+        if (goal.Trim().Length <= SimpleAnswerGoalChars)
+            return new()
+            {
+                new() { Title = "Answer the request", Description = $"Answer directly and practically: {goal}", AssignedAnt = "builder", AssignedWorker = "builder.response_builder", TaskType = "build_answer" },
+            };
+
         return new()
         {
             new() { Title = "Research mission", Description = $"Understand the goal and gather useful context: {goal}", AssignedAnt = "researcher", AssignedWorker = "researcher.mission_researcher", TaskType = "research" },
@@ -723,4 +766,11 @@ Required JSON:
             new() { Title = "Verify result", Description = $"Check the result for accuracy, usefulness, and missing steps: {goal}", AssignedAnt = "verifier", AssignedWorker = "verifier.result_verifier", TaskType = "verification" },
         };
     }
+
+    /// <summary>
+    /// The goal length below which the static fallback answers with a single builder task.
+    /// A compile-time constant, like <see cref="AnthillRuntime.MinDynamicTasks"/> — proportionality
+    /// is a planning rule, not an operator gate.
+    /// </summary>
+    internal const int SimpleAnswerGoalChars = 280;
 }

@@ -101,8 +101,56 @@ public sealed class PlanningService : IPlanningService
             if (task.TaskType == "general")
                 task.TaskType = TextUtil.InferTaskType(task.AssignedAnt, task.Title, task.Description);
             if (string.IsNullOrWhiteSpace(task.AssignedWorker))
-                task.AssignedWorker = AntRegistry.DefaultWorkerFor(
-                    task.AssignedAnt, task.TaskType, $"{goal} {task.Title} {task.Description}")?.WorkerId;
+            {
+                // v0.3.8.93 — the registry resolves; a verified trail may replace a TIE-BREAK.
+                //
+                // ResolveWorker answers two things: the worker, and whether the task's own text
+                // decided it. A keyword decision is a capability fact and is final — no trail is
+                // consulted, however strong, because reputation must never outrank compatibility.
+                // When the text said nothing, the registry's answer is declaration order — a guess —
+                // and the colony's own verified track record (worker trails, reinforced only by
+                // completed_verified missions) is better evidence than declaration order. This is
+                // the pheromone layer's first deterministic consumer; the event makes each use
+                // visible, because a learning signal that silently steers dispatch is the kind of
+                // influence an operator must be able to see and audit.
+                var (resolved, keywordDecided) = AntRegistry.ResolveWorker(
+                    task.AssignedAnt, task.TaskType, $"{goal} {task.Title} {task.Description}");
+                task.AssignedWorker = resolved?.WorkerId;
+
+                if (!keywordDecided && resolved is not null
+                    && AntRegistry.ByRole.TryGetValue(task.AssignedAnt, out var roleDef))
+                {
+                    var preferred = Pheromones.TrailGuidedSelection.Prefer(
+                        roleDef.Workers, key => _memory.GetPheromoneTrail(key));
+                    if (preferred is not null && preferred.WorkerId != resolved.WorkerId)
+                    {
+                        task.AssignedWorker = preferred.WorkerId;
+                        // Guarded like PatchApplyReconciler.Announce, for the same reason: the
+                        // events table has an FK to missions, and PlanPreview runs this same code
+                        // over a transient mission that is never persisted (deliberately — one plan
+                        // construction, so preview equals dispatch). The SELECTION must be
+                        // identical on both paths; the EVENT can only exist where the mission
+                        // does, and a diagnostic must never break the decision it describes.
+                        try
+                        {
+                            _memory.LogEvent(context.MissionId, "worker_selected_by_trail",
+                                $"{preferred.WorkerId} takes '{task.Title}' over default {resolved.WorkerId}: "
+                              + "strongest verified worker trail among compatible candidates.",
+                                task.Id, task.AssignedAnt, new()
+                                {
+                                    ["worker"] = preferred.WorkerId,
+                                    ["default_worker"] = resolved.WorkerId,
+                                    ["trail_key"] = Pheromones.TrailGuidedSelection.TrailKeyFor(preferred),
+                                });
+                        }
+                        catch (Exception logError)
+                        {
+                            Console.Error.WriteLine(
+                                $"[planning] worker_selected_by_trail not recorded for {context.MissionId}: {logError.Message}");
+                        }
+                    }
+                }
+            }
 
             // The authorization verdict is part of the plan, not something a caller opts into. An
             // operator reviewing a preview is approving the plan that will actually run, so a task
@@ -133,11 +181,23 @@ public sealed class PlanningService : IPlanningService
         return tasks;
     }
 
-    /// <summary>Append the verifier the plan omitted, when the plan contains admissible work.</summary>
+    /// <summary>
+    /// Append the verifier the plan omitted, when the plan contains admissible CONSEQUENTIAL work.
+    ///
+    /// v0.3.8.93 — the §6 rule was split, not weakened. The permanent half stays permanent: a plan
+    /// that CHANGES anything (any patch-producing task, per <see cref="Planner.IsConsequential"/>)
+    /// gets verification whatever the planner said, because an unverified change that merely looks
+    /// complete is the defect §6 exists to prevent. The half that expired: appending a verifier to
+    /// purely informational plans, where the "deliverable" is prose and the appended task graded
+    /// the wording of an answer at the price of a model call — verification of nothing, bought on
+    /// every question. A planner that WANTS a verifier on an informational plan may still include
+    /// one; this stops forcing it.
+    /// </summary>
     internal static void EnsurePlanVerification(List<Task> tasks)
     {
         var admissible = tasks.Where(t => t.Status != TaskStatus.Failed).ToList();
         if (admissible.Count == 0) return;
+        if (!admissible.Any(Planner.IsConsequential)) return;
         if (admissible.Any(t => string.Equals(t.AssignedAnt, "verifier", StringComparison.OrdinalIgnoreCase)))
             return;
         if (!AntExecutorCatalog.RuntimeAvailable("verifier")) return;   // said elsewhere, honestly, at insert time
