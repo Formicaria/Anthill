@@ -47,6 +47,7 @@
   "answer_synthesis_enabled": true,
   "dashboard_workspace_enabled": true,
   "sandbox_execution_enabled": false,
+  "acting_coder_enabled": false,
   "_comment_roster": "READ THIS BEFORE TRUSTING THE SEVEN FLAGS BELOW. v0.3.8.91 correction. On a config file with no config_schema_version - which this example is - the migration treats present-but-false specialist flags as an UNMIGRATED file and adopts roster_profile 'full', which forces every one of them to TRUE at runtime. They looked like off switches and were not. The real controls are roster_profile ('full' | 'core') and disabled_roles, both of which were undocumented here until now. Set roster_profile to 'core' for the minimal roster, or list individual roles in disabled_roles. The seven flags remain for pre-migration files and are the reason the migration exists.",
   "roster_profile": "full",
   "disabled_roles": [],

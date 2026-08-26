@@ -347,12 +347,21 @@ public static class AgentCliCatalog
 
         switch (access.PolicyWire)
         {
-            case "bypass" when agent.BypassArgs is { Count: > 0 }:
-                args.AddRange(agent.BypassArgs);
-                break;
+            // v0.3.8.95 — BYPASS NEVER CROSSES INTO A CONFINED WORKSPACE. The skip flag removes
+            // the vendor's entire permission layer: not just edit prompts but every tool — any
+            // shell command, any fetch — and the process inherits the host's environment and
+            // credentials no matter how disposable its cwd is. Inside a mission worktree the
+            // operator's Skip-all still means what it says about PROMPTS: edits plus the bounded
+            // tool set flow without one (the autoapprove posture below), and the patch pipeline's
+            // gates — which Skip-all never claimed to skip — judge the result. The unrestricted
+            // flag remains reachable only OUTSIDE confinement, a road no mission takes.
+            case "bypass" when access.ConfinedWorkspace:
             case "autoapprove":
                 if (agent.AcceptEditsArgs is { Count: > 0 }) args.AddRange(agent.AcceptEditsArgs);
                 if (agent.AutoApproveToolArgs is { Count: > 0 }) args.AddRange(agent.AutoApproveToolArgs);
+                break;
+            case "bypass" when agent.BypassArgs is { Count: > 0 }:
+                args.AddRange(agent.BypassArgs);
                 break;
             case "ask" when access.ConfinedWorkspace:
                 // In a DISPOSABLE mission sandbox the approved mission is the approved work; in a
