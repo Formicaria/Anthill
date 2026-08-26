@@ -475,13 +475,20 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
 
         try
         {
+            // v0.3.8.93 — anchored to the task whose work produced the changes, resolved the same
+            // way the result assembler picks the best output (this runs BEFORE Assemble, so
+            // mission.BestOutputTaskId is still null here — which is why the old code recorded
+            // every harvested set against task "", an id no approval card or verification fault
+            // could ever be traced back from).
+            var anchorId = ResultAssembler.SelectBestOutputTaskId(mission);
+            var anchor = mission.Tasks.FirstOrDefault(t => t.Id == anchorId);
+
             var changes = Anthill.Core.Workspaces.WorkspaceChangeSet.Create(
-                workspace, mission.Id, mission.BestOutputTaskId ?? "",
+                workspace, mission.Id, anchorId ?? "",
                 $"Changes from mission workspace {workspace.Id}");
 
             if (changes.Proposals.Count > 0)
             {
-                Memory.SavePatchSet(changes);
                 Memory.LogEvent(mission.Id, "workspace_change_set",
                     $"{changes.Proposals.Count} file(s) proposed from workspace {workspace.Id}", null, "queen",
                     new()
@@ -490,6 +497,29 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
                         ["base_revision"] = workspace.BaseRevision,
                         ["files"] = changes.Proposals.Select(p => p.FilePath).ToList(),
                     });
+
+                // v0.3.8.93 — INTO THE ONE PIPELINE, not past it. This used to be a bare
+                // SavePatchSet: the harvested set existed in the store with no verification
+                // evidence, no artifact, no approval card and no bypass gate — reviewable in
+                // principle, unreachable in practice. It now takes the same path a coder's
+                // structured proposal takes (ProcessPatchSet saves it), with one honest
+                // divergence: policy review tasks cannot be inserted at finalization, and the
+                // pipeline records that instead of hiding it.
+                if (anchor is not null)
+                {
+                    Execution.ProcessHarvestedPatchSet(mission, anchor, changes);
+                }
+                else
+                {
+                    // No completed task to anchor to — a mission whose every task failed but whose
+                    // workspace still changed. The set is saved so the evidence survives; the
+                    // pipeline needs a real task row for attribution and there is none to give it.
+                    Memory.SavePatchSet(changes);
+                    Memory.LogEvent(mission.Id, "workspace_change_set_unanchored",
+                        $"Patch set {changes.Id} from workspace {workspace.Id} was saved without the "
+                      + "review pipeline: no completed task exists to attribute it to.", null, "queen",
+                        new() { ["patch_set_id"] = changes.Id, ["workspace_id"] = workspace.Id });
+                }
             }
             else
             {

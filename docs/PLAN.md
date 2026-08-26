@@ -5,7 +5,7 @@
 [`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
 [`QUALIFICATION.md`](QUALIFICATION.md).
 
-Shipping release: **v0.3.8.92**.
+Shipping release: **v0.3.8.93**.
 
 ---
 
@@ -396,6 +396,41 @@ under it.
 > **Exit gate.** Every write to the operator's tree passes one gate; every externally visible
 > mutation is recoverable after a crash; no security decision reads prose or falls back to a broader
 > source when its authoritative input is missing; and the configuration surface has one authority.
+
+---
+
+### R0-B — One real task, end-to-end, through the production path · *v0.3.8.93*
+
+The corrections brief: make `operator request → plan → routed worker → mission worktree →
+patch/evidence pipeline → real answer` true at every joint, not just at most of them. Closed by
+substance at v0.3.8.93, with one honest residual:
+
+- ✅ **The role's contract clamps the agent CLI** — `AgentAccessScope` carries `RoleMayWrite`,
+  derived from the ant registry at dispatch; a read-only role gets no Edit/Write/Bash flags or
+  settings under ANY policy. *Skip All Approvals skips the operator's prompts, not the role's
+  contract* — the promotion gate's sentence, now true one layer earlier. Enforced in process argv
+  and the materialized settings file, never in prompt prose.
+- ✅ **Both coder modes end in one pipeline** — `ProcessPatchSet` is the single consumer; the
+  harvested worktree diff now gets verification, a patch artifact, approval cards and the bypass
+  gate exactly as a structured-JSON proposal does. The one divergence (review tasks cannot be
+  inserted after the task graph closes) is evented, not silent.
+- ✅ **The prompts tell the truth** — the operator request travels in an OPERATOR REQUEST fence and
+  is the instruction; fetched/prior-model content keeps the UNTRUSTED fence; embedded fence markers
+  are defanged in both, so a hostile string in a fetched document cannot close its fence or forge
+  the operator's. Worker prompts name REAL dispatchable tools from the authorization table, or say
+  "none" — `read_workspace_docs` and its phantom siblings no longer reach a prompt.
+- ✅ **Mission size is proportional** — a one-task informational plan is a declared, accepted
+  outcome; the three-task minimum and the guaranteed verifier now bind exactly the plans with
+  consequential (patch-producing) work. The guard was split, both halves pinned.
+- ✅ **One consequential pheromone decision** — verified worker trails break the
+  declaration-order tie in worker selection; capability keywords outrank any trail; evented as
+  `worker_selected_by_trail`; A/B-replayed in `PheromoneDecisionTests`.
+- ✅ **The real result reaches the operator** — already true since v0.3.8.73 (`operator_summary`
+  compiled from persisted rows, no model in the path); re-verified rather than rebuilt.
+- ◻ **The live CLI gate has still not run.** `CliBoundaryCharacterizationTests` records the exact
+  argv/settings per role×policy cell at the pure-function layer, and says in its own header that it
+  is NOT the live gate: no vendor process starts in the suite. The live run remains R4's item, and
+  nothing in this release claims it.
 
 ---
 

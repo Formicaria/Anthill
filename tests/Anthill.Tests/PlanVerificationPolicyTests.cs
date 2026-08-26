@@ -9,6 +9,13 @@ namespace Anthill.Tests;
 /// Structural repair §6 — mandatory verification is runtime policy, not a planner option. The
 /// planner may request verification; a plan that omits it and still produces work gets the
 /// verifier appended, bound by lineage and dependency to every deliverable-producing task.
+///
+/// v0.3.8.93 — the rule was SPLIT, and these tests now pin both halves. Permanent: a plan with
+/// CONSEQUENTIAL work (any patch-producing task) always gets verification — that half is
+/// unchanged and stays strict. Expired: forcing a verifier onto purely informational plans,
+/// where the appended task graded the wording of an answer at the price of a model call. The
+/// fixtures below use a coder task where the appended verifier is asserted, and assert its
+/// ABSENCE for the informational shapes that used to get one.
 /// </summary>
 public class PlanVerificationPolicyTests : IDisposable
 {
@@ -33,7 +40,7 @@ public class PlanVerificationPolicyTests : IDisposable
     [Fact]
     public void APlanThatOmitsTheVerifier_GetsOneAppended_WithFullLineage()
     {
-        var tasks = new List<DomainTask> { Work("researcher"), Work("builder", "build_answer") };
+        var tasks = new List<DomainTask> { Work("researcher"), Work("coder", "patch_proposal") };
         PlanningService.EnsurePlanVerification(tasks);
 
         var verifier = Assert.Single(tasks, t => t.AssignedAnt == "verifier");
@@ -49,9 +56,29 @@ public class PlanVerificationPolicyTests : IDisposable
     [Fact]
     public void APlanThatAlreadyHasAVerifier_IsNotDoubled()
     {
-        var tasks = new List<DomainTask> { Work("researcher"), Work("verifier", "verification") };
+        var tasks = new List<DomainTask>
+            { Work("coder", "patch_proposal"), Work("verifier", "verification") };
         PlanningService.EnsurePlanVerification(tasks);
         Assert.Single(tasks, t => t.AssignedAnt == "verifier");
+    }
+
+    /// <summary>
+    /// v0.3.8.93 — THE EXPIRED HALF, PINNED IN THE OTHER DIRECTION. An informational plan — no
+    /// patch-producing task anywhere in it — keeps the shape its planner chose. The verifier is
+    /// protection for changes; an answer's wording is not a change, and forcing a grading task
+    /// onto every question was verification of nothing at a model call each.
+    /// </summary>
+    [Fact]
+    public void AnInformationalPlan_IsNotForcedAVerifier()
+    {
+        var tasks = new List<DomainTask> { Work("researcher"), Work("builder", "build_answer") };
+        PlanningService.EnsurePlanVerification(tasks);
+        Assert.DoesNotContain(tasks, t => t.AssignedAnt == "verifier");
+
+        // And a planner that WANTED one keeps it — the rule stopped forcing, not permitting.
+        var chosen = new List<DomainTask> { Work("builder", "build_answer"), Work("verifier", "verification") };
+        PlanningService.EnsurePlanVerification(chosen);
+        Assert.Single(chosen, t => t.AssignedAnt == "verifier");
     }
 
     [Fact]
@@ -72,7 +99,7 @@ public class PlanVerificationPolicyTests : IDisposable
     [Fact]
     public void TheInsertedVerifier_DeclaresItsOrigin()
     {
-        var tasks = new List<DomainTask> { Work("builder", "build_answer") };
+        var tasks = new List<DomainTask> { Work("coder", "patch_proposal") };
         PlanningService.EnsurePlanVerification(tasks);
         Assert.Contains("inserted by runtime policy", tasks.Single(t => t.AssignedAnt == "verifier").Description);
     }

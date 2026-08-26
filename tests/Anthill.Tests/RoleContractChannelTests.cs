@@ -224,21 +224,30 @@ public class RoleContractChannelTests
     }
 
     /// <summary>
-    /// Operator text is FENCED. The mission goal is the operator's words, and a standing objective
-    /// is the operator's words re-read on every unattended run — which makes the objective the
-    /// highest-value place in the colony to plant an instruction, authored once and obeyed forever
-    /// with nobody watching that turn.
+    /// Operator text is FENCED — and since v0.3.8.93, fenced TRUTHFULLY. The mission goal and the
+    /// standing objective are the operator's own instructions, and they travel in the OPERATOR
+    /// REQUEST fence: a boundary that stops embedded text impersonating the contract, without the
+    /// old label's claim that the request was data the worker must never follow — a claim the
+    /// worker had to disbelieve to do its job at all. What the colony did NOT author — fetched
+    /// pages, prior model output — keeps the UNTRUSTED fence, and the coder/builder/verifier file
+    /// is checked for BOTH: the split is the guard, and losing either half of it is the regression.
     /// </summary>
     [Theory]
-    [InlineData("src/Anthill.Core/Agents/Ants.cs")]
-    [InlineData("src/Anthill.Core/Planning/Planner.cs")]
-    [InlineData("src/Anthill.Core/Autonomy/Strategist.cs")]
-    public void OperatorTextIsFenced_AsUntrusted(string relative)
+    [InlineData("src/Anthill.Core/Agents/Ants.cs", true)]
+    [InlineData("src/Anthill.Core/Planning/Planner.cs", false)]
+    [InlineData("src/Anthill.Core/Autonomy/Strategist.cs", false)]
+    public void OperatorTextIsFenced_AndTheTwoFencesStaySplit(string relative, bool carriesUntrustedContext)
     {
         var code = SourceText.CodeOnly(File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
             relative.Replace('/', Path.DirectorySeparatorChar))));
 
-        Assert.Contains("UntrustedBlock(", code);
+        // The operator's words never reach a prompt bare, and never wear the untrusted label.
+        Assert.Contains("OperatorRequestBlock(", code);
+        Assert.DoesNotContain("UntrustedBlock(\"mission goal\"", code);
+        Assert.DoesNotContain("UntrustedBlock(\"standing objective\"", code);
+
+        // Where a file feeds workers retrieved/prior-model context, that context stays untrusted.
+        if (carriesUntrustedContext) Assert.Contains("UntrustedBlock(", code);
     }
 
     // -------------------------------------------------------------------------------------------

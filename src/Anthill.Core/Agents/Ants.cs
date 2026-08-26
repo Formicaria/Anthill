@@ -942,7 +942,10 @@ public sealed class CoderAnt : BaseAnt
 
     private static string BuildPrompt(Task task, Mission mission, string codeContext, string feedback)
     {
-        var prompt = $@"{AnthillRuntime.UntrustedBlock("mission goal", mission.Goal)}
+        // v0.3.8.93: the goal is the OPERATOR REQUEST — the instruction this patch exists to serve —
+        // not untrusted data. See AnthillRuntime.OperatorRequestBlock for why the old fence was
+        // false about this payload; retrieved context and prior model output keep the untrusted one.
+        var prompt = $@"{AnthillRuntime.OperatorRequestBlock("mission goal", mission.Goal)}
 
 Assigned task:
 {task.Title}
@@ -1086,7 +1089,10 @@ public sealed class BuilderAnt : BaseAnt
         // answer Needs Improvement when it "contains only procedural ANTHILL commands like /apply,
         // /patches, or /approval". One role was instructed to produce what another was instructed to
         // penalise.
-        var prompt = $@"{AnthillRuntime.UntrustedBlock("mission goal", mission.Goal)}
+        // v0.3.8.93: the goal moves to the OPERATOR REQUEST fence — it is the question the answer
+        // must serve. Prior task output stays UNTRUSTED: it is model output, and a hostile string
+        // that rode in through a fetched page must not gain authority by being quoted downstream.
+        var prompt = $@"{AnthillRuntime.OperatorRequestBlock("mission goal", mission.Goal)}
 
 Assigned task:
 {task.Title}
@@ -1348,7 +1354,9 @@ public sealed class VerifierAnt : BaseAnt
             // Empty falls back to the mission-wide block, which is what every task received before.
             declaredInputIds: task.InputArtifactIds,
             consumerTaskId: task.Id);
-        var prompt = $@"{AnthillRuntime.UntrustedBlock("mission goal", mission.Goal)}
+        // v0.3.8.93: the goal is what the verifier judges the answer AGAINST — an operator request,
+        // not untrusted data. Task outputs stay untrusted: they are the model output under judgment.
+        var prompt = $@"{AnthillRuntime.OperatorRequestBlock("mission goal", mission.Goal)}
 
 Static system check:
 {staticCheck}

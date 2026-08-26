@@ -100,7 +100,19 @@ public class ColonyAcceptanceTests : IDisposable
             Anthill.Core.Configuration.AnthillRuntime.EnableArchivistAnt = true;
 
             queen = NewQueen("a.db");
-            queen.RunMission("Summarize in one sentence what the ANTHILL framework does.",
+            // v0.3.8.93 — the goal is deliberately BRIEF-SIZED (above Planner.SimpleAnswerGoalChars).
+            // Proportional planning made the old one-line goal a legitimate single-builder mission,
+            // which is the right plan for that question and the wrong fixture for this scenario:
+            // this scenario exists to prove the multi-role path, graph integrity across real edges,
+            // and the archivist's post-finalization run. The single-task path has its own proof in
+            // PlanProportionalityTests; this goal is one a research→build→verify plan actually fits.
+            queen.RunMission(
+                "Summarize in one sentence what the ANTHILL framework does. Ground the sentence in "
+              + "the colony's own context: how a mission travels from an operator's request through "
+              + "planning, execution and verification to a final answer, which roles take part at "
+              + "each stage and what each contributes, and whatever the colony's stored memory can "
+              + "supply about its own history. Close with the single-sentence version an operator "
+              + "would read first.",
                 onMissionCreated: id => missionId = id);
         }
         finally
