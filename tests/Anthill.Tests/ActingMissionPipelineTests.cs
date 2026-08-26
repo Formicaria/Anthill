@@ -363,6 +363,136 @@ public class ActingMissionPipelineTests : IDisposable
         Assert.True(granted);
     }
 
+    // -------------------------------------------------------------------------------------------
+    // v0.3.8.96 — what the live qualification run found
+    // -------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The UI gate matches "ui" as a WORD. As a substring it lived inside "build" — so the moment
+    /// a conversation transcript said "Build final response" (every mission's plan does), every
+    /// later mission in that conversation was refused for having no frontend map. Two live runs
+    /// failed on it before the substring was suspected.
+    /// </summary>
+    [Theory]
+    [InlineData("Create docs/NOTES.md. Transcript: [Colony] Build final response complete.", false)]
+    [InlineData("follow the guide and keep it quite small for the builder", false)]
+    [InlineData("fix the UI alignment on the settings screen", true)]
+    [InlineData("polish the frontend spacing", true)]
+    [InlineData("update the dashboard cards", true)]
+    public void TheUiGoalSignal_MatchesTheWordUi_NeverTheLettersInsideAnotherWord(string goal, bool expected)
+    {
+        Assert.Equal(expected, UiChangeGate.LooksLikeUiWork(goal, ""));
+    }
+
+    /// <summary>
+    /// The capture never proposes the colony's own scaffolding. ANTHILL materializes the agent's
+    /// settings file into the worktree; the live run found that file riding in EVERY change set —
+    /// proposed to the operator as mission work, tripping the soldier's script rule on the way.
+    /// Producer-obtained: a real repository, the real settings path, a real diff.
+    /// </summary>
+    [Fact]
+    public void TheCapture_NeverProposesTheMaterializedSettingsFile()
+    {
+        var repo = NewGitRepo("scaffolding");
+        Directory.CreateDirectory(Path.Combine(repo, ".claude"));
+        File.WriteAllText(Path.Combine(repo, ".claude", "settings.local.json"), "{\"_anthill\":\"m\"}\n");
+        File.WriteAllText(Path.Combine(repo, "real-work.txt"), "the mission's actual output\n");
+
+        var changed = WorkspaceChangeSet.ChangedPaths(repo);
+        Assert.Contains("real-work.txt", changed);
+        Assert.DoesNotContain(changed, p => p.Contains("settings.local.json", StringComparison.OrdinalIgnoreCase));
+
+        var workspace = new MissionWorkspace
+        {
+            Id = "ws-scaf", MissionId = "m-scaf", SourceRoot = repo, Root = repo,
+            Mode = "worktree", BaseRevision = Git(repo, "rev-parse HEAD"), State = WorkspaceState.Active,
+        };
+        var set = WorkspaceChangeSet.Create(workspace, "m-scaf", "t-scaf", "scaffolding test");
+        Assert.Contains(set.Proposals, p => p.FilePath == "real-work.txt");
+        Assert.DoesNotContain(set.Proposals, p => p.FilePath.Contains("settings.local.json", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>And a worktree whose ONLY change is the scaffolding classifies as an idle acting
+    /// turn — the settings file must never make a no-op look like work.</summary>
+    [Fact]
+    public void ScaffoldingAlone_IsNotWork()
+    {
+        var repo = NewGitRepo("scaffolding-only");
+        Directory.CreateDirectory(Path.Combine(repo, ".claude"));
+        File.WriteAllText(Path.Combine(repo, ".claude", "settings.local.json"), "{\"_anthill\":\"m\"}\n");
+
+        Assert.Empty(WorkspaceChangeSet.ChangedPaths(repo));
+    }
+
+    /// <summary>
+    /// Core cannot reference the provider module, so the scaffolding path is duplicated — and this
+    /// is the test the duplication comment promises: the two constants must be the same file.
+    /// </summary>
+    [Fact]
+    public void TheScaffoldingPath_AgreesWithTheCatalogsSettingsPath()
+    {
+        var claude = AgentCliCatalog.ById("agent:claude-code");
+        Assert.NotNull(claude);
+        Assert.Equal(
+            WorkspaceChangeSet.AgentSettingsRelativePath.Replace('\\', '/'),
+            (claude!.LocalSettingsRelativePath ?? "").Replace('\\', '/'));
+    }
+
+    /// <summary>
+    /// A route save persists BOTH halves. POST /routes/{role} used to mutate the live dictionary
+    /// and then save the untouched Config object — every save wrote the stale routes, and a route
+    /// lived exactly until the next restart. Found by restarting mid-qualification. Source-position
+    /// asserted, FinalizationOrderTests-style, because the defect was two updates that each worked
+    /// and never met.
+    /// </summary>
+    [Fact]
+    public void ARouteSave_WritesTheLiveDictionaryAndThePersistedConfig_Together()
+    {
+        var runtime = SourceText.CodeOnly(File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
+            "src", "Anthill.Core", "Configuration", "AnthillRuntime.cs")));
+        var method = runtime.IndexOf("public static void SetModelRoute", StringComparison.Ordinal);
+        Assert.True(method >= 0, "SetModelRoute is no longer recognisable in AnthillRuntime.cs");
+        var body = runtime[method..(method + 900)];
+        var live = body.IndexOf("ModelRouting[role]", StringComparison.Ordinal);
+        var persisted = body.IndexOf("Config.ModelRoutes[role]", StringComparison.Ordinal);
+        var save = body.IndexOf("SaveConfig()", StringComparison.Ordinal);
+        Assert.True(live >= 0 && persisted >= 0, "SetModelRoute no longer writes both halves");
+        Assert.True(save > live && save > persisted,
+            "SaveConfig must run after BOTH the live dictionary and the persisted config are updated");
+
+        var api = SourceText.CodeOnly(File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
+            "src", "Anthill.Api", "ApiHost.Routes.cs")));
+        Assert.Contains("AnthillRuntime.SetModelRoute(", api, StringComparison.Ordinal);
+        Assert.DoesNotContain("AnthillRuntime.ModelRouting[role]", api, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The settings surface can write the acting gate, the startup warns about legacy config
+    /// files, and the snapshot reports the checks that govern plus every declared check the
+    /// resolver refused — three "present and unreachable" findings from one live run, pinned.
+    /// </summary>
+    [Fact]
+    public void TheConfigSurface_CarriesTheQualificationRunsFindings()
+    {
+        var runtime = SourceText.CodeOnly(File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
+            "src", "Anthill.Core", "Configuration", "AnthillRuntime.cs")));
+
+        // acting_coder_enabled is an editable key…
+        var editable = runtime.IndexOf("EditableConfigKeys", StringComparison.Ordinal);
+        Assert.True(editable >= 0);
+        Assert.Contains("\"acting_coder_enabled\"", runtime[editable..(editable + 2500)], StringComparison.Ordinal);
+
+        // …the loader warns about the relic location…
+        Assert.Contains("WarnAboutLegacyConfigs(path)", runtime, StringComparison.Ordinal);
+        Assert.Contains("data/anthill.json", runtime, StringComparison.Ordinal);
+
+        // …and the snapshot answers for the checks, including the refusals.
+        var snapshot = Anthill.Core.Configuration.AnthillRuntime.SettingsSnapshot();
+        Assert.True(snapshot.ContainsKey("workspace_checks_active"));
+        Assert.True(snapshot.ContainsKey("workspace_check_problems"));
+        Assert.True(snapshot.ContainsKey("acting_coder_enabled"));
+    }
+
     private static string Git(string workdir, string args)
     {
         using var p = Process.Start(new ProcessStartInfo("git", args)

@@ -26,6 +26,25 @@ public static class WorkspaceChangeSet
     public const int MaxProposalChars = 400_000;
 
     /// <summary>
+    /// v0.3.8.96 — the agent-CLI settings file ANTHILL itself materializes into a working
+    /// directory (<c>AgentCliCatalog.LocalSettingsRelativePath</c>, duplicated here because Core
+    /// cannot reference the provider module; a test holds the two strings equal). The live
+    /// qualification run found it riding in EVERY captured change set: the colony wrote its own
+    /// scaffolding into the worktree, then diffed the worktree, then proposed its scaffolding to
+    /// the operator as the mission's work — where it tripped the soldier's script rule and, on
+    /// approval, would have been applied into the operator's repository. Scaffolding is not work,
+    /// and the producer that put it there is the one that must not count it.
+    /// </summary>
+    public const string AgentSettingsRelativePath = ".claude/settings.local.json";
+
+    /// <summary>True when <paramref name="relativePath"/> is the colony's own materialized agent
+    /// scaffolding rather than mission work. Separator-insensitive; never throws.</summary>
+    public static bool IsColonyScaffolding(string? relativePath) =>
+        !string.IsNullOrWhiteSpace(relativePath)
+        && string.Equals(relativePath.Trim().Trim('"').Replace('\\', '/'),
+            AgentSettingsRelativePath, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Build the change set for <paramref name="workspace"/>.
     ///
     /// Returns an empty set when nothing changed, rather than null: "the mission ran and changed
@@ -68,6 +87,9 @@ public static class WorkspaceChangeSet
             // — a review that ends in a failure the reviewer could not have predicted.
             if (code.StartsWith('D')) continue;
 
+            // v0.3.8.96: the colony's own materialized scaffolding is never mission work.
+            if (IsColonyScaffolding(path)) continue;
+
             var proposal = Proposal(workspace, against, path, added: code.StartsWith('A'));
             if (proposal is not null) set.Proposals.Add(proposal);
         }
@@ -77,6 +99,9 @@ public static class WorkspaceChangeSet
         var (_, untracked) = Git(workspace.Root, "ls-files --others --exclude-standard");
         foreach (var path in untracked.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
+            // v0.3.8.96: the settings file is created untracked, so this loop is where it actually
+            // entered every change set. Same rule, both discovery paths.
+            if (IsColonyScaffolding(path)) continue;
             var proposal = Proposal(workspace, against, path.Trim(), added: true);
             if (proposal is not null) set.Proposals.Add(proposal);
         }
@@ -139,7 +164,10 @@ public static class WorkspaceChangeSet
         if (string.IsNullOrWhiteSpace(workspaceRoot) || !Directory.Exists(workspaceRoot))
             return Array.Empty<string>();
 
-        var (ok, output) = Git(workspaceRoot, "status --porcelain");
+        // -uall: individual FILES, never a collapsed "dir/" entry — a directory whose content is
+        // entirely untracked would otherwise appear as one opaque path the scaffolding exclusion
+        // below cannot see into (found by this method's own test: .claude/ hid the settings file).
+        var (ok, output) = Git(workspaceRoot, "status --porcelain -uall");
         if (!ok) return Array.Empty<string>();
 
         var paths = new List<string>();
@@ -150,6 +178,9 @@ public static class WorkspaceChangeSet
             var entry = line.Length > 3 ? line[3..].Trim() : "";
             var arrow = entry.IndexOf(" -> ", StringComparison.Ordinal);
             if (arrow >= 0) entry = entry[(arrow + 4)..].Trim();
+            // v0.3.8.96: the acting coder's success is judged by this list, and the colony's own
+            // materialized settings file must not be able to make an idle turn look like work.
+            if (IsColonyScaffolding(entry)) continue;
             if (entry.Length > 0) paths.Add(entry.Trim('"'));
         }
         return paths;
