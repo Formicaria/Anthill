@@ -78,7 +78,11 @@ public static class ToolEvidence
             deterministic: true,
             passed: success,
             missionId: missionId,
-            detail: TextUtil.Truncate(detail ?? "", 500),
+            // v0.3.8.97: 500 → 2400. Five hundred characters was sized for a verdict line, and a
+            // FAILED check's detail now carries its output tail — the part an operator reads to
+            // learn WHY. A cap that re-destroys what the producer just started preserving would be
+            // the same three-layer loss with a smaller knife.
+            detail: TextUtil.Truncate(detail ?? "", 2400),
             taskId: taskId,
             revisionId: scope?.RevisionId,
             patchSetHash: scope?.PatchSetHash,
