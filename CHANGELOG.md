@@ -32,6 +32,17 @@ Two live runs, two different planners, same refusal, before the substring was su
 now a word-boundary match of its own; the other signal words keep their substring semantics,
 which are intended ("webpage", "pages").
 
+**And the gate must not refuse itself.** Validating the word-boundary fix live found the deeper
+defect it had been hiding: once the gate refused a mission, its own refusal prose — "this task
+changes the ui … map the frontend …" — entered the conversation transcript, the transcript rides
+beneath every later composed goal, and every later mission in that conversation was refused. A
+self-sustaining refusal, seeded by the gate quoting itself; the substring fix was correct and
+irrelevant, because the matched words were real words in COLONY-GENERATED text. The goal signal
+now judges the OPERATOR'S ASK alone — everything above the composed goal's first section marker —
+because what the colony previously said about a mission is never evidence about what the operator
+is asking for now. Markerless goals (the direct API, the CLI, every existing test) are judged
+whole, exactly as before.
+
 **The capture no longer proposes the colony's own scaffolding.** ANTHILL materializes the agent
 CLI's settings file into the mission worktree — and then diffed the worktree and proposed its own
 scaffolding to the operator as the mission's work, in every change set, where it tripped the
