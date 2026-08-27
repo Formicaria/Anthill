@@ -1,3 +1,28 @@
+## v0.3.8.97 - a failed check keeps its output, and the last two switches reach the surface
+
+The remaining ledger from the qualification day, closed.
+
+**A failed check's evidence is finally readable.** Three layers conspired to destroy the
+diagnosis of every failed revision check, each defensible alone: `CheckRunner` truncated output
+keeping only the HEAD (restore chatter — a build's or test run's verdict lines live at the END),
+`Tools.RecordEvidence` recorded `Output` on success but only the one-line `Error` on failure
+(the transcript existed on both branches and was kept exactly when nobody needed it), and
+`ToolEvidence` capped whatever survived at 500 characters. Three live `dotnet_test` failures
+inside materialized revisions left 28 readable characters each — "check 'dotnet_test' exited 1"
+— and the mystery stayed a mystery BECAUSE of the recording, not despite it. Truncation now
+keeps head and tail with the omission counted, a failure records its headline beside its output
+tail, and the evidence cap fits what the producers preserve. The revision-test failure itself
+remains open — deliberately: the next failing run will be the first one that can be READ, and
+diagnosing from data beats guessing from theory, which is this repository's whole doctrine.
+
+**`workspace_checks` and `objective_verification_enabled` join the editable settings.** The same
+finding as v0.3.8.96's `acting_coder_enabled`, twice more, from the same live day: declaring a
+workspace check took a file edit and a host restart per attempt — three restarts to land one
+check id — and the deliverable evaluation layer could not be switched on at all without the same
+dance, which is why every qualification record so far reads "deliverable: not_checked". Both are
+live-editable now; the resolver's validation, the loud refusals, and the snapshot's
+`workspace_check_problems` reporting (v0.3.8.96) are what make live editing of checks safe.
+
 ## v0.3.8.96 - what the live run taught, closed while the transcript was still warm
 
 Seven findings from the first passing acting-coder qualification run (mission 3bbbde32,
