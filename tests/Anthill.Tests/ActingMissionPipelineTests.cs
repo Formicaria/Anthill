@@ -385,6 +385,32 @@ public class ActingMissionPipelineTests : IDisposable
     }
 
     /// <summary>
+    /// THE GATE MUST NOT REFUSE ITSELF. Found live, the same day as the substring fix: once the
+    /// gate refused a mission, its own refusal prose ("changes the ui … map the frontend") entered
+    /// the conversation transcript, the transcript rides beneath every later composed goal under
+    /// the "--- conversation context ---" delimiter, and every later mission in that conversation
+    /// was refused — a self-sustaining refusal seeded by the gate quoting itself. The goal signal
+    /// judges only the operator's ask, above the first section marker; colony narration below it
+    /// is never evidence of operator intent. A markerless goal is judged whole, as ever.
+    /// </summary>
+    [Fact]
+    public void TheGatesOwnRefusalInTheTranscript_CannotRefuseTheNextMission()
+    {
+        var poisoned =
+            "Create a new file docs/ACTING-RUN-RECORD.md with one line. Do not modify any existing file.\n"
+          + "\n--- conversation context (what the request above refers to) ---\n"
+          + "Colony: \"Create structured patch proposal\" failed: this task changes the ui and the "
+          + "mission has no ui_map. The cartographer must map the frontend before a change is proposed.";
+
+        Assert.False(UiChangeGate.LooksLikeUiWork(poisoned, ""));
+
+        // And a genuine UI ask ABOVE the marker still trips it — the reduction narrows the text,
+        // never the rule.
+        var genuine = "fix the UI alignment\n\n--- conversation context ---\nColony: earlier chatter";
+        Assert.True(UiChangeGate.LooksLikeUiWork(genuine, ""));
+    }
+
+    /// <summary>
     /// The capture never proposes the colony's own scaffolding. ANTHILL materializes the agent's
     /// settings file into the worktree; the live run found that file riding in EVERY change set —
     /// proposed to the operator as mission work, tripping the soldier's script rule on the way.
