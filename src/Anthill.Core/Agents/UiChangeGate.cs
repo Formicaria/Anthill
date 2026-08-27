@@ -68,9 +68,31 @@ public static class UiChangeGate
     /// a UI change proposed blind against a frontend nobody looked at, which is the failure this gate
     /// exists for. Those are not symmetric and the threshold reflects that.
     /// </summary>
+    /// <summary>
+    /// v0.3.8.96, second finding of the same live day — THE GATE REFUSED ITSELF. A composed
+    /// mission goal carries the recent transcript beneath the operator's message, under a
+    /// "--- conversation context ---" delimiter. Once this gate refused a mission, its own refusal
+    /// prose — "this task changes the ui … map the frontend …" — entered that transcript, so every
+    /// LATER goal in the conversation contained "ui" and "frontend" as words, and the gate refused
+    /// forever: a self-sustaining refusal seeded by the gate quoting itself. The word-boundary fix
+    /// shipped hours earlier was correct and irrelevant, because the matched words were real words
+    /// in COLONY-GENERATED text.
+    ///
+    /// So the goal signal now judges the OPERATOR'S ASK alone: everything before the first
+    /// "--- " section marker, which is where ComposeMissionGoal begins the standing context, the
+    /// transcript, and the attachments. What the colony previously said about a mission is never
+    /// evidence about what the operator is asking for now. A goal with no markers — the direct
+    /// API, the CLI, every existing test — is judged whole, exactly as before.
+    /// </summary>
+    internal static string OperatorAskOnly(string goal)
+    {
+        var marker = goal.IndexOf("\n--- ", StringComparison.Ordinal);
+        return marker >= 0 ? goal[..marker] : goal;
+    }
+
     public static bool LooksLikeUiWork(string? goal, string? taskText)
     {
-        var lowered = (goal ?? "").ToLowerInvariant();
+        var lowered = OperatorAskOnly(goal ?? "").ToLowerInvariant();
         if (GoalWords.Any(lowered.Contains)) return true;
         if (UiWord.IsMatch(lowered)) return true;
 
