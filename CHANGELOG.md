@@ -90,6 +90,30 @@ modelling question. `EnsureClassCoverage` adds only what is missing — a read-o
 inspection, a compiler, a verifier — in the same place and by the same rule as the long-standing
 guaranteed verifier, and every inserted task passes the ordinary authorization and permission gates.
 
+**An assessment is now graded on what it left behind, not on a verifier saying the words.** The
+deliverable layer could read exactly one intent — a file change — so a mission that changes nothing
+by construction resolved to `not_applicable` and its entire judgment fell to a model returning
+"Verification Passed". That is the whole of what made mission `7afd85b2` gradeable as complete.
+`AssessmentObjective` asks three questions an audit can be held to without a model's opinion, each
+answered from a record: was anything inspected (the evidence store), did the verifier read what it
+graded (the consumption ledger), and is there an answer. An unreadable store fails closed, because
+an outage is never permission. It applies to one mission class and can only narrow what counts as
+verified — nothing that fails today newly passes.
+
+Per-deliverable coverage is deliberately NOT in that gate yet. The obvious implementation — does
+the answer contain this question's words — grades on vocabulary: an answer reading "Strengths: …
+Weaknesses: …" addresses "what is good and bad about it" completely and contains neither word, and
+a gate that demoted it would make every real gate less trustworthy. Coverage becomes checkable when
+a deliverable can be CLAIMED by the task that served it; that is the deliverable ledger, and it
+lands with the assembler rather than being faked from a word search.
+
+**The answer is assembled before the mission is graded.** `ResultAssembler` ran after the
+evaluation, which was harmless while the deliverable layer only asked whether a file changed and
+impossible once it asks about the answer: the evaluator read `FinalResult` before anything had
+written it. Assembly is a pure function of the terminal tasks, so moving it ahead of the grade adds
+an input without adding an influence. The workspace harvest deliberately stays after — a change set
+is a result of the mission, and producing one must never alter the outcome that produced it.
+
 ## v0.3.8.97 - execution/promotion closure, and the last two switches reach the surface
 
 Two bodies of work from the same qualification day, shipped as one release: the remaining

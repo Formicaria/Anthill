@@ -1104,6 +1104,23 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
                                               || (t.Status == TaskStatus.Failed && !t.Critical));
         mission.Status = criticalFailed ? MissionStatus.Failed : degraded ? MissionStatus.Partial : MissionStatus.Complete;
 
+        // v3.1.0 (ADR-001): the three operator-facing accounts of a finished mission — raw best
+        // output, full trace, and the plain-English answer — assembled behind one interface.
+        //
+        // v0.3.8.98 — ASSEMBLED BEFORE THE GRADE, because the answer is now part of what is graded.
+        // This ran after the evaluation, which was harmless while the deliverable layer could only
+        // ask whether a file changed and impossible once it asks whether the ANSWER addresses what
+        // the operator requested: the evaluator read `FinalResult` before anything had written it,
+        // and every assessment would have been demoted for producing no answer it had not yet been
+        // given the chance to produce. Assembly is a pure function of the terminal tasks — it
+        // selects, composes and synthesises, and decides nothing about the outcome — so moving it
+        // ahead of the grade adds an input without adding an influence. The workspace harvest below
+        // deliberately stays AFTER: a change set is a result of the mission, and producing one must
+        // never alter the outcome that produced it.
+        _results.Assemble(mission, context);
+        Memory.LogEvent(mission.Id, "best_output_selected", $"Best output task selected: {mission.BestOutputTaskId}",
+            metadata: new() { ["best_output_task_id"] = mission.BestOutputTaskId });
+
         // v2.26.0 pre-V3 hardening: the ONE evaluation. Computed exactly once, after every task is
         // terminal, PERSISTED before any learning/credit/completion consumer runs — so restored
         // state answers exactly what live state answered, and no consumer re-derives success.
@@ -1121,8 +1138,20 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         {
             Console.Error.WriteLine($"[finalize] could not read evidence for {mission.Id}: {evidenceError.Message}");
         }
+        // v0.3.8.98 — and the consumption ledger, read the same way and for the same reason: the
+        // assessment objective asks whether the verifier read what it graded, and a read failure
+        // must reach the evaluator as NULL (fail closed) rather than as an empty list, which would
+        // be indistinguishable from "the verifier consumed nothing" and is a different fact.
+        IReadOnlyList<Anthill.SDK.Artifacts.ArtifactConsumption>? missionConsumptions = null;
+        try { missionConsumptions = ((Anthill.SDK.Artifacts.IArtifactStore)Memory).ConsumptionsForMission(mission.Id, 500); }
+        catch (Exception consumptionError)
+        {
+            Console.Error.WriteLine($"[finalize] could not read consumptions for {mission.Id}: {consumptionError.Message}");
+        }
+
         var evaluation = _evaluator.Evaluate(
-            mission, context, stopReason, Memory.CountPatchProposalsForMission(mission.Id), missionEvidence);
+            mission, context, stopReason, Memory.CountPatchProposalsForMission(mission.Id), missionEvidence,
+            missionConsumptions);
         // NB: persisted by RunMission AFTER the final SaveMission (INSERT OR REPLACE would erase
         // it here) and before anything publishes completion. In-process consumers below use this
         // same object, so they cannot disagree with what gets persisted.
@@ -1162,11 +1191,6 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // mission is using". Outside a scope it is null and this is a no-op, which is correct for
         // the read-only missions that never get one.
         HarvestWorkspaceChanges(mission, Anthill.Core.Workspaces.MissionWorkspaceScope.Current);
-        // v3.1.0 (ADR-001): the three operator-facing accounts of a finished mission — raw best
-        // output, full trace, and the plain-English answer — assembled behind one interface.
-        _results.Assemble(mission, context);
-        Memory.LogEvent(mission.Id, "best_output_selected", $"Best output task selected: {mission.BestOutputTaskId}",
-            metadata: new() { ["best_output_task_id"] = mission.BestOutputTaskId });
         var eventType = mission.Status == MissionStatus.Complete ? "mission_completed" : mission.Status == MissionStatus.Partial ? "mission_partial" : "mission_failed";
         Memory.LogEvent(mission.Id, eventType, $"Mission finished with status: {mission.Status.Value()}", metadata: new()
         {

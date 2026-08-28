@@ -52,6 +52,7 @@ public class SystemAuditMissionTests : IDisposable
     private readonly bool _useOllamaWas = AnthillRuntime.UseOllama;
     private readonly string _workspaceWas = AnthillRuntime.AllowedWorkspaceRoot;
     private readonly bool _fileToolsWas = AnthillRuntime.EnableFileTools;
+    private readonly bool _objectiveWas = AnthillRuntime.EnableObjectiveVerification;
     // The roster gates are process-global and this fixture forces them on. Captured and restored
     // so a leaked gate cannot decide a later test's result — the failure mode RosterGates exists for.
     private readonly RosterGates.Snapshot _gatesWere = RosterGates.Capture();
@@ -67,6 +68,7 @@ public class SystemAuditMissionTests : IDisposable
         AnthillRuntime.UseOllama = _useOllamaWas;
         AnthillRuntime.AllowedWorkspaceRoot = _workspaceWas;
         AnthillRuntime.EnableFileTools = _fileToolsWas;
+        AnthillRuntime.EnableObjectiveVerification = _objectiveWas;
         RosterGates.Restore(_gatesWere);
         try { Directory.Delete(_dir, recursive: true); } catch { }
     }
@@ -149,7 +151,13 @@ public class SystemAuditMissionTests : IDisposable
             "SCRIPTED: Capabilities: the colony plans, executes, verifies and promotes patches. "
           + "Strengths: deterministic gates. Weaknesses: worker selection is keyword-based. "
           + "Roles used: researcher, builder, verifier.")
-        .Role("verifier", "SCRIPTED: the assessment addresses the request.")
+        // The verifier's REAL vocabulary. `VerificationVerdict.Parse` recognises exactly three
+        // phrases, and a scripted verifier that invents its own wording is not standing in for the
+        // ant — it is testing a colony whose verifier never returns a verdict. The first draft said
+        // "the assessment addresses the request", which parses to Unknown, which is not a pass, and
+        // every case failed at the canonical evaluation for a reason that had nothing to do with
+        // the audit.
+        .Role("verifier", "Verification Passed: the assessment addresses the request and cites what was inspected.")
         .Role("tester", "SCRIPTED: no checks required.")
         .Role("soldier", "SCRIPTED: no security concern.")
         .Role("medic", "SCRIPTED: no diagnosis required.")
@@ -175,6 +183,10 @@ public class SystemAuditMissionTests : IDisposable
         AnthillRuntime.AllowedWorkspaceRoot = SourceText.RepoRoot();
         // `search_workspace` is registered only when file tools are on — see AcceptanceGatesOneAndTwo.
         AnthillRuntime.EnableFileTools = true;
+        // THE DELIVERABLE LAYER IS ON. Off (the default) it reports `not_checked` and demotes
+        // nothing, so the assessment objective would not run and this test would be graded by the
+        // verifier model alone — which is the thing v0.3.8.98 exists to stop being sufficient.
+        AnthillRuntime.EnableObjectiveVerification = true;
 
         using var scripted = ScriptedColony.Begin(AuditScript(),
             "planner", "researcher", "builder", "verifier", "tester", "soldier",
