@@ -84,6 +84,20 @@ public class SystemAuditMissionTests : IDisposable
         "Inspect the current repository and determine whether tasks reach the appropriate workers.",
 
         "Evaluate the implemented workflow, its strengths, its limitations, and the roles actually used.",
+
+        // THE ADVERSARIAL ONE, and the only phrasing that currently proves anything about worker
+        // resolution. The four above pass the worker assertions BY LUCK: `ResolveWorker` sees
+        // `goal + title + description`, none of them contains "mission" or "history", so the
+        // repository researcher is chosen as the fallback — `Pick(false, …)`, keyword-decided
+        // FALSE, which means it was selected by declaration order and is the exact branch a
+        // pheromone trail is allowed to override. Nothing reasoned about what an audit needs.
+        //
+        // This request means precisely the same thing and says "missions" in passing, the way an
+        // operator naturally would. Today that single word routes it to `mission_researcher` —
+        // keyword-decided TRUE, therefore final and unoverridable — and the audit is served by the
+        // mission-history researcher instead of the one that reads the repository. Same question,
+        // different worker, because of a substring. That is the defect, stated as a fixture.
+        "Assess what this colony can do today and whether its missions reach the right workers.",
     };
 
     /// <summary>
