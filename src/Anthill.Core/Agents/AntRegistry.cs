@@ -312,8 +312,15 @@ public static class AntRegistry
                 W("researcher", "mission_researcher", "MissionResearcher", "Read prior mission and objective memory.", ReadMemory, new[] { "read_mission_history", "read_pheromone_summary" }, noApply)
                     with { Capabilities = new[] { Missions.WorkerCapabilities.RecallMissionHistory, Missions.WorkerCapabilities.InspectRuntimeState } }),
             R("file", "FileAnt", "Workspace", "Finds and reads relevant workspace files, read-only by default.", true, ReadWorkspace, new[] { "list_workspace_files", "read_workspace_file" }, noApply,
-                W("file", "file_scout", "FileScout", "Find relevant files and folders.", ReadWorkspace, new[] { "list_workspace_files", "search_workspace_files" }, noApply),
-                W("file", "file_reader", "FileReader", "Read exact file content or snippets.", ReadWorkspace, new[] { "read_text_file", "read_file_snippet" }, noApply)),
+                // Both declare the same capability, and that is not a mistake to be tidied away:
+                // locating a file and reading one are both inspecting the repository, so an
+                // AMBIGUOUS capability match is the honest answer. Ambiguity decides nothing —
+                // WorkerResolution falls through to the keyword, which is what distinguishes
+                // "find the files" from "read this one".
+                W("file", "file_scout", "FileScout", "Find relevant files and folders.", ReadWorkspace, new[] { "list_workspace_files", "search_workspace_files" }, noApply)
+                    with { Capabilities = new[] { Missions.WorkerCapabilities.InspectRepository } },
+                W("file", "file_reader", "FileReader", "Read exact file content or snippets.", ReadWorkspace, new[] { "read_text_file", "read_file_snippet" }, noApply)
+                    with { Capabilities = new[] { Missions.WorkerCapabilities.InspectRepository } }),
             R("web", "WebAnt", "External Research", "Performs external public research when explicitly allowed.", true, Web, new[] { "web_search", "read_public_source" }, noApply,
                 W("web", "source_finder", "SourceFinder", "Find relevant public sources.", Web, new[] { "web_search", "open_public_source" }, noApply),
                 W("web", "source_verifier", "SourceVerifier", "Check source relevance and authority.", Web, new[] { "read_public_source", "compare_sources" }, noApply)),

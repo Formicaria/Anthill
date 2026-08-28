@@ -125,9 +125,9 @@ public sealed class Planner
         // followed by a synthesis pass. This runs regardless of model availability. (Spec-ingestion
         // plans are already research/synthesis/verify only — no coder tasks — so they honour the
         // no-patch constraint by construction.)
-        if (IsLongInput(goal)) return AssignDefaultWorkers(CreateSpecIngestionTasks(goal), goal, constraints, specification);
+        if (IsLongInput(goal)) return AssignDefaultWorkers(EnsureClassCoverage(CreateSpecIngestionTasks(goal), goal, specification), goal, constraints, specification);
 
-        if (!_useOllama || _router is null) return AssignDefaultWorkers(EnforceConstraints(FallbackTasks(goal), goal, constraints), goal, constraints, specification);
+        if (!_useOllama || _router is null) return AssignDefaultWorkers(EnsureClassCoverage(EnforceConstraints(FallbackTasks(goal), goal, constraints), goal, specification), goal, constraints, specification);
 
         var constraintDirective = constraints.BlocksPatches
             ? "\nHARD CONSTRAINT (operator requested verification / read-only / no file changes):\n" +
@@ -234,12 +234,12 @@ Required JSON:
             var tasks = plan.Tasks.ToList();
             // Belt-and-suspenders: even with the prompt directive, a small model may still emit a
             // coder patch task on a verification-only mission. Strip them deterministically.
-            return AssignDefaultWorkers(EnforceConstraints(tasks, goal, constraints), goal, constraints, specification);
+            return AssignDefaultWorkers(EnsureClassCoverage(EnforceConstraints(tasks, goal, constraints), goal, specification), goal, constraints, specification);
         }
         catch (Exception error)
         {
             Console.Error.WriteLine($"Dynamic planner parse failed: {error.Message}");
-            return AssignDefaultWorkers(EnforceConstraints(FallbackTasks(goal), goal, constraints), goal, constraints, specification);
+            return AssignDefaultWorkers(EnsureClassCoverage(EnforceConstraints(FallbackTasks(goal), goal, constraints), goal, specification), goal, constraints, specification);
         }
     }
 
@@ -299,6 +299,62 @@ Required JSON:
                 AssignedAnt = "verifier", AssignedWorker = "verifier.result_verifier", TaskType = "verification",
             });
         return kept;
+    }
+
+    /// <summary>
+    /// THE COVERAGE A MISSION CLASS REQUIRES, guaranteed deterministically. v0.3.8.98.
+    ///
+    /// A system audit that plans no inspection step produces an assessment of what the model
+    /// already believed — which is mission `7afd85b2`'s shape exactly: tasks completed, nothing
+    /// read, findings asserted. The planner is a model and may omit the step; whether the mission
+    /// class REQUIRES it is not a modelling question, so it is answered here.
+    ///
+    /// Same rule and same place as <see cref="EnforceConstraints"/>'s guaranteed verifier: only
+    /// what is MISSING is added, an audit is the only class this acts on at v0.3.8.98, and every
+    /// inserted task passes the ordinary authorization and permission gates below like any other.
+    /// Workers are left unassigned on purpose — which worker serves an inspection is the
+    /// specification's question, answered by <see cref="Agents.WorkerResolution"/> a few lines down.
+    /// </summary>
+    internal static List<Task> EnsureClassCoverage(List<Task> tasks, string goal,
+        Anthill.Core.Missions.MissionSpecification? specification)
+    {
+        if (specification?.MissionClass != Anthill.Core.Missions.MissionSpecification.SystemAuditClass)
+            return tasks;
+
+        // READ-ONLY, stated in the description because that text reaches the worker. The file ant
+        // holds no write permission at all, so this is a description of the work rather than a
+        // restraint on it — but a task that reads as ambiguous invites a plan repair that is not.
+        if (!tasks.Any(t => string.Equals(t.AssignedAnt, "file", StringComparison.OrdinalIgnoreCase)))
+            tasks.Insert(0, new Task
+            {
+                Title = "Inspect the workspace (read-only)",
+                Description = "List and read the repository files relevant to this assessment. "
+                            + "Do not modify anything — this is an observation, and its findings "
+                            + $"are the evidence the assessment must rest on: {goal}",
+                AssignedAnt = "file",
+                TaskType = "file_inspection",
+            });
+
+        if (!tasks.Any(t => string.Equals(t.AssignedAnt, "builder", StringComparison.OrdinalIgnoreCase)))
+            tasks.Add(new Task
+            {
+                Title = "Compile the assessment",
+                Description = $"Assemble the findings into the assessment the operator asked for: {goal}",
+                AssignedAnt = "builder",
+                TaskType = "synthesis",
+            });
+
+        if (!tasks.Any(t => string.Equals(t.AssignedAnt, "verifier", StringComparison.OrdinalIgnoreCase)))
+            tasks.Add(new Task
+            {
+                Title = "Verify the assessment",
+                Description = "Check that the assessment answers every question the operator asked "
+                            + $"and is supported by what was actually inspected: {goal}",
+                AssignedAnt = "verifier",
+                TaskType = "verification",
+            });
+
+        return tasks;
     }
 
     private static List<Task> AssignDefaultWorkers(List<Task> tasks, string goal, MissionConstraints constraints,

@@ -73,6 +73,23 @@ unweakened — a verified trail may replace declaration order and nothing else, 
 compatibility decision — but it now reads the recorded decision basis instead of re-deriving one,
 so the layer that consults the trail cannot disagree with the layer that assigned the worker.
 
+**An inspection is now recorded as evidence, and still promotes nothing.** An assessment mission's
+authority is `observe`: it runs no checks, so the deterministic evidence lane is empty by design,
+and before this release the store stayed empty however much the colony actually read. "This audit
+inspected nothing and asserted its findings" and "this audit read the repository" were the same
+record — which is precisely why mission `7afd85b2`'s emptiness could not be detected by the runtime
+that produced it. Four read-only tools now write an `inspection` row at the dispatch chokepoint that
+already logs and reinforces them. The verdict lane is untouched: `run_allowlisted_check` remains its
+only member, an inspection is recorded non-deterministic, and `HasDeterministicPass`,
+`EvidenceVerdict` and the promotion identity gate treat it exactly as they treat a model review.
+Widened where evidence comes from; not what a verdict is.
+
+**An audit is guaranteed the inspection step it depends on.** The planner is a model and may plan an
+assessment with nothing that reads anything; whether a mission CLASS requires inspection is not a
+modelling question. `EnsureClassCoverage` adds only what is missing — a read-only workspace
+inspection, a compiler, a verifier — in the same place and by the same rule as the long-standing
+guaranteed verifier, and every inserted task passes the ordinary authorization and permission gates.
+
 ## v0.3.8.97 - execution/promotion closure, and the last two switches reach the surface
 
 Two bodies of work from the same qualification day, shipped as one release: the remaining
