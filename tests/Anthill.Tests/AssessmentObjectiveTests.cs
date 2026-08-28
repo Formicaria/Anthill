@@ -59,7 +59,7 @@ public class AssessmentObjectiveTests
             evidence: Array.Empty<Evidence>(), VerifierRead(), Answer);
 
         Assert.False(result.Satisfied);
-        Assert.Contains("no inspection evidence", result.Explanation, StringComparison.Ordinal);
+        Assert.Contains($"no '{EvidenceKinds.Inspection}' evidence", result.Explanation, StringComparison.Ordinal);
     }
 
     /// <summary>

@@ -22,15 +22,13 @@ namespace Anthill.Core.Outcomes;
 ///   2. DID THE VERIFIER READ WHAT IT GRADED? The consumption ledger answers. A verifier that
 ///      consumed nothing graded prose it was handed, which is the "two channels and the prose one
 ///      wins" failure ADR-004 exists to prevent, arriving at the last gate instead of the first.
-///   3. DOES THE ANSWER ADDRESS EVERY REQUESTED DELIVERABLE? The specification holds what was
-///      asked, with an id per question, so "three questions asked, one answered" is finally a
-///      checkable claim rather than something an operator notices later.
+///   3. IS THERE AN ANSWER AT ALL? An assessment mission whose deliverable is absent is the
+///      recorded failure in its purest form, and it costs nothing to refuse.
 ///
-/// DELIBERATELY MODEST, for the same reason <see cref="ObjectiveVerification"/> is. Question 3 is a
-/// PRESENCE check — one of a deliverable's subject words must appear in the answer — so it catches
-/// an omitted question and not a shallow one. Grading depth is a judgment call, and a model
-/// asserting it is precisely the evidence v2.19.0 stopped accepting. A floor that catches the
-/// recorded failure beats a ceiling that pretends to measure quality.
+/// DELIBERATELY MODEST, for the same reason <see cref="ObjectiveVerification"/> is. It does NOT yet
+/// check that each requested question was answered — see the note on question 3 in the body for why
+/// the obvious implementation grades vocabulary rather than content, and what has to exist first.
+/// A floor that catches the recorded failure beats a ceiling that pretends to measure quality.
 ///
 /// AND DELIBERATELY ADDITIVE. It can only narrow what counts as verified: it applies to one mission
 /// class, and nothing that fails today can newly pass because of it.
@@ -75,11 +73,17 @@ public static class AssessmentObjective
 
         var reasons = new List<string>();
 
-        // 1. An inspection happened.
+        // 1. An inspection happened — of every kind the specification said this class requires.
+        //
+        // Read from `RequiredEvidence` rather than hard-coded here, so the requirement is stated
+        // once, where the class is defined, and a class that later needs a second kind gets it by
+        // saying so instead of by editing this gate.
         if (evidence is null)
             reasons.Add("the evidence store could not be read, so no inspection can be shown");
-        else if (!evidence.Any(e => string.Equals(e.Kind, EvidenceKinds.Inspection, StringComparison.OrdinalIgnoreCase)))
-            reasons.Add("no inspection evidence was recorded — the assessment rests on nothing that was read");
+        else
+            foreach (var kind in specification.RequiredEvidence)
+                if (!evidence.Any(e => string.Equals(e.Kind, kind, StringComparison.OrdinalIgnoreCase)))
+                    reasons.Add($"no '{kind}' evidence was recorded — the assessment rests on nothing that was read");
 
         // 2. The verifier read what it graded.
         if (consumptions is null)

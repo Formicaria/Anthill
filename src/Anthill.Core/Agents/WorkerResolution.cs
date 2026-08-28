@@ -76,6 +76,44 @@ public static class WorkerResolution
     }
 
     /// <summary>
+    /// A worker the PLAN named that cannot serve what the mission declared it needs. v0.3.8.98.
+    ///
+    /// ADR-008's division: a model may propose structure, and a deterministic gate decides what is
+    /// kept. A planner naming <c>researcher.mission_researcher</c> for a repository audit has
+    /// proposed a worker whose own contract says it reads mission history — and until this release
+    /// that proposal was final, because an explicitly named worker skipped resolution entirely. The
+    /// same audit therefore got a different specialist depending on what the planner happened to
+    /// write, which is the defect the capability system removes, arriving through a second door.
+    ///
+    /// DELIBERATELY NARROW. It repairs only when all four hold: the mission DECLARED capabilities;
+    /// the named worker declares NONE of them; exactly one worker in that role does; and the role
+    /// is the one the plan chose (a wrong ROLE is a planning error, not a resolution one, and the
+    /// admission gate answers for it). An ambiguous alternative decides nothing, and a mission that
+    /// declared nothing repairs nothing — so every mission before v0.3.8.98 is untouched.
+    /// </summary>
+    /// <returns>The worker that was replaced, or null when nothing was repaired.</returns>
+    public static string? RepairIncompatible(Domain.Task task, IReadOnlyList<string>? requiredCapabilities)
+    {
+        if (requiredCapabilities is null || requiredCapabilities.Count == 0) return null;
+        if (string.IsNullOrWhiteSpace(task.AssignedWorker)) return null;
+        if (!AntRegistry.ByWorker.TryGetValue(task.AssignedWorker!, out var named)) return null;
+        if (!string.Equals(named.ParentRoleId, task.AssignedAnt, StringComparison.OrdinalIgnoreCase)) return null;
+
+        // Already compatible: nothing to answer for. A worker declaring one of the required
+        // capabilities is serving the mission, whoever chose it.
+        if (named.Capabilities.Any(c => requiredCapabilities.Contains(c, StringComparer.OrdinalIgnoreCase)))
+            return null;
+
+        var (byCapability, decided) = AntRegistry.ResolveByCapability(task.AssignedAnt, requiredCapabilities);
+        if (!decided || byCapability is null || byCapability.WorkerId == task.AssignedWorker) return null;
+
+        var previous = task.AssignedWorker!;
+        task.AssignedWorker = byCapability.WorkerId;
+        task.WorkerBasis = Domain.WorkerDecisionBasis.Specification;
+        return previous;
+    }
+
+    /// <summary>
     /// The workers a trail is allowed to choose between: the role's own, narrowed to those whose
     /// declared capabilities the mission actually requires when it required any.
     ///

@@ -111,6 +111,44 @@ public sealed class PlanningService : IPlanningService
             if (string.IsNullOrWhiteSpace(task.AssignedWorker))
                 Agents.WorkerResolution.Assign(task, goal, context.Specification);
 
+            // v0.3.8.98 — A NAMED WORKER IS A PROPOSAL, NOT A DECISION.
+            //
+            // A worker the PLAN named arrives here with `WorkerBasis == Unset`: nothing resolved
+            // it, because a non-blank assignment skipped resolution entirely. That is the second
+            // door into the defect this release closes — the same audit routed to the
+            // mission-history researcher or the repository researcher depending on what the
+            // planner happened to write, with the whole capability system bypassed. ADR-008's
+            // division applies: the model proposes, a deterministic gate decides.
+            //
+            // The repair is narrow (see RepairIncompatible) and it is ANNOUNCED. A dispatch
+            // silently different from the plan an operator previewed is the kind of divergence
+            // this repository has shipped before; the event makes the plan and the run reconcilable.
+            if (task.WorkerBasis == Domain.WorkerDecisionBasis.Unset
+                && Agents.WorkerResolution.RepairIncompatible(
+                       task, context.Specification.RequiredCapabilities) is { } replaced)
+            {
+                try
+                {
+                    _memory.LogEvent(context.MissionId, "worker_repaired_by_capability",
+                        $"{task.AssignedWorker} takes '{task.Title}' from {replaced}: the plan named a "
+                      + "worker whose contract serves none of the capabilities this mission declared.",
+                        task.Id, task.AssignedAnt, new()
+                        {
+                            ["worker"] = task.AssignedWorker,
+                            ["planned_worker"] = replaced,
+                            ["required_capabilities"] = context.Specification.RequiredCapabilities,
+                        });
+                }
+                catch (Exception logError)
+                {
+                    // Guarded like the trail event below, and for the same reason: PlanPreview runs
+                    // this code over a transient mission that is never persisted, and a diagnostic
+                    // must never break the decision it describes.
+                    Console.Error.WriteLine(
+                        $"[planning] worker_repaired_by_capability not recorded for {context.MissionId}: {logError.Message}");
+                }
+            }
+
             // v0.3.8.93 — a verified trail may replace a TIE-BREAK, and only a tie-break.
             //
             // A Specification or Keyword basis is a COMPATIBILITY decision and is final: no trail

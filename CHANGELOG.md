@@ -114,6 +114,30 @@ written it. Assembly is a pure function of the terminal tasks, so moving it ahea
 an input without adding an influence. The workspace harvest deliberately stays after — a change set
 is a result of the mission, and producing one must never alter the outcome that produced it.
 
+**A worker the plan NAMED is a proposal, not a decision.** An explicit `assigned_worker` skipped
+resolution entirely, so a planner could bypass the whole capability system by being specific — the
+same audit routed to the mission-history researcher or the repository researcher depending on what
+the model happened to write. ADR-008's division applies: the model proposes, a deterministic gate
+decides. The repair is narrow (the mission declared capabilities, the named worker serves none of
+them, exactly one worker in that role does) and it is announced as `worker_repaired_by_capability`,
+because a dispatch that silently differs from the plan an operator previewed is a divergence nobody
+can reconcile afterwards.
+
+**And the mission researcher stopped claiming a capability it does not have.** It declared
+`inspect_runtime_state` alongside `recall_mission_history`; its permission contract is ReadMemory
+and its tools are `read_mission_history` and `read_pheromone_summary`. It can say what missions DID
+and nothing about what is enabled now. An overstated contract is worse than an omitted one, because
+resolution BELIEVES it — the audit that must not be answered from mission history would have been
+routed there legitimately. `inspect_runtime_state` is consequently absent from the audit's required
+set at `.98`: nothing serves it, and requiring what nothing serves is the declaration-reaching-nobody
+defect in its purest form. The id stays defined for the release that builds the worker.
+
+**The audit gate is now pushed in the directions it must refuse.** Three composed negative runs, one
+per layer: a plan naming incompatible workers is repaired and the repair is announced; a plan
+missing the steps the class requires has them supplied; and a verifier that returns a refusal keeps
+the mission out of a verified outcome. That last one is what makes the passing acceptance test worth
+anything — a gate nothing can fail is a formality, and this repository has shipped several.
+
 ## v0.3.8.97 - execution/promotion closure, and the last two switches reach the surface
 
 Two bodies of work from the same qualification day, shipped as one release: the remaining

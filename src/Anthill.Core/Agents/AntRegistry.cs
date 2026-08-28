@@ -309,8 +309,15 @@ public static class AntRegistry
             R("researcher", "ResearcherAnt", "Context", "Understands repository, mission, prior results, and architectural intent.", true, ReadWorkspace, new[] { "read_workspace_docs", "read_memory" }, noApply,
                 W("researcher", "repo_researcher", "RepoResearcher", "Read repo-level docs and architecture context.", ReadWorkspace, new[] { "read_workspace_docs", "read_readme", "read_changelog" }, noApply)
                     with { Capabilities = new[] { Missions.WorkerCapabilities.InspectRepository } },
+                // RecallMissionHistory ONLY. The first draft also claimed `inspect_runtime_state`,
+                // and that claim was wrong in the way that matters: this worker's permission
+                // contract is ReadMemory and its tools are `read_mission_history` and
+                // `read_pheromone_summary` — it can say what missions DID, and nothing about what
+                // is enabled right now. A contract that overstates what a worker can do is worse
+                // than one that omits it, because resolution BELIEVES it: the audit that must not
+                // be answered from mission history would have been routed here legitimately.
                 W("researcher", "mission_researcher", "MissionResearcher", "Read prior mission and objective memory.", ReadMemory, new[] { "read_mission_history", "read_pheromone_summary" }, noApply)
-                    with { Capabilities = new[] { Missions.WorkerCapabilities.RecallMissionHistory, Missions.WorkerCapabilities.InspectRuntimeState } }),
+                    with { Capabilities = new[] { Missions.WorkerCapabilities.RecallMissionHistory } }),
             R("file", "FileAnt", "Workspace", "Finds and reads relevant workspace files, read-only by default.", true, ReadWorkspace, new[] { "list_workspace_files", "read_workspace_file" }, noApply,
                 // Both declare the same capability, and that is not a mistake to be tidied away:
                 // locating a file and reading one are both inspecting the repository, so an

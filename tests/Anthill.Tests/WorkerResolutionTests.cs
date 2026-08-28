@@ -86,8 +86,12 @@ public class WorkerResolutionTests
     [Fact]
     public void CompatibleCandidates_NarrowsWhenItCan_AndNeverEmptiesTheRole()
     {
+        // Only the repository researcher. The mission researcher reads history and declares
+        // `recall_mission_history` alone — an audit requires none of what it can do, so a trail
+        // cannot reach it here however strong its record. That narrowing IS the rule: reputation
+        // ranks compatible choices and never creates compatibility.
         var researchers = WorkerResolution.CompatibleCandidates("researcher", AuditCapabilities);
-        Assert.Equal(new[] { "researcher.repo_researcher", "researcher.mission_researcher" },
+        Assert.Equal(new[] { "researcher.repo_researcher" },
             researchers.Select(w => w.WorkerId).ToArray());
 
         // The coder role declares none of an audit's capabilities. The field stays whole.
@@ -115,6 +119,62 @@ public class WorkerResolutionTests
 
         Assert.Equal("researcher.repo_researcher", task.AssignedWorker);
         Assert.Equal(WorkerDecisionBasis.Specification, task.WorkerBasis);
+    }
+
+    /// <summary>
+    /// A WORKER THE PLAN NAMED IS A PROPOSAL. ADR-008's division — the model proposes structure, a
+    /// deterministic gate decides what is kept — applied to the second door into the same defect:
+    /// an explicitly named worker used to skip resolution entirely, so a planner could bypass the
+    /// capability system simply by being specific.
+    /// </summary>
+    [Fact]
+    public void APlannedWorkerThatServesNoRequiredCapability_IsRepaired()
+    {
+        var task = new Anthill.Core.Domain.Task
+        {
+            AssignedAnt = "researcher", TaskType = "research",
+            AssignedWorker = "researcher.mission_researcher",
+        };
+
+        Assert.Equal("researcher.mission_researcher", WorkerResolution.RepairIncompatible(task, AuditCapabilities));
+        Assert.Equal("researcher.repo_researcher", task.AssignedWorker);
+        Assert.Equal(WorkerDecisionBasis.Specification, task.WorkerBasis);
+    }
+
+    /// <summary>
+    /// And it repairs NOTHING ELSE. A compatible choice stands, a mission that declared nothing
+    /// stands, and a coding mission is untouched — the narrowness is what makes this safe to apply
+    /// to every plan rather than only to audits.
+    /// </summary>
+    [Fact]
+    public void RepairIncompatible_LeavesEveryOtherPlanAlone()
+    {
+        var compatible = new Anthill.Core.Domain.Task
+        {
+            AssignedAnt = "builder", AssignedWorker = "builder.result_compiler",
+        };
+        Assert.Null(WorkerResolution.RepairIncompatible(compatible, AuditCapabilities));
+        Assert.Equal("builder.result_compiler", compatible.AssignedWorker);
+
+        // A mission that declared no capabilities cannot repair anything: there is nothing to be
+        // incompatible WITH, and this is every mission that ran before v0.3.8.98.
+        var undeclared = new Anthill.Core.Domain.Task
+        {
+            AssignedAnt = "coder", AssignedWorker = "coder.docs_coder",
+        };
+        Assert.Null(WorkerResolution.RepairIncompatible(undeclared, requiredCapabilities: null));
+        Assert.Null(WorkerResolution.RepairIncompatible(undeclared, Array.Empty<string>()));
+        Assert.Equal("coder.docs_coder", undeclared.AssignedWorker);
+
+        // A role serving none of the required capabilities keeps whatever the plan named — the
+        // coder is there for a reason the specification does not describe, and silently moving it
+        // would be this gate deciding a planning question it was not asked.
+        var unrelated = new Anthill.Core.Domain.Task
+        {
+            AssignedAnt = "coder", AssignedWorker = "coder.ui_coder",
+        };
+        Assert.Null(WorkerResolution.RepairIncompatible(unrelated, AuditCapabilities));
+        Assert.Equal("coder.ui_coder", unrelated.AssignedWorker);
     }
 
     // ---- the wiring ----------------------------------------------------------------------------

@@ -80,10 +80,17 @@ public static class MissionIntake
     /// them. Named for what must be POSSIBLE, not for who does it — naming a worker here would put
     /// the selection back in the specification and make the resolver ceremonial.
     /// </summary>
+    /// <remarks>
+    /// <see cref="WorkerCapabilities.InspectRuntimeState"/> is deliberately ABSENT at v0.3.8.98. No
+    /// worker serves it: the mission researcher reads history, not live state, and claiming
+    /// otherwise is how an audit gets answered from what previous missions did. Requiring a
+    /// capability nothing can serve would be a declaration reaching nobody — this repository's
+    /// recurring defect — so the id stays defined for the release that builds the worker, and the
+    /// requirement lands with it.
+    /// </remarks>
     public static readonly IReadOnlyList<string> SystemAuditCapabilities = new[]
     {
         WorkerCapabilities.InspectRepository,
-        WorkerCapabilities.InspectRuntimeState,
         WorkerCapabilities.CompileResult,
         WorkerCapabilities.VerifyResultCompleteness,
     };
@@ -124,7 +131,11 @@ public static class MissionIntake
             Authority = MissionAuthority.Observe,
             Deliverables = ResolveDeliverables(request),
             RequiredCapabilities = SystemAuditCapabilities,
-            RequiredEvidence = new[] { "repository_inspection" },
+            // The EVIDENCE KIND, spelled as the store spells it, because `AssessmentObjective`
+            // looks for exactly these rows. The first draft said "repository_inspection", which
+            // matches nothing the store ever writes — a requirement no producer could satisfy and
+            // no consumer could check, which is a decoration, not a contract.
+            RequiredEvidence = new[] { Anthill.SDK.Artifacts.EvidenceKinds.Inspection },
         };
     }
 
