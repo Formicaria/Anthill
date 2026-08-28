@@ -41,6 +41,25 @@ public static class MissionReport
         string Id, string Ant, string Worker, string Title, string Status,
         double? ElapsedSeconds, bool Critical, string? FailureReason);
 
+    /// <summary>One file of one patch set, as the store records it: what changed, whether a human
+    /// (or policy) approved it, and whether it reached the target tree. v0.3.8.97.</summary>
+    public sealed record PatchFileLine(
+        string Path, string ChangeType, string Status, string ApprovalState);
+
+    /// <summary>
+    /// One patch set, projected from its rows. v0.3.8.97 — the report used to compress the entire
+    /// execution outcome into a patch-set COUNT, so a mission record could say "1 patch set" while
+    /// answering none of the operator's real questions: which files, approved by whom, applied or
+    /// not, into which tree. Every field here is a row projection; TargetRoot comes from the same
+    /// resolver the promotion path uses, so the report and the apply can never name different trees.
+    /// </summary>
+    public sealed record PatchSetLine(
+        string Id,
+        string? WorkspaceId,
+        string TargetRoot,
+        string ApplicationState,
+        IReadOnlyList<PatchFileLine> Files);
+
     public sealed record Report(
         string MissionId,
         string Goal,
@@ -56,7 +75,8 @@ public static class MissionReport
         IReadOnlyList<string> RolesDispatched,
         int PatchSetCount,
         int ArtifactCount,
-        int EvidenceCount);
+        int EvidenceCount,
+        IReadOnlyList<PatchSetLine> PatchSets);
 
     /// <summary>
     /// Compile from persisted state alone. Every argument is a store; nothing here takes text.
@@ -124,6 +144,8 @@ public static class MissionReport
         var finished = rows.Select(r => Time(r, "finished_at")).Where(t => t is not null).Max()
                     ?? Time(mission, "saved_at");
 
+        var patchSets = CompilePatchSets(memory, missionId);
+
         return new Report(
             MissionId: missionId,
             Goal: mission is null ? "" : Str(mission, "goal"),
@@ -139,9 +161,84 @@ public static class MissionReport
             Checks: checks,
             RolesRegistered: registered,
             RolesDispatched: dispatched,
-            PatchSetCount: memory.GetRecentEvents(500, "patch_set_created", missionId).Count,
+            // v0.3.8.97: counted from the patch-set ROWS rather than from event rows — the rows are
+            // what the section below projects, and two sources for one number is the drift class
+            // this file exists to end.
+            PatchSetCount: patchSets.Count,
             ArtifactCount: SafeArtifactCount(memory, missionId),
-            EvidenceCount: evidence?.Count ?? 0);
+            EvidenceCount: evidence?.Count ?? 0,
+            PatchSets: patchSets);
+    }
+
+    /// <summary>
+    /// The patch-set section, one row projection per set. v0.3.8.97 — what actually changed, the
+    /// set's identity, each file's approval state, whether application happened, and the target
+    /// tree. Never throws: a report that cannot read the patch store reports an empty section, and
+    /// the mission's other facts survive.
+    /// </summary>
+    private static IReadOnlyList<PatchSetLine> CompilePatchSets(SqliteMemory memory, string missionId)
+    {
+        var lines = new List<PatchSetLine>();
+        try
+        {
+            foreach (var row in memory.GetPatchSetsForMission(missionId))
+            {
+                var setId = Str(row, "id");
+                if (setId.Length == 0) continue;
+
+                var files = new List<PatchFileLine>();
+                foreach (var p in memory.GetPatchProposalsForSet(setId))
+                {
+                    var patchId = Str(p, "id");
+                    // The approval STATE comes from the approval row when one exists; "none" is a
+                    // real answer (bypass-applied sets never had a card) and is reported as itself.
+                    string approvalState;
+                    try
+                    {
+                        approvalState = memory.GetApprovalForTarget(patchId)
+                            ?.GetValueOrDefault("status")?.ToString() ?? "none";
+                    }
+                    catch { approvalState = "unreadable"; }
+
+                    files.Add(new PatchFileLine(
+                        Path: Str(p, "file_path"),
+                        ChangeType: Str(p, "change_type"),
+                        Status: Str(p, "status"),
+                        ApprovalState: approvalState));
+                }
+
+                // Application state is DERIVED from the per-file statuses, and a mixture says so:
+                // "partially applied" is a state the atomic lanes make unreachable, so reporting
+                // it plainly is how a regression would surface rather than hide.
+                var appliedCount = files.Count(f => f.Status == PatchStatus.Applied.Value());
+                var applicationState = files.Count == 0 ? "empty"
+                    : appliedCount == files.Count ? "applied"
+                    : appliedCount == 0 ? "not applied"
+                    : $"PARTIALLY APPLIED ({appliedCount} of {files.Count}) — investigate; sets apply as a unit";
+
+                // The same resolver the promotion path uses. An unresolvable target is reported as
+                // exactly that — the report never substitutes a plausible root.
+                string targetRoot;
+                try
+                {
+                    var target = Verification.PatchTargetResolver.Resolve(memory, setId);
+                    targetRoot = target.Ok ? target.Root : $"UNRESOLVABLE: {target.Problem}";
+                }
+                catch (Exception error) { targetRoot = $"UNRESOLVABLE: {error.Message}"; }
+
+                lines.Add(new PatchSetLine(
+                    Id: setId,
+                    WorkspaceId: Str(row, "workspace_id") is { Length: > 0 } ws ? ws : null,
+                    TargetRoot: targetRoot,
+                    ApplicationState: applicationState,
+                    Files: files));
+            }
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"[mission-report] could not read patch sets for {missionId}: {error.Message}");
+        }
+        return lines;
     }
 
     /// <summary>
@@ -180,6 +277,20 @@ public static class MissionReport
         sb.AppendLine($"roles dispatched ({r.RolesDispatched.Count}): "
             + (r.RolesDispatched.Count == 0 ? "none" : string.Join(", ", r.RolesDispatched)));
         sb.AppendLine($"patch_sets: {r.PatchSetCount}   artifacts: {r.ArtifactCount}   evidence_rows: {r.EvidenceCount}");
+
+        // v0.3.8.97 — the execution outcome, per set and per file. Every value is a row projection
+        // made in Compile; this loop only renders.
+        foreach (var set in r.PatchSets)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"patch set {set.Id}:");
+            sb.AppendLine($"  workspace: {set.WorkspaceId ?? "none recorded"}");
+            sb.AppendLine($"  target: {set.TargetRoot}");
+            sb.AppendLine($"  application: {set.ApplicationState}");
+            sb.AppendLine($"  files ({set.Files.Count}):");
+            foreach (var f in set.Files)
+                sb.AppendLine($"    [{f.ChangeType}] {f.Path} — status: {f.Status}, approval: {f.ApprovalState}");
+        }
         return sb.ToString();
     }
 

@@ -65,7 +65,6 @@ public class HarvestedPatchPipelineTests
     [InlineData(@"_memory\.SavePatchSet\(")]
     [InlineData(@"RecordPatchArtifact\(mission")]
     [InlineData(@"VerifyPatchSet\(mission")]
-    [InlineData(@"ApplyUnderBypass\(mission")]
     [InlineData(@"CreatePatchApprovalRequest\(mission")]
     public void EachPipelineStep_HasExactlyOneCallSite(string pattern)
     {
@@ -74,6 +73,27 @@ public class HarvestedPatchPipelineTests
             $"{pattern} occurs {count} time(s) in ExecutionService — the pipeline steps must live "
           + "in exactly one place, or the two coder modes drift apart the way they did before "
           + "v0.3.8.93.");
+    }
+
+    /// <summary>
+    /// v0.3.8.97 — the bypass step has exactly TWO entries, and they are these two: the immediate
+    /// attempt in ProcessPatchSet (taken only when no reviews were inserted) and the deferred
+    /// attempt at review completion (MaybeApplyBypassAfterReviews). Both converge on the ONE
+    /// ApplyUnderBypass, whose gate stays the authority. A third caller is a drift; so is losing
+    /// either of these two — dropping the deferred one reintroduces the bypass-that-never-applies,
+    /// dropping the immediate one strands the harvested/no-review lanes.
+    /// </summary>
+    [Fact]
+    public void TheBypassStep_HasExactlyItsTwoSequencedEntries()
+    {
+        var code = ExecutionSource();
+        var calls = Regex.Matches(code, @"ApplyUnderBypass\(mission").Count;
+        Assert.True(calls == 2,
+            $"ApplyUnderBypass has {calls} call site(s); expected exactly the immediate arm in "
+          + "ProcessPatchSet and the deferred arm in MaybeApplyBypassAfterReviews.");
+
+        Assert.Contains("ApplyUnderBypass(mission, task, patchSet)", code, StringComparison.Ordinal);
+        Assert.Contains("ApplyUnderBypass(mission, producer, patchSet)", code, StringComparison.Ordinal);
     }
 
     /// <summary>

@@ -501,10 +501,26 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
             var anchorId = ResultAssembler.SelectBestOutputTaskId(mission);
             var anchor = mission.Tasks.FirstOrDefault(t => t.Id == anchorId);
 
-            var changes = Anthill.Core.Workspaces.WorkspaceChangeSet.Create(
+            var capture = Anthill.Core.Workspaces.WorkspaceChangeSet.Create(
                 workspace, mission.Id, anchorId ?? "",
                 $"Changes from mission workspace {workspace.Id}");
 
+            // v0.3.8.97 — an unfaithful capture is refused whole, here exactly as in the acting
+            // lane: harvesting the representable subset would file a set that silently omits
+            // deletions, renames, or oversized work. The workspace stays on disk (Checkpoint below
+            // never runs), so the operator can inspect what could not be captured.
+            if (!capture.Faithful)
+            {
+                Memory.LogEvent(mission.Id, "workspace_capture_failed",
+                    $"Workspace {workspace.Id} changes could NOT be faithfully captured at "
+                  + $"finalization — {capture.Problems.Count} problem(s), so no patch set was "
+                  + "harvested: " + string.Join(" | ", capture.Problems.Take(5)),
+                    null, "queen",
+                    new() { ["workspace_id"] = workspace.Id, ["problems"] = capture.Problems });
+                return;
+            }
+
+            var changes = capture.Set;
             if (changes.Proposals.Count > 0)
             {
                 Memory.LogEvent(mission.Id, "workspace_change_set",

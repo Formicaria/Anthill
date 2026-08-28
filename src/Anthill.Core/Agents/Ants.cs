@@ -769,15 +769,28 @@ public sealed class CoderAnt : BaseAnt
                 "Coder cannot produce patch proposals: model routing/LLM generation is unavailable.");
 
         // v0.3.8.95 — ACTING MODE. Three conditions, each load-bearing: the operator turned the
-        // gate on; the mission holds a usable isolated worktree (acting with nowhere isolated to
-        // act is the defect the workspace exists to prevent, so its absence falls through to
-        // propose-only rather than to a worse place); and the routed provider is an agent CLI —
-        // the only kind of provider with hands. A local model routed to coder keeps proposing
-        // JSON: it cannot edit a file, and pretending otherwise would classify its prose as work.
-        if (AnthillRuntime.EnableActingCoder
-            && Anthill.Core.Workspaces.MissionWorkspaceScope.CurrentRoot is { } actingTree
-            && _router.GetRoute("coder").Provider.StartsWith("agent:", StringComparison.OrdinalIgnoreCase))
+        // gate on; the mission holds a usable isolated worktree; and the routed provider is an
+        // agent CLI — the only kind of provider with hands. A local model routed to coder keeps
+        // proposing JSON: it cannot edit a file, and pretending otherwise would classify its
+        // prose as work.
+        //
+        // v0.3.8.97 — A MISSING WORKTREE FAILS CLOSED, it no longer falls through. The old
+        // fall-through went to "propose-only", but propose-only through the SAME writing CLI is a
+        // sentence in a prompt, not a boundary: the process still stood in the project's live
+        // checkout with its editing tools installed. An acting-capable coder with nowhere isolated
+        // to act refuses here, by name — and AgentCliProvider's worktree gate refuses the process
+        // start independently, so this branch being edited away would not reopen the road.
+        var actingRoute = AnthillRuntime.EnableActingCoder
+            && _router.GetRoute("coder").Provider.StartsWith("agent:", StringComparison.OrdinalIgnoreCase);
+        if (actingRoute && Anthill.Core.Workspaces.MissionWorkspaceScope.CurrentRoot is { } actingTree)
             return ExecuteActing(task, mission, codeContext, actingTree);
+        if (actingRoute)
+            return AntExecutionResult.Failed(FailureClass.PolicyDenial,
+                "Acting coder refused by the worktree gate: the routed provider is a writable agent "
+              + "CLI and this mission has no usable isolated worktree (preparation failed, was "
+              + "rejected, or the workspace is unusable). A writing agent is never invoked in the "
+              + "live project, and prompt-only restrictions are not a fallback — fix the mission "
+              + "workspace and retry.");
 
         // v2.11.1: when the sandbox gate is on, iterate inside a disposable sandbox (propose ->
         // apply IN THE SANDBOX -> build -> refine on failure) and return proposals that verified —
@@ -813,7 +826,14 @@ public sealed class CoderAnt : BaseAnt
     /// </summary>
     public const string NoChangesMarker = "NO_CHANGES_NEEDED";
 
-    private const string ActingCoderRules =
+    /// <summary>
+    /// The acting coder's operating contract, as the model receives it. v0.3.8.97 made it
+    /// `internal` so its guard can assert on the ASSEMBLED string rather than on this file's text:
+    /// a rule split across two C# literals is present at runtime and absent from any source-level
+    /// search, so a source assertion fails on a re-wrap while passing on a deleted rule that
+    /// happens to stay on one line. The value is the subject; read the value.
+    /// </summary>
+    internal const string ActingCoderRules =
         "Your role:\nImplement the assigned task by editing files directly in your working directory.\n\n"
       + "Your working directory is an ISOLATED git worktree prepared for this mission. Nothing you "
       + "change here reaches the live checkout: ANTHILL diffs this tree afterwards, the diff becomes "
@@ -821,8 +841,14 @@ public sealed class CoderAnt : BaseAnt
       + "road to the real repository.\n\n"
       + "Rules:\n"
       + "- Edit real files, in place, relative to the working directory. Create files where the task needs them.\n"
-      + "- Do not run builds, tests, or git — ANTHILL's tester runs the checks afterwards, against your changes.\n"
-      + "- Do not commit; leave your work as uncommitted changes for the diff.\n"
+      // v0.3.8.97 — iteration is allowed, evidence is not delegated. The permission layer grants
+      // exactly the repository's own declared check commands (CheckCommandStems), so the rule and
+      // the mechanism state the same boundary.
+      + "- You MAY run the repository's own declared build/test commands (e.g. dotnet build, dotnet test) "
+      + "inside your working directory to check your work while iterating. ANTHILL's tester re-runs the "
+      + "declared checks independently afterwards; its runs are the evidence, yours are only for iteration.\n"
+      + "- Do not run git commands that change state, and do not commit; leave your work as uncommitted "
+      + "changes for the diff.\n"
       + "- When done, reply with a short factual summary of WHAT you changed and WHY.\n"
       + "- If, after examining the code, the task genuinely requires no change, reply with the single "
       + "marker " + NoChangesMarker + " followed by one sentence explaining why.";

@@ -66,7 +66,17 @@ public class WorkspaceChangeSetTests : IDisposable
         BaseRevision = Git(_repo, "rev-parse HEAD"),
     };
 
-    private PatchSet Harvest() => WorkspaceChangeSet.Create(Workspace(), "m1", "t1", "summary");
+    private WorkspaceChangeSet.CaptureResult Capture() =>
+        WorkspaceChangeSet.Create(Workspace(), "m1", "t1", "summary");
+
+    /// <summary>The set of a capture this test expects to be FAITHFUL — an unexpected problem list
+    /// fails here with its contents, instead of surfacing later as a wrong proposal count.</summary>
+    private PatchSet Harvest()
+    {
+        var capture = Capture();
+        Assert.True(capture.Faithful, string.Join(" | ", capture.Problems));
+        return capture.Set;
+    }
 
     // ---- what a change set contains ---------------------------------------------------------
 
@@ -105,7 +115,7 @@ public class WorkspaceChangeSetTests : IDisposable
         Git(_repo, "commit -m unrelated");
 
         var proposal = Assert.Single(
-            WorkspaceChangeSet.Create(workspace, "m1", "t1", "summary").Proposals);
+            WorkspaceChangeSet.Create(workspace, "m1", "t1", "summary").Set.Proposals);
 
         Assert.Equal("original\n", proposal.OldContent);
         Assert.DoesNotContain("SOMEONE ELSE", proposal.OldContent);
@@ -128,16 +138,85 @@ public class WorkspaceChangeSetTests : IDisposable
     }
 
     /// <summary>
-    /// Deletions are skipped. ApplyPatchTool supports add and modify only, so a delete proposal
-    /// would produce a change set that cannot be applied — a review ending in a failure the reviewer
-    /// could not have predicted.
+    /// v0.3.8.97 — a deletion is a FIRST-CLASS proposal, anchored to the base content so the
+    /// applier's stale-base rule works for it. The `continue` this replaces skipped every D row,
+    /// so a mission that deleted a file produced a change set that reviewed clean and described
+    /// the worktree wrongly — approved, it applied everything EXCEPT the deletion.
     /// </summary>
     [Fact]
-    public void ADeletion_IsNotProposed_BecauseItCouldNotBeApplied()
+    public void ADeletion_IsProposedAsADelete_AnchoredToTheBase()
     {
         File.Delete(Path.Combine(_worktree, "Existing.cs"));
 
-        Assert.Empty(Harvest().Proposals);
+        var proposal = Assert.Single(Harvest().Proposals);
+
+        Assert.Equal("Existing.cs", proposal.FilePath);
+        Assert.Equal(PatchChangeType.Delete, proposal.ChangeType);
+        Assert.Equal("original\n", proposal.OldContent);
+        Assert.Null(proposal.NewContent);
+        Assert.Equal(PatchApply.HashOf("original\n"), proposal.BaseHash);
+    }
+
+    /// <summary>
+    /// v0.3.8.97 — a PURE rename is one Rename proposal carrying source and destination. Before
+    /// this, an R row decayed into an Add of the destination with the source left in place:
+    /// applying the set duplicated the file instead of moving it.
+    /// </summary>
+    [Fact]
+    public void APureRename_IsProposedAsARename()
+    {
+        Git(_worktree, "mv Existing.cs Renamed.cs");
+
+        var proposal = Assert.Single(Harvest().Proposals);
+
+        Assert.Equal(PatchChangeType.Rename, proposal.ChangeType);
+        Assert.Equal("Existing.cs", proposal.FilePath);
+        Assert.Equal("Renamed.cs", proposal.DestinationPath);
+        Assert.Equal(PatchApply.HashOf("original\n"), proposal.BaseHash);
+    }
+
+    /// <summary>
+    /// v0.3.8.97 — a rename WITH edits is the two operations it truly is: delete of the source
+    /// plus add of the destination with the WORKTREE's content. apply_patch's rename moves bytes
+    /// verbatim, so calling an edited move a pure rename would apply the OLD content under the
+    /// new name.
+    /// </summary>
+    [Fact]
+    public void ARenameWithEdits_DecomposesIntoDeletePlusAdd()
+    {
+        Git(_worktree, "mv Existing.cs Moved.cs");
+        File.WriteAllText(Path.Combine(_worktree, "Moved.cs"), "original\nplus an edit\n");
+        Git(_worktree, "add -A");
+
+        var set = Harvest();
+
+        Assert.Equal(2, set.Proposals.Count);
+        var delete = Assert.Single(set.Proposals, p => p.ChangeType == PatchChangeType.Delete);
+        Assert.Equal("Existing.cs", delete.FilePath);
+        var add = Assert.Single(set.Proposals, p => p.ChangeType == PatchChangeType.Add);
+        Assert.Equal("Moved.cs", add.FilePath);
+        Assert.Equal("original\nplus an edit\n", add.NewContent);
+    }
+
+    /// <summary>
+    /// v0.3.8.97 — an oversized file is a NAMED PROBLEM and the capture is unfaithful; it is not
+    /// silently absent. Callers refuse an unfaithful capture whole, because proposing the
+    /// representable subset puts a wrong description of the worktree in front of the reviewers.
+    /// </summary>
+    [Fact]
+    public void AnOversizedFile_MakesTheCaptureUnfaithful_NeverSilentlySmaller()
+    {
+        File.WriteAllText(Path.Combine(_worktree, "huge.bin"),
+            new string('x', WorkspaceChangeSet.MaxProposalChars + 1));
+        File.WriteAllText(Path.Combine(_worktree, "Existing.cs"), "changed\n");
+
+        var capture = Capture();
+
+        Assert.False(capture.Faithful);
+        Assert.Contains(capture.Problems, p => p.Contains("huge.bin", StringComparison.Ordinal));
+        // The representable part is still IN the set — the caller decides to refuse the whole,
+        // and a diagnosing operator can see both halves.
+        Assert.Contains(capture.Set.Proposals, p => p.FilePath == "Existing.cs");
     }
 
     /// <summary>
@@ -188,10 +267,11 @@ public class WorkspaceChangeSetTests : IDisposable
     {
         File.WriteAllText(Path.Combine(_worktree, "Existing.cs"), "changed\n");
 
-        var set = WorkspaceChangeSet.Create(
+        var capture = WorkspaceChangeSet.Create(
             Workspace() with { State = WorkspaceState.Cleaned }, "m1", "t1", "s");
 
-        Assert.Empty(set.Proposals);
+        Assert.Empty(capture.Set.Proposals);
+        Assert.True(capture.Faithful);
     }
 
     /// <summary>

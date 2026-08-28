@@ -15,7 +15,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "0.3.8.96";
+    public const string Version = "0.3.8.97";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -1281,6 +1281,14 @@ public static class AnthillRuntime
         // could not write it, so enabling acting mode took a manual file edit plus a restart. A
         // gate the operator is meant to turn on belongs on the surface operators turn things on.
         "acting_coder_enabled",
+        // v0.3.8.97 — the same finding, twice more, from the same qualification day. Declaring a
+        // workspace check took a file edit and a restart per attempt (three restarts to land one
+        // check id); the resolver's validation and the snapshot's problem reporting already make
+        // live editing safe — ApplySettingsUpdate re-projects, Resolve refuses bad entries loudly,
+        // and the snapshot shows what took. And the deliverable evaluation layer could not be
+        // switched on without the same file-and-restart dance, which is why every qualification
+        // record read "deliverable: not_checked".
+        "workspace_checks", "objective_verification_enabled",
         "shell_tool_enabled", "file_tools_enabled", "agent_workspace_dir", "parallel_execution_enabled",
         "max_parallel_workers", "max_web_searches_per_mission", "max_sources_per_mission",
         "max_context_packet_chars", "max_agent_message_content_chars",

@@ -368,11 +368,28 @@ public static class AgentCliCatalog
                 // live directory (the chat lane) Manual approval grants nothing — per-edit prompts
                 // are unanswerable headless, so the honest move is to propose a mission instead.
                 if (agent.AcceptEditsArgs is { Count: > 0 }) args.AddRange(agent.AcceptEditsArgs);
+                // v0.3.8.97 — plus the worktree's own REPOSITORY-DECLARED check commands, when the
+                // mission carried any (CheckCommandStems comes from the detected capability
+                // manifest, never from a model). This is what lets an acting agent run `dotnet
+                // build` in its isolated worktree to iterate; ANTHILL's tester independently
+                // re-runs the declared checks afterwards and remains the evidence source. Nothing
+                // network-shaped, nothing outside the declared stems.
+                if (RepoCheckToolList(access) is { Length: > 0 } askTools)
+                    args.AddRange(new[] { "--allowedTools", askTools });
                 break;
         }
 
         return AddDirectoryGates(agent, access, args);
     }
+
+    /// <summary>The `--allowedTools` value for the mission tree's declared check commands, or ""
+    /// when the context carries none. One `Bash(stem:*)` per stem — bounded to exactly the
+    /// executables the repository's own manifest declares.</summary>
+    private static string RepoCheckToolList(Anthill.SDK.Reasoning.AgentAccessScope.Context access) =>
+        access.CheckCommandStems is { Count: > 0 } stems
+            ? string.Join(",", stems.Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(s => $"Bash({s.Trim()}:*)"))
+            : "";
 
     /// <summary>Every granted directory becomes one AddDirArgs expansion. Shared by the writing and
     /// the role-clamped read-only paths, so the two cannot disagree about what a gate means.</summary>
@@ -418,7 +435,15 @@ public static class AgentCliCatalog
                 "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)",
                 "Bash(ls:*)", "Bash(cat:*)", "Bash(grep:*)", "Bash(find:*)",
             },
-            "ask" when access.ConfinedWorkspace => new List<string> { "Edit", "Write" },
+            // v0.3.8.97 — the settings channel mirrors the argv channel's ask cell exactly: edits,
+            // plus one Bash(stem:*) per repository-declared check command the context carries.
+            // One policy, two transports, still one shape.
+            "ask" when access.ConfinedWorkspace =>
+                new List<string> { "Edit", "Write" }
+                    .Concat((access.CheckCommandStems ?? Array.Empty<string>())
+                        .Where(s => !string.IsNullOrWhiteSpace(s))
+                        .Select(s => $"Bash({s.Trim()}:*)"))
+                    .ToList(),
             _ => new List<string>(),
         };
         if (allow.Count == 0 && access.GrantedDirectories.Count == 0) return null;

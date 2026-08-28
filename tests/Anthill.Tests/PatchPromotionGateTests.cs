@@ -55,6 +55,10 @@ public class PatchPromotionGateTests
                      nameof(PromotionRefusal.ReviewIncomplete),
                      nameof(PromotionRefusal.EvidenceAboutAnotherRevision),
                      nameof(PromotionRefusal.WorkspaceMoved),
+                     // v0.3.8.97 — the target tree resolves for every actor, before the human is
+                     // even a question: an unresolvable target refuses Bypass and Automation
+                     // exactly as it refuses the Apply button.
+                     nameof(PromotionRefusal.TargetUnresolvable),
                  })
             Assert.True(common.Contains(refusal, StringComparison.Ordinal),
                 $"{refusal} is no longer checked before the actor switch. Moving a condition inside "
@@ -179,23 +183,16 @@ public class PatchPromotionGateTests
     ///
     /// Brace-matched rather than sliced to a character budget: a budget has to be guessed, the guess
     /// is invisible when it is wrong, and it silently means something different on a checkout with
-    /// different line endings. Falls back to the rest of the file if the braces do not balance,
-    /// which reads as "too much" rather than "too little" — a guard that over-reads reports a
-    /// false pass on a neighbour, and one that under-reads reports a false failure on itself.
+    /// different line endings — which is exactly how this guard failed on main at v0.3.8.92 after
+    /// passing locally.
+    ///
+    /// v0.3.8.97 — the matcher itself moved to <see cref="SourceText.MemberBody"/>, because a second
+    /// guard needed it and two copies of "read one member" is the defect class this repository keeps
+    /// collapsing. The shared one also handles expression-bodied members, which a brace-matcher
+    /// silently over-reads past.
     /// </summary>
-    private static string MethodBody(string code, int signatureAt)
-    {
-        var open = code.IndexOf('{', signatureAt);
-        if (open < 0) return code[signatureAt..];
-
-        var depth = 0;
-        for (var i = open; i < code.Length; i++)
-        {
-            if (code[i] == '{') depth++;
-            else if (code[i] == '}' && --depth == 0) return code[signatureAt..(i + 1)];
-        }
-        return code[signatureAt..];
-    }
+    private static string MethodBody(string code, int signatureAt) =>
+        SourceText.MemberBody(code, signatureAt);
 
     /// <summary>
     /// THE DETERMINISTIC BLOCK IS PERSISTED, AND THE GATE READS THE PERSISTED ONE.

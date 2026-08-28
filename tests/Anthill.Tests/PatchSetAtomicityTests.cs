@@ -76,7 +76,9 @@ public class PatchSetAtomicityTests
         Assert.True(apply > 0, "ApplySet has moved or been renamed.");
         var body = code[apply..];
 
-        var preflightAt = body.IndexOf("Preflight(set)", StringComparison.Ordinal);
+        // v0.3.8.97: the preflight takes the resolved TARGET root, so the check and the write are
+        // about the same tree.
+        var preflightAt = body.IndexOf("Preflight(set, workspace)", StringComparison.Ordinal);
         var beginAt = body.IndexOf("ApplyTransaction.Begin", StringComparison.Ordinal);
         var stageAt = body.IndexOf("StageExternal", StringComparison.Ordinal);
         var applyAt = body.IndexOf("applyOne(", StringComparison.Ordinal);

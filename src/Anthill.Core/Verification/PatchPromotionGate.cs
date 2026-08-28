@@ -33,6 +33,9 @@ public enum PromotionRefusal
     EvidenceAboutAnotherRevision,
     /// <summary>The live tree is not the one verification read. The evidence is about other bytes.</summary>
     WorkspaceMoved,
+    /// <summary>v0.3.8.97 — the set's persisted workspace names a target tree that cannot be
+    /// established. Nothing is compared, journal-checked, or applied against a guessed root.</summary>
+    TargetUnresolvable,
     MissionNotVerified,
     HumanApprovalMissing,
 }
@@ -124,13 +127,24 @@ public static class PatchPromotionGate
                 "patch_application_enabled and file_writing_enabled must both be on before anything "
               + "writes to the operator's tree");
 
+        // v0.3.8.97 — WHICH TREE IS THIS SET FOR, resolved once and used for every tree-shaped
+        // question below. Until this release the rollback-marker check and the freshness compare
+        // both consulted the configured live root while a project set's workspace named another
+        // SourceRoot — true answers about the wrong tree, at the gate whose whole job is the tree.
+        var target = PatchTargetResolver.Resolve(memory, patchSetId);
+        if (!target.Ok)
+            return PromotionVerdict.Refuse(PromotionRefusal.TargetUnresolvable, "target-resolver",
+                target.Problem ?? $"the target tree for patch set {patchSetId} could not be resolved");
+
         // A previous rollback that could not complete leaves a durable marker. Until a human has
         // looked, the tree's state is unknown, and writing more into an unknown tree is how a
-        // partial rollback becomes an unrecoverable one.
-        if (SDK.Common.ApplyTransaction.HasRollbackFailure(AnthillRuntime.AllowedWorkspaceRoot))
+        // partial rollback becomes an unrecoverable one. Checked against the TARGET tree's journal:
+        // that is the tree this set would write into, and the only one whose halted rollback is
+        // this promotion's problem.
+        if (SDK.Common.ApplyTransaction.HasRollbackFailure(target.Root))
             return PromotionVerdict.Refuse(PromotionRefusal.RollbackHalted, "apply-journal",
-                "a previous apply left a ROLLBACK_FAILED marker in the apply journal. The workspace "
-              + "state is unverified until an operator resolves it.");
+                "a previous apply left a ROLLBACK_FAILED marker in the apply journal at "
+              + $"{target.Root}. The workspace state is unverified until an operator resolves it.");
 
         var tasks = missionId.Length > 0 ? memory.GetTasksForMission(missionId) : new();
 
@@ -216,8 +230,12 @@ public static class PatchPromotionGate
         // never measured, and refusing every such set would turn a schema addition into a
         // retroactive freeze. Unmeasurable IS a refusal: something WAS captured and cannot be read
         // back now, which is a different statement and one the operator should see.
+        // v0.3.8.97 — against the TARGET tree. The fingerprint was captured from the mission's own
+        // source root at verification time (VerifyPatchSet), so comparing it against the configured
+        // live root when the set targets a project answered a question about the wrong repository
+        // in both directions: a moved project tree passed, an untouched live tree failed.
         var recorded = memory.GetPatchSetBaseFingerprint(patchSetId);
-        var freshness = Workspaces.WorkspaceFingerprint.Compare(recorded, AnthillRuntime.AllowedWorkspaceRoot);
+        var freshness = Workspaces.WorkspaceFingerprint.Compare(recorded, target.Root);
 
         if (freshness is Workspaces.FreshnessVerdict.Moved or Workspaces.FreshnessVerdict.Unmeasurable)
             return PromotionVerdict.Refuse(PromotionRefusal.WorkspaceMoved, "workspace-freshness",

@@ -188,7 +188,9 @@ public class AutoApplyAtomicityTests
 
         var start = runner.IndexOf("private static List<string> Preflight(", StringComparison.Ordinal);
         Assert.True(start >= 0, "Preflight is no longer recognisable");
-        var delegation = runner[start..Math.Min(runner.Length, start + 2000)];
+        // This one is EXPRESSION-BODIED — one line delegating to the shared preflight — which is
+        // why the reader has to know both member shapes rather than assuming a brace.
+        var delegation = SourceText.MemberBody(runner, start);
 
         Assert.Contains("PatchSetApply.Preflight(", delegation, StringComparison.Ordinal);
 
@@ -197,7 +199,7 @@ public class AutoApplyAtomicityTests
 
         var sharedAt = shared.IndexOf("public static List<string> Preflight(", StringComparison.Ordinal);
         Assert.True(sharedAt >= 0, "the shared preflight is no longer recognisable");
-        var body = shared[sharedAt..Math.Min(shared.Length, sharedAt + 2000)];
+        var body = SourceText.MemberBody(shared, sharedAt);
 
         Assert.Contains("PatchApply.Compute(", body, StringComparison.Ordinal);
         // And with the same strictness the live applier uses, or the batch would preflight green

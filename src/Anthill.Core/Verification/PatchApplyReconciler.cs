@@ -81,7 +81,7 @@ public static class PatchApplyReconciler
 
                     case PatchApplyPhase.Mutating:
                     {
-                        var current = CurrentHash(intent.TargetPath);
+                        var current = CurrentHash(memory, intent);
 
                         if (intent.PreHash is not null && string.Equals(current, intent.PreHash, StringComparison.Ordinal))
                         {
@@ -193,14 +193,26 @@ public static class PatchApplyReconciler
         }
     }
 
-    /// <summary>The target's current bytes, or null when it is absent or unreadable.</summary>
-    private static string? CurrentHash(string? targetPath)
+    /// <summary>
+    /// The target's current bytes, or null when it is absent or unreadable.
+    ///
+    /// v0.3.8.97 — resolved in the INTENT'S OWN TARGET TREE: the intent carries its patch-set id,
+    /// and the resolver turns that into the tree the interrupted apply was writing into. Hashing
+    /// the same relative path in the configured live root instead would compare against a
+    /// different repository's file whenever the apply targeted a project — and reconciliation
+    /// deciding "the write never landed" from the wrong tree's bytes is precisely the ambiguity
+    /// the hashes exist to remove. An unresolvable target reads as null, which the Mutating arm
+    /// already treats as "cannot tell": the intent is left for an operator.
+    /// </summary>
+    private static string? CurrentHash(SqliteMemory memory, PatchApplyIntent intent)
     {
-        if (string.IsNullOrWhiteSpace(targetPath)) return null;
+        if (string.IsNullOrWhiteSpace(intent.TargetPath)) return null;
         try
         {
-            var guard = new WorkspacePathGuard(AnthillRuntime.AllowedWorkspaceRoot);
-            var resolved = guard.ResolveSafePath(targetPath);
+            var target = PatchTargetResolver.Resolve(memory, intent.PatchSetId);
+            if (!target.Ok) return null;
+            var guard = new WorkspacePathGuard(target.Root);
+            var resolved = guard.ResolveSafePath(intent.TargetPath!);
             return File.Exists(resolved) ? ApplyTransaction.HashFile(resolved) : null;
         }
         catch { return null; }

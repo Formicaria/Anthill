@@ -248,7 +248,23 @@ public sealed class AgentCliProvider : IReasoningProvider, IStreamingReasoningPr
     {
         if (!_agent.Writes) return null;
 
-        var cwd = EffectiveWorkingDirectory(Anthill.SDK.Reasoning.AgentAccessScope.Current);
+        var access = Anthill.SDK.Reasoning.AgentAccessScope.Current;
+
+        // v0.3.8.97 — THE WORKTREE GATE. A mission flow whose role may write and whose isolated
+        // worktree is missing or rejected says so explicitly, and a writing agent is refused
+        // BEFORE the process starts. This cannot be inferred from a null working directory —
+        // EffectiveWorkingDirectory below falls back to the static agent workspace root, and the
+        // mission lane resolves the project's LIVE checkout as its directory — so without the flag
+        // this provider would happily stand a writing agent in the operator's real tree the moment
+        // worktree preparation failed. Prompt-only restraint is not confinement.
+        if (access is { MissionWorktreeMissing: true })
+            return Fail(ModelCallOutcome.ConfigError,
+                $"{_agent.DisplayName} writes files and this mission's role may write, but the "
+                + "mission has no usable isolated worktree — refused by the worktree gate "
+                + "(AgentCliProvider.Confinement) before the process started. A writable agent CLI "
+                + "is never run in the live project; fix or retry the mission workspace instead.");
+
+        var cwd = EffectiveWorkingDirectory(access);
         if (string.IsNullOrWhiteSpace(cwd))
             return Fail(ModelCallOutcome.ConfigError,
                 $"{_agent.DisplayName} edits files and runs commands, so it will not be started without a "

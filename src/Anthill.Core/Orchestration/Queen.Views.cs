@@ -132,6 +132,34 @@ public sealed partial class Queen
                 $"Patch cannot be applied.\nPatch ID: {patchId}\nRefused by: {verdict.Layer}\n{verdict.Reason}");
         }
 
+        // v0.3.8.97 — A MULTI-FILE SET APPLIES AS A UNIT ON THIS PATH TOO. The Apply button was the
+        // last per-file lane: the bypass and auto-apply lanes went transactional in v0.3.8.91/.94
+        // while an operator approving a three-file set and clicking Apply three times could still
+        // land one file and fail the next — the exact partial-set state six documents promise
+        // cannot exist. A set with more than one proposal now routes through the same transaction
+        // the other lanes use, once every member is approved; a single-proposal set keeps the
+        // long-standing single-file path below, target-pinned.
+        var patchSetId = Str(patch, "patch_set_id");
+        var members = Verification.PatchSetApply.LoadSet(Memory, patchSetId);
+        if (members.Count > 1)
+            return ApplyApprovedSetAsAUnit(approvalId, approval, patchSetId, members);
+
+        // v0.3.8.97 — THE TARGET TREE, RESOLVED AND PINNED. The gate above already refused an
+        // unresolvable target; this re-resolution is what the write itself uses, and the pinned
+        // scope makes the intent hashes and the apply_patch tool resolve against the set's own
+        // tree rather than the configured live root or an ambient mission worktree.
+        var target = Verification.PatchTargetResolver.Resolve(Memory, patchSetId);
+        if (!target.Ok)
+            return new(PatchApplyOutcome.RefusedStatus,
+                $"Patch cannot be applied.\nPatch ID: {patchId}\nRefused by: target-resolver\n{target.Problem}");
+        using var pinnedTarget = Anthill.Core.Workspaces.MissionWorkspaceScope.Enter(
+            new Anthill.Core.Workspaces.MissionWorkspace
+            {
+                Id = $"apply-target-{patchSetId}", MissionId = Str(approval, "mission_id"),
+                Root = target.Root, SourceRoot = target.Root, Mode = "apply-target",
+                State = Anthill.Core.Workspaces.WorkspaceState.Active,
+            });
+
         // THE INTENT IS RECORDED BEFORE THE DISK IS TOUCHED. v0.3.8.91.
         //
         // Below this point the old code wrote the file and then made four separate, un-transacted
@@ -143,8 +171,9 @@ public sealed partial class Queen
         // The intent carries the target's bytes as they are right now, so startup reconciliation can
         // decide from hashes rather than from belief. See `PatchApplyReconciler`.
         var intent = Memory.BeginApplyIntent(
-            patchId, approvalId, Str(patch, "patch_set_id"), Str(approval, "mission_id"),
-            Str(patch, "file_path"), Verification.PatchApplyIntentHash.Of(Str(patch, "file_path")));
+            patchId, approvalId, patchSetId, Str(approval, "mission_id"),
+            Str(patch, "file_path"),
+            Verification.PatchApplyIntentHash.Of(Str(patch, "file_path"), target.Root));
 
         Memory.AdvanceApplyIntent(intent.Id, Verification.PatchApplyPhase.Mutating);
 
@@ -166,7 +195,7 @@ public sealed partial class Queen
         // The bytes are down. From here the database is behind the disk, and the intent says so
         // until the records catch up — which is exactly the window a crash used to make permanent.
         Memory.AdvanceApplyIntent(intent.Id, Verification.PatchApplyPhase.Applied,
-            Verification.PatchApplyIntentHash.Of(Str(patch, "file_path")));
+            Verification.PatchApplyIntentHash.Of(Str(patch, "file_path"), target.Root));
 
         Memory.UpdatePatchStatus(patchId, PatchStatus.Applied, AnthillTime.NowUtc().ToIso(), backupPath, null);
         Memory.UpdateApprovalStatus(approvalId, ApprovalStatus.Consumed, "Approval consumed by successful patch application.");
@@ -181,6 +210,66 @@ public sealed partial class Queen
 
         return new(PatchApplyOutcome.Applied,
             $"Patch applied successfully.\nApproval ID: {approvalId}\nPatch ID: {patchId}\nFile: {Str(patch, "file_path")}\nBackup: {backupPath ?? "n/a"}\nApproval Status: consumed\nPatch Status: applied");
+    }
+
+    /// <summary>
+    /// v0.3.8.97 — the Apply button's SET lane: every member of the set must be individually
+    /// promotable as Human (which includes each member's own approved approval row), and then the
+    /// whole set goes through the one transaction. One unapproved or refused member refuses the
+    /// set with the file and the layer named — approving two of three files and applying is not a
+    /// partial apply, it is a refusal that says which approval is missing.
+    /// </summary>
+    private PatchApplyResult ApplyApprovedSetAsAUnit(string approvalId,
+        Dictionary<string, object?> approval, string patchSetId,
+        List<(string PatchId, PatchProposal Proposal)> members)
+    {
+        var refusals = new List<string>();
+        foreach (var (memberId, proposal) in members)
+        {
+            var memberVerdict = Anthill.Core.Verification.PatchPromotionGate.Evaluate(
+                Memory, (Anthill.SDK.Artifacts.IEvidenceStore)Memory, memberId,
+                Anthill.Core.Verification.PromotionActor.Human);
+            if (!memberVerdict.Promotable)
+                refusals.Add($"{proposal.FilePath} [{memberVerdict.Layer}]: {memberVerdict.Reason}");
+        }
+
+        if (refusals.Count > 0)
+        {
+            Memory.LogEvent(Str(approval, "mission_id"), "patch_promotion_refused",
+                $"Set apply refused: {refusals.Count} of {members.Count} member(s) of patch set "
+              + $"{patchSetId} are not promotable, so none were applied. " + string.Join(" | ", refusals.Take(5)),
+                Str(approval, "task_id"), "queen",
+                new()
+                {
+                    ["patch_set_id"] = patchSetId, ["approval_request_id"] = approvalId,
+                    ["refused_count"] = refusals.Count, ["refusals"] = refusals,
+                });
+            return new(PatchApplyOutcome.RefusedStatus,
+                $"Patch set cannot be applied as a unit.\nPatch Set ID: {patchSetId}\n"
+              + $"{refusals.Count} of {members.Count} file(s) refused — a multi-file set applies "
+              + "completely or not at all, so approve or resolve every file first.\n"
+              + string.Join("\n", refusals));
+        }
+
+        var outcome = ApplyPatchSetTransactionally(patchSetId, $"operator(approval {approvalId})");
+        if (!outcome.Applied)
+            return new(PatchApplyOutcome.Failed,
+                $"Patch set was not applied.\nPatch Set ID: {patchSetId}\n{outcome.Message}\n"
+              + string.Join("\n", outcome.Refusals));
+
+        // Every member's approval is consumed by the one application — including the clicked one.
+        foreach (var (memberId, _) in members)
+        {
+            var memberApproval = Memory.GetApprovalForTarget(memberId);
+            var memberApprovalId = memberApproval?.GetValueOrDefault("id")?.ToString();
+            if (memberApprovalId is { Length: > 0 })
+                Memory.UpdateApprovalStatus(memberApprovalId, ApprovalStatus.Consumed,
+                    "Approval consumed by the transactional application of its whole patch set.");
+        }
+
+        return new(PatchApplyOutcome.Applied,
+            $"Patch set applied as a unit.\nPatch Set ID: {patchSetId}\nApproval ID: {approvalId}\n"
+          + $"Files applied: {outcome.Count}\n{outcome.Message}");
     }
 
     /// <summary>
@@ -207,9 +296,24 @@ public sealed partial class Queen
         var missionId = first?.GetValueOrDefault("mission_id")?.ToString() ?? "";
         var taskId = first?.GetValueOrDefault("task_id")?.ToString();
 
+        // v0.3.8.97 — the set's own target tree, or a refusal that names why. Passing the resolved
+        // root through to ApplySet is what makes "the operator selected repository B" survive to
+        // the transaction instead of being dropped at this boundary for the configured live root.
+        var target = Verification.PatchTargetResolver.Resolve(Memory, patchSetId);
+        if (!target.Ok)
+        {
+            Memory.LogEvent(missionId, "patch_set_apply_refused",
+                $"Patch set {patchSetId} was not applied: {target.Problem}", taskId, "queen",
+                new() { ["patch_set_id"] = patchSetId, ["requested_by"] = requestedBy,
+                        ["refusal"] = "target_unresolvable" });
+            return Verification.SetApplyOutcome.Refused(
+                $"patch set {patchSetId} was not applied: its target tree could not be resolved",
+                new[] { target.Problem ?? "target unresolvable" });
+        }
+
         var outcome = Verification.PatchSetApply.ApplySet(
             Memory, patchSetId, set,
-            applyOne: patchId => ApplyPatchForAutomation(patchId, missionId, taskId),
+            applyOne: patchId => ApplyPatchForAutomation(patchId, missionId, taskId, requestedBy),
             rollBack: (applied, tx, reason) =>
             {
                 var report = tx.Rollback();
@@ -236,7 +340,8 @@ public sealed partial class Queen
                         ["conflicts"] = string.Join(" | ", report.Conflicts),
                         ["failures"] = string.Join(" | ", report.Failures),
                     });
-            });
+            },
+            targetRoot: target.Root);
 
         Memory.LogEvent(missionId, outcome.Applied ? "patch_set_applied" : "patch_set_apply_refused",
             outcome.Message, taskId, "queen",
@@ -270,12 +375,19 @@ public sealed partial class Queen
     /// same write gates and path guard as the human <see cref="ApplyApprovedPatch"/> path — the
     /// only difference is the actor and that no human approval row is consumed. Logs an audit event.
     /// </summary>
-    public AutoApplyOutcome ApplyPatchForAutomation(string patchId, string missionId, string? taskId)
+    public AutoApplyOutcome ApplyPatchForAutomation(string patchId, string missionId, string? taskId,
+        string requestedBy = "director")
     {
         var patch = Memory.GetPatchProposal(patchId);
         if (patch is null) return new AutoApplyOutcome(false, patchId, "patch not found", null, null, "", "");
         var changeType = Str(patch, "change_type");
         var filePath = Str(patch, "file_path");
+        // v0.3.8.97 — this delegate now serves the operator's set lane and the bypass lane as well
+        // as the Director, and the record must say WHO applied. The Director keeps its event; every
+        // other requester's application is a queen-attributed patch_applied, because an operator's
+        // click recorded as "Director auto-applied" is a false provenance line in the audit trail.
+        var isDirector = string.Equals(requestedBy, "director", StringComparison.OrdinalIgnoreCase);
+        var actor = isDirector ? "director" : "queen";
 
         // Same intent journal as the operator's Apply button. v0.3.8.91 — one lane having crash
         // recovery and the other not is how the manual path became the one that could strand a
@@ -286,7 +398,7 @@ public sealed partial class Queen
 
         Memory.AdvanceApplyIntent(intent.Id, Verification.PatchApplyPhase.Mutating);
 
-        var result = Tools.RunTool("apply_patch", missionId, taskId, "director",
+        var result = Tools.RunTool("apply_patch", missionId, taskId, actor,
             new() { ["patch"] = patch });
 
         // v0.3.8.62 (S4): parse metadata from SUCCESS AND FAILURE alike. The tool now reports the
@@ -320,8 +432,12 @@ public sealed partial class Queen
             appliedHash ?? Verification.PatchApplyIntentHash.Of(filePath));
 
         Memory.UpdatePatchStatus(patchId, PatchStatus.Applied, AnthillTime.NowUtc().ToIso(), backupPath, null, appliedHash);
-        Memory.LogEvent(missionId, "autonomy_autoapply_applied", $"Director auto-applied patch: {filePath}", taskId, "director",
-            new() { ["patch_id"] = patchId, ["file_path"] = filePath, ["change_type"] = changeType, ["backup_path"] = backupPath, ["destination_path"] = resolvedDestination, ["applied_hash"] = appliedHash, ["verified"] = false });
+        Memory.LogEvent(missionId,
+            isDirector ? "autonomy_autoapply_applied" : "patch_applied",
+            isDirector ? $"Director auto-applied patch: {filePath}"
+                       : $"Patch applied as part of its set by {requestedBy}: {filePath}",
+            taskId, actor,
+            new() { ["patch_id"] = patchId, ["file_path"] = filePath, ["change_type"] = changeType, ["backup_path"] = backupPath, ["destination_path"] = resolvedDestination, ["applied_hash"] = appliedHash, ["verified"] = false, ["requested_by"] = requestedBy });
 
         Memory.CloseApplyIntent(intent.Id);
         return new AutoApplyOutcome(true, patchId, null, resolvedPath, backupPath, changeType, filePath, resolvedDestination, appliedHash);
@@ -546,12 +662,16 @@ public sealed partial class Queen
             if (conversation?.EffectivePolicy is not (Anthill.Core.Conversations.EscalationPolicy.Bypass
                                                    or Anthill.Core.Conversations.EscalationPolicy.AutoApprove)) return;
 
-            // Resolve the file the way the apply tool did: relative paths are workspace-rooted.
+            // Resolve the file the way the apply tool did: relative paths are rooted at the SET'S
+            // OWN TARGET tree (v0.3.8.97) — the same resolution the write used, so the commit can
+            // never land in a different repository than the bytes did.
             var filePath = Str(patch, "file_path");
             if (string.IsNullOrWhiteSpace(filePath)) return;
+            var commitTarget = Verification.PatchTargetResolver.Resolve(Memory, Str(patch, "patch_set_id"));
+            if (!commitTarget.Ok) return;   // the apply itself was refused upstream; nothing landed
             var full = Path.IsPathRooted(filePath)
                 ? Path.GetFullPath(filePath)
-                : Path.GetFullPath(Path.Combine(AnthillRuntime.AllowedWorkspaceRoot, filePath));
+                : Path.GetFullPath(Path.Combine(commitTarget.Root, filePath));
             var dir = Path.GetDirectoryName(full);
             var repoRoot = dir is null ? null : Anthill.Core.Projects.RepoOps.TopLevel(dir);
             if (repoRoot is null) return;   // plain folder — the operator's git story ends here, honestly
