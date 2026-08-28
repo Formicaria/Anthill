@@ -170,6 +170,32 @@ public class SystemAuditNegativeTests : IDisposable
         return (memory, missionId!);
     }
 
+    /// <summary>
+    /// THE PLAN THAT RAN IS THE PLAN THE FIXTURE WROTE.
+    ///
+    /// Required by `ScriptedPlanConformanceTests` for any fixture whose plan is built rather than
+    /// declared as a readable constant — and it caught a real hole here, not a formality. If the
+    /// Planner discarded these plans (a bad role, a parse failure) the mission would run
+    /// `FallbackTasks` instead, and `APlanMissingTheStepsTheClassRequires_HasThemSupplied` would
+    /// pass on a fallback plan that already contains a builder and a verifier: a green test proving
+    /// nothing about the coverage layer it exists to check.
+    ///
+    /// A SUBSET, not an equality. `EnsureClassCoverage` deliberately ADDS the steps an audit
+    /// requires, so demanding an exact match would assert that the feature under test did not run.
+    /// </summary>
+    private static void AssertTheMissionRanTheScriptedPlan(
+        SqliteMemory memory, string missionId, params string[] scriptedTitles)
+    {
+        var planned = memory.GetTasksForMission(missionId)
+            .Select(t => t.GetValueOrDefault("title")?.ToString() ?? "")
+            .ToList();
+
+        foreach (var title in scriptedTitles)
+            Assert.True(planned.Contains(title, StringComparer.Ordinal),
+                $"the mission did not run the scripted plan — '{title}' is absent, so the Planner "
+              + $"discarded the fixture's plan and ran its own.\n\nTasks that ran: {string.Join(", ", planned)}");
+    }
+
     private static IReadOnlyList<string> WorkersOf(SqliteMemory memory, string missionId) =>
         memory.GetTasksForMission(missionId)
             .Select(t => t.GetValueOrDefault("assigned_worker")?.ToString() ?? "")
@@ -188,6 +214,9 @@ public class SystemAuditNegativeTests : IDisposable
     {
         var (memory, missionId) = RunAudit(Script(IncompatiblePlan, Passes));
         using var owned = memory;
+
+        AssertTheMissionRanTheScriptedPlan(memory, missionId,
+            "Research the mission", "Compile the assessment", "Verify the assessment");
 
         var workers = WorkersOf(memory, missionId);
         Assert.Contains("researcher.repo_researcher", workers);
@@ -214,6 +243,8 @@ public class SystemAuditNegativeTests : IDisposable
         var (memory, missionId) = RunAudit(Script(ResearchOnlyPlan, Passes));
         using var owned = memory;
 
+        AssertTheMissionRanTheScriptedPlan(memory, missionId, "Research the implementation");
+
         var roles = memory.GetTasksForMission(missionId)
             .Select(t => t.GetValueOrDefault("assigned_ant")?.ToString() ?? "")
             .ToList();
@@ -234,6 +265,8 @@ public class SystemAuditNegativeTests : IDisposable
     {
         var (memory, missionId) = RunAudit(Script(IncompatiblePlan, Refuses));
         using var owned = memory;
+
+        AssertTheMissionRanTheScriptedPlan(memory, missionId, "Verify the assessment");
 
         var evaluation = memory.LoadMissionEvaluation(missionId);
         Assert.NotNull(evaluation);
