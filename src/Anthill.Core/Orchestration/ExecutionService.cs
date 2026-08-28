@@ -647,7 +647,13 @@ public sealed class ExecutionService : IExecutionService
                             MissionId = mission.Id,
                             Root = revision.Root,
                             Mode = revision.Mode,
-                            SourceRoot = AnthillRuntime.AllowedWorkspaceRoot,
+                            // v0.3.8.97 — keep the MISSION's own source identity on the revision
+                            // scope: for a project mission the ambient workspace names the
+                            // project's checkout, and stamping the configured live root here would
+                            // relabel every check run inside the revision as being about a tree
+                            // the mission never targeted.
+                            SourceRoot = Workspaces.MissionWorkspaceScope.Current?.SourceRoot
+                                         ?? AnthillRuntime.AllowedWorkspaceRoot,
                             BaseRevision = revision.BaseRevision,
                             State = Workspaces.WorkspaceState.Active,
                             MaterializedPatchSetId = revision.PatchSetId,
@@ -792,6 +798,11 @@ public sealed class ExecutionService : IExecutionService
                 // so verification is inserted after it rather than left to the plan.
                 if (task.AssignedAnt == "builder") EnsureVerificationAfterDeliverable(mission, context, task, scheduler);
                 if (task.AssignedAnt == "archivist") IngestMemoryCandidates(mission, task, execution);
+                // v0.3.8.97 — the deferred bypass attempt, at the only moment it can succeed: a
+                // policy review just completed, so if it was the LAST one for its patch set the
+                // gate's ReviewIncomplete refusal has cleared and Skip-all-approvals can finally
+                // mean what it says.
+                if (task.AssignedAnt is "tester" or "soldier") MaybeApplyBypassAfterReviews(mission, task);
                 IngestHandoffs(mission, context, task, execution, runtimeSelection, scheduler);
                 RecordAgentMessage(mission.Id, task.Id, runtimeSelection.RuntimeNodeId, "queen", "task_result",
                     task.ResultSummary ?? TextUtil.CreateResultSummary(task.Result, AnthillRuntime.MaxResultSummaryChars),
@@ -1257,7 +1268,11 @@ public sealed class ExecutionService : IExecutionService
                 MissionId = mission.Id,
                 Root = materialized.Root,
                 Mode = materialized.Mode,
-                SourceRoot = AnthillRuntime.AllowedWorkspaceRoot,
+                // v0.3.8.97 — the tree this sandbox was ACTUALLY materialized from. This field
+                // said the configured live root even when the mission's project supplied the
+                // source three lines above — a label that would send anyone tracing a project
+                // set's provenance to the wrong repository.
+                SourceRoot = materializationSource,
                 BaseRevision = materialized.BaseRevision,
                 State = Workspaces.WorkspaceState.Active,
                 // v0.3.8.41 — this tree CONTAINS the patch, and now says so. Anything running a
@@ -1384,7 +1399,12 @@ public sealed class ExecutionService : IExecutionService
             //
             // Captured here rather than at apply time for the obvious reason: later would fingerprint
             // a tree that had already had time to move.
-            var fingerprint = Workspaces.WorkspaceFingerprint.Capture(AnthillRuntime.AllowedWorkspaceRoot);
+            // v0.3.8.97 — captured from the tree the set will be APPLIED to: the mission's own
+            // source root, the same tree the sandbox above was materialized from. Fingerprinting
+            // the configured live root for a project set recorded the state of a repository the
+            // apply would never touch, so the gate's freshness check was comparing tree A's
+            // fingerprint against tree A while the write went to tree B.
+            var fingerprint = Workspaces.WorkspaceFingerprint.Capture(materializationSource);
             _memory.SetPatchSetBaseFingerprint(patchSet.Id, fingerprint);
             _memory.LogEvent(mission.Id, "mission_revision_registered",
                 $"Revision {revision.RevisionId} registered: patch set {patchSet.Id} materialized at {revision.Root}",
@@ -1489,10 +1509,30 @@ public sealed class ExecutionService : IExecutionService
 
         try
         {
-            var changes = Workspaces.WorkspaceChangeSet.Create(
+            var capture = Workspaces.WorkspaceChangeSet.Create(
                 workspace, mission.Id, task.Id,
                 $"Acting coder changes from workspace {workspace.Id}");
 
+            // v0.3.8.97 — AN UNFAITHFUL CAPTURE IS A CAPTURE FAILURE, refused whole. Proposing the
+            // representable subset would put a set in front of the reviewers that silently omits
+            // deletions, renames, or oversized work the agent actually did — a review of a
+            // description that is wrong. The block on the task is what keeps a bypass conversation
+            // from applying anything while the capture is unaccounted for.
+            if (!capture.Faithful)
+            {
+                _memory.LogEvent(mission.Id, "workspace_capture_failed",
+                    $"Workspace {workspace.Id} changes could NOT be faithfully captured — "
+                  + $"{capture.Problems.Count} problem(s), so no patch set was proposed: "
+                  + string.Join(" | ", capture.Problems.Take(5)),
+                    task.Id, task.AssignedAnt,
+                    new() { ["workspace_id"] = workspace.Id, ["problems"] = capture.Problems });
+                task.DeterministicBlock ??=
+                    $"the acting coder's workspace changes could not be faithfully captured: "
+                  + string.Join("; ", capture.Problems.Take(3));
+                return;
+            }
+
+            var changes = capture.Set;
             if (changes.Proposals.Count == 0)
             {
                 // Legitimate: the coder declared NO_CHANGES_NEEDED, or its edits were judged
@@ -1583,8 +1623,9 @@ public sealed class ExecutionService : IExecutionService
             // AFTER RecordPatchArtifact deliberately: the soldier reads the patch-set artifact
             // (v3.8.25), so inserting its task before the artifact exists would schedule a review of
             // something not yet written. The ordering here IS the contract between the two.
+            var reviewsPending = false;
             if (context is not null && scheduler is not null)
-                InsertPolicyReviewTasks(mission, context, task, patchSet, scheduler, patchArtifactId);
+                reviewsPending = InsertPolicyReviewTasks(mission, context, task, patchSet, scheduler, patchArtifactId);
             else if (patchSet.Proposals.Count > 0)
                 // The harvested lane, at finalization: the mission's task graph is closed, so an
                 // inserted tester/soldier task would sit unscheduled forever. Saying so is the
@@ -1605,7 +1646,31 @@ public sealed class ExecutionService : IExecutionService
             // apply below runs the same audited transitions the operator's own button does.
             // Automatically approve deliberately keeps the manual apply card — that policy means
             // "act freely, but ask me before changing real files."
-            ApplyUnderBypass(mission, task, patchSet);
+            //
+            // v0.3.8.97 — AFTER THE REVIEWS, NOT BESIDE THEM. This call used to run one statement
+            // after the tester and soldier tasks were INSERTED — still-pending rows the gate's
+            // ReviewIncomplete refusal then correctly rejected, every time, and nothing ever
+            // retried. So under Bypass a reviewed set was never bypass-applied at all: the policy
+            // said "apply without a card" and the sequencing guaranteed the answer was always "the
+            // review you just scheduled has not run". When reviews were inserted, the attempt now
+            // moves to the moment the LAST review completes (MaybeApplyBypassAfterReviews, hooked
+            // at tester/soldier task completion); when none could be inserted, the immediate
+            // attempt below is still the right one — there is nothing to wait for.
+            if (reviewsPending)
+            {
+                var conversation = _memory.FindConversationForMission(mission.Id);
+                if (conversation?.EffectivePolicy == Conversations.EscalationPolicy.Bypass)
+                    _memory.LogEvent(mission.Id, "patch_bypass_deferred",
+                        $"Skip-all-approvals application of patch set {patchSet.Id} is deferred "
+                      + "until its tester/soldier reviews complete — applying beside a pending "
+                      + "review would make the review advisory.",
+                        task.Id, task.AssignedAnt,
+                        new() { ["patch_set_id"] = patchSet.Id });
+            }
+            else
+            {
+                ApplyUnderBypass(mission, task, patchSet);
+            }
             if (patchSet.Proposals.Count == 0)
             {
                 _memory.LogEvent(mission.Id, "patch_set_empty", "CoderAnt returned a valid patch set with no proposals.", task.Id, task.AssignedAnt,
@@ -1842,10 +1907,67 @@ public sealed class ExecutionService : IExecutionService
         Console.WriteLine($"Task {execution.StatusCode}: {task.Title} ({elapsed}s) — {TextUtil.Truncate(decision.Reason, 160)}");
     }
 
+    /// <summary>
+    /// v0.3.8.97 — bypass application, at review completion. `ProcessPatchSet` defers the bypass
+    /// attempt whenever it inserted tester/soldier reviews (attempting beside a still-pending
+    /// review lost to the gate's ReviewIncomplete refusal on every mission, forever); this is the
+    /// other half. Called when a tester or soldier task completes: if that task carries a
+    /// policy-review marker and EVERY review for its patch set is now complete, the set is
+    /// re-assembled from the store and offered to <see cref="ApplyUnderBypass"/> — where the
+    /// promotion gate, evaluated as Bypass per proposal, remains the authority. Never throws into
+    /// the completion path.
+    /// </summary>
+    private void MaybeApplyBypassAfterReviews(Mission mission, Task reviewTask)
+    {
+        try
+        {
+            var marker = System.Text.RegularExpressions.Regex.Match(reviewTask.Description ?? "",
+                @"policy-review:(?:tester|soldier):(?<set>[A-Za-z0-9\-]+)");
+            if (!marker.Success) return;
+            var patchSetId = marker.Groups["set"].Value;
+
+            // ALL reviews for this set must be terminal-complete. mission.Tasks is the live graph
+            // this completion is running inside, so the sibling review's status is current.
+            var reviews = mission.Tasks
+                .Where(t => (t.Description ?? "").Contains($":{patchSetId}]", StringComparison.Ordinal)
+                         && (t.Description ?? "").Contains("policy-review:", StringComparison.Ordinal))
+                .ToList();
+            if (reviews.Count == 0 || reviews.Any(t => t.Status != TaskStatus.Complete)) return;
+
+            var row = _memory.GetPatchSetRow(patchSetId);
+            var proposals = Verification.PatchSetApply.LoadSet(_memory, patchSetId);
+            if (proposals.Count == 0) return;
+
+            var patchSet = new PatchSet
+            {
+                Id = patchSetId,
+                MissionId = row?.GetValueOrDefault("mission_id")?.ToString() ?? mission.Id,
+                TaskId = row?.GetValueOrDefault("task_id")?.ToString() ?? "",
+                WorkspaceId = row?.GetValueOrDefault("workspace_id")?.ToString(),
+                Summary = row?.GetValueOrDefault("summary")?.ToString() ?? "",
+            };
+            patchSet.Proposals.AddRange(proposals.Select(p => p.Proposal));
+
+            // The PRODUCING task, not the review: its deterministic block is the one ApplyUnderBypass
+            // must honor, and its id is where the apply events belong. The review task stands in
+            // only when the producer's row is no longer in the graph.
+            var producer = mission.Tasks.FirstOrDefault(t => t.Id == patchSet.TaskId) ?? reviewTask;
+
+            ApplyUnderBypass(mission, producer, patchSet);
+        }
+        catch (Exception error)
+        {
+            // Refusing to apply is always a safe failure; the manual card remains for the operator.
+            Console.Error.WriteLine(
+                $"[execution] deferred bypass apply failed after review {reviewTask.Id}: {error.Message}");
+        }
+    }
+
     /// <summary>v0.3.8.51 — the Bypass path's unprompted apply. Refuses without a Bypass
     /// conversation, with a deterministic block standing, with any proposal the promotion gate
     /// refuses, or without a transactional set applier; logs every outcome. v0.3.8.91 applies the
-    /// set as ONE unit rather than one proposal at a time.</summary>
+    /// set as ONE unit rather than one proposal at a time; v0.3.8.97 reaches here only after any
+    /// inserted policy reviews have completed.</summary>
     private void ApplyUnderBypass(Mission mission, Task task, PatchSet patchSet)
     {
         if (patchSet.Proposals.Count == 0) return;
@@ -1988,15 +2110,47 @@ public sealed class ExecutionService : IExecutionService
         // disposable workspace exists to deny. Missions without a workspace (read-only runs, or
         // preparation rejected) keep the previous behaviour, stated by the scope's own fields.
         var missionWorktree = Workspaces.MissionWorkspaceScope.CurrentRoot;
+        IReadOnlyList<string>? checkStems = null;
         if (missionWorktree is not null)
         {
             workingDirectory = missionWorktree;
             grants = Array.Empty<string>();
+
+            // v0.3.8.97 — the worktree's own REPOSITORY-DECLARED check commands ride along, so an
+            // acting agent can run exactly the repo's build/test for iteration. Detected from the
+            // tree (WorkspaceCapabilityManifest's rule: detection reads the project, execution
+            // reads only reviewed adapters), never proposed by a model. Read-only roles carry
+            // none — a stem is a command grant and their contract grants no execution.
+            if (roleMayWrite)
+            {
+                try
+                {
+                    checkStems = Workspaces.WorkspaceCapabilityManifest.Detect(missionWorktree)
+                        .Checks.Where(c => c.Enabled).Select(c => c.FileName)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
+                }
+                catch (Exception error)
+                {
+                    // Degrade toward LESS access: no stems means no extra commands, never a failure.
+                    Console.Error.WriteLine(
+                        $"[execution] check-stem detection failed for {missionWorktree}: {error.Message}");
+                }
+            }
         }
+        // v0.3.8.97 — FAIL CLOSED, EXPLICITLY, when a writable role has no isolated worktree. A
+        // null working directory was never a refusal (the provider falls back to the static agent
+        // workspace root), so a rejected or missing worktree used to hand a writing agent CLI the
+        // project's live checkout with nothing but prompt text for restraint. The flag is the
+        // refusal's carrier; AgentCliProvider.Confinement is where it becomes "the process never
+        // starts".
+        var worktreeMissing = roleMayWrite && missionWorktree is null;
         // confinedWorkspace: mission tasks run in disposable sandboxes/worktrees, never the live tree.
         return Anthill.SDK.Reasoning.AgentAccessScope.Enter(
             policy, grants, confinedWorkspace: true, workingDirectory: workingDirectory,
-            roleMayWrite: roleMayWrite);
+            roleMayWrite: roleMayWrite,
+            missionWorktreeMissing: worktreeMissing,
+            checkCommandStems: checkStems);
     }
 
     /// <summary>
@@ -2243,10 +2397,16 @@ public sealed class ExecutionService : IExecutionService
     /// scheduling rule in `AntRegistry.ValidateTask` — the same discriminator handoffs use, for the
     /// same reason: this task was caused by something that happened, not scheduled speculatively.
     /// </summary>
-    private void InsertPolicyReviewTasks(Mission mission, MissionContext context, Task coderTask,
+    /// <returns>
+    /// v0.3.8.97 — whether any review task was actually inserted (and is therefore now PENDING).
+    /// The caller's bypass decision hangs on this: an inserted review means bypass application
+    /// must wait for it, and a lane that cannot know whether reviews exist cannot sequence itself
+    /// after them.
+    /// </returns>
+    private bool InsertPolicyReviewTasks(Mission mission, MissionContext context, Task coderTask,
         PatchSet patchSet, TaskScheduler? scheduler, string? patchArtifactId = null)
     {
-        if (patchSet.Proposals.Count == 0) return;
+        if (patchSet.Proposals.Count == 0) return false;
 
         // The evidence tasks this patch set now has, collected so the verifier can be made to wait
         // for them. v0.3.8.41 — see EnsureVerificationWaitsFor.
@@ -2317,6 +2477,8 @@ public sealed class ExecutionService : IExecutionService
         EnsureVerificationWaitsFor(mission, context, coderTask, scheduler, inserted,
             because: $"patch set {patchSet.Id} must be verified against its own test and security evidence",
             evidence: new() { ["patch_set_id"] = patchSet.Id });
+
+        return inserted.Count > 0;
     }
 
     /// <summary>

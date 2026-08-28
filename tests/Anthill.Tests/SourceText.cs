@@ -97,6 +97,68 @@ public static class SourceText
         return sb.ToString();
     }
 
+    /// <summary>
+    /// ONE MEMBER'S BODY, from its signature to the end of that member. v0.3.8.97.
+    ///
+    /// THE POPULATION THIS EXISTS FOR. The remark above says every guard built on
+    /// <see cref="CodeOnly"/> reads by character offset, and names the CRLF failure that made one of
+    /// them pass locally and fail on main. v0.3.8.97 hit the other half of the same defect: adding
+    /// six lines and an explanatory paragraph to `PatchSetApply.Preflight` pushed
+    /// `requireBaseHash: true` past `AutoApplyAtomicityTests`' 2,000-character window, so a guard
+    /// whose subject was unchanged and still true reported the strictness gone. Comments are BLANKED
+    /// here and not removed, so explaining a change inside a guarded member is by itself enough to
+    /// break a budget-sliced guard — and the reflex a false failure invites is to relax the rule.
+    ///
+    /// A budget is a proxy for "inside this member" and a bad one: the guess is invisible when it is
+    /// wrong, it means something different per platform, and it drifts every time the member grows.
+    /// Reading the delimiters answers the question that was actually being asked.
+    ///
+    /// BOTH MEMBER SHAPES, because the second one bit immediately: `AutoApplyRunner.Preflight` is
+    /// expression-bodied, so a brace-matcher that assumes `{` finds the NEXT member's brace and
+    /// over-reads into it — which is how a guard comes to pass on its neighbour's code. Whichever of
+    /// <c>{</c> or <c>=&gt;</c> comes first decides: a block body is brace-matched, an expression
+    /// body runs to the semicolon that closes it at depth zero.
+    ///
+    /// Falls back to the rest of the file when the delimiters do not balance, which reads as "too
+    /// much" rather than "too little": over-reading risks a false pass on a neighbour, while
+    /// under-reading reports a false failure on a correct change — and that is the one that gets a
+    /// real rule weakened.
+    /// </summary>
+    public static string MemberBody(string code, int signatureAt)
+    {
+        if (signatureAt < 0 || signatureAt >= code.Length) return "";
+
+        var brace = code.IndexOf('{', signatureAt);
+        var arrow = code.IndexOf("=>", signatureAt, StringComparison.Ordinal);
+
+        // Neither delimiter: not a member declaration this can bound. Hand back the rest.
+        if (brace < 0 && arrow < 0) return code[signatureAt..];
+
+        if (arrow >= 0 && (brace < 0 || arrow < brace))
+        {
+            // Expression body. The terminating semicolon is the one outside every paren, bracket and
+            // brace opened after the arrow — a lambda inside the expression (`.Select(e => (a, b))`)
+            // opens and closes its own, and a collection or object initializer opens braces.
+            var depth = 0;
+            for (var i = arrow + 2; i < code.Length; i++)
+            {
+                var c = code[i];
+                if (c is '(' or '[' or '{') depth++;
+                else if (c is ')' or ']' or '}') depth--;
+                else if (c == ';' && depth <= 0) return code[signatureAt..(i + 1)];
+            }
+            return code[signatureAt..];
+        }
+
+        var braces = 0;
+        for (var i = brace; i < code.Length; i++)
+        {
+            if (code[i] == '{') braces++;
+            else if (code[i] == '}' && --braces == 0) return code[signatureAt..(i + 1)];
+        }
+        return code[signatureAt..];
+    }
+
     /// <summary>Every production .cs file, excluding build output.</summary>
     public static IEnumerable<string> ProductionFiles(string repoRoot) =>
         Directory.GetFiles(Path.Combine(repoRoot, "src"), "*.cs", SearchOption.AllDirectories)

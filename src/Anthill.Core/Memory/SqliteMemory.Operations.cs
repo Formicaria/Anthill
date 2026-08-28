@@ -972,6 +972,26 @@ public sealed partial class SqliteMemory
         Query("SELECT base_fingerprint FROM patch_sets WHERE id = @id", ("@id", patchSetId ?? ""))
             .FirstOrDefault()?.GetValueOrDefault("base_fingerprint")?.ToString();
 
+    /// <summary>
+    /// The patch set's own row — identity, producer, and above all <c>workspace_id</c>. v0.3.8.97.
+    ///
+    /// This read is what lets promotion answer "which tree is this set FOR": the workspace id names
+    /// the mission workspace row, and that row's SourceRoot is the checkout the set was diffed
+    /// against. `PatchTargetResolver` is the one consumer; nothing else should re-derive a target
+    /// from this row, or two answers to one question come back.
+    /// </summary>
+    public Dictionary<string, object?>? GetPatchSetRow(string patchSetId) =>
+        Query(@"SELECT id, mission_id, task_id, workspace_id, summary, proposal_count, base_fingerprint, created_at
+                FROM patch_sets WHERE id = @id", ("@id", patchSetId ?? ""))
+            .FirstOrDefault();
+
+    /// <summary>Every patch set a mission produced, newest last. v0.3.8.97 — the mission report
+    /// compiles its patch-set section from these rows rather than from event counts.</summary>
+    public List<Dictionary<string, object?>> GetPatchSetsForMission(string missionId) =>
+        Query(@"SELECT id, mission_id, task_id, workspace_id, summary, proposal_count, base_fingerprint, created_at
+                FROM patch_sets WHERE mission_id = @m ORDER BY created_at ASC, id ASC",
+            ("@m", missionId ?? ""));
+
     public List<Dictionary<string, object?>> GetPatchProposalsForSet(string patchSetId)
     {
         var rows = Query(@"SELECT id, patch_set_id, mission_id, task_id, file_path, change_type, reason, risk,

@@ -298,7 +298,7 @@ public class ActingMissionPipelineTests : IDisposable
             State = WorkspaceState.Active,
         };
 
-        var set = WorkspaceChangeSet.Create(workspace, mission.Id, "task-1", "stamp test");
+        var set = WorkspaceChangeSet.Create(workspace, mission.Id, "task-1", "stamp test").Set;
         Assert.Equal("ws-stamp", set.WorkspaceId);
         Assert.Contains(set.Proposals, p => p.FilePath == "born.txt");
 
@@ -433,7 +433,7 @@ public class ActingMissionPipelineTests : IDisposable
             Id = "ws-scaf", MissionId = "m-scaf", SourceRoot = repo, Root = repo,
             Mode = "worktree", BaseRevision = Git(repo, "rev-parse HEAD"), State = WorkspaceState.Active,
         };
-        var set = WorkspaceChangeSet.Create(workspace, "m-scaf", "t-scaf", "scaffolding test");
+        var set = WorkspaceChangeSet.Create(workspace, "m-scaf", "t-scaf", "scaffolding test").Set;
         Assert.Contains(set.Proposals, p => p.FilePath == "real-work.txt");
         Assert.DoesNotContain(set.Proposals, p => p.FilePath.Contains("settings.local.json", StringComparison.OrdinalIgnoreCase));
     }

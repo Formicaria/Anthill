@@ -1,4 +1,9 @@
-## v0.3.8.97 - a failed check keeps its output, and the last two switches reach the surface
+## v0.3.8.97 - execution/promotion closure, and the last two switches reach the surface
+
+Two bodies of work from the same qualification day, shipped as one release: the remaining
+ledger from the live run — a failed check's evidence, and the last two switches an operator
+could not reach — and the seven production-path defects between "the mission verified" and
+"the bytes landed" that the same run exposed and could not close.
 
 The remaining ledger from the qualification day, closed.
 
@@ -22,6 +27,122 @@ check id — and the deliverable evaluation layer could not be switched on at al
 dance, which is why every qualification record so far reads "deliverable: not_checked". Both are
 live-editable now; the resolver's validation, the loud refusals, and the snapshot's
 `workspace_check_problems` reporting (v0.3.8.96) are what make live editing of checks safe.
+
+---
+
+**And then the promotion path itself.** Seven production-path defects between the verdict and
+the bytes, every one found by asking where a PROJECT mission's identity goes at promotion time.
+The answer was: it went exactly as far as verification and was dropped at the apply boundary —
+the operator selected repository B and every tree-shaped question after the verdict was answered
+about repository A.
+
+**The target tree is resolved once, from the set's own persisted identity, and used everywhere.**
+`PatchTargetResolver` walks the chain the last three releases built — project → mission workspace
+→ `PatchSet.WorkspaceId` → workspace `SourceRoot` — and answers "which tree is this set FOR".
+The promotion gate's rollback-marker check and freshness compare, the set applier's preflight and
+transaction, the apply-intent hashes, startup reconciliation's current-bytes read, and the
+post-apply auto-commit all consult that answer now; none of them consults the configured live
+root for a set whose workspace names another checkout. Fail-closed is a first-class verdict: a
+set that NAMES a workspace the store cannot produce — or one whose source root is gone — refuses
+with the new `TargetUnresolvable` promotion refusal rather than being quietly redirected to the
+live tree. The verification side records honestly too: the freshness fingerprint is captured from
+the mission's own source root (it fingerprinted the live root even for project sets, so the
+gate compared tree A against tree A while the write went to tree B), and the verify scope's
+`SourceRoot` label stopped claiming the configured root for trees materialized from a project.
+Startup recovery sweeps the apply journal of every workspace-recorded source root, not only the
+live one. The Director's auto-apply lane — whose writable probe, verify step, and branch commit
+are all built around the colony's own checkout — refuses a project-targeted set by name instead
+of applying it into the wrong repository.
+
+**The Apply button applies a multi-file set as a unit.** The last per-file lane. An operator
+approving a three-file set and clicking Apply could land one file and fail the next — the exact
+partial-set state six documents promise cannot exist, reachable through the one path a person
+actually clicks. `ApplyApprovedPatchTyped` now routes any set with more than one proposal through
+the same `PatchSetApply` transaction the bypass and Director lanes use: every member faces the
+promotion gate as Human first (which requires every member's own approved approval row — a
+missing one refuses the set naming the file), the whole set preflights, journals, applies, and
+rolls back together, and every member's approval is consumed by the one application. The
+single-proposal path keeps its long-standing intent journal, now pinned to the resolved target.
+
+**Bypass application waits for the reviews it used to race.** `ApplyUnderBypass` ran one
+statement after the tester and soldier review tasks were INSERTED — still-pending rows the gate's
+`ReviewIncomplete` refusal then correctly rejected, every time, with no retry. Skip-all-approvals
+on a reviewed set therefore never applied anything, forever, by construction. The attempt now
+moves to the moment it can succeed: `ProcessPatchSet` defers (with a `patch_bypass_deferred`
+event) whenever reviews were inserted, and the completion of the LAST review for the set —
+detected off the `policy-review:` marker at tester/soldier task completion — re-assembles the set
+from the store and offers it to the same gate-guarded bypass apply. When no reviews could be
+inserted, the immediate attempt survives; there is nothing to wait for.
+
+**A writable agent CLI without a worktree never starts.** When worktree preparation failed or was
+rejected, the mission lane kept the project's LIVE checkout as the agent's working directory —
+`confinedWorkspace: true` beside a cwd that was the real tree — and the acting coder "fell
+through to propose-only", which is a sentence in a prompt handed to the same writing CLI standing
+in the live project. The access scope now carries an explicit `MissionWorktreeMissing` deny flag
+(a null directory was never a refusal — the provider falls back to the static workspace root),
+`AgentCliProvider.Confinement` refuses to start any writing agent that carries it, naming the
+worktree gate, and `CoderAnt` fails the acting branch closed by name instead of falling through.
+
+**The capture is faithful or it is loud.** `WorkspaceChangeSet.Create` dropped what it could not
+represent: deletions were skipped by a `continue` (the comment blamed an applier that has applied
+deletes since v0.3.8.52), a rename decayed into an Add of the destination with the source left in
+place, an oversized or unreadable file vanished with a `return null`, and a git failure returned
+an empty set indistinguishable from a clean tree. Deletions and pure renames are now first-class
+Delete/Rename proposals anchored to the base revision's content (so the stale-base rule works for
+them); a rename with edits decomposes into the delete-plus-add it truly is; and everything still
+unrepresentable lands in the new `CaptureResult.Problems` — both callers (the acting capture and
+the finalization harvest) refuse an unfaithful capture WHOLE, with the problems in the event and
+a deterministic block on the producing task, because proposing the representable subset puts a
+wrong description of the worktree in front of the reviewers.
+
+**Acting Claude Code may iterate; the tester stays the evidence.** The acting rules forbade
+builds and tests outright, so the agent shipped its first compile attempt untested and every
+defect cost a full mission round-trip. The mission lane now detects the worktree's own
+REPOSITORY-DECLARED check commands (`WorkspaceCapabilityManifest` — detection reads the project,
+execution reads only reviewed adapters) and carries their executable stems on the access scope;
+the CLI translation turns exactly those stems into bounded `Bash(stem:*)` grants in both channels
+(argv and materialized settings) under ask-in-worktree. The rule text states the same boundary
+the mechanism enforces: iterate freely, ANTHILL's tester re-runs the declared checks
+independently afterwards and its runs are the record.
+
+**The mission record reports the execution outcome.** `MissionReport` compressed everything after
+the verdict into a patch-set COUNT. It now projects, per set: the actual changed files with their
+change types, the set's identity and workspace, each file's approval state, the application state
+(derived from the per-file statuses — a mixture renders as `PARTIALLY APPLIED`, loudly, because
+the atomic lanes make it unreachable and a regression should surface), and the target root from
+the same resolver the promotion path uses, so the report and the apply can never name different
+trees.
+
+**Two guards were reading the wrong thing, and this release is what proved it.** Adding the
+target's resolution to `PatchSetApply.Preflight` pushed `requireBaseHash: true` past
+`AutoApplyAtomicityTests`' 2,000-character window, so a guard whose subject was unchanged and
+still true reported the strictness gone — comments are blanked but not removed by `CodeOnly`, so
+explaining a change inside a guarded member is by itself enough to break a budget-sliced guard,
+and a false failure on a correct change is what invites someone to relax a real rule. The rule is
+not relaxed; it is read correctly: `SourceText.MemberBody` bounds a member by its delimiters, and
+handles expression-bodied members too — a plain brace-matcher over-reads `AutoApplyRunner`'s
+one-line `Preflight` into the next member, which is how a guard comes to pass on its neighbour's
+code. `PatchPromotionGateTests`' private copy now delegates to it. Separately,
+`CoderAnt.ActingCoderRules` became `internal` so its guard asserts on the ASSEMBLED contract
+rather than on Ants.cs's text: the sentence the model receives spans two C# literals, so a source
+search fails on a re-wrap that changes nothing while passing on a deleted rule that happens to
+stay on one line.
+
+Acceptance for all of it runs on two disposable repositories (`ExecutionPromotionClosureTests`):
+a mission for B whose whole captured set — modify, add, delete, rename — applies into B as one
+unit after approval while A stays byte-for-byte identical throughout; a failing set applies
+nothing; an unresolvable workspace refuses at the resolver and the gate; the worktree-missing
+flag stops the real provider before any process starts; and the report names files, approvals,
+application, and target.
+
+**The v0.3.8.97 tag waits for the live qualification pack**, per the release brief: the Claude
+Code run with objective verification ENABLED, the exported `LiveQualificationRecord`, and the
+operator-machine `dotnet_test` diagnosis. Two of those were unrunnable before this release and
+are not any more — the evaluation layer can now be switched on without a file edit and a
+restart, and a failed check keeps enough output to be read rather than guessed at. That is why
+these two bodies of work ship together: one made the pack possible to run, the other made the
+path it exercises correct. QUALIFICATION.md §3 records what has and has not been demonstrated
+live.
 
 ## v0.3.8.96 - what the live run taught, closed while the transcript was still warm
 

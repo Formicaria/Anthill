@@ -232,6 +232,25 @@ public static partial class ApiHost
         {
             foreach (var line in Anthill.SDK.Common.ApplyTransaction.Recover(AnthillRuntime.AllowedWorkspaceRoot))
                 Console.WriteLine($"[apply-recovery] {line}");
+
+            // v0.3.8.97 — AND EVERY PROJECT TREE THE COLONY HAS APPLIED INTO. Apply transactions
+            // journal beside the tree they mutate, so a crash mid-apply into a project's checkout
+            // leaves its journal THERE — a recovery that swept only the configured live root would
+            // never replay it. The persisted workspaces are the record of which source roots the
+            // colony has worked against; each distinct existing one gets the same sweep.
+            var swept = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                { Path.GetFullPath(AnthillRuntime.AllowedWorkspaceRoot) };
+            foreach (var sourceRoot in Queen.Memory.LoadWorkspaces()
+                         .Select(w => w.SourceRoot)
+                         .Where(r => !string.IsNullOrWhiteSpace(r))
+                         .Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                string full;
+                try { full = Path.GetFullPath(sourceRoot); } catch { continue; }
+                if (!swept.Add(full) || !Directory.Exists(full)) continue;
+                foreach (var line in Anthill.SDK.Common.ApplyTransaction.Recover(full))
+                    Console.WriteLine($"[apply-recovery:{full}] {line}");
+            }
         }
         catch (Exception e) { Console.Error.WriteLine($"[apply-recovery] recovery scan failed: {e.Message}"); }
 

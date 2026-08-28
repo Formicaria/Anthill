@@ -241,6 +241,9 @@ public static class EventTypes
     // two of the dozen or so names still hiding behind it.
     public const string PatchBypassApplied = "patch_bypass_applied";
     public const string PatchBypassApplyRefused = "patch_bypass_apply_refused";
+    /// <summary>v0.3.8.97 — Skip-all-approvals application is waiting for the set's inserted
+    /// tester/soldier reviews to complete; the attempt fires at the last review's completion.</summary>
+    public const string PatchBypassDeferred = "patch_bypass_deferred";
     // The promotion gate's own refusal, new in v0.3.8.91 and declared with its producer.
     public const string PatchPromotionRefused = "patch_promotion_refused";
     // v0.3.8.91 — the set-level apply and its rollback, declared with their producer so the

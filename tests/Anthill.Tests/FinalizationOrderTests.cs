@@ -261,7 +261,9 @@ public class FinalizationOrderTests : IDisposable
     {
         var source = ExecutionSource();
 
-        var insert = source.IndexOf("private void InsertPolicyReviewTasks", StringComparison.Ordinal);
+        // v0.3.8.97: the method returns bool — whether reviews are now pending — so the bypass
+        // lane can sequence itself after them.
+        var insert = source.IndexOf("private bool InsertPolicyReviewTasks", StringComparison.Ordinal);
         Assert.True(insert >= 0, "InsertPolicyReviewTasks is no longer recognisable");
 
         // Scoped to THE METHOD, not to a character budget. The first cut of this bounded the search
