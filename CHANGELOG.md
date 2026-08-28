@@ -1,3 +1,54 @@
+## v0.3.8.98 - the universal workflow begins: system audits, and one documented truth
+
+**IN DEVELOPMENT.** This entry is written as the release is built and describes only what has
+landed. Nothing here is claimed as qualified until its exit gate in `PLAN.md` §2c passes.
+
+**The v0.3.8.97 tag decision, recorded rather than rewritten.** `.97` shipped at `a828dfe` with a
+CHANGELOG entry saying its tag waited for the live qualification pack. It did not wait: the pack
+was blocked on operator switches that had no UI control, and the operator authorized the tag on
+`.97`'s own evidence. That entry is not edited — a tagged entry records what a release said and
+shipped, and editing it to flatter a later decision would make the changelog a description of the
+present instead of a record of the past. The correction lives in `PLAN.md`, `HANDOFF.md` and
+`QUALIFICATION.md` §3, which are the documents that answer for the present. The unfinished pack
+items did not lapse; they are `.98` exit-gate items, because `.98` cannot be demonstrated with
+objective verification switched off. The Windows materialized-revision `dotnet_test` failure is
+carried as an explicit `.97` residual and is deliberately NOT a `.98` gate — it is a coding-lane
+defect, and letting it steer this release would reproduce the exact asymmetry `.98` exists to
+correct.
+
+**The documentation now tells one story, and one document owns each question.** An inventory of
+every current-state claim found four contradictions between documents that were each individually
+plausible: `PLAN.md` opened with "structurally complete" and recorded live qualification as
+"never run under protocol"; `QUALIFICATION.md` had been corrected to PARTIAL in `.97`;
+`QA-CHECKLIST.md` still asserted live qualification had never run against any provider; and
+`HANDOFF.md` described a tag that was already cut. An authority table in `PLAN.md` now assigns one
+responsibility per document — README what it does, PLAN the roadmap, HANDOFF the session,
+QUALIFICATION the measured evidence, CHANGELOG the immutable record, ADRs the durable contract,
+archive the snapshots — and `DocumentationConsistencyTests` parses the declared fields rather than
+searching prose, so the next drift fails a test instead of surviving a release.
+
+**A capability-status table replaces "supported".** Fifteen capabilities, each rated across
+implemented / default-on / deterministically qualified / live-qualified, with external dependencies
+named. It says plainly what has been true and unsaid for several releases: the coding lane is
+substantially qualified and live-demonstrated, and every non-code mission class is partial or
+absent. No row may claim more than `QUALIFICATION.md` records, and that is now checked.
+
+**ADR-008 states the permanent contract** the `.98`–`.107` sequence is built to satisfy: one
+production spine for every mission class, coding as one class rather than the workflow itself,
+success measured against requested deliverables rather than task completion, capability-first
+worker resolution, pheromones ranking only among compatible choices, honest blocking with the exact
+missing thing named, models proposing structure while deterministic gates enforce it, and every
+existing coding-lane protection preserved. Sequencing stays in `PLAN.md`; the ADR is architecture,
+not status, and says so.
+
+**The `.98` acceptance mission is written first and fails.** `SystemAuditMissionTests` drives four
+semantically equivalent audit requests through `ConversationRunner` into the real Queen and asserts
+the whole spine — repository researcher and result verifier resolved, inspection actually performed,
+typed artifacts consumed, evidence recorded, every requested section present in the answer, and a
+positive canonical evaluation. It asserts nothing about the types this release intends to add: a
+test written against the design can be satisfied by the design, and this one can only be satisfied
+by behaviour. It is red until the slice lands, deliberately.
+
 ## v0.3.8.97 - execution/promotion closure, and the last two switches reach the surface
 
 Two bodies of work from the same qualification day, shipped as one release: the remaining
