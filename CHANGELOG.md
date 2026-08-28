@@ -49,6 +49,30 @@ positive canonical evaluation. It asserts nothing about the types this release i
 test written against the design can be satisfied by the design, and this one can only be satisfied
 by behaviour. It is red until the slice lands, deliberately.
 
+**Worker selection now asks what a worker CAN DO — and the answer reaches the plan.** The mission
+carries a `MissionSpecification`, resolved once at intake from independently derived dimensions
+(intent, targets, freshness, authority) rather than matched as a phrase, and workers declare the
+capabilities they serve. An audit therefore resolves `researcher.repo_researcher` because that
+worker reads repositories, not because the request avoided the word "missions" — the same question
+phrased five ways now reaches the same specialist.
+
+**And the first attempt at that shipped as dead code, which is the finding worth recording.** The
+capability branch was written in `PlanningService`, guarded by "if this task has no worker yet" —
+and `Planner.CreateTasks` fills that field on every path before returning. It compiled, it read
+correctly, it was never executed once: the acceptance test still routed the audit to the
+mission-history researcher with the whole capability system in the build. Resolution now happens in
+exactly one place, `WorkerResolution`, called where a blank worker is actually filled, and the task
+records WHAT decided it — a declared capability, a keyword, or declaration order. The same defect
+class as the phantom tools and the unreachable operator switches; caught this time by a test that
+entered at the conversation rather than at the unit under construction, and pinned by a guard on
+the planner's own resolution site.
+
+**v0.3.8.93's pheromone decision was unreachable for the same reason, and now runs.** Trail-guided
+worker selection lived inside that identical never-true condition. Its rule is unchanged and
+unweakened — a verified trail may replace declaration order and nothing else, and never outranks a
+compatibility decision — but it now reads the recorded decision basis instead of re-deriving one,
+so the layer that consults the trail cannot disagree with the layer that assigned the worker.
+
 ## v0.3.8.97 - execution/promotion closure, and the last two switches reach the surface
 
 Two bodies of work from the same qualification day, shipped as one release: the remaining

@@ -102,8 +102,17 @@ public sealed class Planner
     /// same constraint object the admission gate and the evaluator use, not from its own parse of
     /// the goal. v1.8.16 introduced the rule; the planner re-derived it until now.
     /// </param>
+    /// <summary>
+    /// v0.3.8.98 — <paramref name="specification"/> is the mission's authoritative account of what
+    /// it needs (see <see cref="Anthill.Core.Missions.MissionSpecification"/>), and it travels here
+    /// for the same reason <paramref name="constraints"/> already does: worker assignment happens
+    /// inside this method, so a resolver that cannot see the specification cannot use it. It is
+    /// optional because the offline/tooling callers have no mission; null means "requires nothing",
+    /// which resolves exactly as this planner did before the parameter existed.
+    /// </summary>
     public List<Task> CreateTasks(string goal, MissionConstraints constraints, string memoryContext = "",
-        string toolContext = "", string pheromoneContext = "", string skillContext = "")
+        string toolContext = "", string pheromoneContext = "", string skillContext = "",
+        Anthill.Core.Missions.MissionSpecification? specification = null)
     {
 
         // v2.22.0 (made concurrency-safe in v2.26.0): capture exactly which skills THIS plan was
@@ -116,9 +125,9 @@ public sealed class Planner
         // followed by a synthesis pass. This runs regardless of model availability. (Spec-ingestion
         // plans are already research/synthesis/verify only — no coder tasks — so they honour the
         // no-patch constraint by construction.)
-        if (IsLongInput(goal)) return AssignDefaultWorkers(CreateSpecIngestionTasks(goal), goal, constraints);
+        if (IsLongInput(goal)) return AssignDefaultWorkers(CreateSpecIngestionTasks(goal), goal, constraints, specification);
 
-        if (!_useOllama || _router is null) return AssignDefaultWorkers(EnforceConstraints(FallbackTasks(goal), goal, constraints), goal, constraints);
+        if (!_useOllama || _router is null) return AssignDefaultWorkers(EnforceConstraints(FallbackTasks(goal), goal, constraints), goal, constraints, specification);
 
         var constraintDirective = constraints.BlocksPatches
             ? "\nHARD CONSTRAINT (operator requested verification / read-only / no file changes):\n" +
@@ -225,12 +234,12 @@ Required JSON:
             var tasks = plan.Tasks.ToList();
             // Belt-and-suspenders: even with the prompt directive, a small model may still emit a
             // coder patch task on a verification-only mission. Strip them deterministically.
-            return AssignDefaultWorkers(EnforceConstraints(tasks, goal, constraints), goal, constraints);
+            return AssignDefaultWorkers(EnforceConstraints(tasks, goal, constraints), goal, constraints, specification);
         }
         catch (Exception error)
         {
             Console.Error.WriteLine($"Dynamic planner parse failed: {error.Message}");
-            return AssignDefaultWorkers(EnforceConstraints(FallbackTasks(goal), goal, constraints), goal, constraints);
+            return AssignDefaultWorkers(EnforceConstraints(FallbackTasks(goal), goal, constraints), goal, constraints, specification);
         }
     }
 
@@ -292,7 +301,8 @@ Required JSON:
         return kept;
     }
 
-    private static List<Task> AssignDefaultWorkers(List<Task> tasks, string goal, MissionConstraints constraints)
+    private static List<Task> AssignDefaultWorkers(List<Task> tasks, string goal, MissionConstraints constraints,
+        Anthill.Core.Missions.MissionSpecification? specification = null)
     {
         var valid = new List<Task>();
         foreach (var task in tasks)
@@ -301,8 +311,13 @@ Required JSON:
             task.TaskType = string.IsNullOrWhiteSpace(task.TaskType)
                 ? TextUtil.InferTaskType(task.AssignedAnt, task.Title, task.Description)
                 : task.TaskType.Trim().ToLowerInvariant();
+            // v0.3.8.98 — THIS is where a blank worker is filled, and therefore where the mission's
+            // declared capabilities have to be consulted. The capability branch used to live in
+            // `PlanningService`, downstream of this line, where it could never fire: this call had
+            // already made the worker non-blank on every planner path. One resolver, at the first
+            // place the question is asked, recording what decided it.
             if (string.IsNullOrWhiteSpace(task.AssignedWorker))
-                task.AssignedWorker = AntRegistry.DefaultWorkerFor(task.AssignedAnt, task.TaskType, $"{goal} {task.Title} {task.Description}")?.WorkerId;
+                WorkerResolution.Assign(task, goal, specification);
             var result = AntRegistry.ValidateTask(task, constraints);
             if (!result.Allowed)
             {
