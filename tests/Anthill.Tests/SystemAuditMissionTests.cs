@@ -1,7 +1,11 @@
 using Anthill.Core.Configuration;
 using Anthill.Core.Conversations;
 using Anthill.Core.Memory;
+using Anthill.Core.Modules;
 using Anthill.Core.Orchestration;
+using Anthill.Core.Security;
+using Anthill.Modules.Tools;
+using Anthill.SDK.Events;
 using Xunit;
 
 namespace Anthill.Tests;
@@ -47,6 +51,7 @@ public class SystemAuditMissionTests : IDisposable
     private readonly string _dir;
     private readonly bool _useOllamaWas = AnthillRuntime.UseOllama;
     private readonly string _workspaceWas = AnthillRuntime.AllowedWorkspaceRoot;
+    private readonly bool _fileToolsWas = AnthillRuntime.EnableFileTools;
     // The roster gates are process-global and this fixture forces them on. Captured and restored
     // so a leaked gate cannot decide a later test's result — the failure mode RosterGates exists for.
     private readonly RosterGates.Snapshot _gatesWere = RosterGates.Capture();
@@ -61,6 +66,7 @@ public class SystemAuditMissionTests : IDisposable
     {
         AnthillRuntime.UseOllama = _useOllamaWas;
         AnthillRuntime.AllowedWorkspaceRoot = _workspaceWas;
+        AnthillRuntime.EnableFileTools = _fileToolsWas;
         RosterGates.Restore(_gatesWere);
         try { Directory.Delete(_dir, recursive: true); } catch { }
     }
@@ -167,6 +173,8 @@ public class SystemAuditMissionTests : IDisposable
         AnthillRuntime.ActivationTier = Anthill.Core.Agents.ActivationTier.Full;
         AnthillRuntime.UseOllama = true;
         AnthillRuntime.AllowedWorkspaceRoot = SourceText.RepoRoot();
+        // `search_workspace` is registered only when file tools are on — see AcceptanceGatesOneAndTwo.
+        AnthillRuntime.EnableFileTools = true;
 
         using var scripted = ScriptedColony.Begin(AuditScript(),
             "planner", "researcher", "builder", "verifier", "tester", "soldier",
@@ -180,7 +188,24 @@ public class SystemAuditMissionTests : IDisposable
         };
         memory.SaveConversation(conversation);
 
+        // THE TOOLS THE REAL COMPOSITION ROOT CONTRIBUTES.
+        //
+        // `list_directory` and `read_text_file` have lived in `Anthill.Modules.Tools` since
+        // v3.8.16, and both API and CLI drain them in at startup. A Queen built without them is a
+        // colony that cannot read a file — `CapabilityGrant.Resolve` does not grant `repo.read`,
+        // and every role requiring it is DENIED at dispatch. That is correct behaviour and the
+        // wrong harness: an audit asserted against the production path must be given the production
+        // composition, or what it proves is that an incomplete colony cannot inspect anything.
+        //
+        // The first draft of this test omitted the module and read the resulting empty evidence
+        // store as a missing feature. It was a missing tool registration, which is worth writing
+        // down: "the colony did not inspect" and "the colony could not inspect" are different
+        // findings, and only the second one is about the harness.
+        var host = new ModuleHost(memory, NullEventBus.Instance);
+        host.Load(new ToolsModule(new WorkspacePathGuard()));
+
         var queen = new Queen(memory);
+        queen.AdoptModuleTools(host.ContributedTools);
         string? missionId = null;
 
         // `Run` returns as soon as the mission ROW exists and lets the work continue on a
