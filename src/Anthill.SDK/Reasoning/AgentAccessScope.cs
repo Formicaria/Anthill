@@ -55,19 +55,41 @@ public static class AgentAccessScope
     /// from the registry on every task. The default preserves those callers exactly; the flag only
     /// ever narrows.
     /// </summary>
+    /// <summary>
+    /// <paramref name="MissionWorktreeMissing"/> — v0.3.8.97: this flow's role may write and the
+    /// mission holds NO usable isolated worktree. An explicit deny signal rather than a null
+    /// working directory, because null was never a refusal: the provider's directory resolution
+    /// falls back to the static agent workspace root, and before this flag a writable agent CLI
+    /// whose worktree was rejected simply ran in the project's LIVE checkout with a
+    /// prompt's worth of restraint. The provider refuses to start a writing agent when this is
+    /// set. Defaults false, so the operator's own direct agent lane — which has no mission and no
+    /// worktree to miss — is untouched.
+    /// </summary>
+    /// <summary>
+    /// <paramref name="CheckCommandStems"/> — v0.3.8.97: the executable names of the mission
+    /// worktree's own REPOSITORY-DECLARED checks (WorkspaceCapabilityManifest — e.g. "dotnet" for
+    /// a .NET tree), carried so the CLI translation can allow the acting agent to run exactly
+    /// those commands inside its worktree for iteration. Null or empty grants nothing extra. The
+    /// stems come from the detected manifest, never from a model or a prompt, and ANTHILL's tester
+    /// re-runs the declared checks independently afterwards — the agent's own runs are for
+    /// iteration, not evidence.
+    /// </summary>
     public sealed record Context(
         string PolicyWire,
         IReadOnlyList<string> GrantedDirectories,
         bool ConfinedWorkspace = false,
         string? WorkingDirectory = null,
-        bool RoleMayWrite = true);
+        bool RoleMayWrite = true,
+        bool MissionWorktreeMissing = false,
+        IReadOnlyList<string>? CheckCommandStems = null);
 
     private static readonly AsyncLocal<Context?> Ambient = new();
 
     public static Context? Current => Ambient.Value;
 
     public static IDisposable Enter(string policyWire, IReadOnlyList<string>? grantedDirectories = null,
-        bool confinedWorkspace = false, string? workingDirectory = null, bool roleMayWrite = true)
+        bool confinedWorkspace = false, string? workingDirectory = null, bool roleMayWrite = true,
+        bool missionWorktreeMissing = false, IReadOnlyList<string>? checkCommandStems = null)
     {
         var previous = Ambient.Value;
         Ambient.Value = new Context(
@@ -75,7 +97,9 @@ public static class AgentAccessScope
             grantedDirectories ?? Array.Empty<string>(),
             confinedWorkspace,
             string.IsNullOrWhiteSpace(workingDirectory) ? null : workingDirectory,
-            roleMayWrite);
+            roleMayWrite,
+            missionWorktreeMissing,
+            checkCommandStems);
         return new Scope(previous);
     }
 

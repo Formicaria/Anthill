@@ -96,6 +96,34 @@ public static class AutoApplyRunner
         }
         if (eligible.Count == 0) return;
 
+        // v0.3.8.97 — WHICH TREE ARE THESE SETS FOR. The Director's whole lane — the writable
+        // probe above, the verify step, the standalone-branch commit — is built around the
+        // colony's OWN checkout. A set whose persisted workspace names another SourceRoot (a
+        // project mission's) must therefore be REFUSED here, not applied into the live root the
+        // lane happens to hold: project sets promote through the mission lanes (bypass or the
+        // operator's Apply), which carry the target through the transaction. Unresolvable targets
+        // refuse for the same reason the gate does — nothing writes on a guessed tree.
+        var targetRefusals = new List<string>();
+        foreach (var setId in eligible.Select(e => e.PatchSetId ?? "").Distinct(StringComparer.Ordinal))
+        {
+            var target = Anthill.Core.Verification.PatchTargetResolver.Resolve(queen.Memory, setId);
+            if (!target.Ok)
+                targetRefusals.Add($"set {setId}: {target.Problem}");
+            else if (!target.IsLiveTree)
+                targetRefusals.Add($"set {setId} targets {target.Root} — a project checkout, not the "
+                    + "colony's own tree. Auto-apply serves only the live root; project sets promote "
+                    + "through the mission lanes, which carry their target through the transaction.");
+        }
+        if (targetRefusals.Count > 0)
+        {
+            queen.Memory.LogEvent(missionId, "autonomy_autoapply_skipped",
+                $"Auto-apply refused for mission {missionId}: " + string.Join(" | ", targetRefusals.Take(5)),
+                antName: "director",
+                metadata: new() { ["mission_id"] = missionId, ["reason"] = "target_not_live_or_unresolvable",
+                                  ["refusals"] = targetRefusals });
+            return;
+        }
+
         // v0.3.8.94 — THE GATE, AS AUTOMATION, FOR EVERY PROPOSAL. One refusal refuses the set:
         // it applies as a unit, so it is gated as one. The gate's verdict is typed and names its
         // layer, and the halted case keeps its own event — an operator must be able to tell "this

@@ -4,8 +4,43 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: main carries **v0.3.8.96** — the live qualification run's findings, closed. 3,213+ tests
-(core + homelab), all green.
+State: main carries **v0.3.8.97** — execution/promotion closure. **THE v0.3.8.97 TAG IS NOT CUT
+YET**: per the release brief it waits for the live qualification pack (Claude Code with objective
+verification ENABLED, the exported `LiveQualificationRecord`, QUALIFICATION.md §3 updated from
+the store, and the operator-machine `dotnet_test` failure diagnosed). Do not tag until those
+gates pass.
+
+WHAT v0.3.8.97 SHIPPED (full account in the CHANGELOG entry): the target tree is resolved from
+`PatchSet.WorkspaceId → workspace.SourceRoot` by `PatchTargetResolver` and used by the gate
+(new `TargetUnresolvable` refusal, fail-closed), the set applier, the intent hashes,
+reconciliation, recovery, and the auto-commit — no project patch consults the configured live
+root as its target; the Apply button applies multi-file sets transactionally
+(`ApplyApprovedSetAsAUnit`); bypass application is DEFERRED until the inserted tester/soldier
+reviews complete (`patch_bypass_deferred` + `MaybeApplyBypassAfterReviews` at review-task
+completion); a writable agent CLI with no usable worktree never starts
+(`Context.MissionWorktreeMissing` → `AgentCliProvider.Confinement` refusal; the acting branch
+fails closed instead of falling through to propose-only); `WorkspaceChangeSet` captures delete
+and rename as first-class proposals and refuses unrepresentable changes loudly
+(`CaptureResult.Problems`, both callers refuse an unfaithful capture whole); acting Claude Code
+may run the repository's DECLARED build/test commands in its worktree (stems from
+`WorkspaceCapabilityManifest` → bounded `Bash(stem:*)` in both CLI channels; tester stays the
+evidence source); and `MissionReport` reports per-set files, approval state, application state,
+and target root. Acceptance: `ExecutionPromotionClosureTests` (two disposable repositories —
+B changes wholly, A byte-for-byte never).
+
+AND THE SAME RELEASE CARRIES THE QUALIFICATION DAY'S REMAINING LEDGER, which is what makes the
+pack runnable at all: `workspace_checks` and `objective_verification_enabled` are editable
+settings now (declaring a check took a file edit and a restart per attempt; the evaluation layer
+could not be switched on, which is why every record so far reads `deliverable: not_checked`),
+and a failed check KEEPS ITS OUTPUT — head-and-tail truncation, the transcript recorded on the
+failure branch, an evidence cap that fits. So two of the .96 STILL-OPEN items below are closed,
+and the third — the Windows `dotnet_test` failure inside a materialized revision — is now
+diagnosable rather than mysterious: the next failing run is the first one that can be READ.
+
+Previous state below, kept because the next session runs the live pack against it.
+
+State (previous): main carried **v0.3.8.96** — the live qualification run's findings, closed.
+3,213+ tests (core + homelab), all green.
 
 **THE LIVE MISSION PASSED.** Mission `3bbbde32` (2026-08-26): a real Claude Code acting-coder
 mission through the composed runtime — per-project worktree from the project's own clone, the CLI
