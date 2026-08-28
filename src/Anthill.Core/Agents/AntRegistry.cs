@@ -22,7 +22,23 @@ public sealed record AntWorkerDefinition(
     bool Enabled,
     AntPermissionContract Permissions,
     IReadOnlyList<string> AllowedTools,
-    IReadOnlyList<string> ForbiddenTools);
+    IReadOnlyList<string> ForbiddenTools)
+{
+    /// <summary>
+    /// What this worker can DO, as ids from <see cref="Missions.WorkerCapabilities"/>. v0.3.8.98.
+    ///
+    /// Declared rather than inferred, and additive: a worker that declares none is invisible to
+    /// capability resolution and is reached exactly as it was before — by
+    /// <see cref="AntRegistry.ResolveWorker"/>'s keyword fallback. That is what lets this ship for
+    /// the audit class without re-deciding every other role's selection in the same release.
+    ///
+    /// The distinction this closes: a capability is a fact about the WORKER, stated by the worker's
+    /// own contract. Before this, specialization was decided by whether the task text happened to
+    /// contain a word — so the same audit question routed to the repository researcher or the
+    /// mission-history researcher depending on whether the operator wrote "missions" in passing.
+    /// </summary>
+    public IReadOnlyList<string> Capabilities { get; init; } = Array.Empty<string>();
+}
 
 public sealed record AntRoleDefinition(
     string RoleId,
@@ -75,6 +91,55 @@ public static class AntRegistry
 
     public static AntWorkerDefinition? DefaultWorkerFor(string roleId, string taskType = "", string goal = "") =>
         ResolveWorker(roleId, taskType, goal).Worker;
+
+    /// <summary>
+    /// CAPABILITY-FIRST RESOLUTION. v0.3.8.98 — the replacement for asking what words a task
+    /// happens to contain.
+    ///
+    /// Given what the MISSION requires, pick the worker in this role whose own contract declares
+    /// it can do one of those things. The question answered is "can this worker serve this
+    /// mission", which is a fact about the worker; the question `ResolveWorker` answers is "does
+    /// this text contain a word", which is a fact about English. The same audit request routed to
+    /// the repository researcher or the mission-history researcher depending on whether the
+    /// operator wrote "missions" in passing — that is the defect, and this is the fix.
+    ///
+    /// RETURNS NULL RATHER THAN GUESSING, in three cases that are deliberately not merged:
+    /// the role is unknown; the mission declared no capabilities (an unclassified request — every
+    /// mission before this release, and every class after it that intake cannot yet serve); or no
+    /// worker in the role declares any capability the mission needs. Every one of them means "this
+    /// mechanism has nothing to say", and the caller falls back to the keyword resolver, which is
+    /// exactly the behaviour that shipped before. A resolver that answered anyway would be a worse
+    /// guess wearing a better name.
+    ///
+    /// THE REQUIRED LIST IS ORDERED, AND THE ORDER IS THE TIE-BREAK. A mission needing both
+    /// `inspect_repository` and `inspect_runtime_state` has two compatible researchers — one for
+    /// each — and picking "the first declared" would decide a real question by the order somebody
+    /// happened to type the registry in. Instead the FIRST REQUIRED CAPABILITY this role can serve
+    /// decides: the specification states what matters most first, and a worker that uniquely serves
+    /// it is the answer. Only when one capability is served by several workers is the choice left
+    /// open for the pheromone layer, under the rule it has had since v0.3.8.93 — reputation ranks
+    /// compatible choices and never creates compatibility.
+    /// </summary>
+    /// <returns>The worker, and whether capability DECIDED the choice (a unique server of the
+    /// highest-priority capability this role can serve).</returns>
+    public static (AntWorkerDefinition? Worker, bool CapabilityDecided) ResolveByCapability(
+        string roleId, IReadOnlyList<string>? requiredCapabilities)
+    {
+        if (requiredCapabilities is null || requiredCapabilities.Count == 0) return (null, false);
+        if (!ByRole.TryGetValue(roleId ?? "", out var role)) return (null, false);
+
+        foreach (var capability in requiredCapabilities)
+        {
+            var servers = role.Workers
+                .Where(w => w.Enabled && w.Capabilities.Contains(capability, StringComparer.OrdinalIgnoreCase))
+                .ToList();
+
+            if (servers.Count == 0) continue;              // this role does not serve it; try the next
+            return (servers[0], servers.Count == 1);        // unique server decides; several do not
+        }
+
+        return (null, false);
+    }
 
     /// <summary>
     /// v0.3.8.93 — the same resolution, and WHETHER THE TASK'S OWN TEXT DECIDED IT.
@@ -242,8 +307,10 @@ public static class AntRegistry
                 W("constraint", "scope_guard", "ScopeGuard", "Detect no-patch, read-only, verification-only, and language boundaries.", ReadMemory, new[] { "read_mission_prompt", "read_policy_rules" }, noApply),
                 W("constraint", "tool_guard", "ToolGuard", "Check requested tools against role permissions.", ReadMemory, new[] { "read_task_plan", "read_permission_contracts" }, noApply)),
             R("researcher", "ResearcherAnt", "Context", "Understands repository, mission, prior results, and architectural intent.", true, ReadWorkspace, new[] { "read_workspace_docs", "read_memory" }, noApply,
-                W("researcher", "repo_researcher", "RepoResearcher", "Read repo-level docs and architecture context.", ReadWorkspace, new[] { "read_workspace_docs", "read_readme", "read_changelog" }, noApply),
-                W("researcher", "mission_researcher", "MissionResearcher", "Read prior mission and objective memory.", ReadMemory, new[] { "read_mission_history", "read_pheromone_summary" }, noApply)),
+                W("researcher", "repo_researcher", "RepoResearcher", "Read repo-level docs and architecture context.", ReadWorkspace, new[] { "read_workspace_docs", "read_readme", "read_changelog" }, noApply)
+                    with { Capabilities = new[] { Missions.WorkerCapabilities.InspectRepository } },
+                W("researcher", "mission_researcher", "MissionResearcher", "Read prior mission and objective memory.", ReadMemory, new[] { "read_mission_history", "read_pheromone_summary" }, noApply)
+                    with { Capabilities = new[] { Missions.WorkerCapabilities.RecallMissionHistory, Missions.WorkerCapabilities.InspectRuntimeState } }),
             R("file", "FileAnt", "Workspace", "Finds and reads relevant workspace files, read-only by default.", true, ReadWorkspace, new[] { "list_workspace_files", "read_workspace_file" }, noApply,
                 W("file", "file_scout", "FileScout", "Find relevant files and folders.", ReadWorkspace, new[] { "list_workspace_files", "search_workspace_files" }, noApply),
                 W("file", "file_reader", "FileReader", "Read exact file content or snippets.", ReadWorkspace, new[] { "read_text_file", "read_file_snippet" }, noApply)),
@@ -259,10 +326,13 @@ public static class AntRegistry
                 W("ui_cartographer", "component_mapper", "ComponentMapper", "Find components, styling, API hooks, and implementation points.", ReadWorkspace, new[] { "read_component_files", "read_style_files" }, noApply)),
             R("builder", "BuilderAnt", "Output", "Compiles task outputs into final operator-facing responses.", true, ReadMemory, new[] { "read_task_outputs", "read_patch_metadata" }, noApply,
                 W("builder", "response_builder", "ResponseBuilder", "Write final answer or mission report.", ReadMemory, new[] { "read_task_outputs", "read_verifier_output" }, noApply),
-                W("builder", "result_compiler", "ResultCompiler", "Compile structured mission data, checks, warnings, and result.", ReadMemory, new[] { "read_task_outputs", "read_event_log" }, noApply)),
+                W("builder", "result_compiler", "ResultCompiler", "Compile structured mission data, checks, warnings, and result.", ReadMemory, new[] { "read_task_outputs", "read_event_log" }, noApply)
+                    with { Capabilities = new[] { Missions.WorkerCapabilities.CompileResult } }),
             R("verifier", "VerifierAnt", "Verification", "Checks result quality, correctness, safety, and completeness.", true, ReadMemory, new[] { "read_task_outputs", "read_patch_metadata" }, noApply,
-                W("verifier", "result_verifier", "ResultVerifier", "Check final result quality and completeness.", ReadMemory, new[] { "read_mission_result", "read_task_outputs" }, noApply),
-                W("verifier", "safety_verifier", "SafetyVerifier", "Check constraints, approval boundaries, and risky claims.", ReadMemory, new[] { "read_mission_constraints", "read_patch_metadata" }, noApply)),
+                W("verifier", "result_verifier", "ResultVerifier", "Check final result quality and completeness.", ReadMemory, new[] { "read_mission_result", "read_task_outputs" }, noApply)
+                    with { Capabilities = new[] { Missions.WorkerCapabilities.VerifyResultCompleteness } },
+                W("verifier", "safety_verifier", "SafetyVerifier", "Check constraints, approval boundaries, and risky claims.", ReadMemory, new[] { "read_mission_constraints", "read_patch_metadata" }, noApply)
+                    with { Capabilities = new[] { Missions.WorkerCapabilities.VerifySafety } }),
             R("tester", "TesterAnt", "Testing", "Runs or interprets allowlisted verification checks.", false, Checks, new[] { "run_allowlisted_check", "read_test_summary" }, noApply,
                 W("tester", "dotnet_tester", "DotnetTester", "Run or interpret .NET build/test checks.", Checks, new[] { "run_allowlisted_check", "read_test_errors" }, noApply),
                 W("tester", "frontend_tester", "FrontendTester", "Run or interpret frontend checks when present.", Checks, new[] { "run_allowlisted_check", "read_frontend_build_errors" }, noApply)),

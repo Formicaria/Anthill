@@ -1,6 +1,7 @@
 using Anthill.Core.Common;
 using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
+using Anthill.Core.Missions;
 
 namespace Anthill.Core.Orchestration;
 
@@ -62,6 +63,21 @@ public sealed record MissionContext
     /// <summary>Parsed exactly once, at intake.</summary>
     public required MissionConstraints Constraints { get; init; }
 
+    /// <summary>
+    /// What the operator asked for, resolved exactly once, at intake. v0.3.8.98.
+    ///
+    /// Beside <see cref="Constraints"/> and for the identical reason ADR-002 gives for it: a fact
+    /// about the mission that every layer needs must be resolved once and carried, or each layer
+    /// re-derives it and they disagree. Constraints were re-parsed at eight sites before ADR-002;
+    /// the operator's REQUEST was re-interpreted at three — the planner read it to choose roles,
+    /// `ObjectiveVerification` re-read it to guess a deliverable, and `ResultAssembler` never read
+    /// it at all.
+    ///
+    /// An unclassified request carries <see cref="MissionSpecification.General"/>, which constrains
+    /// nothing and leaves every existing behaviour exactly as it was.
+    /// </summary>
+    public MissionSpecification Specification { get; init; } = MissionSpecification.General("");
+
     /// <summary>What this run may do. Resolved at admission, not at each point of use.</summary>
     public required RuntimeProfile Profile { get; init; }
 
@@ -105,6 +121,8 @@ public sealed record MissionContext
             CorrelationId = mission.Id,
             Goal = mission.Goal,
             Constraints = MissionConstraints.Parse(mission.Goal),
+            // Resolved here, once, for the same reason the constraints are — see the field.
+            Specification = Missions.MissionIntake.Resolve(mission.Goal),
             Profile = profile,
             Deadline = startedAt.AddSeconds(options.MaxMissionSeconds),
             Budgets = new MissionBudgets(
@@ -140,6 +158,7 @@ public sealed record MissionContext
         ["deadline"] = Deadline.ToIso(),
         ["environment"] = EnvironmentFingerprint,
         ["workspace_id"] = WorkspaceId,
+        ["specification"] = Specification.Snapshot(),
         ["constraints"] = new Dictionary<string, object?>
         {
             ["no_patches"] = Constraints.NoPatches,
