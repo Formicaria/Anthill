@@ -286,8 +286,17 @@ public sealed class ToolRegistry
 
         try
         {
-            var evidence = ToolEvidence.For(toolName, result.Success, missionId, taskId,
-                                            result.Success ? result.Output : result.Error ?? "");
+            // v0.3.8.97 — A FAILURE KEEPS ITS OUTPUT. This recorded `result.Output` on success and
+            // `result.Error` on failure — and Error for a check is the one-line classification
+            // ("check 'dotnet_test' exited 1") while Output holds the run's actual text on BOTH
+            // branches. So the evidence carried the full transcript exactly when nobody needed it
+            // and threw it away exactly when it was the diagnosis: three live revision-check
+            // failures left 28 readable characters each. A failed check now records its headline
+            // AND the tail of its output, where a build's or test run's verdict lines live.
+            var detail = result.Success
+                ? result.Output
+                : (result.Error ?? "") + "\n" + Tail(result.Output ?? "", 1800);
+            var evidence = ToolEvidence.For(toolName, result.Success, missionId, taskId, detail);
             if (evidence is not null) ((Anthill.SDK.Artifacts.IEvidenceStore)_memory).Put(evidence);
         }
         catch (Exception error)
@@ -295,6 +304,11 @@ public sealed class ToolRegistry
             Console.Error.WriteLine($"Could not record tool evidence for {toolName}: {error.Message}");
         }
     }
+
+    /// <summary>The last <paramref name="chars"/> of <paramref name="text"/> — the end is where a
+    /// failed run's verdict lives.</summary>
+    private static string Tail(string text, int chars) =>
+        text.Length <= chars ? text : "…" + text[^chars..];
 
     /// <summary>
     /// Classify an exception that escaped a tool.

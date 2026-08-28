@@ -163,5 +163,17 @@ public sealed class RunAllowlistedCheckTool : ITool
         }
     }
 
-    private static string Truncate(string s) => s.Length <= 8000 ? s : s[..8000] + "\n…(truncated)";
+    /// <summary>
+    /// v0.3.8.97 — keep the HEAD and the TAIL. This kept only the first 8000 characters, and for
+    /// a build or test run those are restore chatter — the verdict lines ("Failed!  - Failed: N",
+    /// the first failing test's name, the compiler error) live at the END, which is exactly the
+    /// part that was cut. The live qualification runs failed `dotnet_test` inside a revision three
+    /// times and left nothing to read; head-only truncation was the first of three layers that
+    /// destroyed the diagnosis (see Tools.RecordEvidence for the other). Head for context, tail
+    /// for the verdict, the omission counted in between.
+    /// </summary>
+    private static string Truncate(string s) =>
+        s.Length <= 8000
+            ? s
+            : s[..2000] + $"\n…({s.Length - 8000} chars omitted)…\n" + s[^6000..];
 }

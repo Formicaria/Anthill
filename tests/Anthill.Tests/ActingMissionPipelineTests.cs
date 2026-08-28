@@ -298,7 +298,7 @@ public class ActingMissionPipelineTests : IDisposable
             State = WorkspaceState.Active,
         };
 
-        var set = WorkspaceChangeSet.Create(workspace, mission.Id, "task-1", "stamp test");
+        var set = WorkspaceChangeSet.Create(workspace, mission.Id, "task-1", "stamp test").Set;
         Assert.Equal("ws-stamp", set.WorkspaceId);
         Assert.Contains(set.Proposals, p => p.FilePath == "born.txt");
 
@@ -433,7 +433,7 @@ public class ActingMissionPipelineTests : IDisposable
             Id = "ws-scaf", MissionId = "m-scaf", SourceRoot = repo, Root = repo,
             Mode = "worktree", BaseRevision = Git(repo, "rev-parse HEAD"), State = WorkspaceState.Active,
         };
-        var set = WorkspaceChangeSet.Create(workspace, "m-scaf", "t-scaf", "scaffolding test");
+        var set = WorkspaceChangeSet.Create(workspace, "m-scaf", "t-scaf", "scaffolding test").Set;
         Assert.Contains(set.Proposals, p => p.FilePath == "real-work.txt");
         Assert.DoesNotContain(set.Proposals, p => p.FilePath.Contains("settings.local.json", StringComparison.OrdinalIgnoreCase));
     }
@@ -507,6 +507,10 @@ public class ActingMissionPipelineTests : IDisposable
         var editable = runtime.IndexOf("EditableConfigKeys", StringComparison.Ordinal);
         Assert.True(editable >= 0);
         Assert.Contains("\"acting_coder_enabled\"", runtime[editable..(editable + 2500)], StringComparison.Ordinal);
+        // …and v0.3.8.97 adds the two the qualification day demanded three restarts for: the
+        // operator's check declarations, and the deliverable evaluation layer's switch.
+        Assert.Contains("\"workspace_checks\"", runtime[editable..(editable + 2500)], StringComparison.Ordinal);
+        Assert.Contains("\"objective_verification_enabled\"", runtime[editable..(editable + 2500)], StringComparison.Ordinal);
 
         // …the loader warns about the relic location…
         Assert.Contains("WarnAboutLegacyConfigs(path)", runtime, StringComparison.Ordinal);
@@ -517,6 +521,50 @@ public class ActingMissionPipelineTests : IDisposable
         Assert.True(snapshot.ContainsKey("workspace_checks_active"));
         Assert.True(snapshot.ContainsKey("workspace_check_problems"));
         Assert.True(snapshot.ContainsKey("acting_coder_enabled"));
+    }
+
+    // -------------------------------------------------------------------------------------------
+    // v0.3.8.97 — a failed check keeps its output
+    // -------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Three layers destroyed the diagnosis of every failed revision check: CheckRunner kept only
+    /// the HEAD of the output (restore chatter — the verdict lives at the end), Tools.RecordEvidence
+    /// recorded only the one-line Error on failure, and ToolEvidence capped the remainder at 500.
+    /// Three live `dotnet_test` failures left 28 readable characters each. The producer chain now
+    /// preserves head AND tail, records the failure's output tail beside its headline, and the cap
+    /// fits what the producers preserve. This test drives the PUBLIC producer with a long detail —
+    /// the old cap fails it at five hundred characters.
+    /// </summary>
+    [Fact]
+    public void AFailedChecksEvidence_KeepsItsDiagnosticDetail()
+    {
+        var headline = "check 'dotnet_test' exited 1\n";
+        var tail = new string('x', 1700) + "\nFailed!  - Failed: 3, Passed: 2947";
+        var evidence = Anthill.Core.Tools.ToolEvidence.For(
+            "run_allowlisted_check", success: false, missionId: "m-detail", taskId: "t-detail",
+            detail: headline + tail);
+
+        Assert.NotNull(evidence);
+        Assert.False(evidence!.Passed);
+        Assert.StartsWith("check 'dotnet_test' exited 1", evidence.Detail, StringComparison.Ordinal);
+        Assert.Contains("Failed: 3, Passed: 2947", evidence.Detail, StringComparison.Ordinal);
+    }
+
+    /// <summary>And the two upstream layers hold their halves: the runner's truncation keeps a
+    /// tail, and the recorder composes the failure's output beside its headline. Source-position
+    /// asserted — each defect was one expression choosing the wrong half of a result.</summary>
+    [Fact]
+    public void TheCheckOutputChain_PreservesTheTail_AtEveryLayer()
+    {
+        var runner = SourceText.CodeOnly(File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
+            "src", "Anthill.Core", "Tools", "CheckRunner.cs")));
+        Assert.Contains("s[^6000..]", runner, StringComparison.Ordinal);
+
+        var tools = SourceText.CodeOnly(File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
+            "src", "Anthill.Core", "Tools", "Tools.cs")));
+        Assert.Contains("Tail(result.Output", tools, StringComparison.Ordinal);
+        Assert.DoesNotContain("result.Success ? result.Output : result.Error ?? \"\");", tools, StringComparison.Ordinal);
     }
 
     private static string Git(string workdir, string args)

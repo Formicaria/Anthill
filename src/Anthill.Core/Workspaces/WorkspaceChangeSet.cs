@@ -45,13 +45,34 @@ public static class WorkspaceChangeSet
             AgentSettingsRelativePath, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
+    /// What one capture produced: the set, and every change that could NOT be represented in it.
+    /// v0.3.8.97. <see cref="Faithful"/> false means the set is a PARTIAL account of the worktree
+    /// and must not be proposed — a reviewer approving it would be approving a description that
+    /// silently omits work the agent did. Callers refuse loudly on an unfaithful capture; nothing
+    /// may quietly propose the representable subset.
+    /// </summary>
+    public sealed record CaptureResult(PatchSet Set, IReadOnlyList<string> Problems)
+    {
+        public bool Faithful => Problems.Count == 0;
+    }
+
+    /// <summary>
     /// Build the change set for <paramref name="workspace"/>.
     ///
-    /// Returns an empty set when nothing changed, rather than null: "the mission ran and changed
-    /// nothing" is a real, reportable outcome and collapsing it into an error would make a
+    /// Returns an empty, FAITHFUL set when nothing changed, rather than null: "the mission ran and
+    /// changed nothing" is a real, reportable outcome and collapsing it into an error would make a
     /// legitimately no-op mission look broken.
+    ///
+    /// v0.3.8.97 — FAITHFUL OR LOUD. This producer used to drop what it could not represent:
+    /// deletions were skipped by a `continue`, a rename decayed into an Add of the destination with
+    /// the source left in place, an oversized or unreadable file vanished with a `return null`, and
+    /// a git failure returned an empty set indistinguishable from a clean tree. Every one of those
+    /// was a change set that reviewed clean and described the worktree wrongly. Deletes and renames
+    /// are now first-class proposals (ApplyPatchTool has applied both since v0.3.8.52); everything
+    /// still unrepresentable — and every read that failed — lands in
+    /// <see cref="CaptureResult.Problems"/> instead of nowhere.
     /// </summary>
-    public static PatchSet Create(MissionWorkspace workspace, string missionId, string taskId, string summary)
+    public static CaptureResult Create(MissionWorkspace workspace, string missionId, string taskId, string summary)
     {
         var set = new PatchSet
         {
@@ -63,16 +84,28 @@ public static class WorkspaceChangeSet
             WorkspaceId = workspace?.Id,
             Summary = summary ?? "",
         };
+        var problems = new List<string>();
 
-        if (workspace is null || !workspace.Usable || !Directory.Exists(workspace.Root)) return set;
+        if (workspace is null || !workspace.Usable || !Directory.Exists(workspace.Root))
+            return new CaptureResult(set, problems);
 
         var against = workspace.BaseRevision.Length > 0 ? workspace.BaseRevision : "HEAD";
 
         // --name-status rather than a unified diff: the pipeline wants whole-file old and new
         // content, not hunks, and reconstructing files from a patch would be a second, subtly
         // different implementation of something git already does exactly.
-        var (ok, status) = Git(workspace.Root, $"diff --name-status {against} --");
-        if (!ok) return set;
+        // --find-renames explicitly: rename detection must not depend on the operator's diff.renames
+        // config — a tree where it is off would report every rename as D+A under one config and
+        // R under another, and a capture whose shape depends on user config is not deterministic.
+        var (ok, status) = Git(workspace.Root, $"diff --name-status --find-renames {against} --");
+        if (!ok)
+        {
+            // v0.3.8.97 — a diff that failed is NOT a clean tree. Returning the empty set here made
+            // the two indistinguishable, which is the exact "silently dropped" shape this release
+            // removes.
+            problems.Add($"git diff --name-status failed in {workspace.Root}: {status}");
+            return new CaptureResult(set, problems);
+        }
 
         foreach (var line in status.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
@@ -82,46 +115,111 @@ public static class WorkspaceChangeSet
             var code = parts[0].Trim();
             var path = parts[^1].Trim();
 
-            // Deletions are DESCRIBED but never proposed. ApplyPatchTool supports add and modify
-            // only, so emitting a delete proposal would produce a change set that cannot be applied
-            // — a review that ends in a failure the reviewer could not have predicted.
-            if (code.StartsWith('D')) continue;
-
             // v0.3.8.96: the colony's own materialized scaffolding is never mission work.
             if (IsColonyScaffolding(path)) continue;
 
-            var proposal = Proposal(workspace, against, path, added: code.StartsWith('A'));
-            if (proposal is not null) set.Proposals.Add(proposal);
+            switch (code[0])
+            {
+                case 'A':
+                    Add(set, problems, WorktreeProposal(workspace, against, path, added: true));
+                    break;
+
+                case 'M':
+                    Add(set, problems, WorktreeProposal(workspace, against, path, added: false));
+                    break;
+
+                case 'D':
+                    // A first-class DELETE proposal, anchored to the base content so the applier's
+                    // base-hash rule can refuse a stale delete exactly as it refuses a stale write.
+                    Add(set, problems, BaseAnchoredProposal(workspace, against, path,
+                        PatchChangeType.Delete, destination: null));
+                    break;
+
+                case 'R':
+                {
+                    // R<similarity>\told\tnew. A PURE rename (R100) is one Rename proposal — the
+                    // move the agent actually made. A rename WITH edits decomposes into the two
+                    // operations it truly is — delete of the source, add of the destination with
+                    // the worktree's content — because apply_patch's rename moves bytes verbatim
+                    // and pretending an edited move is a pure one would apply the OLD content
+                    // under the new name.
+                    var source = parts.Length >= 3 ? parts[1].Trim() : "";
+                    if (source.Length == 0)
+                    {
+                        problems.Add($"rename entry '{line.Trim()}' names no source path");
+                        break;
+                    }
+                    if (IsColonyScaffolding(source)) break;
+
+                    if (string.Equals(code, "R100", StringComparison.Ordinal))
+                        Add(set, problems, BaseAnchoredProposal(workspace, against, source,
+                            PatchChangeType.Rename, destination: path));
+                    else
+                    {
+                        Add(set, problems, BaseAnchoredProposal(workspace, against, source,
+                            PatchChangeType.Delete, destination: null));
+                        Add(set, problems, WorktreeProposal(workspace, against, path, added: true));
+                    }
+                    break;
+                }
+
+                case 'C':
+                    // A copy leaves its source intact, so the destination is genuinely new work.
+                    Add(set, problems, WorktreeProposal(workspace, against, path, added: true));
+                    break;
+
+                default:
+                    // T (typechange), U (unmerged), X and anything git grows later: unrepresentable
+                    // in the proposal vocabulary, and therefore LOUD rather than absent.
+                    problems.Add($"unsupported change '{code}' for {path} — this change cannot be "
+                        + "represented as a patch proposal and the capture refuses to drop it silently");
+                    break;
+            }
         }
 
         // Untracked files are genuine new work — a mission that creates a file has not committed it,
         // so it appears nowhere in a diff against the base and would be silently dropped.
-        var (_, untracked) = Git(workspace.Root, "ls-files --others --exclude-standard");
-        foreach (var path in untracked.Split('\n', StringSplitOptions.RemoveEmptyEntries))
-        {
-            // v0.3.8.96: the settings file is created untracked, so this loop is where it actually
-            // entered every change set. Same rule, both discovery paths.
-            if (IsColonyScaffolding(path)) continue;
-            var proposal = Proposal(workspace, against, path.Trim(), added: true);
-            if (proposal is not null) set.Proposals.Add(proposal);
-        }
+        var (untrackedOk, untracked) = Git(workspace.Root, "ls-files --others --exclude-standard");
+        if (!untrackedOk)
+            problems.Add($"git ls-files --others failed in {workspace.Root}: {untracked}");
+        else
+            foreach (var path in untracked.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            {
+                // v0.3.8.96: the settings file is created untracked, so this loop is where it
+                // actually entered every change set. Same rule, both discovery paths.
+                if (IsColonyScaffolding(path)) continue;
+                Add(set, problems, WorktreeProposal(workspace, against, path.Trim(), added: true));
+            }
 
-        return set;
+        return new CaptureResult(set, problems);
     }
 
-    private static PatchProposal? Proposal(MissionWorkspace workspace, string against, string path, bool added)
+    private static void Add(PatchSet set, List<string> problems,
+        (PatchProposal? Proposal, string? Problem) produced)
+    {
+        if (produced.Proposal is not null) set.Proposals.Add(produced.Proposal);
+        if (produced.Problem is not null) problems.Add(produced.Problem);
+    }
+
+    /// <summary>An Add/Modify proposal whose new content is the WORKTREE's bytes. A file that is
+    /// missing, oversized, or unreadable is a named problem, never a silent null. v0.3.8.97.</summary>
+    private static (PatchProposal? Proposal, string? Problem) WorktreeProposal(
+        MissionWorkspace workspace, string against, string path, bool added)
     {
         string newContent;
         try
         {
             var full = Path.Combine(workspace.Root, path);
-            if (!File.Exists(full)) return null;
-            if (new FileInfo(full).Length > MaxProposalChars) return null;   // binaries, bundles, fixtures
+            if (!File.Exists(full))
+                return (null, $"{path}: listed as changed and absent from the worktree");
+            if (new FileInfo(full).Length > MaxProposalChars)
+                return (null, $"{path}: exceeds the {MaxProposalChars}-character proposal cap "
+                    + "(binary, bundle, or fixture) and cannot be proposed for review");
             newContent = File.ReadAllText(full);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
-            return null;
+            return (null, $"{path}: unreadable during capture — {error.Message}");
         }
 
         // From the BASE REVISION — see the class remarks. `git show <base>:<path>` is the text this
@@ -134,7 +232,7 @@ public static class WorkspaceChangeSet
             if (ok) oldContent = original;
         }
 
-        return new PatchProposal
+        return (new PatchProposal
         {
             FilePath = path,
             ChangeType = added || oldContent is null ? PatchChangeType.Add : PatchChangeType.Modify,
@@ -149,7 +247,34 @@ public static class WorkspaceChangeSet
             // Always. A workspace exists so an agent's work is REVIEWED before it reaches the live
             // checkout; a change set that could apply itself would make the isolation pointless.
             RequiresApproval = true,
-        };
+        }, null);
+    }
+
+    /// <summary>A Delete or Rename proposal anchored to the BASE revision's content, which is the
+    /// only text the applier's stale-base refusal can honestly compare against. A base that cannot
+    /// be read is a named problem — a destructive proposal with no base would either be refused
+    /// downstream for a reason the reviewer could not predict, or worse, applied blind. v0.3.8.97.</summary>
+    private static (PatchProposal? Proposal, string? Problem) BaseAnchoredProposal(
+        MissionWorkspace workspace, string against, string path, PatchChangeType changeType,
+        string? destination)
+    {
+        var (ok, original) = Git(workspace.Root, $"show {against}:{path}");
+        if (!ok)
+            return (null, $"{path}: base content could not be read for its "
+                + $"{changeType.ToString().ToLowerInvariant()} proposal — {original}");
+
+        return (new PatchProposal
+        {
+            FilePath = path,
+            ChangeType = changeType,
+            NewContent = null,
+            OldContent = original,
+            DestinationPath = destination,
+            BaseHash = PatchApply.HashOf(original),
+            Reason = $"Produced in mission workspace {workspace.Id}, based on {Short(against)}",
+            Risk = "medium",
+            RequiresApproval = true,
+        }, null);
     }
 
     /// <summary>

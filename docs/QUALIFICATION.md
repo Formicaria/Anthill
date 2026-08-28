@@ -8,7 +8,7 @@ Two things with the same name and different jobs. Keeping them apart is the poin
 | Blocks a merge | **yes** | **no** |
 | Model | scripted (`ScriptedColony`) | real |
 | Proves | the runtime does what it says | the runtime survives what models actually do |
-| Status | **20 of 20 scenarios closed by substance** *(v0.3.8.79)* | **NEVER RUN** — see §3 |
+| Status | **20 of 20 scenarios closed by substance** *(v0.3.8.79)* | **PARTIAL** — acting missions have run live and passed; the full recorded pack has not — see §3 |
 
 A live run must never gate a merge. It costs money, needs credentials, depends on someone else's
 uptime, and is non-deterministic by construction — a suite with those properties either becomes flaky
@@ -74,14 +74,25 @@ made a fixture-level substitution invisible for two releases.
 
 ---
 
-## 3. Live qualification — NEVER RUN
+## 3. Live qualification — PARTIALLY RUN
 
-**Status: not performed. No result exists for any provider.**
+**Status: live acting-coder missions have run and passed on the operator's machine (recorded
+below), and the FULL pack this section specifies — objective verification enabled, every scenario
+class covered, telemetry exported through `LiveQualificationRecord` — has not been performed. No
+exported record exists for any provider.**
 
-This is the honest state and it is worth being blunt about, because everything else in this repository
-is scripted. The deterministic suite proves the runtime behaves as designed against answers written to
-fit it. It cannot tell you what happens when a real model returns a patch with the fences mismatched,
-ignores the four-section format, invents a file path, or takes ninety seconds to answer.
+The distinction is worth being blunt about, because for several releases this document said
+"never run" while `HANDOFF.md` described a passing live mission — two documents answering one
+question differently, which is this repository's oldest defect shape applied to its own record.
+The truth is both halves: real Claude Code missions have driven the acting pipeline end to end
+live (that is where the v0.3.8.95/.96 findings came from), and none of those runs captured the
+telemetry table below, ran with objective verification on, or exported a record. A live run whose
+evidence is a transcript summary is a smoke test, not a qualification.
+
+The deterministic suite proves the runtime behaves as designed against answers written to
+fit it. It cannot tell you what happens when a real model returns a patch with the fences
+mismatched, ignores the four-section format, invents a file path, or takes ninety seconds to
+answer.
 
 ### What a run must cover
 
@@ -168,7 +179,38 @@ Add a dated section below. Do not edit this document to say a run happened witho
 
 <!-- LIVE-QUALIFICATION-RESULTS -->
 
-_No live qualification has been recorded._
+### 2026-08 — live acting-coder missions (partial; not the full pack)
+
+What ran, on the operator's Windows machine, against the real Claude Code CLI: repeated live
+missions through the acting pipeline, of which the first PASSING one — mission `3bbbde32`,
+`completed_verified`, 41.6 s — is the run whose seven findings shipped in v0.3.8.96, and the six
+failing runs before it each produced a finding of their own (recorded in the v0.3.8.95 and
+v0.3.8.96 changelog entries).
+
+What this does and does not establish. It establishes that the acting pipeline — per-project
+worktree, real CLI edits, tree-judged classification, capture into the one review pipeline —
+survives contact with a real model. It is NOT the qualification this section specifies: objective
+verification was not enabled for these runs, no `LiveQualificationRecord` was exported, token and
+cost telemetry was not captured, and the scenario classes (read-only mission, controlled test
+failure, cancellation, pheromone-influence repeat) were not driven deliberately. The
+operator-machine `dotnet_test` check failure observed during this period also remains
+undiagnosed.
+
+**Two of those were not the operator's omission — they were unreachable, and v0.3.8.97 fixed
+that.** Objective verification could not be switched on without editing a config file and
+restarting the host, which is why every record so far reads `deliverable: not_checked`; it is an
+editable setting now. And a failed check destroyed its own diagnosis at three layers — head-only
+truncation, a failure branch that recorded the one-line error instead of the transcript, and a
+500-character cap — so three live `dotnet_test` failures left 28 readable characters each. Output
+survives now, head and tail, with the omission counted. The failure itself is still open by
+choice: the next failing run will be the first one that can be READ, and diagnosing from data
+beats guessing from theory.
+
+The full pack — with objective verification enabled and the exported record as its evidence — is
+the gate the v0.3.8.97 tag waits on. When it runs, its dated section lands here, compiled from
+the store rather than from notes.
+
+_No full live qualification pack has been recorded._
 
 ---
 

@@ -90,10 +90,18 @@ public static class PatchSetApply
     /// writes to the operator's real tree, so a destructive proposal that cannot say what it was
     /// built against is refused here rather than discovered mid-set.
     /// </summary>
-    public static List<string> Preflight(IEnumerable<(string PatchId, PatchProposal Proposal)> set)
+    public static List<string> Preflight(IEnumerable<(string PatchId, PatchProposal Proposal)> set,
+        string? targetRoot = null)
     {
         var refusals = new List<string>();
-        var guard = new WorkspacePathGuard(AnthillRuntime.AllowedWorkspaceRoot);
+        // v0.3.8.97 — against the TARGET tree, pinned. The guard's EffectiveRoot follows the ambient
+        // MissionWorkspaceScope, and the promotion path can run while a mission's own worktree (or a
+        // verify sandbox) is ambient — which would preflight the proposals against a tree they will
+        // never be applied to. Pinning the scope to the resolved target makes the guard, and every
+        // path resolved through it below, answer about the tree the set is actually FOR.
+        var root = targetRoot is null ? PatchTarget.LiveRoot() : PatchTarget.SafeFull(targetRoot);
+        using var pinned = Workspaces.MissionWorkspaceScope.Enter(ApplyScopeFor(root, "preflight"));
+        var guard = new WorkspacePathGuard(root);
 
         foreach (var (patchId, proposal) in set)
         {
@@ -147,7 +155,8 @@ public static class PatchSetApply
         string patchSetId,
         IReadOnlyList<(string PatchId, PatchProposal Proposal)> set,
         Func<string, Queen.AutoApplyOutcome> applyOne,
-        Action<IReadOnlyList<Queen.AutoApplyOutcome>, ApplyTransaction, string> rollBack)
+        Action<IReadOnlyList<Queen.AutoApplyOutcome>, ApplyTransaction, string> rollBack,
+        string? targetRoot = null)
     {
         ArgumentNullException.ThrowIfNull(memory);
         ArgumentNullException.ThrowIfNull(applyOne);
@@ -155,13 +164,23 @@ public static class PatchSetApply
         if (set.Count == 0)
             return SetApplyOutcome.Refused($"patch set {patchSetId} has no proposals", Array.Empty<string>());
 
-        var refusals = Preflight(set);
+        // v0.3.8.97 — THE TARGET TREE, PINNED FOR THE WHOLE TRANSACTION. `targetRoot` is the
+        // resolved answer from `PatchTargetResolver` (callers refuse before reaching here when it
+        // cannot be resolved); null keeps the configured live root for the pre-project lanes.
+        // Pinning the ambient workspace scope is load-bearing, twice over: it makes THIS method's
+        // guard resolve against the target rather than whatever mission worktree happens to be
+        // ambient, and it redirects `applyOne` — which runs the startup-constructed apply_patch
+        // tool through the Queen — so the singleton tool's own injected guard writes into the same
+        // tree this transaction journals. One tree, every layer, stated once.
+        var workspace = targetRoot is null ? PatchTarget.LiveRoot() : PatchTarget.SafeFull(targetRoot);
+        using var pinned = Workspaces.MissionWorkspaceScope.Enter(ApplyScopeFor(workspace, patchSetId));
+
+        var refusals = Preflight(set, workspace);
         if (refusals.Count > 0)
             return SetApplyOutcome.Refused(
                 $"{refusals.Count} of {set.Count} proposal(s) in set {patchSetId} cannot be applied to "
-              + "the tree as it stands, so none were", refusals);
+              + $"the target tree ({workspace}) as it stands, so none were", refusals);
 
-        var workspace = AnthillRuntime.AllowedWorkspaceRoot;
         var guard = new WorkspacePathGuard(workspace);
         var tx = ApplyTransaction.Begin(workspace, note: $"patch set {patchSetId}");
         var applied = new List<Queen.AutoApplyOutcome>();
@@ -205,6 +224,22 @@ public static class PatchSetApply
 
         tx.Commit();
         return new SetApplyOutcome(true, applied.Count,
-            $"patch set {patchSetId} applied as a unit: {applied.Count} file(s)", Array.Empty<string>());
+            $"patch set {patchSetId} applied as a unit: {applied.Count} file(s) into {workspace}",
+            Array.Empty<string>());
     }
+
+    /// <summary>
+    /// The synthetic ambient workspace that pins every guard-resolved path to the apply target.
+    /// v0.3.8.97. A record, not a persisted row: it exists only for the lifetime of one preflight
+    /// or one transaction, and its Root and SourceRoot are the same tree by construction.
+    /// </summary>
+    private static Workspaces.MissionWorkspace ApplyScopeFor(string root, string label) => new()
+    {
+        Id = $"apply-target-{label}",
+        MissionId = "",
+        Root = root,
+        SourceRoot = root,
+        Mode = "apply-target",
+        State = Workspaces.WorkspaceState.Active,
+    };
 }

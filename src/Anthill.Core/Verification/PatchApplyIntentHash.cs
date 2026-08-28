@@ -18,12 +18,18 @@ namespace Anthill.Core.Verification;
 /// </summary>
 public static class PatchApplyIntentHash
 {
-    public static string? Of(string? relativePath)
+    /// <summary>
+    /// <paramref name="targetRoot"/> (v0.3.8.97): the tree the intent is about. Null keeps the
+    /// configured live root — the pre-project behaviour — but every promotion-path caller now
+    /// passes the resolved target, because an intent hash taken from tree A about a write landing
+    /// in tree B makes every reconciliation of that intent ambiguous.
+    /// </summary>
+    public static string? Of(string? relativePath, string? targetRoot = null)
     {
         if (string.IsNullOrWhiteSpace(relativePath)) return null;
         try
         {
-            var guard = new WorkspacePathGuard(AnthillRuntime.AllowedWorkspaceRoot);
+            var guard = new WorkspacePathGuard(targetRoot ?? AnthillRuntime.AllowedWorkspaceRoot);
             var resolved = guard.ResolveSafePath(relativePath);
             return File.Exists(resolved) ? ApplyTransaction.HashFile(resolved) : null;
         }
