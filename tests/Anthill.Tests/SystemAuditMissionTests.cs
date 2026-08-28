@@ -168,15 +168,36 @@ public class SystemAuditMissionTests : IDisposable
 
         var queen = new Queen(memory);
         string? missionId = null;
+
+        // `Run` returns as soon as the mission ROW exists and lets the work continue on a
+        // background thread — correct for an HTTP caller, and a race for a test that asserts on
+        // what the mission produced. The delegate signals when `RunMission` has actually returned,
+        // so every assertion below reads a settled mission rather than a running one.
+        using var settled = new ManualResetEventSlim(false);
         var runner = new ConversationRunner(memory,
             (goal, _, onCreated, cancel) =>
             {
-                queen.RunMission(goal, onMissionCreated: id => { missionId = id; onCreated(id); }, cancel);
-                return missionId ?? "";
+                try
+                {
+                    queen.RunMission(goal, onMissionCreated: id => { missionId = id; onCreated(id); }, cancel);
+                    return missionId ?? "";
+                }
+                finally { settled.Set(); }
             });
 
-        // Mission mode explicitly: this is the operator asking for work, not chat.
-        runner.Run(conversation, request, ConversationMode.Mission);
+        // Mission mode, and an OPERATOR APPROVAL recorded for the start.
+        //
+        // The conversation runs under `Ask`, which is the honest default and refuses to start work
+        // nobody approved — "absence of an answer is NOT consent". The first draft of this test
+        // omitted the answer and every case failed before a mission existed, which was the gate
+        // behaving correctly and the fixture asking for something it had not authorized. Supplying
+        // the approval keeps the gate on the path and traverses it, rather than routing around it
+        // by declaring the conversation Bypass.
+        runner.Run(conversation, request, ConversationMode.Mission,
+            answers: new Dictionary<string, string> { [ConversationRunner.StartMissionAction] = "approve" });
+
+        Assert.True(settled.Wait(TimeSpan.FromMinutes(2)),
+            "the mission did not settle within two minutes — the audit path is hung, not merely wrong.");
         Assert.NotNull(missionId);
 
         var tasks = memory.GetTasksForMission(missionId!);
