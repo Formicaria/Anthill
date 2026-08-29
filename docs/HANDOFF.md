@@ -4,8 +4,33 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: main carries **v0.3.8.97** — execution/promotion closure — and **v0.3.8.97 IS TAGGED AND
-RELEASED** (`a828dfe`).
+State: main carries **v0.3.8.97** (`a828dfe`, tagged and released). **`release/v0.3.8.98` is
+complete and green** — the first universal vertical slice: repository + read-only runtime system
+audits, end to end through the real conversation path.
+
+WHAT `.98` DELIVERS, in one paragraph: an operator's audit request is classified at intake into
+declared dimensions (`mission_class`, intent, targets, freshness, authority) and carried on
+`MissionContext` as a `MissionSpecification`; workers are resolved by DECLARED CAPABILITY rather
+than by substring, and a worker the plan named that cannot serve the mission is repaired and the
+repair announced; the audit inspects the repository and the live colony state (`colony_state` +
+`researcher.runtime_researcher`) and leaves `inspection` evidence — a new NON-DETERMINISTIC lane
+that records that an inspection happened and can promote nothing; the answer is assembled BEFORE the
+grade; and `AssessmentObjective` plus a deliverable ledger refuse an audit that inspected nothing, a
+verifier that consumed nothing, or a requested deliverable nothing produced.
+
+THREE DEFECTS `.98` FOUND IN ITSELF, all of the same family and worth carrying forward: capability
+resolution was written one layer downstream of the fill it replaced and never executed once (and
+v0.3.8.93's trail-guided selection had been sitting in the same never-true condition since it
+shipped); `mission_researcher` declared a capability its permission contract cannot support, which
+made the wrong worker look compatible; and the acceptance test's first four phrasings passed the
+worker assertions by luck, because none of them contained the word the keyword resolver keys on.
+Every one was found by a test that entered at the CONVERSATION rather than at the unit being built.
+
+NOT CLAIMED: any of it live. The `.97` live pack — objective verification enabled in a real run, an
+exported `LiveQualificationRecord`, a live system-audit mission — is still open and is the operator's
+step. `PLAN.md` §2c also records two gate items implemented deliberately differently from the way
+they were written (a missing builder is SUPPLIED rather than refused; answer coverage is STRUCTURAL
+rather than textual) and one not implemented at all (`blocked_missing_capability`).
 
 **The tag was cut by operator decision BEFORE the live qualification pack completed.** The
 release brief had gated it on that pack, and the shipped CHANGELOG entry for .97 says so in the

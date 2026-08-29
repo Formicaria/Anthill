@@ -40,7 +40,17 @@ language: until v0.3.8.97 this document opened with "structurally complete", whi
 structures and false of the workflow. Measured at v0.3.8.97, only the coding mission class has a
 complete execution and verification lifecycle — `ObjectiveVerification` recognises exactly one
 deliverable kind (`FileChange`), worker specialization is chosen by substring match, and the
-assembled answer is never compared to what the operator asked. See
+assembled answer is never compared to what the operator asked.
+
+**What v0.3.8.98 changes, and how far.** ONE non-code class — `system_audit` — now has a complete
+lifecycle: classified at intake into declared dimensions, routed by declared worker capability
+rather than by substring, inspecting the repository AND the live colony state with `inspection`
+evidence to show for it, and graded against a deliverable ledger that refuses an audit which
+inspected nothing, a verifier that read nothing, or a requested deliverable nothing produced. That
+is DETERMINISTICALLY qualified and NOT live-qualified: no audit has run against a real provider. And
+it is one class of the seven — research, documents, data, troubleshooting, system and external
+missions are untouched, and every one of them still resolves `not_applicable` at the deliverable
+layer exactly as before. See
 [`ADR-008`](adr/ADR-008-universal-mission-lifecycle.md) §1 for the evidence and §2 for the contract
 the `.98`–`.107` sequence exists to satisfy.
 
@@ -97,8 +107,8 @@ through the real application. **Ext.** = requires an external adapter, connectio
 |---|---|---|---|---|---|
 | Coding: worktree execution | yes | no (`acting_coder_enabled`) | yes | **yes** | the qualified lane |
 | Coding: patch promotion and apply | yes | gates off by default | yes | yes | target identity, atomic sets (.97) |
-| Repository inspection | partial | yes | partial | no | tools exist; audit missions do not resolve them — `.98` |
-| Runtime/state inspection (read-only) | partial | yes | no | no | records exist; no audit path — `.98` |
+| Repository inspection | yes | yes | **yes** | no | audit missions resolve `repo_researcher` + file inspection by declared capability and leave `inspection` evidence (.98); live run pending |
+| Runtime/state inspection (read-only) | yes | yes | **yes** | no | `colony_state` + `researcher.runtime_researcher` (.98); live run pending |
 | Web research | yes | no | partial | no | `.99` |
 | Artifact/document creation | partial | yes | no | no | `.100` |
 | Data analysis | no | — | no | no | `.100` |
@@ -109,7 +119,7 @@ through the real application. **Ext.** = requires an external adapter, connectio
 | Dynamic repair (Medic) | partial | yes | partial | no | bounded repair exists; not evidence-driven — `.104` |
 | Multi-mission continuity | no | — | no | no | `.105` |
 | Pheromone / skill learning | yes | yes | yes | no | positive learning restricted to `completed_verified` |
-| Objective verification (non-code) | **no** | `objective_verification_enabled` | no | no | recognises `FileChange` only — `.98` |
+| Objective verification (non-code) | **partial** | `objective_verification_enabled` | **yes** | no | `.98` added `AssessmentObjective` + the deliverable ledger for the `system_audit` class; every other non-code class still resolves `not_applicable` |
 
 No row may claim a status stronger than `QUALIFICATION.md` records. That is checked, not trusted:
 see `DocumentationConsistencyTests`.
@@ -194,21 +204,54 @@ ledger, `ResultAssembler`, `MissionEvaluator`, `MissionReport`.
 ExecutionService → ResultAssembler → MissionEvaluator → MissionReport`.
 
 **Exit gate** — the composed acceptance mission (`SystemAuditMissionTests`), written before the
-implementation and failing until it lands, proving over four semantically equivalent phrasings:
-the previewed admitted plan is the plan executed with no generic fallback; `researcher.repo_researcher`
-and `verifier.result_verifier` ran and `mission_researcher`/`safety_verifier` did not; repository
-inspection actually ran and left receipts; outputs became typed artifacts whose consumption was
-recorded; evidence supports the deliverables; the builder assembled every requested section; the
-verifier consumed what it graded; objective evaluation passed; and the final answer addresses every
-question asked. Negative scenarios prove the old `mission_researcher + safety_verifier` graph is
-refused or repaired, a no-evidence audit fails objective verification, a missing builder fails
-preflight, a missing requested section fails answer coverage, unavailable repository access returns
-`blocked_missing_capability`, and removing any production call site breaks the composed scenario.
+implementation and failing until it landed. **MET deterministically**, over FIVE semantically
+equivalent phrasings rather than four: the fifth was added when the original four turned out to pass
+the worker assertions by luck — none of them contains the word "missions", so the repository
+researcher was the keyword FALLBACK rather than a decision, and the assertions proved nothing about
+resolution until one phrasing said it.
 
-**Also in .98, carried from .97's incomplete live pack:** objective verification enabled in a live
-run, an exported `LiveQualificationRecord`, and a live system-audit mission through the composed
-application. These belong here rather than in a standalone errand — `.98`'s subject cannot be shown
-with objective verification switched off.
+Proved, each by an assertion that fails without it:
+
+- the plan executed is the plan the fixture wrote, with no generic fallback (`SystemAuditNegativeTests`);
+- `researcher.repo_researcher`, `researcher.runtime_researcher` and `verifier.result_verifier` ran;
+  `mission_researcher` and `safety_verifier` did not;
+- repository AND runtime inspection ran and left `inspection` evidence;
+- outputs became typed artifacts whose consumption was recorded;
+- the verifier consumed what it graded;
+- the builder assembled every requested section, and the final answer addresses every question;
+- the canonical evaluation is positive, and `AssessmentObjective` is what makes that mean something.
+
+Negative scenarios prove: the old `mission_researcher + safety_verifier` graph is repaired and the
+repair is announced; a plan missing the class's required steps has them supplied; a refusing verifier
+keeps the mission out of a verified outcome; an audit with no inspection evidence, a verifier that
+consumed nothing, and an unserved deliverable are each refused by name.
+
+**Two gate items were deliberately NOT implemented as written, and the difference is recorded rather
+than quietly dropped:**
+
+- *"a missing builder fails preflight"* — it does not fail; `EnsureClassCoverage` SUPPLIES the
+  missing step. Refusing a plan for lacking a step the runtime knows the class requires punishes the
+  operator for the planner's omission, and the same guarantee (an audit always compiles and verifies)
+  is reached by construction. The negative test asserts the supply, not a refusal.
+- *"a missing requested section fails answer coverage"* — coverage is STRUCTURAL, not textual. The
+  obvious implementation asks whether the answer contains a question's words, and an answer reading
+  "Strengths: … Weaknesses: …" addresses "what is good and bad about it" completely while containing
+  neither. The deliverable ledger asks instead whether a task that OWNS each deliverable completed,
+  which is checkable without a model's opinion. It catches a question dropped by a failed step; it
+  does not claim to catch a question answered shallowly.
+
+**Still open, and the release does not claim them:**
+
+- `blocked_missing_capability` for unavailable repository access — no such outcome code exists yet;
+  today an audit that cannot inspect is refused by the assessment objective rather than blocked by
+  name at intake;
+- "removing any production call site breaks the composed scenario" — held for the two sites where it
+  was affordable as a source-shape guard (the planner's worker fill, the trail rule's basis read),
+  not as a general mutation property;
+- **the live pack carried from `.97`:** objective verification enabled in a live run, an exported
+  `LiveQualificationRecord`, and a live system-audit mission through the composed application. These
+  need a real provider and are the operator's step; `QUALIFICATION.md` §3 remains the authority and
+  still says PARTIAL.
 
 **Explicitly still unsupported after .98:** research, document/data, troubleshooting, system and
 external mission classes; multi-mission continuity; capability-first resolution for classes other

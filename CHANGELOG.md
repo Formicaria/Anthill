@@ -1,7 +1,12 @@
 ## v0.3.8.98 - the universal workflow begins: system audits, and one documented truth
 
-**IN DEVELOPMENT.** This entry is written as the release is built and describes only what has
-landed. Nothing here is claimed as qualified until its exit gate in `PLAN.md` §2c passes.
+**DETERMINISTICALLY COMPLETE, NOT LIVE-QUALIFIED.** Every claim below is covered by a test that
+fails without it, and the composed acceptance mission passes over five semantically equivalent
+phrasings with three negative runs proving each layer can refuse. NOT claimed: any of it running
+against a real provider. `PLAN.md` §2c names what remains — the live pack carried from `.97`, and
+two gate items deliberately implemented differently from the way they were written, each recorded
+there with the reason rather than dropped. `QUALIFICATION.md` §3 stays the authority on live
+evidence and still says PARTIAL.
 
 **The v0.3.8.97 tag decision, recorded rather than rewritten.** `.97` shipped at `a828dfe` with a
 CHANGELOG entry saying its tag waited for the live qualification pack. It did not wait: the pack
