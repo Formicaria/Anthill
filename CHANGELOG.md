@@ -1,3 +1,194 @@
+## v0.3.8.98 - the universal workflow begins: system audits, and one documented truth
+
+**DETERMINISTICALLY COMPLETE, NOT LIVE-QUALIFIED.** Every claim below is covered by a test that
+fails without it, and the composed acceptance mission passes over five semantically equivalent
+phrasings with three negative runs proving each layer can refuse. NOT claimed: any of it running
+against a real provider. `PLAN.md` §2c names what remains — the live pack carried from `.97`, and
+two gate items deliberately implemented differently from the way they were written, each recorded
+there with the reason rather than dropped. `QUALIFICATION.md` §3 stays the authority on live
+evidence and still says PARTIAL.
+
+**The v0.3.8.97 tag decision, recorded rather than rewritten.** `.97` shipped at `a828dfe` with a
+CHANGELOG entry saying its tag waited for the live qualification pack. It did not wait: the pack
+was blocked on operator switches that had no UI control, and the operator authorized the tag on
+`.97`'s own evidence. That entry is not edited — a tagged entry records what a release said and
+shipped, and editing it to flatter a later decision would make the changelog a description of the
+present instead of a record of the past. The correction lives in `PLAN.md`, `HANDOFF.md` and
+`QUALIFICATION.md` §3, which are the documents that answer for the present. The unfinished pack
+items did not lapse; they are `.98` exit-gate items, because `.98` cannot be demonstrated with
+objective verification switched off. The Windows materialized-revision `dotnet_test` failure is
+carried as an explicit `.97` residual and is deliberately NOT a `.98` gate — it is a coding-lane
+defect, and letting it steer this release would reproduce the exact asymmetry `.98` exists to
+correct.
+
+**The documentation now tells one story, and one document owns each question.** An inventory of
+every current-state claim found four contradictions between documents that were each individually
+plausible: `PLAN.md` opened with "structurally complete" and recorded live qualification as
+"never run under protocol"; `QUALIFICATION.md` had been corrected to PARTIAL in `.97`;
+`QA-CHECKLIST.md` still asserted live qualification had never run against any provider; and
+`HANDOFF.md` described a tag that was already cut. An authority table in `PLAN.md` now assigns one
+responsibility per document — README what it does, PLAN the roadmap, HANDOFF the session,
+QUALIFICATION the measured evidence, CHANGELOG the immutable record, ADRs the durable contract,
+archive the snapshots — and `DocumentationConsistencyTests` parses the declared fields rather than
+searching prose, so the next drift fails a test instead of surviving a release.
+
+**A capability-status table replaces "supported".** Fifteen capabilities, each rated across
+implemented / default-on / deterministically qualified / live-qualified, with external dependencies
+named. It says plainly what has been true and unsaid for several releases: the coding lane is
+substantially qualified and live-demonstrated, and every non-code mission class is partial or
+absent. No row may claim more than `QUALIFICATION.md` records, and that is now checked.
+
+**ADR-008 states the permanent contract** the `.98`–`.107` sequence is built to satisfy: one
+production spine for every mission class, coding as one class rather than the workflow itself,
+success measured against requested deliverables rather than task completion, capability-first
+worker resolution, pheromones ranking only among compatible choices, honest blocking with the exact
+missing thing named, models proposing structure while deterministic gates enforce it, and every
+existing coding-lane protection preserved. Sequencing stays in `PLAN.md`; the ADR is architecture,
+not status, and says so.
+
+**The `.98` acceptance mission is written first and fails.** `SystemAuditMissionTests` drives four
+semantically equivalent audit requests through `ConversationRunner` into the real Queen and asserts
+the whole spine — repository researcher and result verifier resolved, inspection actually performed,
+typed artifacts consumed, evidence recorded, every requested section present in the answer, and a
+positive canonical evaluation. It asserts nothing about the types this release intends to add: a
+test written against the design can be satisfied by the design, and this one can only be satisfied
+by behaviour. It is red until the slice lands, deliberately.
+
+**Worker selection now asks what a worker CAN DO — and the answer reaches the plan.** The mission
+carries a `MissionSpecification`, resolved once at intake from independently derived dimensions
+(intent, targets, freshness, authority) rather than matched as a phrase, and workers declare the
+capabilities they serve. An audit therefore resolves `researcher.repo_researcher` because that
+worker reads repositories, not because the request avoided the word "missions" — the same question
+phrased five ways now reaches the same specialist.
+
+**And the first attempt at that shipped as dead code, which is the finding worth recording.** The
+capability branch was written in `PlanningService`, guarded by "if this task has no worker yet" —
+and `Planner.CreateTasks` fills that field on every path before returning. It compiled, it read
+correctly, it was never executed once: the acceptance test still routed the audit to the
+mission-history researcher with the whole capability system in the build. Resolution now happens in
+exactly one place, `WorkerResolution`, called where a blank worker is actually filled, and the task
+records WHAT decided it — a declared capability, a keyword, or declaration order. The same defect
+class as the phantom tools and the unreachable operator switches; caught this time by a test that
+entered at the conversation rather than at the unit under construction, and pinned by a guard on
+the planner's own resolution site.
+
+**v0.3.8.93's pheromone decision was unreachable for the same reason, and now runs.** Trail-guided
+worker selection lived inside that identical never-true condition. Its rule is unchanged and
+unweakened — a verified trail may replace declaration order and nothing else, and never outranks a
+compatibility decision — but it now reads the recorded decision basis instead of re-deriving one,
+so the layer that consults the trail cannot disagree with the layer that assigned the worker.
+
+**An inspection is now recorded as evidence, and still promotes nothing.** An assessment mission's
+authority is `observe`: it runs no checks, so the deterministic evidence lane is empty by design,
+and before this release the store stayed empty however much the colony actually read. "This audit
+inspected nothing and asserted its findings" and "this audit read the repository" were the same
+record — which is precisely why mission `7afd85b2`'s emptiness could not be detected by the runtime
+that produced it. Four read-only tools now write an `inspection` row at the dispatch chokepoint that
+already logs and reinforces them. The verdict lane is untouched: `run_allowlisted_check` remains its
+only member, an inspection is recorded non-deterministic, and `HasDeterministicPass`,
+`EvidenceVerdict` and the promotion identity gate treat it exactly as they treat a model review.
+Widened where evidence comes from; not what a verdict is.
+
+**An audit is guaranteed the inspection step it depends on.** The planner is a model and may plan an
+assessment with nothing that reads anything; whether a mission CLASS requires inspection is not a
+modelling question. `EnsureClassCoverage` adds only what is missing — a read-only workspace
+inspection, a compiler, a verifier — in the same place and by the same rule as the long-standing
+guaranteed verifier, and every inserted task passes the ordinary authorization and permission gates.
+
+**An assessment is now graded on what it left behind, not on a verifier saying the words.** The
+deliverable layer could read exactly one intent — a file change — so a mission that changes nothing
+by construction resolved to `not_applicable` and its entire judgment fell to a model returning
+"Verification Passed". That is the whole of what made mission `7afd85b2` gradeable as complete.
+`AssessmentObjective` asks three questions an audit can be held to without a model's opinion, each
+answered from a record: was anything inspected (the evidence store), did the verifier read what it
+graded (the consumption ledger), and is there an answer. An unreadable store fails closed, because
+an outage is never permission. It applies to one mission class and can only narrow what counts as
+verified — nothing that fails today newly passes.
+
+Per-deliverable coverage is deliberately NOT in that gate yet. The obvious implementation — does
+the answer contain this question's words — grades on vocabulary: an answer reading "Strengths: …
+Weaknesses: …" addresses "what is good and bad about it" completely and contains neither word, and
+a gate that demoted it would make every real gate less trustworthy. Coverage becomes checkable when
+a deliverable can be CLAIMED by the task that served it; that is the deliverable ledger, and it
+lands with the assembler rather than being faked from a word search.
+
+**The answer is assembled before the mission is graded.** `ResultAssembler` ran after the
+evaluation, which was harmless while the deliverable layer only asked whether a file changed and
+impossible once it asks about the answer: the evaluator read `FinalResult` before anything had
+written it. Assembly is a pure function of the terminal tasks, so moving it ahead of the grade adds
+an input without adding an influence. The workspace harvest deliberately stays after — a change set
+is a result of the mission, and producing one must never alter the outcome that produced it.
+
+**A worker the plan NAMED is a proposal, not a decision.** An explicit `assigned_worker` skipped
+resolution entirely, so a planner could bypass the whole capability system by being specific — the
+same audit routed to the mission-history researcher or the repository researcher depending on what
+the model happened to write. ADR-008's division applies: the model proposes, a deterministic gate
+decides. The repair is narrow (the mission declared capabilities, the named worker serves none of
+them, exactly one worker in that role does) and it is announced as `worker_repaired_by_capability`,
+because a dispatch that silently differs from the plan an operator previewed is a divergence nobody
+can reconcile afterwards.
+
+**And the mission researcher stopped claiming a capability it does not have.** It declared
+`inspect_runtime_state` alongside `recall_mission_history`; its permission contract is ReadMemory
+and its tools are `read_mission_history` and `read_pheromone_summary`. It can say what missions DID
+and nothing about what is enabled now. An overstated contract is worse than an omitted one, because
+resolution BELIEVES it — the audit that must not be answered from mission history would have been
+routed there legitimately. `inspect_runtime_state` is consequently absent from the audit's required
+set at `.98`: nothing serves it, and requiring what nothing serves is the declaration-reaching-nobody
+defect in its purest form. The id stays defined for the release that builds the worker.
+
+**The audit gate is now pushed in the directions it must refuse.** Three composed negative runs, one
+per layer: a plan naming incompatible workers is repaired and the repair is announced; a plan
+missing the steps the class requires has them supplied; and a verifier that returns a refusal keeps
+the mission out of a verified outcome. That last one is what makes the passing acceptance test worth
+anything — a gate nothing can fail is a formality, and this repository has shipped several.
+
+**"Three questions asked, one answered, mission complete" is now a question the runtime can ask.**
+It was never a bug in any component: a mission's deliverables lived as clauses inside the goal
+string, so no layer could state afterwards whether the thing requested had been produced. Intake
+already gave each request an id; the deliverable ledger is the other half. A plan may declare which
+deliverable each task serves — validated against ids the specification actually holds, so a model
+cannot invent one and have work credited to it — and the ledger records, per id, which tasks own it,
+whether the plan declared that or the runtime inferred it, and whether anything finished. The
+evaluation refuses a mission with an unserved deliverable, naming the id and the operator's own
+words for it.
+
+Its strength depends on what the plan said, and the record is explicit about which case applies. A
+plan that attributed each question to a step is held to that attribution — one failed task means one
+unserved question, whatever the others produced. A plan that claimed nothing has the compiling task
+credited with all of them, which is honest and weaker, and reads as `inferred` rather than being
+quietly equated with the strong case. The check stays STRUCTURAL: it asks whether a task that owns a
+deliverable completed, never whether the answer is good — judging that is a semantic call, and a
+model asserting it is the evidence v2.19.0 stopped accepting.
+
+The ledger is a pure function of the specification and the terminal tasks, so the evaluator builds
+its own rather than trusting one it was handed — a grade has to be reproducible from the persisted
+record. The operator's copy is written as a `deliverable_ledger` artifact at assembly, before the
+grade, so the record exists whatever the outcome and especially when the mission is refused for it.
+
+**An audit can finally answer "what is true now", not only "what is implemented".** Those are
+different questions against different sources, and until this the colony had a worker for the first
+and none for the second — so "is the colony healthy?" was answered from source code. The
+`colony_state` tool reports what the colony IS: which roles and workers are executable and what each
+declares, which tools this run registered, the verification policy in force, and what has already
+run. It is distinct from `system_info`, which answers about the machine, and it is registered in the
+CORE rather than a module — a colony that cannot say what it is has no honest answer to the
+question. `researcher.runtime_researcher` declares `inspect_runtime_state` and dispatches it, and
+the audit class now guarantees a step that requires that capability, so the runtime half of an audit
+is structural rather than something a planner might think of.
+
+The step names the CAPABILITY, not the worker. A mission declares several capabilities and
+resolution takes the first the role can serve, so with the mission's list alone every researcher
+task resolves the same way and the runtime step would have been served, silently, by a worker that
+cannot read live state. A task the runtime inserted because a class requires a capability is the one
+place that requirement is known per task — and saying so leaves the registry deciding who serves it,
+so a better runtime worker later is reached without editing the step that needs it.
+
+`inspect_runtime_state` was held out of the audit's required set while nothing served it, and joins
+it now that something does. A requirement no worker can satisfy is the declaration-reaching-nobody
+defect wearing a specification's clothes, and a test now asserts every capability the class demands
+resolves to a worker that declares it.
+
 ## v0.3.8.97 - execution/promotion closure, and the last two switches reach the surface
 
 Two bodies of work from the same qualification day, shipped as one release: the remaining

@@ -173,6 +173,19 @@ public sealed class ResearcherAnt : BaseAnt
         var relevantMemory = _memory.FormatRelevantMemory(mission.Goal, AnthillRuntime.RelevantMemoryLimit, AnthillRuntime.MemoryResultChars);
         var pheromoneContext = _memory.FormatPheromoneContext(8);
         var toolResults = new List<ToolResult> { _tools.RunTool("system_info", mission.Id, task.Id, Name) };
+
+        // v0.3.8.98 — THE RUNTIME HALF, dispatched when the TASK says that is what it is for.
+        //
+        // Branching on the task's declared capability rather than on its worker id or on words in
+        // its description: the capability is what the step was created to exercise, the registry
+        // decides which worker serves it, and neither this handler nor the plan has to spell a
+        // worker name for the right tool to run. `colony_state` reports what is enabled and
+        // registered NOW — the question the repository cannot answer, and the one an operator
+        // means by "is the colony healthy?".
+        if (string.Equals(task.RequiredCapability, Missions.WorkerCapabilities.InspectRuntimeState,
+                          StringComparison.OrdinalIgnoreCase))
+            toolResults.Add(_tools.RunTool("colony_state", mission.Id, task.Id, Name));
+
         if (ShouldInspectWorkspace(task, mission))
         {
             toolResults.Add(_tools.RunTool("list_directory", mission.Id, task.Id, Name, new() { ["path"] = "." }));

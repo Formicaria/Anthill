@@ -282,7 +282,10 @@ public sealed class ToolRegistry
     /// </summary>
     private void RecordEvidence(string toolName, ToolResult result, string missionId, string? taskId)
     {
-        if (!ToolEvidence.IsDeterministic(toolName)) return;
+        // v0.3.8.98 — EITHER lane: a reproducible verdict, or a read-only observation. Which one
+        // this is remains ToolEvidence's decision, and an observation is stamped non-deterministic
+        // there, so nothing that reads this store for promotion can mistake one for the other.
+        if (!ToolEvidence.Records(toolName)) return;
 
         try
         {

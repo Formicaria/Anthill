@@ -39,7 +39,7 @@ public static class ToolAuthorization
     /// model-only today) has an EMPTY allowlist — fail closed.</summary>
     private static readonly Dictionary<string, HashSet<string>> RoleAllowedTools = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["researcher"] = new(StringComparer.OrdinalIgnoreCase) { "system_info", "list_directory" },
+        ["researcher"] = new(StringComparer.OrdinalIgnoreCase) { "system_info", "list_directory", "colony_state" },
         ["web"] = new(StringComparer.OrdinalIgnoreCase) { "web_search", "system_info" },
         ["file"] = new(StringComparer.OrdinalIgnoreCase) { "list_directory", "read_text_file", "system_info" },
         ["coder"] = new(StringComparer.OrdinalIgnoreCase),

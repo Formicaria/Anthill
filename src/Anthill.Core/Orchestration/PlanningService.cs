@@ -93,61 +93,111 @@ public sealed class PlanningService : IPlanningService
             $"Recent Memory:\n{_memory.FormatRecentMemory(AnthillRuntime.RecentMemoryLimit, AnthillRuntime.MemoryResultChars)}\n\n" +
             $"Relevant Memory:\n{_memory.FormatRelevantMemory(goal, AnthillRuntime.RelevantMemoryLimit, AnthillRuntime.MemoryResultChars)}";
 
+        // v0.3.8.98 — the specification travels INTO planning, because worker assignment happens
+        // inside `CreateTasks`. See the block below for what this release learned about the cost of
+        // resolving one layer too late.
         var tasks = _planner.CreateTasks(goal, context.Constraints, memoryContext, _tools.DescribeTools(),
-            _memory.FormatPheromoneContext(8), SkillPlanningContext.Format(_skills()));
+            _memory.FormatPheromoneContext(8), SkillPlanningContext.Format(_skills()),
+            context.Specification);
 
         foreach (var task in tasks)
         {
             if (task.TaskType == "general")
                 task.TaskType = TextUtil.InferTaskType(task.AssignedAnt, task.Title, task.Description);
+            // A task that reached here with no worker came from a path that does not assign one
+            // (the planner's model-rejection fallbacks, and tasks inserted by constraint
+            // enforcement). It gets the SAME resolver the planner uses, so there is exactly one
+            // answer to "which worker serves this task" in the codebase.
             if (string.IsNullOrWhiteSpace(task.AssignedWorker))
-            {
-                // v0.3.8.93 — the registry resolves; a verified trail may replace a TIE-BREAK.
-                //
-                // ResolveWorker answers two things: the worker, and whether the task's own text
-                // decided it. A keyword decision is a capability fact and is final — no trail is
-                // consulted, however strong, because reputation must never outrank compatibility.
-                // When the text said nothing, the registry's answer is declaration order — a guess —
-                // and the colony's own verified track record (worker trails, reinforced only by
-                // completed_verified missions) is better evidence than declaration order. This is
-                // the pheromone layer's first deterministic consumer; the event makes each use
-                // visible, because a learning signal that silently steers dispatch is the kind of
-                // influence an operator must be able to see and audit.
-                var (resolved, keywordDecided) = AntRegistry.ResolveWorker(
-                    task.AssignedAnt, task.TaskType, $"{goal} {task.Title} {task.Description}");
-                task.AssignedWorker = resolved?.WorkerId;
+                Agents.WorkerResolution.Assign(task, goal, context.Specification);
 
-                if (!keywordDecided && resolved is not null
-                    && AntRegistry.ByRole.TryGetValue(task.AssignedAnt, out var roleDef))
+            // v0.3.8.98 — A NAMED WORKER IS A PROPOSAL, NOT A DECISION.
+            //
+            // A worker the PLAN named arrives here with `WorkerBasis == Unset`: nothing resolved
+            // it, because a non-blank assignment skipped resolution entirely. That is the second
+            // door into the defect this release closes — the same audit routed to the
+            // mission-history researcher or the repository researcher depending on what the
+            // planner happened to write, with the whole capability system bypassed. ADR-008's
+            // division applies: the model proposes, a deterministic gate decides.
+            //
+            // The repair is narrow (see RepairIncompatible) and it is ANNOUNCED. A dispatch
+            // silently different from the plan an operator previewed is the kind of divergence
+            // this repository has shipped before; the event makes the plan and the run reconcilable.
+            if (task.WorkerBasis == Domain.WorkerDecisionBasis.Unset
+                && Agents.WorkerResolution.RepairIncompatible(
+                       task, Agents.WorkerResolution.CapabilitiesFor(task, context.Specification)) is { } replaced)
+            {
+                try
                 {
-                    var preferred = Pheromones.TrailGuidedSelection.Prefer(
-                        roleDef.Workers, key => _memory.GetPheromoneTrail(key));
-                    if (preferred is not null && preferred.WorkerId != resolved.WorkerId)
+                    _memory.LogEvent(context.MissionId, "worker_repaired_by_capability",
+                        $"{task.AssignedWorker} takes '{task.Title}' from {replaced}: the plan named a "
+                      + "worker whose contract serves none of the capabilities this mission declared.",
+                        task.Id, task.AssignedAnt, new()
+                        {
+                            ["worker"] = task.AssignedWorker,
+                            ["planned_worker"] = replaced,
+                            ["required_capabilities"] = context.Specification.RequiredCapabilities,
+                        });
+                }
+                catch (Exception logError)
+                {
+                    // Guarded like the trail event below, and for the same reason: PlanPreview runs
+                    // this code over a transient mission that is never persisted, and a diagnostic
+                    // must never break the decision it describes.
+                    Console.Error.WriteLine(
+                        $"[planning] worker_repaired_by_capability not recorded for {context.MissionId}: {logError.Message}");
+                }
+            }
+
+            // v0.3.8.93 — a verified trail may replace a TIE-BREAK, and only a tie-break.
+            //
+            // A Specification or Keyword basis is a COMPATIBILITY decision and is final: no trail
+            // is consulted, however strong, because reputation must never outrank compatibility. A
+            // Default basis is declaration order — a guess — and the colony's own verified track
+            // record (worker trails, reinforced only by completed_verified missions) is better
+            // evidence than a guess. The event makes each use visible, because a learning signal
+            // that silently steers dispatch is the kind of influence an operator must be able to
+            // audit.
+            //
+            // v0.3.8.98 — AND THIS RULE NOW ACTUALLY RUNS. It was written inside
+            // `if (string.IsNullOrWhiteSpace(task.AssignedWorker))`, and `Planner.CreateTasks` has
+            // always filled that field before returning; the condition was therefore false on every
+            // planner path and the trail was never consulted in a real mission. The basis is read
+            // off the task rather than re-derived here, so this layer cannot reach a different
+            // conclusion than the layer that made the assignment.
+            if (task.WorkerBasis == Domain.WorkerDecisionBasis.Default
+                && !string.IsNullOrWhiteSpace(task.AssignedWorker))
+            {
+                var candidates = Agents.WorkerResolution.CompatibleCandidates(
+                    task.AssignedAnt, Agents.WorkerResolution.CapabilitiesFor(task, context.Specification));
+                var preferred = Pheromones.TrailGuidedSelection.Prefer(
+                    candidates, key => _memory.GetPheromoneTrail(key));
+                if (preferred is not null && preferred.WorkerId != task.AssignedWorker)
+                {
+                    var previous = task.AssignedWorker;
+                    task.AssignedWorker = preferred.WorkerId;
+                    // Guarded like PatchApplyReconciler.Announce, for the same reason: the events
+                    // table has an FK to missions, and PlanPreview runs this same code over a
+                    // transient mission that is never persisted (deliberately — one plan
+                    // construction, so preview equals dispatch). The SELECTION must be identical on
+                    // both paths; the EVENT can only exist where the mission does, and a diagnostic
+                    // must never break the decision it describes.
+                    try
                     {
-                        task.AssignedWorker = preferred.WorkerId;
-                        // Guarded like PatchApplyReconciler.Announce, for the same reason: the
-                        // events table has an FK to missions, and PlanPreview runs this same code
-                        // over a transient mission that is never persisted (deliberately — one plan
-                        // construction, so preview equals dispatch). The SELECTION must be
-                        // identical on both paths; the EVENT can only exist where the mission
-                        // does, and a diagnostic must never break the decision it describes.
-                        try
-                        {
-                            _memory.LogEvent(context.MissionId, "worker_selected_by_trail",
-                                $"{preferred.WorkerId} takes '{task.Title}' over default {resolved.WorkerId}: "
-                              + "strongest verified worker trail among compatible candidates.",
-                                task.Id, task.AssignedAnt, new()
-                                {
-                                    ["worker"] = preferred.WorkerId,
-                                    ["default_worker"] = resolved.WorkerId,
-                                    ["trail_key"] = Pheromones.TrailGuidedSelection.TrailKeyFor(preferred),
-                                });
-                        }
-                        catch (Exception logError)
-                        {
-                            Console.Error.WriteLine(
-                                $"[planning] worker_selected_by_trail not recorded for {context.MissionId}: {logError.Message}");
-                        }
+                        _memory.LogEvent(context.MissionId, "worker_selected_by_trail",
+                            $"{preferred.WorkerId} takes '{task.Title}' over default {previous}: "
+                          + "strongest verified worker trail among compatible candidates.",
+                            task.Id, task.AssignedAnt, new()
+                            {
+                                ["worker"] = preferred.WorkerId,
+                                ["default_worker"] = previous,
+                                ["trail_key"] = Pheromones.TrailGuidedSelection.TrailKeyFor(preferred),
+                            });
+                    }
+                    catch (Exception logError)
+                    {
+                        Console.Error.WriteLine(
+                            $"[planning] worker_selected_by_trail not recorded for {context.MissionId}: {logError.Message}");
                     }
                 }
             }

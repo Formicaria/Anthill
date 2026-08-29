@@ -134,6 +134,29 @@ public static class EvidenceKinds
     public const string OperatorJudgment = "operator_judgment";
 
     /// <summary>
+    /// A READ-ONLY OBSERVATION of state: a directory listed, a file read, the workspace searched or
+    /// indexed. v0.3.8.98.
+    ///
+    /// WHY IT IS NOT REPRODUCIBLE, even though repeating it on an unchanged tree gives the same
+    /// answer. Reproducibility in this vocabulary means "bound to the bytes it judged" — every
+    /// deterministic kind above is stamped with a revision and a tree hash, and that binding is what
+    /// lets a later reader confirm the evidence is about the thing being promoted. An inspection of
+    /// a live, unpatched workspace has no such identity: the tree it read can change underneath it
+    /// with nothing recorded. Calling it deterministic would put "the ant looked at a file" in the
+    /// same table as "the test suite passed" — the exact confusion the flag exists to prevent, and
+    /// the reason this kind sits below the line rather than above it.
+    ///
+    /// WHY IT IS RECORDED AT ALL. An assessment mission runs no checks: its authority is `observe`,
+    /// so the deterministic lane is empty BY DESIGN, and before this kind existed such a mission
+    /// left the evidence store untouched no matter how much it read. "Nothing was inspected" and
+    /// "an inspection happened and this vocabulary had no word for it" were indistinguishable —
+    /// which is how mission 7afd85b2 could complete its tasks, read nothing, and be impossible to
+    /// tell apart from one that had. An audit that asserts without inspecting is now detectable,
+    /// and an inspection still cannot promote anything.
+    /// </summary>
+    public const string Inspection = "inspection";
+
+    /// <summary>
     /// Which kinds are reproducible. Stated here so <c>Evidence.Deterministic</c> can be CHECKED
     /// against the kind rather than trusted from the caller — a "test_run" that claims to be
     /// non-deterministic, or a "model_review" that claims it is, is a mistake worth catching.
@@ -166,6 +189,18 @@ public static class ArtifactSchemas
     public const string OperatorSummary = "operator_summary";
     public const string ReleaseNotes = "release_notes";
     public const string MemoryCandidate = "memory_candidate";
+
+    /// <summary>
+    /// What the operator asked for, and what the mission did about each of it. v0.3.8.98.
+    ///
+    /// Added because the SHAPE EXISTS and had no way to reach an operator: the specification gives
+    /// each request an id at intake, the evaluator decides per id whether anything produced it, and
+    /// before this the only trace of that decision was a sentence in a refusal. A ledger row says
+    /// which task owned `d2`, whether the plan declared that or the runtime inferred it, and
+    /// whether the task finished — which is the difference between "the answer looks thin" and
+    /// "the step that owned your second question failed".
+    /// </summary>
+    public const string DeliverableLedger = "deliverable_ledger";
 
     /// <summary>
     /// v3.8.20 — added when the ant bridge was built, because the medic already emits
@@ -227,7 +262,7 @@ public static class ArtifactSchemas
     public static readonly IReadOnlySet<string> All =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            RepositoryMap, FileSet, UiMap, ChangePlan, PatchSet, TestReport,
+            RepositoryMap, FileSet, UiMap, ChangePlan, PatchSet, TestReport, DeliverableLedger,
             SecurityReview, FailureDiagnosis, VerificationBundle, OperatorSummary,
             ReleaseNotes, MemoryCandidate, RepairRecommendation, SourceSet, WorkspaceSnapshot,
             FailureContext, DocsPatchSet, ResearchBrief,
