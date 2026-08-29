@@ -317,7 +317,15 @@ public static class AntRegistry
                 // than one that omits it, because resolution BELIEVES it: the audit that must not
                 // be answered from mission history would have been routed here legitimately.
                 W("researcher", "mission_researcher", "MissionResearcher", "Read prior mission and objective memory.", ReadMemory, new[] { "read_mission_history", "read_pheromone_summary" }, noApply)
-                    with { Capabilities = new[] { Missions.WorkerCapabilities.RecallMissionHistory } }),
+                    with { Capabilities = new[] { Missions.WorkerCapabilities.RecallMissionHistory } },
+                // v0.3.8.98 — the worker `inspect_runtime_state` was declared for and nobody served.
+                // It answers a different question from both siblings: the repository researcher says
+                // what is IMPLEMENTED, the mission researcher says what previous missions DID, and
+                // this says what is ENABLED AND REGISTERED RIGHT NOW. An operator asking "is the
+                // colony healthy?" means the third, and until this release the audit answered it
+                // from source code.
+                W("researcher", "runtime_researcher", "RuntimeResearcher", "Read the colony's current runtime state: roster, capabilities, registered tools, policy.", ReadMemory, new[] { "colony_state", "read_mission_history" }, noApply)
+                    with { Capabilities = new[] { Missions.WorkerCapabilities.InspectRuntimeState } }),
             R("file", "FileAnt", "Workspace", "Finds and reads relevant workspace files, read-only by default.", true, ReadWorkspace, new[] { "list_workspace_files", "read_workspace_file" }, noApply,
                 // Both declare the same capability, and that is not a mistake to be tidied away:
                 // locating a file and reading one are both inspecting the repository, so an

@@ -51,14 +51,19 @@ public static class ToolEvidence
     /// WHY IT IS NEEDED. An assessment mission's authority is `observe`: it runs no checks, so the
     /// deterministic lane is empty by design and the store stayed empty however much the colony
     /// read. That made "this audit inspected nothing and asserted its findings" indistinguishable
-    /// from "this audit read the repository", which is mission 7afd85b2's exact shape. These four
-    /// tools are the colony's whole read surface, they are dispatched through this chokepoint, and
-    /// the record costs one row per call.
+    /// from "this audit read the repository", which is mission 7afd85b2's exact shape. These are the
+    /// colony's whole read surface — four that read the REPOSITORY and one that reads the COLONY
+    /// ITSELF — they are dispatched through this chokepoint, and the record costs one row per call.
     /// </summary>
     private static readonly IReadOnlySet<string> ObservationTools =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "list_directory", "read_text_file", "search_workspace", "repository_index",
+            // v0.3.8.98: the colony reading its OWN state is an inspection by the same definition —
+            // read-only, unbound to any tree, and the only receipt an audit of "what is enabled
+            // right now" can leave. `system_info` stays out: reporting the OS and the process is
+            // not evidence that anything about the colony was examined.
+            "colony_state",
         };
 
     /// <summary>True when this tool's outcome is a reproducible VERDICT — the promotion lane.</summary>

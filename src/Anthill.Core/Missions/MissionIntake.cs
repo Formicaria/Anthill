@@ -81,16 +81,21 @@ public static class MissionIntake
     /// the selection back in the specification and make the resolver ceremonial.
     /// </summary>
     /// <remarks>
-    /// <see cref="WorkerCapabilities.InspectRuntimeState"/> is deliberately ABSENT at v0.3.8.98. No
-    /// worker serves it: the mission researcher reads history, not live state, and claiming
-    /// otherwise is how an audit gets answered from what previous missions did. Requiring a
-    /// capability nothing can serve would be a declaration reaching nobody — this repository's
-    /// recurring defect — so the id stays defined for the release that builds the worker, and the
-    /// requirement lands with it.
+    /// ORDERED, and the order is the tie-break `AntRegistry.ResolveByCapability` applies: the first
+    /// capability a role can serve decides its worker. `inspect_repository` leads because a plan's
+    /// unqualified research step is about what is implemented; the runtime half is reached by a task
+    /// that names <see cref="WorkerCapabilities.InspectRuntimeState"/> as its own requirement, which
+    /// is what `Planner.EnsureClassCoverage` gives the step it inserts for exactly that purpose.
+    ///
+    /// `inspect_runtime_state` was held OUT of this list at first, while nothing served it —
+    /// requiring a capability no worker declares would be a declaration reaching nobody, this
+    /// repository's recurring defect. `researcher.runtime_researcher` and the `colony_state` tool
+    /// landed together, so the requirement lands with them.
     /// </remarks>
     public static readonly IReadOnlyList<string> SystemAuditCapabilities = new[]
     {
         WorkerCapabilities.InspectRepository,
+        WorkerCapabilities.InspectRuntimeState,
         WorkerCapabilities.CompileResult,
         WorkerCapabilities.VerifyResultCompleteness,
     };

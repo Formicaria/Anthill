@@ -209,20 +209,26 @@ public class ArtifactBridgeTests : IDisposable
     }
 
     /// <summary>
-    /// THE MOVED HALF, stated as narrowly as it is true. The four read-only REPOSITORY tools record
-    /// that an inspection happened; everything else still records nothing, because the store is not
-    /// an audit log — the event stream is — and a tool that reads no repository state is not
-    /// evidence that the repository was examined.
+    /// THE MOVED HALF, stated as narrowly as it is true. The read-only INSPECTION tools record that
+    /// an inspection happened — four that read the repository, and `colony_state`, which reads what
+    /// the colony currently is. Everything else still records nothing, because the store is not an
+    /// audit log — the event stream is.
+    ///
+    /// `system_info` is the boundary case and stays OUT: reporting the OS, the framework and the
+    /// working directory is not evidence that anything about the colony or its repository was
+    /// examined, and admitting it would let a mission that inspected nothing produce an inspection
+    /// row for free — which is the exact hole this lane was opened to close.
     /// </summary>
     [Theory]
     [InlineData("list_directory", true)]
     [InlineData("read_text_file", true)]
     [InlineData("search_workspace", true)]
     [InlineData("repository_index", true)]
+    [InlineData("colony_state", true)]
     [InlineData("web_search", false)]
     [InlineData("shell_command", false)]
     [InlineData("system_info", false)]
-    public void OnlyRepositoryObservations_AreRecordedAsInspections(string toolName, bool recorded)
+    public void OnlyReadOnlyInspections_AreRecorded(string toolName, bool recorded)
     {
         var registry = new ToolRegistry(_memory);
         registry.Register(new FakeTool(toolName, ok: true));

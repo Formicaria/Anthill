@@ -294,7 +294,11 @@ public static class AntExecutionCatalog
             // one. That reasoning was right and the fix was to do BOTH, not to keep withholding: a
             // researcher that can list a directory but cannot search it is answering "what is in
             // this codebase" by reading folder names.
-            AllowedTools: S("system_info", "list_directory", "search_workspace", "repository_index"),
+            // v0.3.8.98: colony_state joins, and the HANDLER dispatches it in the same release —
+            // the rule v3.8.30 stated when search was added, applied again. It is granted to the
+            // ROLE and used by one WORKER: the runtime researcher, which is what `inspect_runtime_state`
+            // means, while the repository researcher never asks for it.
+            AllowedTools: S("system_info", "list_directory", "search_workspace", "repository_index", "colony_state"),
             ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
             ProducedArtifactTypes: S("text"),
             AllowedHandoffRoles: S("web", "file", "ui_cartographer", "coder", "builder"),

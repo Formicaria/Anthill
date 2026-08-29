@@ -86,12 +86,12 @@ public class WorkerResolutionTests
     [Fact]
     public void CompatibleCandidates_NarrowsWhenItCan_AndNeverEmptiesTheRole()
     {
-        // Only the repository researcher. The mission researcher reads history and declares
-        // `recall_mission_history` alone — an audit requires none of what it can do, so a trail
-        // cannot reach it here however strong its record. That narrowing IS the rule: reputation
-        // ranks compatible choices and never creates compatibility.
+        // The two researchers an audit can use, and NOT the third. The mission researcher reads
+        // history and declares `recall_mission_history` alone — an audit requires none of what it
+        // can do, so a trail cannot reach it here however strong its record. That narrowing IS the
+        // rule: reputation ranks compatible choices and never creates compatibility.
         var researchers = WorkerResolution.CompatibleCandidates("researcher", AuditCapabilities);
-        Assert.Equal(new[] { "researcher.repo_researcher" },
+        Assert.Equal(new[] { "researcher.repo_researcher", "researcher.runtime_researcher" },
             researchers.Select(w => w.WorkerId).ToArray());
 
         // The coder role declares none of an audit's capabilities. The field stays whole.
@@ -175,6 +175,50 @@ public class WorkerResolutionTests
         };
         Assert.Null(WorkerResolution.RepairIncompatible(unrelated, AuditCapabilities));
         Assert.Equal("coder.ui_coder", unrelated.AssignedWorker);
+    }
+
+    /// <summary>
+    /// A TASK'S OWN CAPABILITY OUTRANKS THE MISSION'S LIST, and it has to.
+    ///
+    /// An audit declares `inspect_repository` first, so every researcher task resolves to the
+    /// repository researcher — including the runtime-inspection step the class inserts, which would
+    /// then be served by a worker that cannot read live state at all, silently, while the capability
+    /// it was created for went unused. A step that names its own requirement asks the narrower and
+    /// more accurate question.
+    /// </summary>
+    [Fact]
+    public void ATasksOwnCapability_DecidesBeforeTheMissionsList()
+    {
+        var spec = MissionIntake.Resolve(
+            "Assess what this colony can do today and whether its missions reach the right workers.");
+
+        var repository = new Anthill.Core.Domain.Task { AssignedAnt = "researcher", TaskType = "research" };
+        WorkerResolution.Assign(repository, spec.OriginalRequest, spec);
+        Assert.Equal("researcher.repo_researcher", repository.AssignedWorker);
+
+        var runtime = new Anthill.Core.Domain.Task
+        {
+            AssignedAnt = "researcher", TaskType = "research",
+            RequiredCapability = WorkerCapabilities.InspectRuntimeState,
+        };
+        WorkerResolution.Assign(runtime, spec.OriginalRequest, spec);
+        Assert.Equal("researcher.runtime_researcher", runtime.AssignedWorker);
+        Assert.Equal(WorkerDecisionBasis.Specification, runtime.WorkerBasis);
+    }
+
+    /// <summary>
+    /// AND THE CAPABILITY HAS A SERVER. A requirement no worker declares is a declaration reaching
+    /// nobody — the defect this release keeps finding — so every capability the audit class demands
+    /// must resolve to a worker that says it can do it.
+    /// </summary>
+    [Fact]
+    public void EveryCapabilityAnAuditRequires_HasAWorkerThatDeclaresIt()
+    {
+        foreach (var capability in MissionIntake.SystemAuditCapabilities)
+            Assert.True(
+                AntRegistry.ByWorker.Values.Any(w => w.Enabled && w.Capabilities.Contains(capability, StringComparer.OrdinalIgnoreCase)),
+                $"the audit class requires '{capability}' and no enabled worker declares it — "
+              + "a requirement nothing can serve is a declaration reaching nobody.");
     }
 
     // ---- the wiring ----------------------------------------------------------------------------

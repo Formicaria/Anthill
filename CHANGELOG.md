@@ -161,6 +161,29 @@ its own rather than trusting one it was handed — a grade has to be reproducibl
 record. The operator's copy is written as a `deliverable_ledger` artifact at assembly, before the
 grade, so the record exists whatever the outcome and especially when the mission is refused for it.
 
+**An audit can finally answer "what is true now", not only "what is implemented".** Those are
+different questions against different sources, and until this the colony had a worker for the first
+and none for the second — so "is the colony healthy?" was answered from source code. The
+`colony_state` tool reports what the colony IS: which roles and workers are executable and what each
+declares, which tools this run registered, the verification policy in force, and what has already
+run. It is distinct from `system_info`, which answers about the machine, and it is registered in the
+CORE rather than a module — a colony that cannot say what it is has no honest answer to the
+question. `researcher.runtime_researcher` declares `inspect_runtime_state` and dispatches it, and
+the audit class now guarantees a step that requires that capability, so the runtime half of an audit
+is structural rather than something a planner might think of.
+
+The step names the CAPABILITY, not the worker. A mission declares several capabilities and
+resolution takes the first the role can serve, so with the mission's list alone every researcher
+task resolves the same way and the runtime step would have been served, silently, by a worker that
+cannot read live state. A task the runtime inserted because a class requires a capability is the one
+place that requirement is known per task — and saying so leaves the registry deciding who serves it,
+so a better runtime worker later is reached without editing the step that needs it.
+
+`inspect_runtime_state` was held out of the audit's required set while nothing served it, and joins
+it now that something does. A requirement no worker can satisfy is the declaration-reaching-nobody
+defect wearing a specification's clothes, and a test now asserts every capability the class demands
+resolves to a worker that declares it.
+
 ## v0.3.8.97 - execution/promotion closure, and the last two switches reach the surface
 
 Two bodies of work from the same qualification day, shipped as one release: the remaining

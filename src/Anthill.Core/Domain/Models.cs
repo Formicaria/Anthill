@@ -119,6 +119,23 @@ public sealed class Task
     public List<string> DeliverableIds { get; set; } = new();
 
     /// <summary>
+    /// v0.3.8.98: the ONE capability this task exists to exercise, when the runtime created it for
+    /// that reason. Null for everything a model planned, which is almost everything.
+    ///
+    /// It outranks the mission's capability list during worker resolution, and it has to. The
+    /// mission declares several — an audit needs to read the repository AND the live state — and
+    /// resolution picks the first the role can serve, so every researcher task would resolve to the
+    /// repository researcher and the runtime one would never run. A task the runtime inserted
+    /// BECAUSE the class requires a capability is the one place that capability is known per task
+    /// rather than per mission, and saying so is cheaper and truer than naming the worker directly:
+    /// the registry still decides who serves it, and a later worker that serves it better is
+    /// reached without editing the step that needs it.
+    ///
+    /// Transient, like <see cref="WorkerBasis"/> and <see cref="DeliverableIds"/>.
+    /// </summary>
+    public string? RequiredCapability { get; set; }
+
+    /// <summary>
     /// v3.8.22: a DETERMINISTIC check said no. Null means nothing blocked; a non-null value is the
     /// reason, recorded for the operator.
     ///
@@ -178,6 +195,7 @@ public sealed class Task
         // readers ever see, and a basis that reads Unset there would look like an unresolved task.
         WorkerBasis = WorkerBasis,
         DeliverableIds = new List<string>(DeliverableIds),
+        RequiredCapability = RequiredCapability,
         // v0.3.8.57. The ant receives a DeepCopy, and ArtifactContext reads the inputs off the
         // copy -- omitting this line would leave the field set on the original and empty on the
         // only object the worker ever sees, which is a silent fall back to mission-wide context.

@@ -366,6 +366,11 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // the tree into a prompt. Cached per workspace — a tool that rebuilt on every call would
         // walk the repository once per question, which is the cost the index exists to avoid.
         registry.Register(new RepositoryIndexTool(IndexFor));
+        // v0.3.8.98 — the colony's own state, for the audit class's runtime half. Registered in the
+        // CORE rather than a module: a colony that cannot say what it is has no honest answer to
+        // "what is enabled right now", and unlike file reads that is not an optional capability.
+        // The tool list is read through a lambda because module tools arrive after this call.
+        registry.Register(new ColonyStateTool(Memory, () => registry.Names.ToList()));
 
         // v3.8.16 — list_directory, read_text_file, write_text_file, web_search, shell_command and
         // apply_patch are NOT constructed here any more. They live in Anthill.Modules.Tools, and the

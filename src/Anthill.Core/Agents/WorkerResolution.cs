@@ -50,11 +50,26 @@ public static class WorkerResolution
         var (worker, basis) = Resolve(
             task.AssignedAnt ?? "", task.TaskType ?? "",
             $"{goal} {task.Title} {task.Description}",
-            specification?.RequiredCapabilities);
+            CapabilitiesFor(task, specification));
 
         task.AssignedWorker = worker?.WorkerId;
         task.WorkerBasis = basis;
     }
+
+    /// <summary>
+    /// What this TASK must be able to do: its own declared capability when the runtime gave it one,
+    /// otherwise the mission's list.
+    ///
+    /// The precedence is not a preference. A mission declares several capabilities and resolution
+    /// takes the first the role can serve, so with the mission's list alone every researcher task
+    /// resolves the same way — and the runtime-inspection step the audit class inserts would be
+    /// served by the repository researcher, silently, while the capability it was created for went
+    /// unused. A task that names its own requirement is the narrower and more accurate question.
+    /// </summary>
+    public static IReadOnlyList<string>? CapabilitiesFor(Domain.Task task, MissionSpecification? specification) =>
+        string.IsNullOrWhiteSpace(task.RequiredCapability)
+            ? specification?.RequiredCapabilities
+            : new[] { task.RequiredCapability! };
 
     /// <summary>The decision itself, free of the task object, so tests and previews can ask it.</summary>
     public static (AntWorkerDefinition? Worker, WorkerDecisionBasis Basis) Resolve(

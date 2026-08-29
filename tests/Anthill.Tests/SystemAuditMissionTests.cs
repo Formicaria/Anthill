@@ -267,6 +267,12 @@ public class SystemAuditMissionTests : IDisposable
         Assert.DoesNotContain(tasks, t =>
             t.GetValueOrDefault("assigned_worker")?.ToString() == "researcher.mission_researcher");
 
+        // v0.3.8.98 — AND THE RUNTIME HALF RAN. "What is implemented" and "what is enabled right
+        // now" are different questions against different sources, and an audit that answers only
+        // the first has read the source code and called it the state of the colony.
+        Assert.True(tasks.Any(t => t.GetValueOrDefault("assigned_worker")?.ToString() == "researcher.runtime_researcher"),
+            $"the audit never inspected the live colony state. Workers that ran: {Workers()}");
+
         // Result completeness is the RESULT verifier's question. The safety verifier answers a
         // different one and must not stand in for it.
         Assert.True(tasks.Any(t => t.GetValueOrDefault("assigned_worker")?.ToString() == "verifier.result_verifier"),

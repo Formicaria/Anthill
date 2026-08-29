@@ -348,6 +348,26 @@ Required JSON:
                             + $"are the evidence the assessment must rest on: {goal}",
                 AssignedAnt = "file",
                 TaskType = "file_inspection",
+                RequiredCapability = Anthill.Core.Missions.WorkerCapabilities.InspectRepository,
+            });
+
+        // THE RUNTIME HALF. "What is implemented" and "what is enabled right now" are different
+        // questions against different sources, and an audit that answers only the first reads the
+        // source code and calls it the state of the colony. The task names the CAPABILITY rather
+        // than a worker: the registry still decides who serves it, so a better runtime worker later
+        // is reached without editing this step.
+        if (!tasks.Any(t => string.Equals(t.RequiredCapability, Anthill.Core.Missions.WorkerCapabilities.InspectRuntimeState,
+                                          StringComparison.OrdinalIgnoreCase)))
+            tasks.Insert(0, new Task
+            {
+                Title = "Inspect the live colony state (read-only)",
+                Description = "Report the colony's current runtime state — which roles and workers "
+                            + "are executable and what they declare, which tools this run registered, "
+                            + "the verification policy in force, and what has already run. Read only; "
+                            + $"change nothing: {goal}",
+                AssignedAnt = "researcher",
+                TaskType = "research",
+                RequiredCapability = Anthill.Core.Missions.WorkerCapabilities.InspectRuntimeState,
             });
 
         if (!tasks.Any(t => string.Equals(t.AssignedAnt, "builder", StringComparison.OrdinalIgnoreCase)))

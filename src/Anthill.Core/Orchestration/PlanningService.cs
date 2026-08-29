@@ -125,7 +125,7 @@ public sealed class PlanningService : IPlanningService
             // this repository has shipped before; the event makes the plan and the run reconcilable.
             if (task.WorkerBasis == Domain.WorkerDecisionBasis.Unset
                 && Agents.WorkerResolution.RepairIncompatible(
-                       task, context.Specification.RequiredCapabilities) is { } replaced)
+                       task, Agents.WorkerResolution.CapabilitiesFor(task, context.Specification)) is { } replaced)
             {
                 try
                 {
@@ -169,7 +169,7 @@ public sealed class PlanningService : IPlanningService
                 && !string.IsNullOrWhiteSpace(task.AssignedWorker))
             {
                 var candidates = Agents.WorkerResolution.CompatibleCandidates(
-                    task.AssignedAnt, context.Specification.RequiredCapabilities);
+                    task.AssignedAnt, Agents.WorkerResolution.CapabilitiesFor(task, context.Specification));
                 var preferred = Pheromones.TrailGuidedSelection.Prefer(
                     candidates, key => _memory.GetPheromoneTrail(key));
                 if (preferred is not null && preferred.WorkerId != task.AssignedWorker)
