@@ -41,6 +41,9 @@ public class FullRosterQualificationTests
             "read_changed_files_summary", "repository_index",
             "list_directory", "read_text_file", "write_text_file",
             "web_search", "shell_command", "apply_patch",
+            // v0.3.8.98 — the researcher's contract declares it, and a fixture that omitted it
+            // would fail the qualification for a tool the colony genuinely registers.
+            "colony_state",
         };
 
     /// <summary>
