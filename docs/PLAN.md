@@ -1,19 +1,62 @@
 # ANTHILL — THE PLAN
 
-**The single forward document.** What is done, what is left, and the order to do it in.
-`AUTONOMY-10.md` folded into this file; role mechanics live in
-[`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol lives in
-[`QUALIFICATION.md`](QUALIFICATION.md).
+**The single forward document, and the ONLY one.** What is done, what is left, and the order to do
+it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
+[`ANT_EXECUTION.md`](ANT_EXECUTION.md); the qualification protocol and its measured evidence live in
+[`QUALIFICATION.md`](QUALIFICATION.md); the permanent architectural contract lives in
+[`ADR-008`](adr/ADR-008-universal-mission-lifecycle.md).
 
-Shipping release: **v0.3.8.97**.
+**Document authority** — one responsibility each, so no two documents answer the same question:
+
+| Document | Answers | Never |
+|---|---|---|
+| `README.md` | what Anthill does today, for a user | roadmap, or status beyond the capability table |
+| `docs/PLAN.md` | the forward roadmap, release gates, measured status | historical release narrative |
+| `docs/HANDOFF.md` | current session/operational handoff | the roadmap (points here) |
+| `docs/QUALIFICATION.md` | measured qualification evidence and open gaps | forward plans |
+| `CHANGELOG.md` | what each tagged release said and shipped — immutable | current state |
+| `docs/adr/` | durable architectural decisions | release status |
+| `docs/archive/**` | historical snapshots | anything presented as current |
+
+Shipping release: **v0.3.8.98**.
+
+**v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
+released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
+that sentence was true when written and is not edited, because a tagged entry records what a
+release said and shipped. What happened after: the pack was blocked on operator switches having no
+UI control, and the operator authorized the tag on `.97`'s own evidence. The unfinished pack items
+did **not** lapse — they are `.98` exit-gate items (§2c). One `.97` residual is carried openly and
+is not a `.98` gate: the Windows materialized-revision `dotnet_test` failure, which is a coding-lane
+defect and must not pull `.98` back into a coding release. It blocks `.98` only if it breaks `.98`'s
+suite or the audit path.
 
 ---
 
 ## 1. Where the colony measurably is
 
-**Structurally complete, deterministically qualified across its declared scenarios, never run
-against a real model under protocol, and carrying contract drift that makes a live run
-unattributable.** That last clause is what reorders everything below.
+**The CODING lane is deeply built and substantially qualified. The universal workflow is not, and
+begins at v0.3.8.98.** Both halves of that sentence are load-bearing, and the second half is new
+language: until v0.3.8.97 this document opened with "structurally complete", which was true of the
+structures and false of the workflow. Measured at v0.3.8.97, only the coding mission class has a
+complete execution and verification lifecycle — `ObjectiveVerification` recognises exactly one
+deliverable kind (`FileChange`), worker specialization is chosen by substring match, and the
+assembled answer is never compared to what the operator asked.
+
+**What v0.3.8.98 changes, and how far.** ONE non-code class — `system_audit` — now has a complete
+lifecycle: classified at intake into declared dimensions, routed by declared worker capability
+rather than by substring, inspecting the repository AND the live colony state with `inspection`
+evidence to show for it, and graded against a deliverable ledger that refuses an audit which
+inspected nothing, a verifier that read nothing, or a requested deliverable nothing produced. That
+is DETERMINISTICALLY qualified and NOT live-qualified: no audit has run against a real provider. And
+it is one class of the seven — research, documents, data, troubleshooting, system and external
+missions are untouched, and every one of them still resolves `not_applicable` at the deliverable
+layer exactly as before. See
+[`ADR-008`](adr/ADR-008-universal-mission-lifecycle.md) §1 for the evidence and §2 for the contract
+the `.98`–`.107` sequence exists to satisfy.
+
+The colony has been demonstrated live end-to-end as a **coding** colony (mission `3bbbde32`,
+`completed_verified`). It has not been demonstrated as a general-purpose one, and this document
+will not describe it as one until §2b's exit gates are met.
 
 Done and load-bearing:
 
@@ -40,7 +83,7 @@ Done and load-bearing:
 | Acceptance gates | **12 of 12** *(v0.3.8.80)*. Gates 1 and 2 closed with R3's cancellation matrix, which is what made the roster's declarations true enough to grade |
 | Cancellation cells | **48 of 48 decided; 33 driven live, 0 cited, 15 not-applicable** *(v0.3.8.88 — R3's exit gate MET)*. Two cells moved from not-applicable to DRIVEN by looking at the role's own trigger instead of the planner's: the archivist's at v0.3.8.85 (nothing had ever stopped it at finalization) and the medic's at v0.3.8.88 (from the tester→medic handoff). The 15 that remain are points the runtime cannot produce, each with the reason recorded |
 | Graduation record | **Complete** *(v0.3.8.81)*. The cancellation column and the `ui_cartographer` fault cell were the last nulls |
-| Live qualification | **Never run under protocol.** One live mission happened at v0.3.8.73 and produced three real defects; that is not the recorded multi-provider run item R4 requires |
+| Live qualification | **PARTIAL — coding lane only.** Real Claude Code acting missions have run and passed (`3bbbde32`, `completed_verified`, 41.6s, plus six failing runs whose findings shipped in .95/.96). None captured the §3 telemetry table, ran with objective verification enabled, or exported a `LiveQualificationRecord`; no non-code class has been run live at all. `QUALIFICATION.md` §3 is the authority and says PARTIAL, not NEVER RUN |
 | Model-calling roles | **5 roles and 8 routes, all declared, both directions asserted** *(v0.3.8.76)*. Was "7 declared, 5 of which cannot call a model" — and separately, 3 routes that do call one were declared nowhere |
 | Structured output | **Asked for on the wire by `coder`, `planner`, `strategist`** *(v0.3.8.76)*. The field existed, was plumbed and was gated since v3.4.0; no producer had ever set it |
 
@@ -49,6 +92,170 @@ been able to write before. Scenario 5's note used to admit "the composed UI-patc
 [proved]" while the entry was not labelled partial, so the guard built for exactly that could not see
 it; scenario 17 was labelled honestly and stayed labelled for eleven releases. Both closed on
 substance rather than on wording — 5 at v0.3.8.78, 17 at v0.3.8.79.
+
+---
+
+### Capability status — what is true per capability, not per component
+
+Statuses are exact and mean only what they say. **Implemented** = the code exists and is on the
+production path. **Default on** = enabled without operator action. **Det. qualified** = proved
+through the real composition by the deterministic suite. **Live** = proved with a real provider
+through the real application. **Ext.** = requires an external adapter, connection or authority.
+"Supported" is not a status here, because it has been used to mean all five.
+
+| Capability | Implemented | Default on | Det. qualified | Live | Notes |
+|---|---|---|---|---|---|
+| Coding: worktree execution | yes | no (`acting_coder_enabled`) | yes | **yes** | the qualified lane |
+| Coding: patch promotion and apply | yes | gates off by default | yes | yes | target identity, atomic sets (.97) |
+| Repository inspection | yes | yes | **yes** | no | audit missions resolve `repo_researcher` + file inspection by declared capability and leave `inspection` evidence (.98); live run pending |
+| Runtime/state inspection (read-only) | yes | yes | **yes** | no | `colony_state` + `researcher.runtime_researcher` (.98); live run pending |
+| Web research | yes | no | partial | no | `.99` |
+| Artifact/document creation | partial | yes | no | no | `.100` |
+| Data analysis | no | — | no | no | `.100` |
+| Troubleshooting / diagnosis | no | — | no | no | `.101` |
+| Local system actions | partial | no | partial | no | `.102` |
+| Homelab/infrastructure actions | yes | no | yes | no | Ext. — existing homelab workers, not on the mission spine |
+| External actions (approval-gated) | no | — | no | no | Ext. — `.103` |
+| Dynamic repair (Medic) | partial | yes | partial | no | bounded repair exists; not evidence-driven — `.104` |
+| Multi-mission continuity | no | — | no | no | `.105` |
+| Pheromone / skill learning | yes | yes | yes | no | positive learning restricted to `completed_verified` |
+| Objective verification (non-code) | **partial** | `objective_verification_enabled` | **yes** | no | `.98` added `AssessmentObjective` + the deliverable ledger for the `system_audit` class; every other non-code class still resolves `not_applicable` |
+
+No row may claim a status stronger than `QUALIFICATION.md` records. That is checked, not trusted:
+see `DocumentationConsistencyTests`.
+
+---
+
+## 2b. The universal-workflow program — v0.3.8.98 → v0.3.8.107
+
+**This is the current forward sequence.** It supersedes the earlier framing in which R4–R10 were
+the next thing to run; those items are not deleted, and each release below names the R-items it
+advances. The program's permanent contract is [`ADR-008`](adr/ADR-008-universal-mission-lifecycle.md);
+this section owns only *when* and *what proves it*.
+
+The organizing decision, taken after external review: **vertical slices, not horizontal layers.**
+An earlier draft of this program spent its first five releases building a specification, a
+capability registry, a plan compiler, a typed envelope set and an adapter boundary before anything
+an operator could observe changed — which is the exact failure mode this repository has shipped
+before. Each release below instead makes one mission class work end to end on the shared spine, and
+introduces only the universal structure that class actually requires.
+
+**v0.3.8.97 is not release 1 of this program.** It was an urgent prerequisite: it made the coding
+promotion path correct (project identity through the whole transaction, set-atomic apply, faithful
+capture) and made two operator switches reachable. It strengthened the lane that was already the
+strongest. The program starts at `.98`.
+
+| Release | Operator-visible capability | Exit gate |
+|---|---|---|
+| **.98** | Repository + read-only runtime **system audits** end to end | §2c below |
+| **.99** | Sourced web research and internal-memory research, with claim→source mapping | a research mission whose every claim maps to a retrieved source with retrieval time; unsourced claims demoted, not dropped |
+| **.100** | Documents, file transformation and structured data artifacts | a created artifact exists, satisfies stated requirements, and its inputs are identified; a data analysis records input identity and transformation |
+| **.101** | Troubleshooting and diagnostic execution | a symptom reaches a diagnosis supported by command receipts and exit statuses; the audit/diagnosis boundary holds in both directions |
+| **.102** | Local system and homelab/infrastructure actions | a reversible operation with before-state, receipt and after-state; existing homelab workers reached through the mission spine, not beside it |
+| **.103** | Approval-gated external actions, universal authority adapters | a proposed external action pauses at approval with target resolution recorded; denied authority cannot be replaced by prose |
+| **.104** | Dynamic replanning, clarification, bounded Medic repair | wrong worker rerouted before harmful execution; missing operator decision pauses rather than guesses; repeated identical failure stops truthfully |
+| **.105** | Answer coverage, objective outcomes, multi-mission continuity | a second mission consumes the first's verified artifact by id; an omitted requested section fails coverage |
+| **.106** | Verified route learning; the existing qualification matrix extended | a learned route improves a compatible later mission without overriding compatibility, authority or evidence |
+| **.107** | Live multi-class qualification, hardening, documentation reconciliation | the live pack across classes, recorded from the store; every capability-table row reconciled to measured status |
+
+Rules binding every release in this program:
+
+- Extend the **existing** consumption ledger, artifact store, evidence store, qualification matrix
+  and outcome vocabulary. No parallel ledger, no second matrix, no duplicate schema.
+- Each release adds at least one composed **positive** and one composed **negative** acceptance
+  scenario through the real composition root.
+- A release is not complete while its exit gate is unproved, and unfinished work is not converted
+  into a "documented limitation" to close it.
+- Any new operator switch must reach the editable settings surface, persist, and appear in the
+  settings snapshot **in the same release** — the `.97` lesson: `objective_verification_enabled`
+  became API-editable with no control rendering it, so an operator following the changelog looked
+  for a switch that did not exist.
+
+### 2c. v0.3.8.98 — the repository and runtime system-audit slice
+
+**Delivers:** an operator asking what the colony can do, what is good and bad about its workflow,
+and whether the right roles ran, receives an answer that inspected the repository and the runtime,
+cites what supports each conclusion, and is rejected if it omits a requested section.
+
+**Covers** read-only assessment of both static implementation and current persisted/runtime state:
+what is implemented; what is enabled; which workers are available; which workers actually ran; what
+evidence exists; whether current state is healthy on read-only health, configuration, mission,
+route and evidence records.
+
+**Does not cover** diagnosis of a symptom, root-cause work, invasive probes, or repair. A fault
+found during an audit is reported as an evidenced finding and a proposed follow-up — never silently
+escalated into diagnosis (`.101`) or modification.
+
+**Classification** for the acceptance prompts, resolved by meaning and never by exact string:
+
+```text
+mission_class: system_audit
+targets:       repository + runtime
+intent:        assess
+freshness:     current
+authority:     observe
+```
+
+**Reuses:** `MissionContext` (ADR-002) as the carrier, the artifact and consumption ledgers
+(ADR-004), the evidence store, `AntRegistry` worker contracts, the existing `QualificationMatrixTests`
+ledger, `ResultAssembler`, `MissionEvaluator`, `MissionReport`.
+
+**Connects:** `ConversationRunner → Queen.RunMission → MissionContext → PlanningService →
+ExecutionService → ResultAssembler → MissionEvaluator → MissionReport`.
+
+**Exit gate** — the composed acceptance mission (`SystemAuditMissionTests`), written before the
+implementation and failing until it landed. **MET deterministically**, over FIVE semantically
+equivalent phrasings rather than four: the fifth was added when the original four turned out to pass
+the worker assertions by luck — none of them contains the word "missions", so the repository
+researcher was the keyword FALLBACK rather than a decision, and the assertions proved nothing about
+resolution until one phrasing said it.
+
+Proved, each by an assertion that fails without it:
+
+- the plan executed is the plan the fixture wrote, with no generic fallback (`SystemAuditNegativeTests`);
+- `researcher.repo_researcher`, `researcher.runtime_researcher` and `verifier.result_verifier` ran;
+  `mission_researcher` and `safety_verifier` did not;
+- repository AND runtime inspection ran and left `inspection` evidence;
+- outputs became typed artifacts whose consumption was recorded;
+- the verifier consumed what it graded;
+- the builder assembled every requested section, and the final answer addresses every question;
+- the canonical evaluation is positive, and `AssessmentObjective` is what makes that mean something.
+
+Negative scenarios prove: the old `mission_researcher + safety_verifier` graph is repaired and the
+repair is announced; a plan missing the class's required steps has them supplied; a refusing verifier
+keeps the mission out of a verified outcome; an audit with no inspection evidence, a verifier that
+consumed nothing, and an unserved deliverable are each refused by name.
+
+**Two gate items were deliberately NOT implemented as written, and the difference is recorded rather
+than quietly dropped:**
+
+- *"a missing builder fails preflight"* — it does not fail; `EnsureClassCoverage` SUPPLIES the
+  missing step. Refusing a plan for lacking a step the runtime knows the class requires punishes the
+  operator for the planner's omission, and the same guarantee (an audit always compiles and verifies)
+  is reached by construction. The negative test asserts the supply, not a refusal.
+- *"a missing requested section fails answer coverage"* — coverage is STRUCTURAL, not textual. The
+  obvious implementation asks whether the answer contains a question's words, and an answer reading
+  "Strengths: … Weaknesses: …" addresses "what is good and bad about it" completely while containing
+  neither. The deliverable ledger asks instead whether a task that OWNS each deliverable completed,
+  which is checkable without a model's opinion. It catches a question dropped by a failed step; it
+  does not claim to catch a question answered shallowly.
+
+**Still open, and the release does not claim them:**
+
+- `blocked_missing_capability` for unavailable repository access — no such outcome code exists yet;
+  today an audit that cannot inspect is refused by the assessment objective rather than blocked by
+  name at intake;
+- "removing any production call site breaks the composed scenario" — held for the two sites where it
+  was affordable as a source-shape guard (the planner's worker fill, the trail rule's basis read),
+  not as a general mutation property;
+- **the live pack carried from `.97`:** objective verification enabled in a live run, an exported
+  `LiveQualificationRecord`, and a live system-audit mission through the composed application. These
+  need a real provider and are the operator's step; `QUALIFICATION.md` §3 remains the authority and
+  still says PARTIAL.
+
+**Explicitly still unsupported after .98:** research, document/data, troubleshooting, system and
+external mission classes; multi-mission continuity; capability-first resolution for classes other
+than audit.
 
 ---
 

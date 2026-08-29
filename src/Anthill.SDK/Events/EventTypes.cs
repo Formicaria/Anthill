@@ -143,6 +143,14 @@ public static class EventTypes
     /// tie-break for a task whose text did not decide the worker — the pheromone layer's first
     /// deterministic decision, evented so the steering is auditable rather than silent.</summary>
     public const string WorkerSelectedByTrail = "worker_selected_by_trail";
+    /// <summary>
+    /// v0.3.8.98: the plan NAMED a worker whose contract serves none of the capabilities the
+    /// mission declared, and a compatible one took the task. Evented for the same reason the trail
+    /// selection is — a dispatch that silently differs from the plan an operator previewed is a
+    /// divergence nobody can reconcile afterwards. Metadata carries both workers and the required
+    /// capability set, so the repair can be judged rather than merely noticed.
+    /// </summary>
+    public const string WorkerRepairedByCapability = "worker_repaired_by_capability";
     public const string SkillCandidateRegistered = "skill_candidate_registered";
     public const string SkillOutcomeRecorded = "skill_outcome_recorded";
     public const string LearningReset = "learning_reset";
