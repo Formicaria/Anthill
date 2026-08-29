@@ -30,6 +30,13 @@ namespace Anthill.Core.Tools;
 /// SECRET-FREE BY CONSTRUCTION. It reports names, counts, flags and ids — never configuration
 /// values that could carry a credential, and never a mission's content. `RuntimeProfile.Snapshot`
 /// is already the operator-visible projection and is used as-is rather than re-derived here.
+///
+/// AND THE PROFILE IT REPORTS IS THE LIVE ONE, captured at the moment of the call rather than taken
+/// from the mission's context. That is not a breach of ADR-001, which requires the MISSION PATH to
+/// read the snapshot it captured at intake: "what is enabled right now" and "what was this mission
+/// resolved under" are different questions, and an audit answering the first with the second would
+/// be describing the past. The payload names it `live_runtime_profile` so no reader can confuse
+/// them, and where the two differ that difference is itself worth reporting.
 /// </summary>
 public sealed class ColonyStateTool : ITool
 {
@@ -77,9 +84,15 @@ public sealed class ColonyStateTool : ITool
                 ["colony_version"] = AnthillRuntime.Version,
                 ["roster"] = roster,
                 ["registered_tools"] = Safely(() => _registeredTools().OrderBy(n => n, StringComparer.Ordinal).ToList()),
-                // The one projection an operator already reads elsewhere, reused rather than
-                // re-derived: two accounts of the same configuration eventually disagree.
-                ["runtime_profile"] = Safely(() => RuntimeProfile.Resolve().Snapshot()),
+                // The LIVE profile, captured here rather than taken from the mission's context —
+                // and the key says so. ADR-001 requires the MISSION path to read the snapshot it
+                // captured at intake, and that rule is not being bent: this tool answers "what is
+                // enabled right now", which is a different question from "what was this mission
+                // resolved under", and an audit that reported the mission's own snapshot as the
+                // colony's current state would be describing the past. Where the two differ, that
+                // difference is itself a finding.
+                ["live_runtime_profile"] = Safely(() =>
+                    RuntimeProfile.Resolve(RuntimeOptions.Capture(), _registeredTools()).Snapshot()),
                 ["events"] = Safely(() => _memory.SummarizeEvents()),
                 ["tasks"] = Safely(() => _memory.SummarizeTaskMetrics()),
                 ["recent_missions"] = Safely(() => _memory.GetRecentMissions(10)
