@@ -3,7 +3,6 @@ using Anthill.Core.Missions;
 using Anthill.Core.Outcomes;
 using Anthill.SDK.Artifacts;
 using Xunit;
-using Task = Anthill.Core.Domain.Task;
 
 namespace Anthill.Tests;
 
