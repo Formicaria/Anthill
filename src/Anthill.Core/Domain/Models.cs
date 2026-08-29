@@ -4,6 +4,25 @@ using Anthill.Core.Configuration;
 namespace Anthill.Core.Domain;
 
 /// <summary>
+/// What decided a task's worker, ordered by strength of evidence. v0.3.8.98.
+///
+/// <see cref="Specification"/> and <see cref="Keyword"/> are COMPATIBILITY decisions and are
+/// final. <see cref="Default"/> is declaration order — a tie-break taken when nothing said
+/// anything — and is the only basis a pheromone trail is permitted to replace.
+/// </summary>
+public enum WorkerDecisionBasis
+{
+    /// <summary>Nothing resolved this task yet, or it arrived with a worker the plan named.</summary>
+    Unset,
+    /// <summary>The mission's declared capability requirement matched exactly one worker's contract.</summary>
+    Specification,
+    /// <summary>The task text named the specialization the registry maps to a worker.</summary>
+    Keyword,
+    /// <summary>Declaration order. A guess, and labelled one.</summary>
+    Default,
+}
+
+/// <summary>
 /// A Task is a single tunnel segment in the mission path. The Queen assigns it to one
 /// specialised ant; memory records the result. The scheduler mutates these in place,
 /// so this is a mutable class (not a record) — faithful to the Pydantic model it replaces.
@@ -73,6 +92,50 @@ public sealed class Task
     public bool GenerationDegraded { get; set; }
 
     /// <summary>
+    /// v0.3.8.98: WHAT DECIDED THIS TASK'S WORKER — a declared capability, a keyword, or
+    /// declaration order. Transient and in-memory: it is a property of the planning decision, not
+    /// of the task, and a restored mission re-plans rather than re-reads it.
+    ///
+    /// It exists because "the trail may replace a tie-break, never a compatibility decision" needs
+    /// a reader that can TELL them apart. Before this, the only layer that knew was the one that
+    /// assigned the worker, and every later layer re-derived the answer from the text — which is
+    /// how a capability-first resolver came to sit downstream of an unconditional keyword fill and
+    /// never run. See <see cref="Anthill.Core.Agents.WorkerResolution"/>.
+    /// </summary>
+    public WorkerDecisionBasis WorkerBasis { get; set; } = WorkerDecisionBasis.Unset;
+
+    /// <summary>
+    /// v0.3.8.98: the specification deliverables this task CLAIMS to serve — `d1`, `d2` — as the
+    /// plan declared them, validated at parse time against ids the specification actually holds.
+    ///
+    /// Empty is the ordinary case and means "nothing claimed": the ledger then credits the
+    /// compiling task with every deliverable and labels the claim `inferred`, which is honest and
+    /// weaker. The distinction is the point — a plan that attributed each question to a step can be
+    /// held to that attribution, and one that did not should not be graded as though it had.
+    ///
+    /// Transient, like <see cref="WorkerBasis"/>: it is a property of the plan, and a restored
+    /// mission re-plans rather than re-reading it.
+    /// </summary>
+    public List<string> DeliverableIds { get; set; } = new();
+
+    /// <summary>
+    /// v0.3.8.98: the ONE capability this task exists to exercise, when the runtime created it for
+    /// that reason. Null for everything a model planned, which is almost everything.
+    ///
+    /// It outranks the mission's capability list during worker resolution, and it has to. The
+    /// mission declares several — an audit needs to read the repository AND the live state — and
+    /// resolution picks the first the role can serve, so every researcher task would resolve to the
+    /// repository researcher and the runtime one would never run. A task the runtime inserted
+    /// BECAUSE the class requires a capability is the one place that capability is known per task
+    /// rather than per mission, and saying so is cheaper and truer than naming the worker directly:
+    /// the registry still decides who serves it, and a later worker that serves it better is
+    /// reached without editing the step that needs it.
+    ///
+    /// Transient, like <see cref="WorkerBasis"/> and <see cref="DeliverableIds"/>.
+    /// </summary>
+    public string? RequiredCapability { get; set; }
+
+    /// <summary>
     /// v3.8.22: a DETERMINISTIC check said no. Null means nothing blocked; a non-null value is the
     /// reason, recorded for the operator.
     ///
@@ -128,6 +191,11 @@ public sealed class Task
         AttemptCount = AttemptCount, MaxAttempts = MaxAttempts, FailureReason = FailureReason, FailureType = FailureType,
         SkippedReason = SkippedReason, BlockedReason = BlockedReason,
         ProducedRevisionId = ProducedRevisionId, RanRevisionId = RanRevisionId,
+        // Carried for the same reason InputArtifactIds is: the copy is the only object some
+        // readers ever see, and a basis that reads Unset there would look like an unresolved task.
+        WorkerBasis = WorkerBasis,
+        DeliverableIds = new List<string>(DeliverableIds),
+        RequiredCapability = RequiredCapability,
         // v0.3.8.57. The ant receives a DeepCopy, and ArtifactContext reads the inputs off the
         // copy -- omitting this line would leave the field set on the original and empty on the
         // only object the worker ever sees, which is a silent fall back to mission-wide context.

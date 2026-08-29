@@ -206,9 +206,19 @@ survives now, head and tail, with the omission counted. The failure itself is st
 choice: the next failing run will be the first one that can be READ, and diagnosing from data
 beats guessing from theory.
 
-The full pack — with objective verification enabled and the exported record as its evidence — is
-the gate the v0.3.8.97 tag waits on. When it runs, its dated section lands here, compiled from
-the store rather than from notes.
+**The v0.3.8.97 tag did not wait for this pack, and that is recorded rather than smoothed over.**
+The .97 release brief gated the tag on it; the pack was then blocked on operator switches with no
+UI control; the operator cut the tag on .97's own evidence and moved the pack forward. The .97
+CHANGELOG entry still reads "the tag waits for the live qualification pack" — it is a tagged
+entry and is not rewritten. This paragraph is where the two are reconciled.
+
+The pack's items are now **v0.3.8.98 exit-gate items**: objective verification enabled for a real
+mission, an exported `LiveQualificationRecord`, and a live system-audit mission through the real
+conversation path. They belong there rather than in a standalone errand, because .98's whole
+subject — judging a mission against its requested deliverables — cannot be demonstrated with
+objective verification switched off.
+
+When the pack runs, its dated section lands below, compiled from the store rather than from notes.
 
 _No full live qualification pack has been recorded._
 

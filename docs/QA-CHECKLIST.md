@@ -7,7 +7,9 @@
 
 > **Two kinds of qualification.** This checklist is the MANUAL pass. The automated merge-blocking
 > suite and the live-model run are separate, and `docs/QUALIFICATION.md` owns the distinction —
-> including the fact that **live qualification has never been run against any provider**.
+> including the measured live status, which is **PARTIAL**: real acting-coder missions have run and
+> passed, no full recorded pack exists for any provider, and no non-code mission class has been run
+> live at all. That document is the authority; this line is a pointer to it, not a second claim.
 
 ## 0. Tester & environment
 

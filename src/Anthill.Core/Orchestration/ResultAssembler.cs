@@ -56,6 +56,47 @@ public sealed class ResultAssembler : IResultAssembler
         // v2.16.0: FinalResult is what the operator reads. UserResult (raw best task) and
         // DebugResult (full trace) are untouched, so the detail behind the answer is always there.
         mission.FinalResult = ComposeFinalAnswer(mission, context);
+        RecordDeliverableLedger(mission, context);
+    }
+
+    /// <summary>
+    /// THE LEDGER AS A DURABLE RECORD. v0.3.8.98.
+    ///
+    /// The evaluator BUILDS its own ledger from the specification and the terminal tasks — it must,
+    /// because a grade has to be reproducible from the persisted record rather than from whatever a
+    /// caller handed it. This is the operator's copy of the same answer: which requested deliverable
+    /// was owned by which task, whether the claim was declared by the plan or inferred, and whether
+    /// anything finished. Without it, a refusal naming `d2` sends an operator to read prose looking
+    /// for a question that was never answered.
+    ///
+    /// Written at ASSEMBLY, which now runs before the grade, so the record exists whatever the
+    /// outcome — including, and especially, when the mission is about to be refused for it.
+    ///
+    /// Never throws. A ledger is a diagnostic, and a diagnostic that can fail the mission it
+    /// describes is worse than none — the same rule the artifact and consumption writes already
+    /// follow.
+    /// </summary>
+    private void RecordDeliverableLedger(Mission mission, MissionContext context)
+    {
+        try
+        {
+            var ledger = Missions.DeliverableLedger.Build(context.Specification, mission.Tasks);
+            if (ledger.Count == 0) return;
+
+            ((Anthill.SDK.Artifacts.IArtifactStore)_memory).Put(Anthill.SDK.Artifacts.Artifact.Create(
+                schema: Anthill.SDK.Artifacts.ArtifactSchemas.DeliverableLedger,
+                // The QUEEN owns it: no ant decides what the operator asked for, and attributing it
+                // to one would suggest a worker could be argued with about the answer.
+                producerRole: "queen",
+                missionId: mission.Id,
+                payload: Json.Dumps(Missions.DeliverableLedger.Snapshot(ledger), indented: true),
+                visibility: Anthill.SDK.Artifacts.ArtifactVisibility.Colony));
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine(
+                $"[results] could not record the deliverable ledger for {mission.Id}: {error.Message}");
+        }
     }
 
     // ---- selection -------------------------------------------------------------------------------

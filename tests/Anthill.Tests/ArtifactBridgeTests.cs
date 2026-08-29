@@ -178,24 +178,74 @@ public class ArtifactBridgeTests : IDisposable
     }
 
     /// <summary>
-    /// Everything else produces NOTHING. A web search is not reproducible, a shell command runs
-    /// whatever it was handed, and a file read reports state rather than testing a claim. Recording
-    /// those as evidence would put "the ant looked at something" in the same table as "the suite
-    /// passed", which is precisely what the deterministic flag exists to keep apart.
+    /// THE PERMANENT HALF, and it is the one that matters: nothing but a declared check produces
+    /// DETERMINISTIC evidence. A web search is not reproducible, a shell command runs whatever it
+    /// was handed, and a file read reports state rather than testing a claim — so none of them may
+    /// ever make `HasDeterministicPass` true, which is what "the ant looked at something" being in
+    /// the same table as "the suite passed" would actually cost.
+    ///
+    /// v0.3.8.98 SPLIT THIS GUARD rather than weakened it. It used to assert the store was EMPTY,
+    /// which conflated two claims: "this is not a verdict" (permanent, asserted here) and "this is
+    /// not worth recording at all" (which was true only while every mission ran checks). An
+    /// assessment mission's authority is `observe` — it runs no checks by design — so under the old
+    /// reading "inspected nothing and asserted its findings" and "read the repository" produced an
+    /// identical empty store. The verdict rule is untouched; the recording rule moved, and the case
+    /// below states exactly how far.
     /// </summary>
     [Theory]
     [InlineData("web_search")]
     [InlineData("shell_command")]
     [InlineData("read_text_file")]
     [InlineData("system_info")]
-    public void NonReproducibleTools_ProduceNoEvidence(string toolName)
+    public void NonReproducibleTools_ProduceNoDeterministicEvidence(string toolName)
     {
         var registry = new ToolRegistry(_memory);
         registry.Register(new FakeTool(toolName, ok: true));
 
         registry.RunTool(toolName, "m1", "t1");
 
-        Assert.Empty(((IEvidenceStore)_memory).ForMission("m1"));
+        Assert.DoesNotContain(((IEvidenceStore)_memory).ForMission("m1"), e => e.Deterministic);
+        Assert.False(((IEvidenceStore)_memory).HasDeterministicPass("m1"));
+    }
+
+    /// <summary>
+    /// THE MOVED HALF, stated as narrowly as it is true. The read-only INSPECTION tools record that
+    /// an inspection happened — four that read the repository, and `colony_state`, which reads what
+    /// the colony currently is. Everything else still records nothing, because the store is not an
+    /// audit log — the event stream is.
+    ///
+    /// `system_info` is the boundary case and stays OUT: reporting the OS, the framework and the
+    /// working directory is not evidence that anything about the colony or its repository was
+    /// examined, and admitting it would let a mission that inspected nothing produce an inspection
+    /// row for free — which is the exact hole this lane was opened to close.
+    /// </summary>
+    [Theory]
+    [InlineData("list_directory", true)]
+    [InlineData("read_text_file", true)]
+    [InlineData("search_workspace", true)]
+    [InlineData("repository_index", true)]
+    [InlineData("colony_state", true)]
+    [InlineData("web_search", false)]
+    [InlineData("shell_command", false)]
+    [InlineData("system_info", false)]
+    public void OnlyReadOnlyInspections_AreRecorded(string toolName, bool recorded)
+    {
+        var registry = new ToolRegistry(_memory);
+        registry.Register(new FakeTool(toolName, ok: true));
+
+        registry.RunTool(toolName, "m1", "t1");
+
+        var evidence = ((IEvidenceStore)_memory).ForMission("m1");
+        if (!recorded)
+        {
+            Assert.Empty(evidence);
+            return;
+        }
+
+        var one = Assert.Single(evidence);
+        Assert.Equal(EvidenceKinds.Inspection, one.Kind);
+        Assert.False(one.Deterministic);
+        Assert.False(((IEvidenceStore)_memory).HasDeterministicPass("m1"));
     }
 
     /// <summary>A tool call outside a mission records nothing — there is nothing to attach it to.</summary>

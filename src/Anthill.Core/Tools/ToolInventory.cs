@@ -52,6 +52,10 @@ public static class ToolInventory
         "read_changed_files_summary",
         // v3.6.0: structural repository questions, answered from the index without reading files.
         "repository_index",
+        // v0.3.8.98: the colony's own state — roster, declared capabilities, registered tools,
+        // verification policy, and what has already run. Distinct from `system_info`, which
+        // answers about the machine.
+        "colony_state",
     };
 
     /// <summary>

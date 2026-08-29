@@ -17,7 +17,10 @@ public class AntRegistryTests
     public void Registry_HasExpectedVisibleColonyShape()
     {
         Assert.Equal(25, AntRegistry.Roles.Count); // Queen + Director + 15 main hubs + 8 homelab ants (v1.9.0)
-        Assert.Equal(31, AntRegistry.Roles.SelectMany(r => r.Workers).Count());
+        // 32 at v0.3.8.98: `researcher.runtime_researcher` joined, declaring `inspect_runtime_state`
+        // — the capability an audit needs to answer "what is enabled right now" rather than reading
+        // the source and calling that the state of the colony.
+        Assert.Equal(32, AntRegistry.Roles.SelectMany(r => r.Workers).Count());
         Assert.Empty(AntRegistry.ValidateRegistry());
         Assert.Contains(AntRegistry.Roles, r => r.RoleId == "queen");
         Assert.Contains(AntRegistry.Roles, r => r.RoleId == "director");

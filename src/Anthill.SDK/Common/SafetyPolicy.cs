@@ -186,6 +186,11 @@ public static class SafetyPolicy
                 "search_workspace",
                 "read_changed_files_summary",
                 "repository_index",
+                // v0.3.8.98 — the colony's own state. Mirrored here for the same reason as every
+                // name above: an operator-defined tool must not be able to take a built-in's name
+                // in a process that never loaded the core, and this table is what answers when the
+                // core's own inventory is unreachable.
+                "colony_state",
             };
 
         public IReadOnlySet<string> ForbiddenToolNames { get; } =

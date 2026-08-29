@@ -102,8 +102,17 @@ public sealed class Planner
     /// same constraint object the admission gate and the evaluator use, not from its own parse of
     /// the goal. v1.8.16 introduced the rule; the planner re-derived it until now.
     /// </param>
+    /// <summary>
+    /// v0.3.8.98 — <paramref name="specification"/> is the mission's authoritative account of what
+    /// it needs (see <see cref="Anthill.Core.Missions.MissionSpecification"/>), and it travels here
+    /// for the same reason <paramref name="constraints"/> already does: worker assignment happens
+    /// inside this method, so a resolver that cannot see the specification cannot use it. It is
+    /// optional because the offline/tooling callers have no mission; null means "requires nothing",
+    /// which resolves exactly as this planner did before the parameter existed.
+    /// </summary>
     public List<Task> CreateTasks(string goal, MissionConstraints constraints, string memoryContext = "",
-        string toolContext = "", string pheromoneContext = "", string skillContext = "")
+        string toolContext = "", string pheromoneContext = "", string skillContext = "",
+        Anthill.Core.Missions.MissionSpecification? specification = null)
     {
 
         // v2.22.0 (made concurrency-safe in v2.26.0): capture exactly which skills THIS plan was
@@ -116,9 +125,23 @@ public sealed class Planner
         // followed by a synthesis pass. This runs regardless of model availability. (Spec-ingestion
         // plans are already research/synthesis/verify only — no coder tasks — so they honour the
         // no-patch constraint by construction.)
-        if (IsLongInput(goal)) return AssignDefaultWorkers(CreateSpecIngestionTasks(goal), goal, constraints);
+        if (IsLongInput(goal)) return AssignDefaultWorkers(EnsureClassCoverage(CreateSpecIngestionTasks(goal), goal, specification), goal, constraints, specification);
 
-        if (!_useOllama || _router is null) return AssignDefaultWorkers(EnforceConstraints(FallbackTasks(goal), goal, constraints), goal, constraints);
+        if (!_useOllama || _router is null) return AssignDefaultWorkers(EnsureClassCoverage(EnforceConstraints(FallbackTasks(goal), goal, constraints), goal, specification), goal, constraints, specification);
+
+        // v0.3.8.98 — THE REQUESTED DELIVERABLES, BY ID, so a task can say which one it serves.
+        //
+        // Offered rather than demanded: a claim is validated against these ids and an absent one
+        // degrades to the ledger's `inferred` credit, so a model that ignores this block plans
+        // exactly as it did before. What it buys when the model DOES answer is attribution — a
+        // mission that asked three questions and lost one to a failed task can be refused for the
+        // question, instead of passing because the other two finished.
+        var deliverables = specification?.Deliverables ?? Array.Empty<Anthill.Core.Missions.MissionDeliverable>();
+        var deliverableDirective = deliverables.Count == 0 ? "" :
+            "- The operator asked for these deliverables. Set `deliverables` on a task to the ids it\n"
+          + "  produces, using ONLY the ids listed here. Every id should be served by some task:\n"
+          + string.Join("\n", deliverables.Select(d =>
+                $"    {d.Id}: {TextUtil.Truncate(d.Request, 160, "...")}")) + "\n";
 
         var constraintDirective = constraints.BlocksPatches
             ? "\nHARD CONSTRAINT (operator requested verification / read-only / no file changes):\n" +
@@ -176,7 +199,7 @@ Do not wrap JSON in markdown code fences.
 - skill_id is optional. Set it ONLY to the exact id of a proven procedure listed above that this
   task follows. It records which procedure was used so its track record can be updated; it grants
   no extra permission. Never invent an id.
-
+{deliverableDirective}
 Required JSON:
 {{
   ""tasks"": [
@@ -212,7 +235,8 @@ Required JSON:
         try
         {
             var parsed = Json.ExtractJsonObject(response);
-            var plan = TasksFromJson(parsed, goal, offeredSkillIds);
+            var plan = TasksFromJson(parsed, goal, offeredSkillIds,
+                specification?.Deliverables.Select(d => d.Id).ToHashSet(StringComparer.OrdinalIgnoreCase));
             if (!plan.Accepted)
             {
                 // Every reason, not a count. "Planner dropped 3 invalid task(s)" told an operator
@@ -225,12 +249,12 @@ Required JSON:
             var tasks = plan.Tasks.ToList();
             // Belt-and-suspenders: even with the prompt directive, a small model may still emit a
             // coder patch task on a verification-only mission. Strip them deterministically.
-            return AssignDefaultWorkers(EnforceConstraints(tasks, goal, constraints), goal, constraints);
+            return AssignDefaultWorkers(EnsureClassCoverage(EnforceConstraints(tasks, goal, constraints), goal, specification), goal, constraints, specification);
         }
         catch (Exception error)
         {
             Console.Error.WriteLine($"Dynamic planner parse failed: {error.Message}");
-            return AssignDefaultWorkers(EnforceConstraints(FallbackTasks(goal), goal, constraints), goal, constraints);
+            return AssignDefaultWorkers(EnsureClassCoverage(EnforceConstraints(FallbackTasks(goal), goal, constraints), goal, specification), goal, constraints, specification);
         }
     }
 
@@ -292,7 +316,84 @@ Required JSON:
         return kept;
     }
 
-    private static List<Task> AssignDefaultWorkers(List<Task> tasks, string goal, MissionConstraints constraints)
+    /// <summary>
+    /// THE COVERAGE A MISSION CLASS REQUIRES, guaranteed deterministically. v0.3.8.98.
+    ///
+    /// A system audit that plans no inspection step produces an assessment of what the model
+    /// already believed — which is mission `7afd85b2`'s shape exactly: tasks completed, nothing
+    /// read, findings asserted. The planner is a model and may omit the step; whether the mission
+    /// class REQUIRES it is not a modelling question, so it is answered here.
+    ///
+    /// Same rule and same place as <see cref="EnforceConstraints"/>'s guaranteed verifier: only
+    /// what is MISSING is added, an audit is the only class this acts on at v0.3.8.98, and every
+    /// inserted task passes the ordinary authorization and permission gates below like any other.
+    /// Workers are left unassigned on purpose — which worker serves an inspection is the
+    /// specification's question, answered by <see cref="Agents.WorkerResolution"/> a few lines down.
+    /// </summary>
+    internal static List<Task> EnsureClassCoverage(List<Task> tasks, string goal,
+        Anthill.Core.Missions.MissionSpecification? specification)
+    {
+        if (specification?.MissionClass != Anthill.Core.Missions.MissionSpecification.SystemAuditClass)
+            return tasks;
+
+        // READ-ONLY, stated in the description because that text reaches the worker. The file ant
+        // holds no write permission at all, so this is a description of the work rather than a
+        // restraint on it — but a task that reads as ambiguous invites a plan repair that is not.
+        if (!tasks.Any(t => string.Equals(t.AssignedAnt, "file", StringComparison.OrdinalIgnoreCase)))
+            tasks.Insert(0, new Task
+            {
+                Title = "Inspect the workspace (read-only)",
+                Description = "List and read the repository files relevant to this assessment. "
+                            + "Do not modify anything — this is an observation, and its findings "
+                            + $"are the evidence the assessment must rest on: {goal}",
+                AssignedAnt = "file",
+                TaskType = "file_inspection",
+                RequiredCapability = Anthill.Core.Missions.WorkerCapabilities.InspectRepository,
+            });
+
+        // THE RUNTIME HALF. "What is implemented" and "what is enabled right now" are different
+        // questions against different sources, and an audit that answers only the first reads the
+        // source code and calls it the state of the colony. The task names the CAPABILITY rather
+        // than a worker: the registry still decides who serves it, so a better runtime worker later
+        // is reached without editing this step.
+        if (!tasks.Any(t => string.Equals(t.RequiredCapability, Anthill.Core.Missions.WorkerCapabilities.InspectRuntimeState,
+                                          StringComparison.OrdinalIgnoreCase)))
+            tasks.Insert(0, new Task
+            {
+                Title = "Inspect the live colony state (read-only)",
+                Description = "Report the colony's current runtime state — which roles and workers "
+                            + "are executable and what they declare, which tools this run registered, "
+                            + "the verification policy in force, and what has already run. Read only; "
+                            + $"change nothing: {goal}",
+                AssignedAnt = "researcher",
+                TaskType = "research",
+                RequiredCapability = Anthill.Core.Missions.WorkerCapabilities.InspectRuntimeState,
+            });
+
+        if (!tasks.Any(t => string.Equals(t.AssignedAnt, "builder", StringComparison.OrdinalIgnoreCase)))
+            tasks.Add(new Task
+            {
+                Title = "Compile the assessment",
+                Description = $"Assemble the findings into the assessment the operator asked for: {goal}",
+                AssignedAnt = "builder",
+                TaskType = "synthesis",
+            });
+
+        if (!tasks.Any(t => string.Equals(t.AssignedAnt, "verifier", StringComparison.OrdinalIgnoreCase)))
+            tasks.Add(new Task
+            {
+                Title = "Verify the assessment",
+                Description = "Check that the assessment answers every question the operator asked "
+                            + $"and is supported by what was actually inspected: {goal}",
+                AssignedAnt = "verifier",
+                TaskType = "verification",
+            });
+
+        return tasks;
+    }
+
+    private static List<Task> AssignDefaultWorkers(List<Task> tasks, string goal, MissionConstraints constraints,
+        Anthill.Core.Missions.MissionSpecification? specification = null)
     {
         var valid = new List<Task>();
         foreach (var task in tasks)
@@ -301,8 +402,13 @@ Required JSON:
             task.TaskType = string.IsNullOrWhiteSpace(task.TaskType)
                 ? TextUtil.InferTaskType(task.AssignedAnt, task.Title, task.Description)
                 : task.TaskType.Trim().ToLowerInvariant();
+            // v0.3.8.98 — THIS is where a blank worker is filled, and therefore where the mission's
+            // declared capabilities have to be consulted. The capability branch used to live in
+            // `PlanningService`, downstream of this line, where it could never fire: this call had
+            // already made the worker non-blank on every planner path. One resolver, at the first
+            // place the question is asked, recording what decided it.
             if (string.IsNullOrWhiteSpace(task.AssignedWorker))
-                task.AssignedWorker = AntRegistry.DefaultWorkerFor(task.AssignedAnt, task.TaskType, $"{goal} {task.Title} {task.Description}")?.WorkerId;
+                WorkerResolution.Assign(task, goal, specification);
             var result = AntRegistry.ValidateTask(task, constraints);
             if (!result.Allowed)
             {
@@ -414,6 +520,10 @@ Required JSON:
                   "assigned_worker": { "type": "string" },
                   "task_type": { "type": "string" },
                   "skill_id": { "type": "string" },
+                  "deliverables": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
                   "depends_on": {
                     "type": "array",
                     "items": { "type": ["string", "integer"] }
@@ -425,8 +535,10 @@ Required JSON:
         }
         """;
 
-    internal PlanParse TasksFromJson(JsonObject parsed, string goal, IReadOnlySet<string> offeredSkillIds)
+    internal PlanParse TasksFromJson(JsonObject parsed, string goal, IReadOnlySet<string> offeredSkillIds,
+        IReadOnlySet<string>? offeredDeliverableIds = null)
     {
+        offeredDeliverableIds ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var rejections = new List<PlanRejection>();
         if (parsed["tasks"] is not JsonArray rawTasks)
             return PlanParse.Reject(new PlanRejection(-1, "tasks", "the plan has no `tasks` array"));
@@ -477,7 +589,18 @@ Required JSON:
             // the outcome credited to it, or to a skill it was never shown.
             var claimedSkill = (obj["skill_id"]?.GetValue<string>() ?? "").Trim();
             var skillId = offeredSkillIds.Contains(claimedSkill) ? claimedSkill : null;
-            tasks.Add(new Task { Title = title, Description = description, AssignedAnt = assignedAnt, AssignedWorker = assignedWorker.Length == 0 ? null : assignedWorker, TaskType = taskType, DependsOn = dependsOn, SkillId = skillId });
+            // v0.3.8.98 — WHICH REQUESTED DELIVERABLE THIS TASK SERVES, accepted only when it names
+            // an id the specification actually holds. Same rule as `skill_id` above and for the same
+            // reason: a model must not be able to invent an identifier and have the ledger credit
+            // work to it. An unknown id is DROPPED rather than rejecting the plan — a mis-typed
+            // claim degrades this task to the inferred credit every unclaiming task already gets,
+            // which is a weaker record and not a broken mission.
+            var claimedDeliverables = (obj["deliverables"] as JsonArray)?
+                .Select(n => (n?.ToString() ?? "").Trim())
+                .Where(id => id.Length > 0 && offeredDeliverableIds.Contains(id))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? new List<string>();
+            tasks.Add(new Task { Title = title, Description = description, AssignedAnt = assignedAnt, AssignedWorker = assignedWorker.Length == 0 ? null : assignedWorker, TaskType = taskType, DependsOn = dependsOn, SkillId = skillId, DeliverableIds = claimedDeliverables });
         }
 
         // LLMs often emit non-ID dependency references: integer indices ([0],[1]) or task titles.

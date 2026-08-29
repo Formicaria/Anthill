@@ -92,9 +92,18 @@ public static class MissionEvaluator
     /// <param name="evidence">v0.3.8.66 (§2 item 2): the mission's evidence rows, so the
     /// verification layer can require identity for missions that materialized a patch. Null means
     /// the store could not be read; for a revision-bearing mission that fails closed.</param>
+    /// <param name="specification">v0.3.8.98: what the operator ASKED FOR, resolved once at intake.
+    /// The deliverable layer below could grade a file change and nothing else, so an assessment
+    /// mission — which changes nothing by construction — collapsed onto a verifier model saying the
+    /// right words. Null keeps the pre-v0.3.8.98 behaviour exactly.</param>
+    /// <param name="consumptions">v0.3.8.98: the artifact consumption ledger, so "the verifier
+    /// consumed nothing" is answerable from a record instead of assumed. Null fails the assessment
+    /// objective closed, for the same reason a null evidence list does.</param>
     public static MissionEvaluation Evaluate(Mission mission, string? stopReason, int patchProposalCount,
         MissionConstraints constraints, bool objectiveVerificationEnabled,
-        IReadOnlyList<Anthill.SDK.Artifacts.Evidence>? evidence = null)
+        IReadOnlyList<Anthill.SDK.Artifacts.Evidence>? evidence = null,
+        Missions.MissionSpecification? specification = null,
+        IReadOnlyList<Anthill.SDK.Artifacts.ArtifactConsumption>? consumptions = null)
     {
         var structural = mission.Status.Value();
 
@@ -107,9 +116,28 @@ public static class MissionEvaluator
             : MissionEvaluation.Verification.Failed;
 
         // Deliverable layer — "a patch proposal is a deliverable, not proof the patch is safe".
+        //
+        // v0.3.8.98 — AND AN ASSESSMENT'S DELIVERABLE IS ITS ANSWER. The branch below could read
+        // exactly one intent, `FileChange`, so every mission that legitimately delivers an answer
+        // rather than an edit resolved to `not_applicable` and was graded on the verifier alone.
+        // That is the whole of what made mission 7afd85b2 gradeable as complete. The assessment
+        // objective is asked FIRST, and only for the class it applies to; nothing else changes.
+        var assessment = AssessmentObjective.Applies(specification)
+            ? AssessmentObjective.Evaluate(specification!, evidence, consumptions, mission.FinalResult,
+                // BUILT HERE, not passed in. The ledger is a pure function of the specification and
+                // the terminal tasks, and the evaluator's whole claim is that a grade is
+                // reproducible from the persisted record — so it derives what it can derive rather
+                // than trusting a caller to have derived it the same way.
+                Missions.DeliverableLedger.Build(specification, mission.Tasks))
+            : null;
+
         string deliverable;
         if (!objectiveVerificationEnabled)
             deliverable = MissionEvaluation.Deliverable.NotChecked;
+        else if (assessment is not null)
+            deliverable = assessment.Satisfied
+                ? MissionEvaluation.Deliverable.Satisfied
+                : MissionEvaluation.Deliverable.NotSatisfied;
         else if (ObjectiveVerification.Required(mission.Goal, constraints)
                  == ObjectiveVerification.Deliverable.Unknown)
             deliverable = MissionEvaluation.Deliverable.NotApplicable;
@@ -146,7 +174,10 @@ public static class MissionEvaluator
             EvaluatorVersion: Version,
             EvaluatedAt: AnthillTime.NowUtc().ToIso(),
             Explanation: Explain(outcome, structural, verification, deliverable, stopReason, generationDegraded)
-                + (deterministicBlock is null ? "" : $" Deterministic block: {deterministicBlock}"));
+                + (deterministicBlock is null ? "" : $" Deterministic block: {deterministicBlock}")
+                // The gate that said no, named. A demotion an operator cannot locate is one they
+                // cannot answer, and "deliverable=not_satisfied" alone names no gate.
+                + (assessment is null || assessment.Satisfied ? "" : $" {assessment.Explanation}"));
     }
 
     private static string Resolve(MissionStatus structuralStatus, string? stopReason,

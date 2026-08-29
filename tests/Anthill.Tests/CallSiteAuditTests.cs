@@ -203,6 +203,7 @@ public class CallSiteAuditTests
             ["search_workspace"] = "SearchWorkspaceTool",
             ["read_changed_files_summary"] = "ChangedFilesSummaryTool",
             ["repository_index"] = "RepositoryIndexTool",
+            ["colony_state"] = "ColonyStateTool",
         };
 
         // A new tool must be added HERE as well as to the inventory. That is deliberate friction:
