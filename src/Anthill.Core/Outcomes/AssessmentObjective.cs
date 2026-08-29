@@ -24,11 +24,16 @@ namespace Anthill.Core.Outcomes;
 ///      wins" failure ADR-004 exists to prevent, arriving at the last gate instead of the first.
 ///   3. IS THERE AN ANSWER AT ALL? An assessment mission whose deliverable is absent is the
 ///      recorded failure in its purest form, and it costs nothing to refuse.
+///   4. WAS EVERY REQUESTED DELIVERABLE PRODUCED BY SOMETHING THAT FINISHED? The deliverable
+///      ledger answers, from the specification's ids and the terminal tasks — so "three questions
+///      asked, one answered" is finally a checkable claim rather than something an operator
+///      notices later.
 ///
-/// DELIBERATELY MODEST, for the same reason <see cref="ObjectiveVerification"/> is. It does NOT yet
-/// check that each requested question was answered — see the note on question 3 in the body for why
-/// the obvious implementation grades vocabulary rather than content, and what has to exist first.
-/// A floor that catches the recorded failure beats a ceiling that pretends to measure quality.
+/// DELIBERATELY MODEST, for the same reason <see cref="ObjectiveVerification"/> is. Question 4 is
+/// STRUCTURAL: it asks whether a task that owns a deliverable ran to completion, never whether the
+/// answer is good, deep, or on topic. Judging that is a semantic call, and a model asserting it is
+/// the evidence v2.19.0 stopped accepting. A floor that catches the recorded failure beats a
+/// ceiling that pretends to measure quality.
 ///
 /// AND DELIBERATELY ADDITIVE. It can only narrow what counts as verified: it applies to one mission
 /// class, and nothing that fails today can newly pass because of it.
@@ -64,10 +69,14 @@ public static class AssessmentObjective
     /// <param name="consumptions">The artifact consumption ledger for this mission, same rule.</param>
     /// <param name="answer">The operator-facing answer, as assembled — the text the operator will
     /// actually read, not an intermediate task result.</param>
+    /// <param name="ledger">What the mission did about each requested deliverable, built from the
+    /// specification and the terminal tasks. Empty means the specification asked for nothing this
+    /// layer can attribute.</param>
     public static Result Evaluate(MissionSpecification specification,
         IReadOnlyList<Evidence>? evidence,
         IReadOnlyList<ArtifactConsumption>? consumptions,
-        string? answer)
+        string? answer,
+        IReadOnlyList<DeliverableEntry>? ledger = null)
     {
         if (!Applies(specification)) return Ok;
 
@@ -92,22 +101,32 @@ public static class AssessmentObjective
             reasons.Add("the verifier consumed no artifact — it graded prose rather than the record");
 
         // 3. There is an answer at all.
-        //
-        // PER-DELIVERABLE COVERAGE IS NOT CHECKED HERE, AND THAT IS DELIBERATE. The obvious
-        // implementation — does the answer contain this deliverable's subject words — grades on
-        // VOCABULARY: an answer that says "Strengths: … Weaknesses: …" addresses "what is good and
-        // bad about it" completely and contains neither word. A gate that demoted that mission
-        // would be measuring spelling, which is the misfire `ObjectiveVerification`'s own doc warns
-        // against, and the wrong kind of strictness makes a real gate untrustworthy faster than a
-        // missing one does. Coverage becomes checkable when a deliverable can be CLAIMED — a task
-        // asserting it serves `d2`, the assembler recording that the section was composed from that
-        // task's output — which is the deliverable ledger, and it lands with the assembler rather
-        // than being faked here from a word search. Until then this layer catches an assessment
-        // that inspected nothing, a verifier that read nothing, and a mission with no answer; it
-        // does not claim to catch a question quietly dropped.
         if (string.IsNullOrWhiteSpace(answer))
             reasons.Add("the mission produced no operator-facing answer");
 
+        // 4. Every requested deliverable was produced by something that finished.
+        //
+        // STRUCTURAL, NOT SEMANTIC, and the distinction is the whole design. The obvious coverage
+        // check — does the answer contain this question's words — grades VOCABULARY: an answer
+        // reading "Strengths: … Weaknesses: …" addresses "what is good and bad about it" completely
+        // and contains neither word, and a gate that demoted it would make every real gate less
+        // trustworthy. So the question asked here is one a record can answer: did a task that owns
+        // this deliverable run to completion.
+        //
+        // Its strength depends on what the PLAN said, and the ledger is explicit about which case
+        // applies. A plan that attributed each question to a step is held to that attribution — one
+        // failed task means one unserved question, whatever the others produced. A plan that
+        // claimed nothing gets the compiling task credited with all of them, which is honest and
+        // weaker, and `DeliverableClaim.Inferred` says so in the record rather than in a comment.
+        foreach (var missing in DeliverableLedger.Unserved(ledger ?? Array.Empty<DeliverableEntry>()))
+            reasons.Add($"nothing produced '{missing.Id}' ({Short(missing.Request)}) — "
+                      + (missing.ServingTaskIds.Count == 0
+                            ? "no task owns it"
+                            : $"its {missing.ServingTaskIds.Count} serving task(s) did not complete"));
+
         return reasons.Count == 0 ? Ok : new Result(false, reasons);
     }
+
+    private static string Short(string request) =>
+        request.Length <= 80 ? request.Trim() : request[..77].Trim() + "...";
 }

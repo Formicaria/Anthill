@@ -129,6 +129,20 @@ public sealed class Planner
 
         if (!_useOllama || _router is null) return AssignDefaultWorkers(EnsureClassCoverage(EnforceConstraints(FallbackTasks(goal), goal, constraints), goal, specification), goal, constraints, specification);
 
+        // v0.3.8.98 — THE REQUESTED DELIVERABLES, BY ID, so a task can say which one it serves.
+        //
+        // Offered rather than demanded: a claim is validated against these ids and an absent one
+        // degrades to the ledger's `inferred` credit, so a model that ignores this block plans
+        // exactly as it did before. What it buys when the model DOES answer is attribution — a
+        // mission that asked three questions and lost one to a failed task can be refused for the
+        // question, instead of passing because the other two finished.
+        var deliverables = specification?.Deliverables ?? Array.Empty<Anthill.Core.Missions.MissionDeliverable>();
+        var deliverableDirective = deliverables.Count == 0 ? "" :
+            "- The operator asked for these deliverables. Set `deliverables` on a task to the ids it\n"
+          + "  produces, using ONLY the ids listed here. Every id should be served by some task:\n"
+          + string.Join("\n", deliverables.Select(d =>
+                $"    {d.Id}: {TextUtil.Truncate(d.Request, 160, "...")}")) + "\n";
+
         var constraintDirective = constraints.BlocksPatches
             ? "\nHARD CONSTRAINT (operator requested verification / read-only / no file changes):\n" +
               "- Do NOT include any coder task or any task_type \"patch_proposal\". Propose NO file changes.\n" +
@@ -185,7 +199,7 @@ Do not wrap JSON in markdown code fences.
 - skill_id is optional. Set it ONLY to the exact id of a proven procedure listed above that this
   task follows. It records which procedure was used so its track record can be updated; it grants
   no extra permission. Never invent an id.
-
+{deliverableDirective}
 Required JSON:
 {{
   ""tasks"": [
@@ -221,7 +235,8 @@ Required JSON:
         try
         {
             var parsed = Json.ExtractJsonObject(response);
-            var plan = TasksFromJson(parsed, goal, offeredSkillIds);
+            var plan = TasksFromJson(parsed, goal, offeredSkillIds,
+                specification?.Deliverables.Select(d => d.Id).ToHashSet(StringComparer.OrdinalIgnoreCase));
             if (!plan.Accepted)
             {
                 // Every reason, not a count. "Planner dropped 3 invalid task(s)" told an operator
@@ -485,6 +500,10 @@ Required JSON:
                   "assigned_worker": { "type": "string" },
                   "task_type": { "type": "string" },
                   "skill_id": { "type": "string" },
+                  "deliverables": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
                   "depends_on": {
                     "type": "array",
                     "items": { "type": ["string", "integer"] }
@@ -496,8 +515,10 @@ Required JSON:
         }
         """;
 
-    internal PlanParse TasksFromJson(JsonObject parsed, string goal, IReadOnlySet<string> offeredSkillIds)
+    internal PlanParse TasksFromJson(JsonObject parsed, string goal, IReadOnlySet<string> offeredSkillIds,
+        IReadOnlySet<string>? offeredDeliverableIds = null)
     {
+        offeredDeliverableIds ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var rejections = new List<PlanRejection>();
         if (parsed["tasks"] is not JsonArray rawTasks)
             return PlanParse.Reject(new PlanRejection(-1, "tasks", "the plan has no `tasks` array"));
@@ -548,7 +569,18 @@ Required JSON:
             // the outcome credited to it, or to a skill it was never shown.
             var claimedSkill = (obj["skill_id"]?.GetValue<string>() ?? "").Trim();
             var skillId = offeredSkillIds.Contains(claimedSkill) ? claimedSkill : null;
-            tasks.Add(new Task { Title = title, Description = description, AssignedAnt = assignedAnt, AssignedWorker = assignedWorker.Length == 0 ? null : assignedWorker, TaskType = taskType, DependsOn = dependsOn, SkillId = skillId });
+            // v0.3.8.98 — WHICH REQUESTED DELIVERABLE THIS TASK SERVES, accepted only when it names
+            // an id the specification actually holds. Same rule as `skill_id` above and for the same
+            // reason: a model must not be able to invent an identifier and have the ledger credit
+            // work to it. An unknown id is DROPPED rather than rejecting the plan — a mis-typed
+            // claim degrades this task to the inferred credit every unclaiming task already gets,
+            // which is a weaker record and not a broken mission.
+            var claimedDeliverables = (obj["deliverables"] as JsonArray)?
+                .Select(n => (n?.ToString() ?? "").Trim())
+                .Where(id => id.Length > 0 && offeredDeliverableIds.Contains(id))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? new List<string>();
+            tasks.Add(new Task { Title = title, Description = description, AssignedAnt = assignedAnt, AssignedWorker = assignedWorker.Length == 0 ? null : assignedWorker, TaskType = taskType, DependsOn = dependsOn, SkillId = skillId, DeliverableIds = claimedDeliverables });
         }
 
         // LLMs often emit non-ID dependency references: integer indices ([0],[1]) or task titles.

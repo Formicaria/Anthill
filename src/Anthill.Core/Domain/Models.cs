@@ -105,6 +105,20 @@ public sealed class Task
     public WorkerDecisionBasis WorkerBasis { get; set; } = WorkerDecisionBasis.Unset;
 
     /// <summary>
+    /// v0.3.8.98: the specification deliverables this task CLAIMS to serve — `d1`, `d2` — as the
+    /// plan declared them, validated at parse time against ids the specification actually holds.
+    ///
+    /// Empty is the ordinary case and means "nothing claimed": the ledger then credits the
+    /// compiling task with every deliverable and labels the claim `inferred`, which is honest and
+    /// weaker. The distinction is the point — a plan that attributed each question to a step can be
+    /// held to that attribution, and one that did not should not be graded as though it had.
+    ///
+    /// Transient, like <see cref="WorkerBasis"/>: it is a property of the plan, and a restored
+    /// mission re-plans rather than re-reading it.
+    /// </summary>
+    public List<string> DeliverableIds { get; set; } = new();
+
+    /// <summary>
     /// v3.8.22: a DETERMINISTIC check said no. Null means nothing blocked; a non-null value is the
     /// reason, recorded for the operator.
     ///
@@ -163,6 +177,7 @@ public sealed class Task
         // Carried for the same reason InputArtifactIds is: the copy is the only object some
         // readers ever see, and a basis that reads Unset there would look like an unresolved task.
         WorkerBasis = WorkerBasis,
+        DeliverableIds = new List<string>(DeliverableIds),
         // v0.3.8.57. The ant receives a DeepCopy, and ArtifactContext reads the inputs off the
         // copy -- omitting this line would leave the field set on the original and empty on the
         // only object the worker ever sees, which is a silent fall back to mission-wide context.

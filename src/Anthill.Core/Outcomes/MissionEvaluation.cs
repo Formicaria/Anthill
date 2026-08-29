@@ -123,7 +123,12 @@ public static class MissionEvaluator
         // That is the whole of what made mission 7afd85b2 gradeable as complete. The assessment
         // objective is asked FIRST, and only for the class it applies to; nothing else changes.
         var assessment = AssessmentObjective.Applies(specification)
-            ? AssessmentObjective.Evaluate(specification!, evidence, consumptions, mission.FinalResult)
+            ? AssessmentObjective.Evaluate(specification!, evidence, consumptions, mission.FinalResult,
+                // BUILT HERE, not passed in. The ledger is a pure function of the specification and
+                // the terminal tasks, and the evaluator's whole claim is that a grade is
+                // reproducible from the persisted record — so it derives what it can derive rather
+                // than trusting a caller to have derived it the same way.
+                Missions.DeliverableLedger.Build(specification, mission.Tasks))
             : null;
 
         string deliverable;

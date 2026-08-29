@@ -191,6 +191,18 @@ public static class ArtifactSchemas
     public const string MemoryCandidate = "memory_candidate";
 
     /// <summary>
+    /// What the operator asked for, and what the mission did about each of it. v0.3.8.98.
+    ///
+    /// Added because the SHAPE EXISTS and had no way to reach an operator: the specification gives
+    /// each request an id at intake, the evaluator decides per id whether anything produced it, and
+    /// before this the only trace of that decision was a sentence in a refusal. A ledger row says
+    /// which task owned `d2`, whether the plan declared that or the runtime inferred it, and
+    /// whether the task finished — which is the difference between "the answer looks thin" and
+    /// "the step that owned your second question failed".
+    /// </summary>
+    public const string DeliverableLedger = "deliverable_ledger";
+
+    /// <summary>
     /// v3.8.20 — added when the ant bridge was built, because the medic already emits
     /// <c>repair_recommendation</c> and five of the other six kinds ants emit mapped exactly onto
     /// the list above. A schema the colony already produces and the vocabulary did not name is a
@@ -250,7 +262,7 @@ public static class ArtifactSchemas
     public static readonly IReadOnlySet<string> All =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            RepositoryMap, FileSet, UiMap, ChangePlan, PatchSet, TestReport,
+            RepositoryMap, FileSet, UiMap, ChangePlan, PatchSet, TestReport, DeliverableLedger,
             SecurityReview, FailureDiagnosis, VerificationBundle, OperatorSummary,
             ReleaseNotes, MemoryCandidate, RepairRecommendation, SourceSet, WorkspaceSnapshot,
             FailureContext, DocsPatchSet, ResearchBrief,

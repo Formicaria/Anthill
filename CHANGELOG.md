@@ -138,6 +138,29 @@ missing the steps the class requires has them supplied; and a verifier that retu
 the mission out of a verified outcome. That last one is what makes the passing acceptance test worth
 anything — a gate nothing can fail is a formality, and this repository has shipped several.
 
+**"Three questions asked, one answered, mission complete" is now a question the runtime can ask.**
+It was never a bug in any component: a mission's deliverables lived as clauses inside the goal
+string, so no layer could state afterwards whether the thing requested had been produced. Intake
+already gave each request an id; the deliverable ledger is the other half. A plan may declare which
+deliverable each task serves — validated against ids the specification actually holds, so a model
+cannot invent one and have work credited to it — and the ledger records, per id, which tasks own it,
+whether the plan declared that or the runtime inferred it, and whether anything finished. The
+evaluation refuses a mission with an unserved deliverable, naming the id and the operator's own
+words for it.
+
+Its strength depends on what the plan said, and the record is explicit about which case applies. A
+plan that attributed each question to a step is held to that attribution — one failed task means one
+unserved question, whatever the others produced. A plan that claimed nothing has the compiling task
+credited with all of them, which is honest and weaker, and reads as `inferred` rather than being
+quietly equated with the strong case. The check stays STRUCTURAL: it asks whether a task that owns a
+deliverable completed, never whether the answer is good — judging that is a semantic call, and a
+model asserting it is the evidence v2.19.0 stopped accepting.
+
+The ledger is a pure function of the specification and the terminal tasks, so the evaluator builds
+its own rather than trusting one it was handed — a grade has to be reproducible from the persisted
+record. The operator's copy is written as a `deliverable_ledger` artifact at assembly, before the
+grade, so the record exists whatever the outcome and especially when the mission is refused for it.
+
 ## v0.3.8.97 - execution/promotion closure, and the last two switches reach the surface
 
 Two bodies of work from the same qualification day, shipped as one release: the remaining

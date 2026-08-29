@@ -118,6 +118,12 @@ public static class ArtifactSchemaCheck
             [ArtifactSchemas.SourceSet] =
                 AsObject("WebResearchAnt", "sources"),
 
+            // v0.3.8.98. `deliverables` is required and the two counters are not: a ledger whose
+            // rows are missing has recorded nothing, while `served`/`requested` are a convenience
+            // for a reader and derivable from the rows themselves.
+            [ArtifactSchemas.DeliverableLedger] =
+                AsObject("ResultAssembler.RecordDeliverableLedger", "deliverables"),
+
             // v0.3.8.64 (S6): `{}` conformed, and a gate that accepts an empty object as a map is
             // an existence check wearing a schema check's name. The old comment worried an honest
             // map of a route-less repository would be invalid — but the cartographer has always
