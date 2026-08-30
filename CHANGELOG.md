@@ -56,6 +56,21 @@ unweakened; the new guidance draws the line explicitly. "File transformation" fr
 is recorded in §2c as a divergence, not silently claimed: what shipped is transformation of data
 INTO a recorded analysis, not transformation OF files.
 
+**THE DEFECT THIS RELEASE FOUND IN ITSELF, recorded because the mechanism repeats.** The first
+gate run produced NO creation record on every positive: the builder parsed the deliverable and
+declared the artifact, and `ArtifactSchemas.ForAntKind` — the bridge every ant artifact crosses to
+become a store row — mapped the new kind to its null arm and dropped it, silently, exactly as its
+own documentation warns unmapped kinds are dropped. The schema had a shape declared and a gate
+reading it, and was never admitted to the VOCABULARY (`ArtifactSchemas.All`) or the bridge — three
+tables that must agree, updated in two places out of three. Both guards built for this fired:
+`ArtifactSchemaConformanceTests` refused the shape declared outside the vocabulary, and the
+composed mission showed the drop end-to-end — a unit test on the parser, the gate, and the
+evaluator would all have passed while production stored nothing. `.99` closed with the same lesson
+from a different door: only the composed path sees what the pieces agree to hide from each other.
+The same run caught the fixture pattern too: `ScriptedPlanConformanceTests` refused a plan passed
+through a helper parameter it cannot resolve — a plan nothing checks is a plan the Planner may
+have replaced — so the books now name their plan constants at the call site the guard reads.
+
 **The honest keys and their costs, recorded in §2c:** the gate keys on the plan's own task typing
 (creation is the builder's act — no prior runtime record exists to key on, so `.99`'s "key on what
 the mission did" cannot apply), which means a creation request the planner mistypes produces an

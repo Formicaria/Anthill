@@ -141,7 +141,7 @@ public class CreatedArtifactMissionTests : IDisposable
         // the gap — the same rule `.99` pinned for unsourced claims.
         Assert.Equal(3, record.Requirements.Count);
         Assert.Equal(2, record.Requirements.Count(r => !r.Unmet));
-        var unmet = Assert.Single(record.Requirements.Where(r => r.Unmet));
+        var unmet = Assert.Single(record.Requirements, r => r.Unmet);
         Assert.Contains("troubleshooting", unmet.Text, StringComparison.OrdinalIgnoreCase);
         Assert.All(record.Requirements.Where(r => !r.Unmet), r =>
             Assert.Contains(r.Where!, record.Content, StringComparison.OrdinalIgnoreCase));
@@ -362,19 +362,33 @@ public class CreatedArtifactMissionTests : IDisposable
 
     // ---- harness ---------------------------------------------------------------------------------
 
-    private static ScriptBook DocumentScript() => Script(DocumentPlan, DocumentDeliverable);
-    private static ScriptBook AnalysisScript() => Script(AnalysisPlan, AnalysisDeliverable);
-    private static ScriptBook FabricatedInputScript() => Script(DocumentPlan, FabricatedInputDeliverable);
-    private static ScriptBook ProseScript() => Script(DocumentPlan,
-        "SCRIPTED: I have prepared a thorough onboarding document covering first-run setup and "
-      + "the twelve roles. It walks a new operator through installation and then introduces each "
-      + "specialist ant in turn.");
+    // Each book names its plan CONSTANT at the `.Role("planner", …)` call site, because
+    // `ScriptedPlanConformanceTests` resolves exactly that pattern to prove the plan is one the
+    // Planner accepts rather than one it replaced with the fallback graph. A helper taking the
+    // plan as a parameter reads identically at runtime and is invisible to that guard — the first
+    // draft of this file learned so from the guard itself.
+    private static ScriptBook DocumentScript() => WithCommonRoles(new ScriptBook()
+        .Role("planner", DocumentPlan)
+        .Role("builder", DocumentDeliverable));
 
-    private static ScriptBook Script(string plan, string builderAnswer) => new ScriptBook()
-        .Role("planner", plan)
+    private static ScriptBook AnalysisScript() => WithCommonRoles(new ScriptBook()
+        .Role("planner", AnalysisPlan)
+        .Role("builder", AnalysisDeliverable));
+
+    private static ScriptBook FabricatedInputScript() => WithCommonRoles(new ScriptBook()
+        .Role("planner", DocumentPlan)
+        .Role("builder", FabricatedInputDeliverable));
+
+    private static ScriptBook ProseScript() => WithCommonRoles(new ScriptBook()
+        .Role("planner", DocumentPlan)
+        .Role("builder",
+            "SCRIPTED: I have prepared a thorough onboarding document covering first-run setup and "
+          + "the twelve roles. It walks a new operator through installation and then introduces each "
+          + "specialist ant in turn."));
+
+    private static ScriptBook WithCommonRoles(ScriptBook book) => book
         .Role("researcher", "SCRIPTED: gathered the internal context the deliverable needs.")
         .Role("web", "SCRIPTED: external search performed.")
-        .Role("builder", builderAnswer)
         .Role("verifier", "Verification Passed: the deliverable record is present and traced.")
         .Role("tester", "SCRIPTED: no checks required.")
         .Role("soldier", "SCRIPTED: no security concern.")
