@@ -204,6 +204,18 @@ public class SourcedResearchMissionTests : IDisposable
         Assert.False(evaluation!.IsPositive,
             $"an answer citing a source that was never retrieved reached a positive outcome: "
           + $"{evaluation.Explanation}");
+
+        // AND IT FAILED FOR THE RIGHT REASON. `IsPositive == false` alone is satisfied by any
+        // failure — a hung task, a refusing verifier, an unrelated gate — so a negative test that
+        // stops there proves the mission can fail, not that THIS defect is what fails it. The
+        // explanation must name the citation and the gate that refused it.
+        Assert.Contains("citation integrity", evaluation.Explanation, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("example.invalid", evaluation.Explanation, StringComparison.Ordinal);
+
+        // And the mission that DOES cite honestly passes the same gate — stated here so the two
+        // outcomes are compared under one fixture rather than trusted to differ.
+        Assert.Equal(Anthill.Core.Outcomes.MissionEvaluation.Deliverable.NotSatisfied,
+            evaluation.DeliverableStatus);
     }
 
     // ---- harness ---------------------------------------------------------------------------------
