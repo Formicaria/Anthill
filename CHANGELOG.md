@@ -1,3 +1,55 @@
+## v0.3.8.101 - troubleshooting: a diagnosis that rests on receipts, or a mission that does not pass
+
+**DETERMINISTICALLY COMPLETE, NOT LIVE-QUALIFIED.** Every claim below is covered by a test that
+fails without it; the composed acceptance mission passes over two symptom phrasings with negatives
+in both boundary directions. NOT claimed: any of it against a real model or a real failing
+workspace. `PLAN.md` §2c names what remains, including the live pack carried from `.97`–`.100`.
+
+**The failure this release exists for is the confident root cause.** A model asked why something
+is failing will answer — fluently, specifically, and from nothing. "The test suite fails because
+the reporting module's totals drifted" reads identically whether or not any test ran. `.99` made
+citations checkable against retrieval; `.100` made deliverables checkable against bytes; this
+makes diagnoses checkable against EXECUTION: checks that actually ran, receipts with exit
+statuses, and a root cause that names the receipts it rests on.
+
+**The receipts come from the honest witness.** Every `run_allowlisted_check` dispatch already
+passes the registry chokepoint that writes `command_check` evidence; the row's detail now carries
+the CHECK IDENTITY stamped from the dispatch's own arguments — never parsed back out of output
+text, and never writable by a model. The medic stamps `supporting_receipt:` lines into its
+diagnosis from the failed task's own recorded evidence (`LoadTaskResult`, the reconstructed
+record, not the narrative). `DiagnosisIntegrity` then resolves every cited receipt against the
+mission's rows: a citation resolving to nothing refuses the mission and names the receipt — the
+class's own fabrication, exactly parallel to `.99`'s invented url and `.100`'s claimed input.
+
+**Intake classifies the class, and that decides the gate's key.** `Diagnose` intent plus a
+nameable target derives the troubleshooting class deterministically — the first class to carry
+`ExecuteChecks` authority, and exactly that much: the allowlisted catalog, never a shell, never
+Modify. Change still outranks diagnose, so "find out why and fix it" cannot enter the diagnostic
+lane carrying repair intent. Because the key is the SPECIFICATION, the gate fails CLOSED on an
+unreadable store (S3 — an outage is never permission), where `.99`/`.100`'s record-keyed gates
+decline to apply: a gate that knows this mission owes receipts must not accept an outage as their
+substitute. Both asymmetries are deliberate; §2c records the reasoning.
+
+**The audit/diagnosis boundary holds in both directions** (ADR-008, restated where enforced).
+Direction one: an audit that executed checks is refused by the AUDIT's own gate — "assessment
+observes", and a `command_check` receipt under observe authority is the record of the boundary
+crossed. Direction two: a troubleshooting mission does not pass on assessment-shaped records — no
+receipts, no diagnosis, no pass. "Is it healthy?" reads; "why is it unhealthy?" runs.
+
+**A reproduced symptom is success, narrowly.** The check that fails is the symptom CONFIRMED, and
+the tester task carrying it must not demote the grade — ungated, every honest reproduction reads
+as a degraded run, teaching the class to prefer missions that reproduce nothing. The evaluator
+forgives exactly one shape: diagnosis gate satisfied AND every failed task a tester task. The
+recorded structural status keeps its honest Partial; only the grading reads reproduction as
+completion, and the explanation says so in words. A dead researcher still fails the mission.
+
+**What refuses honestly instead of passing quietly:** a symptom whose checks all pass produces no
+diagnosis and FAILS, with the explanation saying every check passed — "could not reproduce" as a
+first-class positive answer is future work, named in §2c rather than silently graded. The
+capability behind the class (`execute_diagnostic_checks`) lands ON the tester's workers in the
+same release, per the audit list's own precedent: a requirement nothing serves is a declaration
+reaching nobody.
+
 ## v0.3.8.100 - created artifacts: a deliverable that exists, or a mission that does not pass
 
 **DETERMINISTICALLY COMPLETE, NOT LIVE-QUALIFIED.** Every claim below is covered by a test that
