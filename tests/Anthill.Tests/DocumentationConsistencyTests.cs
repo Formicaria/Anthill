@@ -144,29 +144,52 @@ public class DocumentationConsistencyTests
     // ---- the program's own shape ---------------------------------------------------------------
 
     /// <summary>
-    /// THE RELEASE SEQUENCE IS ORDERED, UNIQUE, AND STARTS AT THE SHIPPING VERSION.
+    /// THE RELEASE SEQUENCE IS EXACTLY THE RANGE ITS OWN HEADING DECLARES, AND STARTS AT THE
+    /// SHIPPING VERSION.
     ///
     /// Parsed from the program table's leading cells rather than from the surrounding prose, so
     /// rewriting the descriptions cannot break it and reordering the releases cannot hide in them.
+    ///
+    /// v0.3.8.99 — the range is now READ from the section heading rather than hardcoded as "ten".
+    /// The table is the REMAINING sequence and shrinks as releases ship, so a fixed count had to be
+    /// edited every release, and an expectation edited by routine is one nobody is deciding about.
+    /// Reading the declared range is also strictly stronger than the count was: it catches a gap in
+    /// the middle, which counting could not. This is the same rule the rest of this file follows —
+    /// check a document against what it DECLARES, never against a second copy of the truth kept
+    /// here.
     /// </summary>
     [Fact]
-    public void TheUniversalWorkflowProgram_IsOrderedAndUnique()
+    public void TheUniversalWorkflowProgram_IsExactlyTheRangeItDeclares()
     {
+        var heading = Regex.Match(Plan(),
+            @"^##\s*2b\..*?v\d+\.\d+\.\d+\.(?<from>\d+)\s*(?:→|->)\s*v\d+\.\d+\.\d+\.(?<to>\d+)\s*$",
+            RegexOptions.Multiline);
+
+        Assert.True(heading.Success,
+            "docs/PLAN.md §2b no longer declares its release range in its heading "
+          + "(`## 2b. … — vX.Y.Z.99 → vX.Y.Z.107`), so the program table cannot be checked "
+          + "against anything but itself.");
+
+        var from = int.Parse(heading.Groups["from"].Value);
+        var to = int.Parse(heading.Groups["to"].Value);
+
+        // It begins at the release being built: a program whose first entry has already shipped is
+        // a plan describing the past, and a shipped row that lingers is one whose unmet items can
+        // be dropped without anyone noticing they were unmet.
+        var shipped = int.Parse(AnthillRuntime.Version.Split('.').Last());
+        Assert.True(from == shipped,
+            $"§2b declares the program as beginning at .{from} while the shipping release is "
+          + $".{shipped}. When a release ships, its row leaves the table and anything it did not "
+          + "finish is carried into §2c — the row is not deleted on its own.");
+
+        Assert.True(to > from,
+            $"§2b declares the range .{from} → .{to}, which ends before it begins.");
+
         var ids = Regex.Matches(Plan(), @"^\|\s*\*\*\.(?<n>\d{2,3})\*\*\s*\|", RegexOptions.Multiline)
             .Select(m => int.Parse(m.Groups["n"].Value))
             .ToList();
 
-        Assert.True(ids.Count == 10,
-            $"the universal-workflow program declares {ids.Count} releases; it is a ten-release "
-          + "sequence. Add or remove a row deliberately, and update this expectation with it.");
-
-        Assert.Equal(ids.OrderBy(n => n).ToList(), ids);
-        Assert.Equal(ids.Distinct().Count(), ids.Count);
-
-        // It begins at the release being built: a program whose first entry has already shipped is
-        // a plan describing the past.
-        var shipped = int.Parse(AnthillRuntime.Version.Split('.').Last());
-        Assert.Equal(shipped, ids[0]);
+        Assert.Equal(Enumerable.Range(from, to - from + 1).ToList(), ids);
     }
 
     /// <summary>

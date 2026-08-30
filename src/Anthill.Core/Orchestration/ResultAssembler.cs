@@ -218,6 +218,18 @@ public sealed class ResultAssembler : IResultAssembler
     /// </summary>
     public string ComposeFinalAnswer(Mission mission, MissionContext context)
     {
+        // v0.3.8.99 — A SOURCED ANSWER IS RENDERED FROM THE CLAIMS, NOT SYNTHESISED FROM THE PROSE.
+        //
+        // Synthesis rewrites the answer, and a rewrite can drop an [UNSOURCED] marker without
+        // dropping the claim — leaving an answer that reads as fully attributed because the caveat
+        // did not survive the paraphrase. That is the "two channels and the prose one wins" failure
+        // in its most damaging form: the channel that wins is the one that lost the doubt.
+        //
+        // So where a claim record exists, it IS the answer: each claim with its source, and each
+        // unattributed claim marked here rather than wherever the model happened to remember. The
+        // marking becomes a property of the record instead of a promise about it.
+        if (SourcedRendering(mission) is { Length: > 0 } sourced) return sourced;
+
         var raw = mission.UserResult ?? "";
         if (_router is null || !ShouldSynthesizeAnswer(raw, context.Options.AnswerSynthesis)) return raw;
 
@@ -240,6 +252,27 @@ public sealed class ResultAssembler : IResultAssembler
                 metadata: new() { ["error"] = ex.Message });
         }
         return SelectFinalAnswer(raw, synthesized);
+    }
+
+    /// <summary>
+    /// The answer as the claim record renders it, or empty when this mission produced no such
+    /// record — which is every mission that retrieved nothing, and every one whose builder answered
+    /// in ordinary prose. Never throws: a rendering failure falls back to the raw answer rather than
+    /// leaving the operator with nothing.
+    /// </summary>
+    private string SourcedRendering(Mission mission)
+    {
+        try
+        {
+            var artifacts = ((Anthill.SDK.Artifacts.IArtifactStore)_memory).ForMission(mission.Id);
+            return Outcomes.CitationIntegrity.Answer(artifacts)?.Render() ?? "";
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine(
+                $"[results] could not render the sourced answer for {mission.Id}: {error.Message}");
+            return "";
+        }
     }
 
     // ---- console rendering -----------------------------------------------------------------------
