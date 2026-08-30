@@ -101,6 +101,21 @@ public static class MissionIntake
     };
 
     /// <summary>
+    /// Capability ids a troubleshooting mission requires. v0.3.8.101. `execute_diagnostic_checks`
+    /// leads for the same reason `inspect_repository` leads the audit list: the class's defining
+    /// step resolves first. Declared by the tester's workers IN THE SAME RELEASE — a capability
+    /// nothing serves is a declaration reaching nobody, this repository's recurring defect, and the
+    /// audit list's own remark is the precedent: the requirement lands with its worker.
+    /// </summary>
+    public static readonly IReadOnlyList<string> TroubleshootingCapabilities = new[]
+    {
+        WorkerCapabilities.ExecuteDiagnosticChecks,
+        WorkerCapabilities.InspectRepository,
+        WorkerCapabilities.CompileResult,
+        WorkerCapabilities.VerifyResultCompleteness,
+    };
+
+    /// <summary>
     /// Resolve the specification. Never throws, and never returns null: a request it cannot
     /// classify becomes <see cref="MissionSpecification.General"/>, which constrains nothing.
     /// </summary>
@@ -114,9 +129,34 @@ public static class MissionIntake
         var freshness = CurrentFreshness.IsMatch(request) ? MissionFreshness.Current : MissionFreshness.Historical;
 
         // THE CLASS IS DERIVED, and only when the dimensions agree on something this release can
-        // actually serve. Assessment of the repository and/or the runtime is a system audit. Change
-        // and diagnose intents are real classes with no machinery yet (ADR-008: .101 and later), so
-        // they resolve to `general` and behave as before rather than claiming a lane that is empty.
+        // actually serve. Assessment of the repository and/or the runtime is a system audit;
+        // diagnosis of a symptom about a nameable target is troubleshooting (v0.3.8.101). Change
+        // intent remains a real class with no machinery (ADR-008: .102 and later) and resolves to
+        // `general` — and change OUTRANKS diagnose in `ResolveIntent`, so "find out why and fix it"
+        // cannot enter the diagnostic lane carrying repair intent.
+        if (intent == MissionIntent.Diagnose && targets != MissionTargets.None)
+            return new MissionSpecification
+            {
+                OriginalRequest = request,
+                MissionClass = MissionSpecification.TroubleshootingClass,
+                Intent = MissionIntent.Diagnose,
+                Targets = targets | MissionTargets.Repository,
+                // A symptom is a claim about NOW. "Why is it failing" answered from last month's
+                // records is an archaeology report wearing a diagnosis's clothes.
+                Freshness = MissionFreshness.Current,
+                // EXECUTE CHECKS — the first class to carry this authority, and exactly this much:
+                // allowlisted, read-only-in-effect check commands whose exit statuses become the
+                // receipts a diagnosis rests on. Never Modify: a diagnosis that repairs has left
+                // the class (ADR-008), and the repair lanes keep their own gates.
+                Authority = MissionAuthority.ExecuteChecks,
+                Deliverables = ResolveDeliverables(request),
+                RequiredCapabilities = TroubleshootingCapabilities,
+                // Spelled as the store spells it (the audit class's own lesson, kept): these are
+                // the rows `ToolEvidence` writes when `run_allowlisted_check` dispatches, and the
+                // rows `DiagnosisIntegrity` resolves receipts against.
+                RequiredEvidence = new[] { Anthill.SDK.Artifacts.EvidenceKinds.CommandCheck },
+            };
+
         if (intent != MissionIntent.Assess || targets == MissionTargets.None)
             return MissionSpecification.General(request);
 
@@ -253,6 +293,11 @@ public static class WorkerCapabilities
 
     /// <summary>Judge safety, policy and risk — a different question from completeness.</summary>
     public const string VerifySafety = "verify_safety";
+
+    /// <summary>Run allowlisted checks and record their exit statuses as receipts. v0.3.8.101 —
+    /// the capability behind <see cref="MissionAuthority.ExecuteChecks"/>, and deliberately not
+    /// "run commands": what it grants is the catalog, not a shell.</summary>
+    public const string ExecuteDiagnosticChecks = "execute_diagnostic_checks";
 
     /// <summary>Read prior mission and objective memory.</summary>
     public const string RecallMissionHistory = "recall_mission_history";

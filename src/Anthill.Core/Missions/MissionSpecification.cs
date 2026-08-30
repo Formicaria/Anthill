@@ -117,6 +117,15 @@ public sealed record MissionSpecification
     public const string SystemAuditClass = "system_audit";
 
     /// <summary>
+    /// The diagnostic class v0.3.8.101 implements end to end: a reported symptom, reproduced by
+    /// executed checks and explained by a diagnosis that cites their receipts. The first class to
+    /// carry <see cref="MissionAuthority.ExecuteChecks"/> — and the boundary with the audit class
+    /// is ADR-008's: an assessment that executed checks has left assessment, and a diagnosis that
+    /// executed nothing has not diagnosed.
+    /// </summary>
+    public const string TroubleshootingClass = "troubleshooting";
+
+    /// <summary>
     /// True when this specification carries enough to hold the mission to something. A `general`
     /// specification is a record that intake ran and found no class it could serve honestly — the
     /// downstream layers read this rather than testing the class name, so adding a class later
