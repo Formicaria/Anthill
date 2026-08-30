@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.100**.
+Shipping release: **v0.3.8.101**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -69,9 +69,21 @@ it did to it, or it is refused as a conclusion wearing an analysis's clothes. Un
 are counted and never fatal, for `.99`'s reason: punishing the admission teaches deletion. What is
 NOT claimed: that the content is GOOD or that a traced section truly SATISFIES its requirement
 (semantic — the same line `.99` drew), file transformation as a distinct lane (a transformation
-that touches real files is still the coder's patch lane), and anything live. Three of the seven
-classes are now served; troubleshooting, system and external missions are untouched, and every one
-of them still resolves `not_applicable` at the deliverable layer exactly as before. See
+that touches real files is still the coder's patch lane), and anything live.
+
+**What v0.3.8.101 changes, and how far.** A reported symptom now reaches a diagnosis that RESTS ON
+EXECUTION or the mission does not pass: intake classifies `Diagnose`-intent requests into the
+troubleshooting class under `ExecuteChecks` authority — the first class to carry it — the planner
+ensures a reproduction step, the tester's checks leave `command_check` receipts with exit statuses
+at the dispatch chokepoint, the medic stamps those receipts into its diagnosis from the failed
+task's own recorded evidence, and `DiagnosisIntegrity` refuses a mission whose diagnosis cites a
+receipt nothing ran, whose checks never ran, or whose symptom nothing diagnosed. The
+audit/diagnosis boundary is enforced from both sides, and a reproduced symptom grades as the
+success it is. What is NOT claimed: that the root cause is CORRECT (semantic — the standing line),
+"could not reproduce" as a first-class positive answer, symptom-directed check selection beyond
+the workspace's allowlisted catalog, and anything live. Four of the seven classes are now served;
+system and external missions are untouched, and every one of them still resolves `not_applicable`
+at the deliverable layer exactly as before. See
 [`ADR-008`](adr/ADR-008-universal-mission-lifecycle.md) §1 for the evidence and §2 for the contract
 the `.98`–`.107` sequence exists to satisfy.
 
@@ -136,21 +148,21 @@ through the real application. **Ext.** = requires an external adapter, connectio
 | Claim↔source SUPPORT | no | — | no | no | deliberately absent — semantic, the `.99` line |
 | Artifact/document creation | yes | yes | **yes** | no | a creation-typed task must leave a `created_artifact` whose content exists, requirements trace or stand unmet, inputs resolve (.100) |
 | Data analysis | yes | yes | **yes** | no | input identity (id + content hash from the store) and a transformation account, or the mission is refused (.100) |
-| Troubleshooting / diagnosis | no | — | no | no | `.101` |
+| Troubleshooting / diagnosis | yes | yes | **yes** | no | a symptom reproduced by executed checks, diagnosed with receipts cited by name, boundary enforced both ways (.101) |
 | Local system actions | partial | no | partial | no | `.102` |
 | Homelab/infrastructure actions | yes | no | yes | no | Ext. — existing homelab workers, not on the mission spine |
 | External actions (approval-gated) | no | — | no | no | Ext. — `.103` |
 | Dynamic repair (Medic) | partial | yes | partial | no | bounded repair exists; not evidence-driven — `.104` |
 | Multi-mission continuity | no | — | no | no | `.105` |
 | Pheromone / skill learning | yes | yes | yes | no | positive learning restricted to `completed_verified` |
-| Objective verification (non-code) | **partial** | `objective_verification_enabled` | **yes** | no | `.98` added `AssessmentObjective` + the deliverable ledger for the `system_audit` class; `.99` added `CitationIntegrity`, which keys on retrieval rather than on class; `.100` added `CreationIntegrity`, keyed on the plan's own task typing; every remaining non-code class still resolves `not_applicable` |
+| Objective verification (non-code) | **partial** | `objective_verification_enabled` | **yes** | no | `.98` added `AssessmentObjective` + the deliverable ledger for the `system_audit` class; `.99` added `CitationIntegrity`, which keys on retrieval rather than on class; `.100` added `CreationIntegrity`, keyed on the plan's own task typing; `.101` added `DiagnosisIntegrity` (specification-keyed, fail-closed) and the audit gate's boundary refusal; every remaining non-code class still resolves `not_applicable` |
 
 No row may claim a status stronger than `QUALIFICATION.md` records. That is checked, not trusted:
 see `DocumentationConsistencyTests`.
 
 ---
 
-## 2b. The universal-workflow program — v0.3.8.100 → v0.3.8.107
+## 2b. The universal-workflow program — v0.3.8.101 → v0.3.8.107
 
 **This is the current forward sequence.** It supersedes the earlier framing in which R4–R10 were
 the next thing to run; those items are not deleted, and each release below names the R-items it
@@ -180,8 +192,7 @@ past.
 
 | Release | Operator-visible capability | Exit gate |
 |---|---|---|
-| **.100** | Documents, file transformation and structured data artifacts | §2c below |
-| **.101** | Troubleshooting and diagnostic execution | a symptom reaches a diagnosis supported by command receipts and exit statuses; the audit/diagnosis boundary holds in both directions |
+| **.101** | Troubleshooting and diagnostic execution | §2c below |
 | **.102** | Local system and homelab/infrastructure actions | a reversible operation with before-state, receipt and after-state; existing homelab workers reached through the mission spine, not beside it |
 | **.103** | Approval-gated external actions, universal authority adapters | a proposed external action pauses at approval with target resolution recorded; denied authority cannot be replaced by prose |
 | **.104** | Dynamic replanning, clarification, bounded Medic repair | wrong worker rerouted before harmful execution; missing operator decision pauses rather than guesses; repeated identical failure stops truthfully |
@@ -202,100 +213,83 @@ Rules binding every release in this program:
   became API-editable with no control rendering it, so an operator following the changelog looked
   for a switch that did not exist.
 
-### 2c. v0.3.8.100 — created artifacts and creation integrity
+### 2c. v0.3.8.101 — troubleshooting and diagnosis integrity
 
-**Delivers:** an operator asking for a document, report or data analysis receives the deliverable
-ITSELF, produced as a checkable record — its content exists as bytes, each requirement it states is
-traced into that content or stands visibly unmet, and every input it claims to rest on resolves to
-a record the mission actually holds. An answer that merely DESCRIBES a deliverable — the fluent "I
-have prepared a guide covering setup" with no guide behind it — refuses the mission by name.
+**Delivers:** an operator reporting a symptom — "why is the test suite failing?" — receives a root
+cause that rests on executed checks: the mission runs the workspace's allowlisted checks, each
+dispatch leaves a `command_check` receipt with its exit status at the registry chokepoint (the
+honest witness, never a task's self-report), the failing check routes to the medic through the
+existing failure handoff, and the diagnosis cites its receipts by name. A diagnosis citing a
+receipt no check produced, a troubleshooting mission that executed nothing, and a symptom nothing
+diagnosed all refuse the mission — named.
 
-**Covers** the two creation forms the exit line names: documents (`document_creation`) and data
-analyses (`data_analysis`), the second held to both halves of its own clause — input IDENTITY (the
-concrete artifact ids and content hashes of what was read, stamped from the store's rows and never
-from the model's text) and a TRANSFORMATION account of what was done to them. Inputs are referenced
-by artifact id or by typed schema name (`schema:source_set`), because those are what the builder is
-SHOWN — the `.99` rule that a model may only reference what it has honest access to.
+**The boundary holds in both directions** (ADR-008, restated where enforced): an audit that
+executed checks is refused by the audit's own gate ("assessment observes"), and a troubleshooting
+mission does not pass on assessment-shaped records — no receipts, no diagnosis, no pass. The
+troubleshooting class is the first to carry `ExecuteChecks` authority, and exactly that much:
+the allowlisted catalog, never a shell, never Modify.
 
-**Does not cover**, and this is the boundary the release is named against: whether the content is
-GOOD, or whether a traced section truly SATISFIES the requirement pointing at it. Traceability is
-answerable from a record; satisfaction is a semantic judgment, and a model asserting it is the
-evidence v2.19.0 stopped accepting. The gate is named for the weaker property because that is the
-one it has.
+**A reproduced symptom is success.** The check that fails IS the symptom confirmed, so the failed
+tester task must not demote the grade. The evaluator reads the reproduction narrowly — diagnosis
+gate satisfied AND every failed task a tester task — and grades structural completion while
+RECORDING the honest Partial status and saying so in the explanation. A dead researcher or builder
+still fails the mission; only the reproduction is forgiven, and only when something explained it.
 
-**Reuses:** the artifact store and schema check (ADR-004) as the carrier for the creation record,
-`MissionEvaluator`'s deliverable lane, `ResultAssembler` (the created deliverable outranks both
-synthesis and the claim rendering — a synthesis of a document is a smaller document with the
-unmet-requirements admission at the paraphrase's mercy), and the `AddMissing` migration path. No
-parallel ledger and no second evidence lane.
+**Keyed on the specification**, like the audit gate and unlike `.100`'s plan-typing key, because
+intake now classifies the class deterministically (`Diagnose` intent + a nameable target; change
+still outranks diagnose, so "find out why and fix it" cannot enter this lane carrying repair
+intent). That also decides the null-store rule: specification-keyed gates fail CLOSED (S3 — an
+outage is never permission), where `.99`/`.100`'s record-keyed gates decline to apply. Both
+asymmetries are deliberate and each matches its key.
 
-**Connects:** `Planner (types the task) → BuilderAnt (shown the held inputs, asked for the
-deliverable format) → created_artifact (inputs resolved deterministically) → CreationIntegrity →
-MissionEvaluator → the persisted explanation → ResultAssembler (renders the record)`.
+**Reuses:** the tester's real check execution and catalog, `ToolEvidence`'s dispatch-chokepoint
+receipts, the tester→medic failure handoff with its §1A parent-lineage binding, the
+`failure_diagnosis` artifact, `MissionEvaluator`'s deliverable lane, and the `AddMissing`
+migration path. No parallel ledger, no second evidence lane, no new orchestrator.
 
-**Exit gate** — the composed acceptance mission (`CreatedArtifactMissionTests`), written before the
-implementation and failing until it landed. Positive over three semantically equivalent document
-phrasings plus the data-analysis clause verbatim; negative twice — a fabricated input
-(`AFabricatedInput_FailsTheMission_ByName`) and a creation-typed task answered in prose
-(`ACreationTaskAnsweredInProse_DoesNotGradeAsACreatedArtifact`).
+**Connects:** `MissionIntake (troubleshooting, ExecuteChecks) → Planner.EnsureClassCoverage
+(reproduction step, capability-named) → TesterAnt → run_allowlisted_check → ToolEvidence
+(command_check receipts) → failure handoff → MedicAnt (receipts stamped from the failed task's
+recorded evidence) → failure_diagnosis → DiagnosisIntegrity → MissionEvaluator → the persisted
+explanation`.
 
-Proved, each by an assertion that fails without it:
+**Exit gate** — the composed acceptance mission (`TroubleshootingMissionTests`), written before
+the implementation and failing until it landed. Positive over two symptom phrasings; negative in
+both boundary directions — `AnAudit_ThatExecutedChecks_IsRefusedAtTheBoundary` and
+`ASymptomThatDoesNotReproduce_DoesNotGradeAsADiagnosis` — plus direct gate edges: fail-closed on
+an unreadable store, refusal by name for a receipt that never ran.
 
-- the created content exists in the record and reaches the operator as the final answer verbatim;
-- a requirement traced to a fragment absent from the content fails the mission, and the fragment is
-  named;
-- an admitted-unmet requirement SURVIVES into the record and the rendered answer, counted and never
-  fatal — deleting a requirement is not how a deliverable gets through;
-- a data analysis's inputs carry id, schema and content hash matching the store's own rows, and its
-  transformation account is present;
-- an input naming anything the mission does not hold — including a plausible schema name like
-  `schema:filesystem_snapshot` — refuses the mission, and the reference is named;
-- a creation-typed task with no creation record refuses the mission on the record's absence;
-- an unreadable store means the gate does not apply, `.99`'s asymmetry: "cannot check" is not
-  "guilty".
+**Divergences — recorded rather than quietly dropped:**
 
-**Divergences — implemented differently from the way the roadmap line was written, recorded rather
-than quietly dropped:**
+- *receipt identity is textual* — a receipt is cited by CHECK ID and resolved by content match
+  against the `command_check` row's detail (which now carries the check identity stamped from the
+  dispatch's own arguments). A typed receipt record with a stable row id, and a diagnosis schema
+  that references it as data rather than as a `supporting_receipt:` line, is carried open — the
+  medic's diagnosis remains its structured-text format, stamped deterministically.
+- *"could not reproduce" is not yet an answer* — a troubleshooting mission whose checks all pass
+  produces no diagnosis and FAILS the gate, with the explanation saying exactly why. That is
+  honest and it is also a real limit: "the symptom does not reproduce under these checks" is a
+  legitimate diagnostic conclusion an operator can act on, and until it becomes a first-class
+  positive lane the class refuses it rather than grading it as if it had diagnosed.
+- *the check vocabulary is the workspace's* — reproduction runs the allowlisted catalog the
+  manifest declares (dotnet/node/python detection), not symptom-specific commands. A symptom
+  outside the catalog's reach ("why is nginx slow") reproduces nothing and refuses honestly.
+  Symptom-directed check selection is future work.
 
-- *"file transformation"* — **not a distinct lane, and no file is written by this class.** A
-  transformation that touches real files is the coder's patch lane, unchanged: the planner rule
-  that any file-touching goal MUST route through `patch_proposal` still stands, and this release's
-  planner guidance draws the boundary explicitly. What `.100` types is the ANSWER-deliverable form —
-  content the operator reads, not files the tree gains. A "transform this CSV on disk" mission is
-  patch-lane work today; giving it creation-record provenance on top is future work, not silently
-  claimed here.
-- *keying* — the gate keys on **the plan's own task typing**, not on what the mission DID (`.99`'s
-  key). Creation is the builder's act, so no prior runtime record exists to key on; the planner (a
-  model) proposes the type and the deterministic gate enforces what a creation must leave behind,
-  which is ADR-008's division. The honest cost: a creation request the planner mistypes as
-  `build_answer` produces an ordinary prose answer and NO gate applies — classification by meaning
-  is exactly the capability-first resolution already carried open from `.99`, and this release does
-  not claim it.
-- *"satisfies stated requirements"* — the requirements checked are **the record's own stated
-  requirements**, proposed by the model and gate-checked for traceability. They are not derived
-  from the intake specification's requested deliverables; where a specification exists, the `.98`
-  assessment ledger keeps authority over the lane (its word outranks a satisfied creation gate in
-  the evaluator's ordering). Requirement lists derived from intake — "the operator asked for three
-  sections, the record states two" — is `.105` coverage work and is not claimed.
-- *sourcing inside a creation* — a creation-typed task that also retrieved sources records its
-  provenance through INPUTS (`schema:source_set`), not through claim-level citations: one response
-  cannot carry both formats without the two competing for the same text. Claim-level sourcing
-  INSIDE a created document — this paragraph rests on that source — is carried open.
+**Carried open from `.97`–`.100`, unmet and not lapsed:**
 
-**Carried open from `.98`/`.99`, unmet and not lapsed:**
+- `blocked_missing_capability` for unavailable repository access;
+- "removing any production call site breaks the composed scenario" — held for two sites;
+- **the live pack:** objective verification enabled in a live run, an exported
+  `LiveQualificationRecord`, live system-audit, research, and creation missions through the
+  composed application — a live troubleshooting mission joins it;
+- retrieval time in the claim→source mapping; capability-first resolution for research;
+- claim-level sourcing inside a created document; intake-derived requirement coverage (`.105`);
+- classification by meaning for creation requests (the `.100` keying cost).
 
-- `blocked_missing_capability` for unavailable repository access — no such outcome code exists yet;
-- "removing any production call site breaks the composed scenario" — held for two sites as a
-  source-shape guard, not as a general mutation property;
-- **the live pack carried from `.97`:** objective verification enabled in a live run, an exported
-  `LiveQualificationRecord`, and a live system-audit mission through the composed application — a
-  live research mission (`.99`) and a live creation mission (`.100`) join it;
-- retrieval time in the claim→source mapping;
-- capability-first resolution for research — and now for creation, per the keying divergence above.
-
-**Explicitly still unsupported after .100:** troubleshooting, system and external mission classes;
-multi-mission continuity; claim↔source SUPPORT in any form; requirement coverage derived from
-intake; file transformation as a creation-record lane.
+**Explicitly still unsupported after .101:** system and external mission classes; multi-mission
+continuity; claim↔source SUPPORT; "could not reproduce" as a positive outcome; symptom-directed
+check selection.
 
 ---
 
