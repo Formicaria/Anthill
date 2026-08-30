@@ -1,3 +1,69 @@
+## v0.3.8.100 - created artifacts: a deliverable that exists, or a mission that does not pass
+
+**DETERMINISTICALLY COMPLETE, NOT LIVE-QUALIFIED.** Every claim below is covered by a test that
+fails without it; the composed acceptance mission passes over three semantically equivalent
+document phrasings plus the data-analysis clause verbatim, with two negative runs proving the gate
+can refuse. NOT claimed: any of it running against a real model. `PLAN.md` §2c names what remains,
+including the live pack carried from `.97`–`.99` — unchanged, unmet, and not converted into a
+documented limitation to close it.
+
+**The failure this release exists for is the described deliverable.** `.99`'s failure was a
+citation to something never retrieved; the creation class has a quieter one: a model asked to
+create something can instead describe having created it, and the two read identically. "I have
+prepared an onboarding guide covering setup and the twelve roles" is fluent, confident, and
+checkable against nothing — no record, no bytes, no way for an operator to ask what was actually
+made. Nothing in the colony could tell a produced document from a paragraph about one, because
+nothing required production to leave a record.
+
+**So a creation-typed task owes a `created_artifact`, and the record carries the deliverable
+itself.** The planner types the work (`document_creation`, `data_analysis` — new to the builder's
+contract, so the typing survives plan validation instead of normalising away); the builder is asked
+for the deliverable FORMAT: title, kind, stated requirements each traced to a fragment of the
+content or marked `[UNMET]`, declared inputs, a transformation account, and the full content under
+a marker. `CreationIntegrity` then decides deterministically: the content exists as bytes; every
+traced requirement's fragment actually appears in it (a trace to a section that is not there is a
+fabricated trace, `.99`'s invented citation wearing a requirement's clothes); every claimed input
+resolves to a record the mission holds; and a data analysis identifies its inputs and its
+transformation or is refused as a conclusion wearing an analysis's clothes. The mission that fails
+fails BY NAME — the fragment, the reference, the missing record — in the persisted explanation.
+
+**Input identity is stamped, never asserted.** The builder references inputs by artifact id or by
+typed schema name (`schema:source_set`) — the things it was SHOWN, per `.99`'s rule that a model
+cannot honestly reproduce identities it was never given. The deterministic layer resolves each
+reference against the mission's own store and stamps id, schema and content hash from the store's
+rows. A hash a model wrote is a hash it could have invented; a reference that resolves to nothing
+stays unresolved in the record, which is exactly what the gate refuses. Secret artifacts are not
+listed as referenceable inputs — advertising a withheld record's id would be the S5 leak wearing a
+provenance line's clothes.
+
+**An unmet requirement is not a failure, and that is load-bearing** — the same asymmetry `.99`
+pinned for unsourced claims, because the same incentive is at stake: refusing a deliverable for
+admitting what it lacks teaches deletion of the admission, and a deliverable that looks complete
+because the gaps were deleted is worse than one that owns them. Unmet requirements are kept,
+marked, counted, and rendered into the answer the operator reads. What fails is a claimed trace
+that does not resolve.
+
+**The created deliverable outranks synthesis in the final answer,** one notch past `.99`'s rule
+for claims: a synthesis of a document is a smaller document, with the unmet-requirements admission
+at the paraphrase's mercy. Where a creation record exists, `ResultAssembler` renders it — content,
+then the record's own account of what it lacks and what it rests on — instead of feeding it back
+through a model.
+
+**The boundary with the coding lane holds in both directions.** A creation-typed task writes no
+file: the deliverable is the answer the operator reads. Anything that touches real files — including
+"transform this CSV on disk" — is still the coder's patch lane, and the planner's file rule stands
+unweakened; the new guidance draws the line explicitly. "File transformation" from the roadmap line
+is recorded in §2c as a divergence, not silently claimed: what shipped is transformation of data
+INTO a recorded analysis, not transformation OF files.
+
+**The honest keys and their costs, recorded in §2c:** the gate keys on the plan's own task typing
+(creation is the builder's act — no prior runtime record exists to key on, so `.99`'s "key on what
+the mission did" cannot apply), which means a creation request the planner mistypes produces an
+ordinary prose answer and no gate applies — classification by meaning remains carried open. The
+requirements checked are the record's own stated ones, gate-checked for traceability; requirement
+lists derived from the intake specification are `.105` coverage work, and where a specification
+exists the `.98` assessment ledger keeps authority over the deliverable lane.
+
 ## v0.3.8.99 - sourced research: a citation that resolves, or a mission that does not pass
 
 **DETERMINISTICALLY COMPLETE, NOT LIVE-QUALIFIED.** Every claim below is covered by a test that
