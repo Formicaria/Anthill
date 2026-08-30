@@ -740,18 +740,37 @@ public sealed class MedicAnt : BaseAnt
     /// was recorded — and empty is the honest answer, because `DiagnosisIntegrity` refuses a
     /// troubleshooting diagnosis that rests on nothing rather than this method inventing a rest.
     /// </summary>
-    private string SupportingReceipts(Task failed)
+    private string SupportingReceipts(Mission mission, Task failed)
     {
         if (_memory is null) return "";
         try
         {
-            var recorded = _memory.LoadTaskResult(failed.Id);
-            var checks = recorded?.Evidence?
-                .Where(e => string.Equals(e.Kind, AntEvidenceKinds.Check, StringComparison.OrdinalIgnoreCase))
+            // FROM THE STORE'S OWN command_check ROWS — the dispatch chokepoint's record, the same
+            // rows `DiagnosisIntegrity` resolves against. The first draft read the failed task's
+            // result evidence and stamped nothing: a tester that FAILS returns a failure result,
+            // and the check list it accumulated does not ride on that shape. The store rows are
+            // written per dispatch, before the task's fate is decided, which is exactly what makes
+            // them the honest witness — and reading the same record the gate reads is what stops
+            // two accounts of one check run existing (the `.99` builder's own rule).
+            var receipts = ((Anthill.SDK.Artifacts.IEvidenceStore)_memory).ForMission(mission.Id)
+                .Where(e => string.Equals(e.Kind, Anthill.SDK.Artifacts.EvidenceKinds.CommandCheck,
+                        StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(e.TaskId, failed.Id, StringComparison.Ordinal))
                 .ToList();
-            if (checks is null || checks.Count == 0) return "";
-            return "\n" + string.Join("\n", checks.Select(c =>
-                $"supporting_receipt: {c.Value} {c.Detail}"));
+            if (receipts.Count == 0) return "";
+
+            var lines = new List<string>();
+            foreach (var receipt in receipts)
+            {
+                // The check identity, from the prefix the chokepoint stamps ("check '<id>': …").
+                // A row without one is skipped rather than cited by guesswork — a receipt the
+                // diagnosis cannot name is one it cannot rest on.
+                var id = System.Text.RegularExpressions.Regex
+                    .Match(receipt.Detail, @"^check '(?<id>[^']+)'").Groups["id"].Value;
+                if (id.Length == 0) continue;
+                lines.Add($"supporting_receipt: {id} passed={receipt.Passed}");
+            }
+            return lines.Count == 0 ? "" : "\n" + string.Join("\n", lines);
         }
         catch (Exception error)
         {
@@ -844,35 +863,58 @@ public sealed class MedicAnt : BaseAnt
         // otherwise the failed task's type/role/artifact kinds pick the specialist. Prose picks nothing.
         var (targetRole, targetType, routeReason) = SelectSpecialist(cls, failed, context, retryable);
 
+        // v0.3.8.101 — FOR A TROUBLESHOOTING MISSION, THE DIAGNOSIS IS THE DELIVERABLE. The class's
+        // authority is ExecuteChecks, never Modify (ADR-008): the reproduced failure is the symptom
+        // CONFIRMED, and routing it into the repair lane is the boundary crossed from the inside —
+        // the exact escalation "an audit that discovers a fault reports it as a finding" forbids
+        // for assessment, arriving in the diagnostic class. The first composed run proved the cost:
+        // the medic's repair handoff was refused as a near-duplicate, the refusal became a
+        // deterministic block, and a correctly diagnosed mission graded as failed. Intake is pure
+        // and deterministic, so the medic reads the class from the same resolution every other
+        // layer uses rather than being handed a flag someone could forget to pass.
+        var troubleshooting = Missions.MissionIntake.Resolve(mission.Goal).MissionClass
+            == Missions.MissionSpecification.TroubleshootingClass;
+
         var diagnosis =
             $"failure_signature: {signature}\nfailure_classification: {Anthill.SDK.Contracts.FailureClassNames.Wire(cls)}\n" +
             $"probable_cause: {cause}\nconfidence: {confidence}\nretryable: {retryable}\n" +
             $"failure_context: {(context is not null ? "consumed (typed artifact)" : "ABSENT — legacy prose fallback used")}\n" +
-            $"recommended_role: {targetRole}\nrecommended_task_type: {targetType}\nroute_reason: {routeReason}\n" +
-            $"verification_plan: fresh build/test of the repaired artifact, then verifier bound to its revision\n" +
-            // v0.3.8.101 — the receipts this diagnosis rests on, stamped from the failed task's own
-            // recorded check evidence. Empty for a non-check failure, and DiagnosisIntegrity is the
-            // layer that decides what an empty citation list means for a troubleshooting mission.
-            $"source_task: {failed.Id} ({failed.Title})" + SupportingReceipts(failed);
+            (troubleshooting
+                ? "recommended_role: operator\nrecommended_task_type: none\n" +
+                  "route_reason: troubleshooting mission — the diagnosis is the deliverable; repair is a separate, gated ask\n"
+                : $"recommended_role: {targetRole}\nrecommended_task_type: {targetType}\nroute_reason: {routeReason}\n" +
+                  $"verification_plan: fresh build/test of the repaired artifact, then verifier bound to its revision\n") +
+            // v0.3.8.101 — the receipts this diagnosis rests on, stamped from the store's own
+            // command_check rows for the failed task. Empty for a non-check failure, and
+            // DiagnosisIntegrity is the layer that decides what an empty citation list means.
+            $"source_task: {failed.Id} ({failed.Title})" + SupportingReceipts(mission, failed);
 
-        return new AntExecutionResult
+        var result = new AntExecutionResult
         {
             Success = true,
             StatusCode = "succeeded",
-            Summary = $"Diagnosis: {Anthill.SDK.Contracts.FailureClassNames.Wire(cls)} ({TextShort(cause)}) — route to {targetRole}.",
+            Summary = troubleshooting
+                ? $"Diagnosis: {Anthill.SDK.Contracts.FailureClassNames.Wire(cls)} ({TextShort(cause)}) — recorded with receipts."
+                : $"Diagnosis: {Anthill.SDK.Contracts.FailureClassNames.Wire(cls)} ({TextShort(cause)}) — route to {targetRole}.",
             // The full diagnosis becomes the task's recorded text; the signature must survive into
             // the record because loop control 2 matches it in PRIOR medic results.
             Narrative = diagnosis,
             Artifacts =
             {
                 new AntArtifact("failure_diagnosis", "Failure diagnosis", diagnosis),
-                new AntArtifact("repair_recommendation", "Bounded repair route", $"{targetRole}:{targetType} (single attempt, then fresh checks)"),
             },
             Evidence = { new AntEvidence(AntEvidenceKinds.FailureId, failed.Id, failed.FailureReason ?? "structured failure in result"),
                          new AntEvidence(AntEvidenceKinds.FailureSignature, signature) },
-            Handoffs = { new AntHandoff("medic", targetRole, $"repair route for {Anthill.SDK.Contracts.FailureClassNames.Wire(cls)}",
-                targetType, new[] { "failure_diagnosis" }, true, 1, $"medic:{signature}") },
         };
+        if (!troubleshooting)
+        {
+            result.Artifacts.Add(new AntArtifact("repair_recommendation", "Bounded repair route",
+                $"{targetRole}:{targetType} (single attempt, then fresh checks)"));
+            result.Handoffs.Add(new AntHandoff("medic", targetRole,
+                $"repair route for {Anthill.SDK.Contracts.FailureClassNames.Wire(cls)}",
+                targetType, new[] { "failure_diagnosis" }, true, 1, $"medic:{signature}"));
+        }
+        return result;
     }
 
     /// <summary>§1D — the routing table, from structure. Never from words in error prose.</summary>
