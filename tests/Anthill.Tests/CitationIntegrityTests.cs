@@ -206,7 +206,7 @@ public class CitationIntegrityTests
                        + "the answer cites 'https://example.invalid/never', which this mission never retrieved";
             memory.SaveMissionEvaluation(new Anthill.Core.Outcomes.MissionEvaluation(
                 MissionId: mission.Id,
-                OutcomeCode: Anthill.Core.Domain.MissionOutcome.CompletedUnverified,
+                OutcomeCode: Anthill.Core.Outcomes.MissionOutcome.CompletedUnverified,
                 StructuralStatus: "complete",
                 VerificationStatus: Anthill.Core.Outcomes.MissionEvaluation.Verification.Passed,
                 DeliverableStatus: Anthill.Core.Outcomes.MissionEvaluation.Deliverable.NotSatisfied,
