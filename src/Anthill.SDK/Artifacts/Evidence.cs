@@ -237,6 +237,17 @@ public static class ArtifactSchemas
         new HashSet<string>(StringComparer.OrdinalIgnoreCase) { SourceSet, RecallSet };
 
     /// <summary>
+    /// A created deliverable — the content itself, its stated requirements traced or admitted
+    /// unmet, and the identified inputs it rests on. v0.3.8.100.
+    ///
+    /// Added under the same rule as `sourced_answer` and only under the same condition: the
+    /// builder is now ASKED for this structure when its task is typed as creation, so the record
+    /// is produced rather than imputed from prose. See <see cref="Artifacts.CreatedArtifact"/> for
+    /// what the record claims and — as importantly — what it deliberately does not.
+    /// </summary>
+    public const string CreatedArtifact = "created_artifact";
+
+    /// <summary>
     /// v3.8.20 — added when the ant bridge was built, because the medic already emits
     /// <c>repair_recommendation</c> and five of the other six kinds ants emit mapped exactly onto
     /// the list above. A schema the colony already produces and the vocabulary did not name is a

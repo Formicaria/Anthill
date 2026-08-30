@@ -135,6 +135,16 @@ public static class ArtifactSchemaCheck
             [ArtifactSchemas.RecallSet] =
                 AsObject("ResearcherAnt (the prior missions it was shown)", "sources"),
 
+            // v0.3.8.100. `content` is required because a creation record without content is a
+            // description of a deliverable, which is the shape the record exists to end;
+            // `requirements` and `inputs` because a deliverable that states neither has recorded
+            // no promise to check. `transformation` is NOT required here: it is conditional on
+            // kind, and a schema check that read `kind` to decide would be duplicating the gate —
+            // `CreationIntegrity` owns that rule and names the offender when it fails.
+            [ArtifactSchemas.CreatedArtifact] =
+                AsObject("BuilderAnt (parsed from its deliverable format)",
+                    "kind", "content", "requirements", "inputs"),
+
             // v0.3.8.64 (S6): `{}` conformed, and a gate that accepts an empty object as a map is
             // an existence check wearing a schema check's name. The old comment worried an honest
             // map of a route-less repository would be invalid — but the cartographer has always
