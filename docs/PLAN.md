@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.99**.
+Shipping release: **v0.3.8.100**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -56,10 +56,22 @@ colony's own recalled missions alike — and a citation that resolves to nothing
 by name. Claims the mission could not attribute are marked and counted, never dropped and never
 fatal, and the marking is rendered from the claim record rather than trusted to survive synthesis.
 What is NOT claimed: that a source SUPPORTS the claim it was cited for (semantic, and deliberately
-out of reach — §2c), retrieval TIME as part of the mapping, any routing of research by declared
-capability, and anything live. Two of the seven classes are now served; documents, data,
-troubleshooting, system and external missions are untouched, and every one of them still resolves
-`not_applicable` at the deliverable layer exactly as before. See
+out of reach), retrieval TIME as part of the mapping, any routing of research by declared
+capability, and anything live.
+
+**What v0.3.8.100 changes, and how far.** A created deliverable now EXISTS AS A RECORD or the
+mission does not pass: a plan that types work as `document_creation` or `data_analysis` obliges the
+builder to produce a `created_artifact` whose content is bytes rather than a description, whose
+stated requirements each trace into that content or stand visibly unmet, and whose claimed inputs
+resolve — id, schema, content hash, stamped from the store's rows and never from the model's text —
+to records the mission actually holds. A data analysis additionally records what it read and what
+it did to it, or it is refused as a conclusion wearing an analysis's clothes. Unmet requirements
+are counted and never fatal, for `.99`'s reason: punishing the admission teaches deletion. What is
+NOT claimed: that the content is GOOD or that a traced section truly SATISFIES its requirement
+(semantic — the same line `.99` drew), file transformation as a distinct lane (a transformation
+that touches real files is still the coder's patch lane), and anything live. Three of the seven
+classes are now served; troubleshooting, system and external missions are untouched, and every one
+of them still resolves `not_applicable` at the deliverable layer exactly as before. See
 [`ADR-008`](adr/ADR-008-universal-mission-lifecycle.md) §1 for the evidence and §2 for the contract
 the `.98`–`.107` sequence exists to satisfy.
 
@@ -121,9 +133,9 @@ through the real application. **Ext.** = requires an external adapter, connectio
 | Web research: claim→source traceability | yes | yes | **yes** | no | every cited url resolved against what was retrieved, or the mission is refused (.99); unsourced claims marked, not dropped |
 | Web research: retrieval | yes | no | partial | no | Ext. — needs a search provider; the retrieval itself is still unqualified, only what is done with it is |
 | Internal-memory research | yes | yes | **yes** | no | recall leaves a `recall_set`, so `mission:<id>` is citable and held to the same standard as a url (.99) |
-| Claim↔source SUPPORT | no | — | no | no | deliberately absent — semantic, see §2c |
-| Artifact/document creation | partial | yes | no | no | `.100` |
-| Data analysis | no | — | no | no | `.100` |
+| Claim↔source SUPPORT | no | — | no | no | deliberately absent — semantic, the `.99` line |
+| Artifact/document creation | yes | yes | **yes** | no | a creation-typed task must leave a `created_artifact` whose content exists, requirements trace or stand unmet, inputs resolve (.100) |
+| Data analysis | yes | yes | **yes** | no | input identity (id + content hash from the store) and a transformation account, or the mission is refused (.100) |
 | Troubleshooting / diagnosis | no | — | no | no | `.101` |
 | Local system actions | partial | no | partial | no | `.102` |
 | Homelab/infrastructure actions | yes | no | yes | no | Ext. — existing homelab workers, not on the mission spine |
@@ -131,14 +143,14 @@ through the real application. **Ext.** = requires an external adapter, connectio
 | Dynamic repair (Medic) | partial | yes | partial | no | bounded repair exists; not evidence-driven — `.104` |
 | Multi-mission continuity | no | — | no | no | `.105` |
 | Pheromone / skill learning | yes | yes | yes | no | positive learning restricted to `completed_verified` |
-| Objective verification (non-code) | **partial** | `objective_verification_enabled` | **yes** | no | `.98` added `AssessmentObjective` + the deliverable ledger for the `system_audit` class; `.99` added `CitationIntegrity`, which keys on retrieval rather than on class; every remaining non-code class still resolves `not_applicable` |
+| Objective verification (non-code) | **partial** | `objective_verification_enabled` | **yes** | no | `.98` added `AssessmentObjective` + the deliverable ledger for the `system_audit` class; `.99` added `CitationIntegrity`, which keys on retrieval rather than on class; `.100` added `CreationIntegrity`, keyed on the plan's own task typing; every remaining non-code class still resolves `not_applicable` |
 
 No row may claim a status stronger than `QUALIFICATION.md` records. That is checked, not trusted:
 see `DocumentationConsistencyTests`.
 
 ---
 
-## 2b. The universal-workflow program — v0.3.8.99 → v0.3.8.107
+## 2b. The universal-workflow program — v0.3.8.100 → v0.3.8.107
 
 **This is the current forward sequence.** It supersedes the earlier framing in which R4–R10 were
 the next thing to run; those items are not deleted, and each release below names the R-items it
@@ -168,8 +180,7 @@ past.
 
 | Release | Operator-visible capability | Exit gate |
 |---|---|---|
-| **.99** | Sourced web research and internal-memory research, with claim→source mapping | §2c below |
-| **.100** | Documents, file transformation and structured data artifacts | a created artifact exists, satisfies stated requirements, and its inputs are identified; a data analysis records input identity and transformation |
+| **.100** | Documents, file transformation and structured data artifacts | §2c below |
 | **.101** | Troubleshooting and diagnostic execution | a symptom reaches a diagnosis supported by command receipts and exit statuses; the audit/diagnosis boundary holds in both directions |
 | **.102** | Local system and homelab/infrastructure actions | a reversible operation with before-state, receipt and after-state; existing homelab workers reached through the mission spine, not beside it |
 | **.103** | Approval-gated external actions, universal authority adapters | a proposed external action pauses at approval with target resolution recorded; denied authority cannot be replaced by prose |
@@ -191,83 +202,100 @@ Rules binding every release in this program:
   became API-editable with no control rendering it, so an operator following the changelog looked
   for a switch that did not exist.
 
-### 2c. v0.3.8.99 — sourced research and citation integrity
+### 2c. v0.3.8.100 — created artifacts and creation integrity
 
-**Delivers:** an operator asking a research question receives an answer in which every claim either
-names a source the mission actually retrieved, or says plainly that it could not be attributed —
-and a claim attributed to something the mission never retrieved refuses the mission by name.
+**Delivers:** an operator asking for a document, report or data analysis receives the deliverable
+ITSELF, produced as a checkable record — its content exists as bytes, each requirement it states is
+traced into that content or stands visibly unmet, and every input it claims to rest on resolves to
+a record the mission actually holds. An answer that merely DESCRIBES a deliverable — the fluent "I
+have prepared a guide covering setup" with no guide behind it — refuses the mission by name.
 
-**Covers** both directions a research answer can be sourced from: what the WORLD said (`source_set`,
-from web retrieval) and what the COLONY already knew (`recall_set`, from mission recall). Both are
-records of something consulted, which is the property that makes a citation checkable, and both are
-held to the same standard — `mission:<id>` is refused exactly as an invented url is.
+**Covers** the two creation forms the exit line names: documents (`document_creation`) and data
+analyses (`data_analysis`), the second held to both halves of its own clause — input IDENTITY (the
+concrete artifact ids and content hashes of what was read, stamped from the store's rows and never
+from the model's text) and a TRANSFORMATION account of what was done to them. Inputs are referenced
+by artifact id or by typed schema name (`schema:source_set`), because those are what the builder is
+SHOWN — the `.99` rule that a model may only reference what it has honest access to.
 
-**Does not cover**, and this is the boundary the release is named against: whether a source
-SUPPORTS the claim it was cited for. TRACEABILITY is answerable from a record; support is a semantic
-judgment, and a model asserting it is the evidence v2.19.0 stopped accepting. The gate is named for
-the weaker property because that is the one it has.
+**Does not cover**, and this is the boundary the release is named against: whether the content is
+GOOD, or whether a traced section truly SATISFIES the requirement pointing at it. Traceability is
+answerable from a record; satisfaction is a semantic judgment, and a model asserting it is the
+evidence v2.19.0 stopped accepting. The gate is named for the weaker property because that is the
+one it has.
 
-**Reuses:** the artifact store and schema check (ADR-004) as the carrier for both the retrieval
-records and the claim record, `MissionEvaluator`'s deliverable lane, `ResultAssembler`, and the
-`AddMissing` migration path. No parallel ledger and no second evidence lane.
+**Reuses:** the artifact store and schema check (ADR-004) as the carrier for the creation record,
+`MissionEvaluator`'s deliverable lane, `ResultAssembler` (the created deliverable outranks both
+synthesis and the claim rendering — a synthesis of a document is a smaller document with the
+unmet-requirements admission at the paraphrase's mercy), and the `AddMissing` migration path. No
+parallel ledger and no second evidence lane.
 
-**Connects:** `WebResearchAnt / ResearcherAnt → source_set + recall_set → BuilderAnt (shown what it
-may cite) → sourced_answer → CitationIntegrity → MissionEvaluator → the persisted explanation`.
+**Connects:** `Planner (types the task) → BuilderAnt (shown the held inputs, asked for the
+deliverable format) → created_artifact (inputs resolved deterministically) → CreationIntegrity →
+MissionEvaluator → the persisted explanation → ResultAssembler (renders the record)`.
 
-**Exit gate** — the composed acceptance mission (`SourcedResearchMissionTests`), written before the
-implementation and failing until it landed. **MET deterministically**, over four semantically
-equivalent phrasings, with `AFabricatedCitation_FailsTheMission` proving the gate can refuse.
+**Exit gate** — the composed acceptance mission (`CreatedArtifactMissionTests`), written before the
+implementation and failing until it landed. Positive over three semantically equivalent document
+phrasings plus the data-analysis clause verbatim; negative twice — a fabricated input
+(`AFabricatedInput_FailsTheMission_ByName`) and a creation-typed task answered in prose
+(`ACreationTaskAnsweredInProse_DoesNotGradeAsACreatedArtifact`).
 
 Proved, each by an assertion that fails without it:
 
-- every claim in the final answer carries either a retrieved source or an explicit `[UNSOURCED]`
-  marker, and the marker is rendered from the record rather than trusted to the model;
-- a citation to a url the mission never retrieved refuses the mission, and the url is named;
-- an internal citation resolves against the recall record, and an unrecalled mission id does not;
-- an answer that admits what it could not attribute PASSES — unsourced claims are counted, never
-  fatal, so deleting the unsupported parts is not how an answer gets through;
-- the source-set parser reads the producer's ACTUAL spelling, asserted against both spellings;
-- the refusal's reason survives the process, in the mission row, naming the gate.
+- the created content exists in the record and reaches the operator as the final answer verbatim;
+- a requirement traced to a fragment absent from the content fails the mission, and the fragment is
+  named;
+- an admitted-unmet requirement SURVIVES into the record and the rendered answer, counted and never
+  fatal — deleting a requirement is not how a deliverable gets through;
+- a data analysis's inputs carry id, schema and content hash matching the store's own rows, and its
+  transformation account is present;
+- an input naming anything the mission does not hold — including a plausible schema name like
+  `schema:filesystem_snapshot` — refuses the mission, and the reference is named;
+- a creation-typed task with no creation record refuses the mission on the record's absence;
+- an unreadable store means the gate does not apply, `.99`'s asymmetry: "cannot check" is not
+  "guilty".
 
 **Divergences — implemented differently from the way the roadmap line was written, recorded rather
 than quietly dropped:**
 
-- *"a research mission"* — **no `research` mission class is added at intake, and none is planned for
-  this release.** The gate keys on what a mission DID (it retrieved sources, so its answer owes an
-  account of them) rather than on a label a classifier assigned. That is deliberate and it is also a
-  real limitation: research is not routed by declared capability the way `.98`'s audit is, so a
-  research request still reaches whichever researcher keyword resolution finds. Keying on the record
-  makes the gate apply to every mission that retrieved anything — including coding missions that
-  search — which is stronger coverage than a class label would give; it does not give research the
-  specialist routing an audit has. Classifying research explicitly remains available and is not
-  precluded by anything here.
-- *"with retrieval time"* — **not implemented.** The retrieval records carry url and title; no
-  timestamp is part of the claim→source mapping, so the release cannot answer "when was this true".
-  It is not converted into a documented limitation to close the gate: the mapping requirement is met
-  and the freshness half is open, carried below.
-- *"unsourced claims demoted"* — an unsourced claim marks the CLAIM, and does not demote the
-  MISSION. Demoting a mission for admitting what it could not attribute would reward deletion of the
-  unsupported parts, which is the opposite of the property this gate exists to produce.
+- *"file transformation"* — **not a distinct lane, and no file is written by this class.** A
+  transformation that touches real files is the coder's patch lane, unchanged: the planner rule
+  that any file-touching goal MUST route through `patch_proposal` still stands, and this release's
+  planner guidance draws the boundary explicitly. What `.100` types is the ANSWER-deliverable form —
+  content the operator reads, not files the tree gains. A "transform this CSV on disk" mission is
+  patch-lane work today; giving it creation-record provenance on top is future work, not silently
+  claimed here.
+- *keying* — the gate keys on **the plan's own task typing**, not on what the mission DID (`.99`'s
+  key). Creation is the builder's act, so no prior runtime record exists to key on; the planner (a
+  model) proposes the type and the deterministic gate enforces what a creation must leave behind,
+  which is ADR-008's division. The honest cost: a creation request the planner mistypes as
+  `build_answer` produces an ordinary prose answer and NO gate applies — classification by meaning
+  is exactly the capability-first resolution already carried open from `.99`, and this release does
+  not claim it.
+- *"satisfies stated requirements"* — the requirements checked are **the record's own stated
+  requirements**, proposed by the model and gate-checked for traceability. They are not derived
+  from the intake specification's requested deliverables; where a specification exists, the `.98`
+  assessment ledger keeps authority over the lane (its word outranks a satisfied creation gate in
+  the evaluator's ordering). Requirement lists derived from intake — "the operator asked for three
+  sections, the record states two" — is `.105` coverage work and is not claimed.
+- *sourcing inside a creation* — a creation-typed task that also retrieved sources records its
+  provenance through INPUTS (`schema:source_set`), not through claim-level citations: one response
+  cannot carry both formats without the two competing for the same text. Claim-level sourcing
+  INSIDE a created document — this paragraph rests on that source — is carried open.
 
-**Carried open from `.98`, unmet and not lapsed:**
+**Carried open from `.98`/`.99`, unmet and not lapsed:**
 
 - `blocked_missing_capability` for unavailable repository access — no such outcome code exists yet;
-  an audit that cannot inspect is refused by the assessment objective rather than blocked by name at
-  intake;
 - "removing any production call site breaks the composed scenario" — held for two sites as a
   source-shape guard, not as a general mutation property;
 - **the live pack carried from `.97`:** objective verification enabled in a live run, an exported
-  `LiveQualificationRecord`, and a live system-audit mission through the composed application.
+  `LiveQualificationRecord`, and a live system-audit mission through the composed application — a
+  live research mission (`.99`) and a live creation mission (`.100`) join it;
+- retrieval time in the claim→source mapping;
+- capability-first resolution for research — and now for creation, per the keying divergence above.
 
-**Still open in `.99` itself, and the release does not claim them:**
-
-- **nothing live.** No search provider has been exercised, no model has written a claim record, and
-  a live research mission through the composed application joins the carried live pack above;
-- retrieval time in the claim→source mapping, as recorded in the divergences;
-- capability-first resolution for research, as recorded in the divergences.
-
-**Explicitly still unsupported after .99:** document/data, troubleshooting, system and external
-mission classes; multi-mission continuity; claim↔source SUPPORT in any form.
+**Explicitly still unsupported after .100:** troubleshooting, system and external mission classes;
+multi-mission continuity; claim↔source SUPPORT in any form; requirement coverage derived from
+intake; file transformation as a creation-record lane.
 
 ---
 
