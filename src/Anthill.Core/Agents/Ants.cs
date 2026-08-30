@@ -1297,7 +1297,19 @@ public sealed class BuilderAnt : BaseAnt
         // The sources are LISTED because a model can only cite what it was shown — see
         // `SourcedAnswer` for why the citation is a url and not an id.
         var retrieved = CitableSources(mission.Id);
-        var sourcedDirective = retrieved.Count == 0 ? "" : $@"
+
+        // v0.3.8.100 — WHEN THE TASK IS TYPED AS CREATION, THE ANSWER IS A DELIVERABLE RECORD.
+        //
+        // Keyed on the plan's own typing, which is the only honest key available BEFORE the work
+        // exists: the planner (a model) proposed that this task creates, and the deterministic
+        // gate enforces what a creation must leave behind. A creation-typed task does not ALSO
+        // receive the claim directive — its provenance lives in its declared INPUTS, which the
+        // deterministic layer resolves to held records, where a claim's lives in its citation.
+        // Asking one response to be simultaneously a claims list and a deliverable would set the
+        // two formats competing for the same text, and the loser would render as a fabrication.
+        var creating = Outcomes.CreationIntegrity.CreationTaskTypes.Contains(task.TaskType ?? "");
+        var creationDirective = creating ? CreationDirective(mission.Id, task.TaskType) : "";
+        var sourcedDirective = retrieved.Count == 0 || creating ? "" : $@"
 This mission retrieved the sources below. Write the answer as CLAIMS, one per line:
 
     CLAIM: <one assertion> [SOURCE: <the exact url it rests on>]
@@ -1321,7 +1333,7 @@ Assigned task:
 {AnthillRuntime.UntrustedBlock("prior task output", previousContext)}
 
 Create a practical final response.
-{sourcedDirective}";
+{sourcedDirective}{creationDirective}";
         var call = _router.GenerateTyped("builder", prompt, mission.Id, task.Id, Name,
             system: AnthillRuntime.RoleSystemPrompt("builder", mission.Goal, BuilderRules));
         if (call.Status == ModelCallOutcome.Empty)
@@ -1335,6 +1347,48 @@ Create a practical final response.
                 new[] { $"provider_failure[{call.Status.Name()}]: {TextUtil.Truncate(call.Content, 300)}" },
                 $"{call.Content}\n\nFallback Builder Response:\n{FallbackResponse(task, mission, previousContext)}");
         var text = TextResult(Name, call.Content, call: call);
+
+        // v0.3.8.100 — THE DELIVERABLE AS DATA, when the answer was asked for one. Same rule as
+        // the claims below: a response that ignored the format produces NO artifact and a
+        // disclosed warning, because an empty deliverable record would make "the model wrote about
+        // a document" read identically to "the mission produced one" — the exact confusion the
+        // record exists to end. The gate then fails the mission on the record's absence.
+        if (creating)
+        {
+            var deliverable = Anthill.SDK.Artifacts.CreatedArtifact.TryParse(call.Content);
+            if (deliverable is null)
+                return text with
+                {
+                    StatusCode = "succeeded_with_warnings",
+                    Warnings = text.Warnings
+                        .Append("unstructured_created_artifact: this task was typed as creation and "
+                              + "the response did not carry the deliverable format, so no "
+                              + "created_artifact record was produced and nothing checkable was made")
+                        .ToList(),
+                };
+            var resolved = ResolveInputs(deliverable, mission.Id);
+            var produced = WithArtifact(text, Anthill.SDK.Artifacts.ArtifactSchemas.CreatedArtifact,
+                deliverable.Title, resolved.ToJson());
+
+            // Observability at the point of PRODUCTION, not only at evaluation: an input that
+            // resolved to nothing is disclosed on the task record the moment it happened, so an
+            // operator watching the mission sees the defect where it was made — the gate will
+            // still refuse it at evaluation, by name, from the same record.
+            var unresolvedInputs = resolved.Inputs
+                .Where(i => string.IsNullOrWhiteSpace(i.ArtifactId))
+                .Select(i => i.Reference).ToList();
+            return unresolvedInputs.Count == 0 ? produced : produced with
+            {
+                StatusCode = "succeeded_with_warnings",
+                Warnings = produced.Warnings
+                    .Append("unresolved_creation_inputs: "
+                          + string.Join(", ", unresolvedInputs)
+                          + " — the deliverable claims provenance this mission does not hold, and "
+                          + "creation integrity will refuse it")
+                    .ToList(),
+            };
+        }
+
         if (retrieved.Count == 0) return text;
 
         // v0.3.8.99 — THE CLAIMS AS DATA, when the answer was asked for them.
@@ -1383,6 +1437,108 @@ Create a practical final response.
         {
             Console.Error.WriteLine($"[builder] could not read retrieved sources for {missionId}: {error.Message}");
             return Array.Empty<Anthill.SDK.Artifacts.RetrievedSource>();
+        }
+    }
+
+    /// <summary>
+    /// The deliverable format, asked for by name, with the inputs this mission actually holds
+    /// LISTED — the `.99` rule again: a model can only reference what it was shown, and what it is
+    /// shown here is each held artifact's id and typed schema name. Only model-readable artifacts
+    /// are listed; advertising a Secret record's id would be the S5 leak wearing a provenance
+    /// line's clothes.
+    /// </summary>
+    private string CreationDirective(string missionId, string? taskType)
+    {
+        var kind = string.Equals(taskType, "data_analysis", StringComparison.OrdinalIgnoreCase)
+            ? Anthill.SDK.Artifacts.CreatedArtifact.KindDataAnalysis
+            : Anthill.SDK.Artifacts.CreatedArtifact.KindDocument;
+        var held = HeldInputs(missionId);
+        var available = held.Count == 0
+            ? "    none — write `INPUT: none`"
+            : string.Join("\n", held.Select(a => $"    {a.Id}  — {Anthill.SDK.Common.TextUtil.Truncate(a.Schema, 60)}"));
+
+        return $@"
+This task CREATES a deliverable. Answer in EXACTLY this form:
+
+    DELIVERABLE: <title>
+    KIND: {kind}
+    REQUIREMENT: <a stated requirement> [WHERE: <a fragment appearing verbatim in the content where it is addressed>]
+    REQUIREMENT: <a requirement you did not address> [UNMET]
+    INPUT: <an artifact id from the list below, `schema:<its schema name>`, or none>
+    TRANSFORMATION: <one step of what was done to the inputs — required for a data analysis, one line per step>
+    CONTENT:
+    <the full deliverable content — the thing itself, not a description of it>
+
+Reference ONLY inputs from the list below, by id or by `schema:` name — never invent one: a
+claimed input this mission does not hold asserts a provenance that cannot be checked, which is
+worse than declaring none. Mark any requirement you did not address [UNMET] and KEEP it — do not
+delete a requirement to make the deliverable look more complete than it is.
+
+Available inputs:
+{available}
+";
+    }
+
+    /// <summary>
+    /// Resolve the record's input references against what the mission holds, stamping identity —
+    /// id, schema, content hash — from the STORE's rows, never from the model's text. A hash a
+    /// model wrote is a hash it could have invented; a reference that resolves to nothing is kept
+    /// unresolved, which is exactly what the gate refuses by name. Never throws: an unreadable
+    /// store leaves every reference unresolved rather than answering not at all.
+    /// </summary>
+    private Anthill.SDK.Artifacts.CreatedArtifact ResolveInputs(
+        Anthill.SDK.Artifacts.CreatedArtifact record, string missionId)
+    {
+        if (record.Inputs.Count == 0) return record;
+        var held = HeldInputs(missionId);
+
+        var resolved = new List<Anthill.SDK.Artifacts.CreatedInput>();
+        foreach (var input in record.Inputs)
+        {
+            var reference = input.Reference.Trim();
+            if (reference.StartsWith(Anthill.SDK.Artifacts.CreatedArtifact.SchemaRefPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                var schema = reference[Anthill.SDK.Artifacts.CreatedArtifact.SchemaRefPrefix.Length..].Trim();
+                var matches = held.Where(a => string.Equals(a.Schema, schema, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (matches.Count == 0) { resolved.Add(input); continue; }   // unresolved, by name
+                resolved.AddRange(matches.Select(a =>
+                    new Anthill.SDK.Artifacts.CreatedInput(reference, a.Id, a.Schema, a.ContentHash)));
+            }
+            else
+            {
+                var match = held.FirstOrDefault(a => string.Equals(a.Id, reference, StringComparison.Ordinal));
+                resolved.Add(match is null
+                    ? input
+                    : new Anthill.SDK.Artifacts.CreatedInput(reference, match.Id, match.Schema, match.ContentHash));
+            }
+        }
+
+        return record with
+        {
+            Inputs = resolved
+                .DistinctBy(i => i.ArtifactId ?? $"unresolved:{i.Reference}", StringComparer.Ordinal)
+                .ToList(),
+        };
+    }
+
+    /// <summary>What this mission holds that a deliverable may honestly rest on: model-readable
+    /// artifacts, excluding creation records themselves (a deliverable citing itself resolves and
+    /// means nothing). Never throws, for `CitableSources`' reason.</summary>
+    private IReadOnlyList<Anthill.SDK.Artifacts.Artifact> HeldInputs(string missionId)
+    {
+        if (_artifacts is null) return Array.Empty<Anthill.SDK.Artifacts.Artifact>();
+        try
+        {
+            return _artifacts.ForMission(missionId)
+                .Where(a => a.IsModelReadable
+                    && !string.Equals(a.Schema, Anthill.SDK.Artifacts.ArtifactSchemas.CreatedArtifact,
+                        StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"[builder] could not read held artifacts for {missionId}: {error.Message}");
+            return Array.Empty<Anthill.SDK.Artifacts.Artifact>();
         }
     }
 
