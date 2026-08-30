@@ -20,11 +20,24 @@ public class CitationIntegrityTests
     private const string Ollama = "https://ollama.com/";
     private const string LlamaCpp = "https://github.com/ggerganov/llama.cpp";
 
+    /// <summary>
+    /// A source set spelled THE WAY THE PRODUCER SPELLS IT.
+    ///
+    /// `WebResearchAnt` writes `new { src.Title, src.Url, … }` through `Json.Dumps`, which sets no
+    /// naming policy — so the payload carries `"Title"` and `"Url"`, PascalCase. The first draft of
+    /// this fixture wrote them lowercase, matching what the READER expected, and every test here
+    /// passed while both readers silently resolved nothing against real payloads. A fixture that
+    /// agrees with the code under test proves only that two things written together match.
+    /// </summary>
     private static Artifact SourceSet(params string[] urls) => Artifact.Create(
         schema: ArtifactSchemas.SourceSet,
         producerRole: "web",
         missionId: "m",
-        payload: Json.Dumps(new { query = "q", sources = urls.Select(u => new { url = u, title = "t" }) }));
+        payload: Json.Dumps(new
+        {
+            query = "q",
+            sources = urls.Select(u => new { Title = "t", Url = u, Domain = "d", confidence = 0.8 }),
+        }));
 
     private static Artifact Answer(SourcedAnswer answer) => Artifact.Create(
         schema: ArtifactSchemas.SourcedAnswer,
@@ -145,6 +158,29 @@ public class CitationIntegrityTests
         var result = CitationIntegrity.Evaluate(artifacts);
         Assert.True(result.Satisfied);
         Assert.Equal(2, result.Unsourced);
+    }
+
+    /// <summary>
+    /// THE PARSER READS THE PRODUCER, WHATEVER CASE IT USES.
+    ///
+    /// Both spellings, asserted together, so this can never again pass by agreeing with one of them.
+    /// The PascalCase case is what production actually writes; the camelCase case is what a future
+    /// serializer policy would produce, and a reader that broke silently on that change would be the
+    /// same defect with a different trigger.
+    /// </summary>
+    [Fact]
+    public void TheSourceSetParser_ReadsEitherSpelling()
+    {
+        var pascal = Json.Dumps(new { sources = new[] { new { Title = "t", Url = Ollama } } });
+        var camel = Json.Dumps(new { sources = new[] { new { title = "t", url = Ollama } } });
+
+        Assert.Equal(Ollama, Assert.Single(SourceSetPayload.Read(pascal)).Url);
+        Assert.Equal(Ollama, Assert.Single(SourceSetPayload.Read(camel)).Url);
+
+        // And nothing usable is read from junk, rather than throwing into the mission's face.
+        Assert.Empty(SourceSetPayload.Read("{ not json"));
+        Assert.Empty(SourceSetPayload.Read("{}"));
+        Assert.Empty(SourceSetPayload.Read(null));
     }
 
     /// <summary>

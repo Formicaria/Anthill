@@ -1315,32 +1315,22 @@ Create a practical final response.
     /// same record the rest of the graph reads is what stops two accounts of one search existing.
     /// Never throws — a builder that cannot read the store answers unsourced rather than not at all.
     /// </summary>
-    private IReadOnlyList<(string Url, string Title)> RetrievedSources(string missionId)
+    private IReadOnlyList<Anthill.SDK.Artifacts.RetrievedSource> RetrievedSources(string missionId)
     {
-        if (_artifacts is null) return Array.Empty<(string, string)>();
+        if (_artifacts is null) return Array.Empty<Anthill.SDK.Artifacts.RetrievedSource>();
         try
         {
-            var found = new List<(string Url, string Title)>();
-            foreach (var artifact in _artifacts.ForMission(missionId)
-                         .Where(a => string.Equals(a.Schema, Anthill.SDK.Artifacts.ArtifactSchemas.SourceSet,
-                                                   StringComparison.OrdinalIgnoreCase)))
-            {
-                using var document = System.Text.Json.JsonDocument.Parse(artifact.Payload);
-                if (!document.RootElement.TryGetProperty("sources", out var sources)) continue;
-                foreach (var source in sources.EnumerateArray())
-                {
-                    var url = source.TryGetProperty("url", out var u) ? u.GetString() ?? "" : "";
-                    var title = source.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
-                    if (url.Length > 0 && !found.Any(f => string.Equals(f.Url, url, StringComparison.OrdinalIgnoreCase)))
-                        found.Add((url, title));
-                }
-            }
-            return found;
+            return _artifacts.ForMission(missionId)
+                .Where(a => string.Equals(a.Schema, Anthill.SDK.Artifacts.ArtifactSchemas.SourceSet,
+                                          StringComparison.OrdinalIgnoreCase))
+                .SelectMany(a => Anthill.SDK.Artifacts.SourceSetPayload.Read(a.Payload))
+                .DistinctBy(s => s.Url, StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
         catch (Exception error)
         {
             Console.Error.WriteLine($"[builder] could not read retrieved sources for {missionId}: {error.Message}");
-            return Array.Empty<(string, string)>();
+            return Array.Empty<Anthill.SDK.Artifacts.RetrievedSource>();
         }
     }
 

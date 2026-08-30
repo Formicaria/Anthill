@@ -87,32 +87,16 @@ public static class CitationIntegrity
     /// <summary>
     /// Every url this mission actually retrieved, from the `source_set` records the web ant writes.
     ///
-    /// Case-insensitive, because a model that reproduces a url with different capitalisation has
-    /// cited the same page — and refusing that would be grading transcription rather than honesty.
+    /// Case-insensitive on the URL, because a model that reproduces one with different
+    /// capitalisation has cited the same page and refusing that would grade transcription rather
+    /// than honesty — and case-insensitive on the FIELD NAMES too, via the shared parser, because
+    /// the first draft of this method read `"url"` from a payload the producer writes as `"Url"`
+    /// and silently resolved nothing. See <see cref="SourceSetPayload"/>.
     /// </summary>
-    public static IReadOnlySet<string> Retrieved(IReadOnlyList<Artifact>? artifacts)
-    {
-        var urls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (artifacts is null) return urls;
-
-        foreach (var artifact in artifacts.Where(a =>
-                     string.Equals(a.Schema, ArtifactSchemas.SourceSet, StringComparison.OrdinalIgnoreCase)))
-        {
-            try
-            {
-                using var document = System.Text.Json.JsonDocument.Parse(artifact.Payload);
-                if (!document.RootElement.TryGetProperty("sources", out var sources)) continue;
-                foreach (var source in sources.EnumerateArray())
-                    if (source.TryGetProperty("url", out var url) && url.GetString() is { Length: > 0 } value)
-                        urls.Add(value);
-            }
-            catch (System.Text.Json.JsonException)
-            {
-                // A malformed source set records nothing here. It is already reported as a schema
-                // non-conformance where the artifact is read; failing the mission a second time for
-                // the same defect would say nothing new.
-            }
-        }
-        return urls;
-    }
+    public static IReadOnlySet<string> Retrieved(IReadOnlyList<Artifact>? artifacts) =>
+        artifacts is null
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : SourceSetPayload.UrlsFrom(artifacts
+                .Where(a => string.Equals(a.Schema, ArtifactSchemas.SourceSet, StringComparison.OrdinalIgnoreCase))
+                .Select(a => a.Payload));
 }
