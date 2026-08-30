@@ -90,9 +90,21 @@ public static class AssessmentObjective
         if (evidence is null)
             reasons.Add("the evidence store could not be read, so no inspection can be shown");
         else
+        {
             foreach (var kind in specification.RequiredEvidence)
                 if (!evidence.Any(e => string.Equals(e.Kind, kind, StringComparison.OrdinalIgnoreCase)))
                     reasons.Add($"no '{kind}' evidence was recorded — the assessment rests on nothing that was read");
+
+            // v0.3.8.101 — THE BOUNDARY, DIRECTION ONE (ADR-008): an assessment that executed
+            // checks has left assessment. The audit class's authority is `observe`; a
+            // `command_check` receipt in its store is the record of that boundary crossed, and it
+            // is refused HERE — by the class's own gate, from the mission's own records — rather
+            // than trusted to a dispatch-time authority check alone. "Is it healthy?" reads;
+            // "why is it unhealthy?" runs, and each class keeps its own verbs.
+            if (evidence.Any(e => string.Equals(e.Kind, EvidenceKinds.CommandCheck, StringComparison.OrdinalIgnoreCase)))
+                reasons.Add("the assessment executed checks — assessment observes, and executed "
+                          + "checks belong to the troubleshooting class (ADR-008 boundary)");
+        }
 
         // 2. The verifier read what it graded.
         if (consumptions is null)
