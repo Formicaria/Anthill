@@ -1154,9 +1154,20 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
             Console.Error.WriteLine($"[finalize] could not read consumptions for {mission.Id}: {consumptionError.Message}");
         }
 
+        // v0.3.8.99 — and the mission's artifacts, so citation integrity can resolve what the
+        // answer cited against what the mission actually retrieved. Read failure passes NULL, which
+        // that layer treats as "nothing to contradict" rather than as a failure — see its remarks
+        // for why it is the one gate that does NOT fail closed on an unreadable store.
+        IReadOnlyList<Anthill.SDK.Artifacts.Artifact>? missionArtifacts = null;
+        try { missionArtifacts = ((Anthill.SDK.Artifacts.IArtifactStore)Memory).ForMission(mission.Id); }
+        catch (Exception artifactError)
+        {
+            Console.Error.WriteLine($"[finalize] could not read artifacts for {mission.Id}: {artifactError.Message}");
+        }
+
         var evaluation = _evaluator.Evaluate(
             mission, context, stopReason, Memory.CountPatchProposalsForMission(mission.Id), missionEvidence,
-            missionConsumptions);
+            missionConsumptions, missionArtifacts);
         // NB: persisted by RunMission AFTER the final SaveMission (INSERT OR REPLACE would erase
         // it here) and before anything publishes completion. In-process consumers below use this
         // same object, so they cannot disagree with what gets persisted.

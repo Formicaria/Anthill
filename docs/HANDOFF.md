@@ -4,82 +4,62 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: main carries **v0.3.8.97** (`a828dfe`, tagged and released). **`release/v0.3.8.98` is
-complete and green** — the first universal vertical slice: repository + read-only runtime system
-audits, end to end through the real conversation path.
+State: main carries **v0.3.8.98** (`4a4ed7f`, tagged and released — the first universal vertical
+slice). **`release/v0.3.8.99` is complete and green**: sourced research with claim→source
+traceability, both from the web and from the colony's own memory.
 
-WHAT `.98` DELIVERS, in one paragraph: an operator's audit request is classified at intake into
-declared dimensions (`mission_class`, intent, targets, freshness, authority) and carried on
-`MissionContext` as a `MissionSpecification`; workers are resolved by DECLARED CAPABILITY rather
-than by substring, and a worker the plan named that cannot serve the mission is repaired and the
-repair announced; the audit inspects the repository and the live colony state (`colony_state` +
-`researcher.runtime_researcher`) and leaves `inspection` evidence — a new NON-DETERMINISTIC lane
-that records that an inspection happened and can promote nothing; the answer is assembled BEFORE the
-grade; and `AssessmentObjective` plus a deliverable ledger refuse an audit that inspected nothing, a
+WHAT `.99` DELIVERS, in one paragraph: a research answer is a typed CLAIM RECORD (`sourced_answer`)
+rather than prose — each claim with the url that supports it, or an explicit `[UNSOURCED]` marker —
+and `CitationIntegrity` resolves every cited url against what the mission ACTUALLY retrieved, from
+`source_set` (the web) and `recall_set` (prior missions, citable as `mission:<id>`). A citation that
+resolves to nothing refuses the mission and the url is named. An unsourced claim is marked and
+counted and is NEVER fatal, because refusing a mission for admitting what it could not attribute
+would teach that deleting the unsupported parts is how an answer passes. The rendering comes from
+the record and is composed AHEAD of answer synthesis, so a paraphrase cannot drop a caveat while
+keeping the claim it qualified.
+
+WHAT IT DELIBERATELY DOES NOT DO: judge whether a source SUPPORTS the claim. Traceability is
+answerable from a record; support is semantic, and a model asserting it is the evidence v2.19.0
+stopped accepting.
+
+THREE DEFECTS `.99` FOUND IN ITSELF, all found the same way and worth carrying forward:
+(1) `Json.Dumps` sets no naming policy, so `new { src.Title, src.Url }` serialises PascalCase while
+both readers asked `TryGetProperty("url")` — case-SENSITIVE — and silently resolved nothing; the
+unit tests passed because their fixtures wrote the payload the way the READERS expected rather than
+the way the PRODUCER writes it, so a green suite proved only that two things written together
+matched each other. (2) The fabrication test asserted `IsPositive == false`, which ANY failure
+satisfies. (3) Strengthening it to demand the explanation NAME the gate immediately exposed that
+`evaluation_explanation` had never been persisted — since v2.26.0 every reader after the process
+exited saw the placeholder "loaded from persisted evaluation".
+
+**The lesson, now written at the call sites:** three consecutive defects were caught not by the
+feature's own tests but by making an assertion demand WHY rather than WHETHER — and by entering at
+the CONVERSATION rather than at the unit being built. `.98` learned the same thing by a different
+road (a capability branch that compiled, read correctly and never executed once).
+
+NOT CLAIMED: any of it live. No search provider has been exercised and no model has written a claim
+record. `PLAN.md` §2c records `.99`'s three divergences (no `research` mission class at intake — the
+gate keys on what a mission DID, not on a label; no retrieval TIME in the mapping; an unsourced
+claim marks the claim and does not demote the mission) and carries `.98`'s unmet items forward:
+`blocked_missing_capability`, the call-site mutation property, and the `.97` live pack.
+
+STILL THE OPERATOR'S STEP, unchanged across three releases: objective verification ENABLED in a real
+run, an exported `LiveQualificationRecord`, and a live non-code mission (audit or research) through
+the composed application. `QUALIFICATION.md` §3 is the authority and says PARTIAL.
+
+WHAT `.98` SHIPPED (full account in its CHANGELOG entry): an audit request classified at intake into
+declared dimensions and carried on `MissionContext` as a `MissionSpecification`; workers resolved by
+DECLARED CAPABILITY rather than by substring, with a named-but-incompatible worker repaired and the
+repair announced; repository AND live colony state inspected (`colony_state` +
+`researcher.runtime_researcher`) leaving `inspection` evidence — a NON-DETERMINISTIC lane that
+records that an inspection happened and can promote nothing; the answer assembled BEFORE the grade;
+and `AssessmentObjective` plus a deliverable ledger refusing an audit that inspected nothing, a
 verifier that consumed nothing, or a requested deliverable nothing produced.
 
-THREE DEFECTS `.98` FOUND IN ITSELF, all of the same family and worth carrying forward: capability
-resolution was written one layer downstream of the fill it replaced and never executed once (and
-v0.3.8.93's trail-guided selection had been sitting in the same never-true condition since it
-shipped); `mission_researcher` declared a capability its permission contract cannot support, which
-made the wrong worker look compatible; and the acceptance test's first four phrasings passed the
-worker assertions by luck, because none of them contained the word the keyword resolver keys on.
-Every one was found by a test that entered at the CONVERSATION rather than at the unit being built.
-
-NOT CLAIMED: any of it live. The `.97` live pack — objective verification enabled in a real run, an
-exported `LiveQualificationRecord`, a live system-audit mission — is still open and is the operator's
-step. `PLAN.md` §2c also records two gate items implemented deliberately differently from the way
-they were written (a missing builder is SUPPLIED rather than refused; answer coverage is STRUCTURAL
-rather than textual) and one not implemented at all (`blocked_missing_capability`).
-
-**The tag was cut by operator decision BEFORE the live qualification pack completed.** The
-release brief had gated it on that pack, and the shipped CHANGELOG entry for .97 says so in the
-present tense; that sentence stands as history and is not edited, because a tagged entry is not
-rewritten to flatter a later decision. What actually happened: the pack was blocked on operator
-switches having no UI control, the operator judged the .97 code ready on its own evidence
-(3,236 tests green, the two-repository acceptance passing), and moved the pack forward rather
-than holding a correct release behind a UI gap.
-
-The pack did not evaporate. Its .98-relevant items are now **.98 exit-gate items**, where they
-stop being a separate errand — .98 cannot be proven without them:
-
-- objective verification ENABLED for a real mission;
-- an exported `LiveQualificationRecord`;
-- a live system-audit mission through the real conversation path.
-
-**One .97 residual is explicitly carried, NOT folded in:** the Windows materialized-revision
-`dotnet_test` failure. It is real and unresolved. It is a CODING-lane defect and is not
-logically required to prove the non-code audit spine, so it must not be allowed to pull .98 back
-into a coding release — that is the precise asymmetry .98 exists to correct. It blocks .98 only
-if it breaks .98's suite or the audit path. A failed check now keeps its output tail (.97), so
-the next occurrence is the first one that can be read rather than guessed at.
-
-WHAT v0.3.8.97 SHIPPED (full account in the CHANGELOG entry): the target tree is resolved from
-`PatchSet.WorkspaceId → workspace.SourceRoot` by `PatchTargetResolver` and used by the gate
-(new `TargetUnresolvable` refusal, fail-closed), the set applier, the intent hashes,
-reconciliation, recovery, and the auto-commit — no project patch consults the configured live
-root as its target; the Apply button applies multi-file sets transactionally
-(`ApplyApprovedSetAsAUnit`); bypass application is DEFERRED until the inserted tester/soldier
-reviews complete (`patch_bypass_deferred` + `MaybeApplyBypassAfterReviews` at review-task
-completion); a writable agent CLI with no usable worktree never starts
-(`Context.MissionWorktreeMissing` → `AgentCliProvider.Confinement` refusal; the acting branch
-fails closed instead of falling through to propose-only); `WorkspaceChangeSet` captures delete
-and rename as first-class proposals and refuses unrepresentable changes loudly
-(`CaptureResult.Problems`, both callers refuse an unfaithful capture whole); acting Claude Code
-may run the repository's DECLARED build/test commands in its worktree (stems from
-`WorkspaceCapabilityManifest` → bounded `Bash(stem:*)` in both CLI channels; tester stays the
-evidence source); and `MissionReport` reports per-set files, approval state, application state,
-and target root. Acceptance: `ExecutionPromotionClosureTests` (two disposable repositories —
-B changes wholly, A byte-for-byte never).
-
-AND THE SAME RELEASE CARRIES THE QUALIFICATION DAY'S REMAINING LEDGER, which is what makes the
-pack runnable at all: `workspace_checks` and `objective_verification_enabled` are editable
-settings now (declaring a check took a file edit and a restart per attempt; the evaluation layer
-could not be switched on, which is why every record so far reads `deliverable: not_checked`),
-and a failed check KEEPS ITS OUTPUT — head-and-tail truncation, the transcript recorded on the
-failure branch, an evidence cap that fits. So two of the .96 STILL-OPEN items below are closed,
-and the third — the Windows `dotnet_test` failure inside a materialized revision — is now
-diagnosable rather than mysterious: the next failing run is the first one that can be READ.
+One `.97` residual is explicitly carried and is NOT a gate for either release: the Windows
+materialized-revision `dotnet_test` failure. It is real, unresolved, and a CODING-lane defect, so it
+must not pull a universal-workflow release back into a coding one. A failed check now keeps its
+output tail (.97), so the next occurrence is the first one that can be read rather than guessed at.
 
 Previous state below, kept because the next session runs the live pack against it.
 
@@ -153,11 +133,12 @@ sixteen releases; (2) a cross-boundary value is obtained FROM THE PRODUCER, neve
 match (`CrossBoundaryAgreementTests`); (3) checks that answer a question ADJACENT to the one
 asked are the house defect — the live qualification attempt added `manage_models` to the list.
 
-Repo: `formicaria/anthill` in the operator's VSCode folder; remote
-`https://github.com/formicaria/anthill.git`. Build with `-c Release`. The operator's shell is
-PowerShell 5.1 — `&&` is a parse error; separate statements. A Linux sandbox CAN build and test
-everything except `Anthill.Desktop` (net9.0-windows ref packs): .NET 9 SDK tarball + the
-operator's NuGet cache as `NUGET_PACKAGES`, restore fully offline.
+Repo: `formicaria/anthill`; remote `https://github.com/formicaria/anthill.git`. Build with
+`-c Release`, and stop `Anthill.Api` first — a running instance locks `Anthill.Core.dll`. The
+operator now works on a **Linux laptop** (bash); the earlier PowerShell 5.1 machine is still in use
+occasionally, where `&&` is a parse error and statements must be separated. A Linux sandbox CAN
+build and test everything except `Anthill.Desktop` (net9.0-windows ref packs): .NET 9 SDK tarball +
+the operator's NuGet cache as `NUGET_PACKAGES`, restore fully offline.
 
 Version bumps touch FIVE markers (RegressionGuardTests + the PLAN mention):
 

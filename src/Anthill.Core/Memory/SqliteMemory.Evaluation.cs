@@ -23,12 +23,15 @@ public sealed partial class SqliteMemory
             using var conn = Connect();
             NonQuery(conn, null,
                 @"UPDATE missions SET outcome_code=@code, stop_reason=@stop, verification_status=@ver,
-                      deliverable_status=@del, evaluator_version=@ev, evaluated_at=@at
+                      deliverable_status=@del, evaluator_version=@ev, evaluated_at=@at,
+                      evaluation_explanation=@why
                   WHERE id=@id",
                 ("@id", evaluation.MissionId), ("@code", evaluation.OutcomeCode),
                 ("@stop", evaluation.StopReason), ("@ver", evaluation.VerificationStatus),
                 ("@del", evaluation.DeliverableStatus), ("@ev", evaluation.EvaluatorVersion),
-                ("@at", evaluation.EvaluatedAt));
+                ("@at", evaluation.EvaluatedAt),
+                // v0.3.8.99 — the REASON, not only the verdict. See the schema note.
+                ("@why", evaluation.Explanation));
         }
         InvalidateCache();
     }
@@ -69,7 +72,7 @@ public sealed partial class SqliteMemory
         if (string.IsNullOrWhiteSpace(missionId)) return null;
         var row = Query(
             @"SELECT outcome_code, stop_reason, verification_status, deliverable_status,
-                     evaluator_version, evaluated_at, status
+                     evaluator_version, evaluated_at, evaluation_explanation, status
               FROM missions WHERE id=@id", ("@id", missionId)).FirstOrDefault();
         if (row is null) return null;
 
@@ -85,6 +88,12 @@ public sealed partial class SqliteMemory
             StopReason: row.GetValueOrDefault("stop_reason")?.ToString() is { Length: > 0 } sr ? sr : null,
             EvaluatorVersion: row.GetValueOrDefault("evaluator_version")?.ToString() ?? MissionEvaluator.LegacyVersion,
             EvaluatedAt: row.GetValueOrDefault("evaluated_at")?.ToString() ?? "",
-            Explanation: "loaded from persisted evaluation");
+            // v0.3.8.99 — the evaluator's own sentence, when the row carries one. A legacy row
+            // predates the column and says so plainly rather than pretending the reason is
+            // available: "the reason was not recorded" and "the reason was X" must stay
+            // distinguishable, which is the same rule every other legacy field here follows.
+            Explanation: row.GetValueOrDefault("evaluation_explanation")?.ToString() is { Length: > 0 } why
+                ? why
+                : "loaded from persisted evaluation (this row predates recorded explanations)");
     }
 }

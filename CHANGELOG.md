@@ -1,3 +1,98 @@
+## v0.3.8.99 - sourced research: a citation that resolves, or a mission that does not pass
+
+**DETERMINISTICALLY COMPLETE, NOT LIVE-QUALIFIED.** Every claim below is covered by a test that
+fails without it, and the composed acceptance mission passes over four semantically equivalent
+phrasings with a negative run proving the gate can refuse. NOT claimed: any of it running against a
+real search provider or a real model. `PLAN.md` §2c names what remains, including the live pack
+carried from `.97` and `.98` — unchanged, unmet, and not converted into a documented limitation to
+close it. `QUALIFICATION.md` §3 stays the authority on live evidence and still says PARTIAL.
+
+**The failure this release exists for is the one an operator cannot catch by reading.** An audit's
+evidence is something the colony DID, so `.98` could ask its own records whether it happened. A
+research answer's evidence is something the WORLD said — and the model writing the answer is also
+the thing proposing which source supports which sentence. That arrangement produces a fabricated
+citation: a claim attributed to a url the mission never retrieved. It is fluent, it is confident,
+and a real citation and an invented one look identical on the page. Nothing in the colony could tell
+them apart, because nothing compared what was cited against what was fetched.
+
+**So the model proposes and a deterministic gate decides, which is ADR-008's division applied to
+attribution.** The builder is shown the urls the mission actually retrieved and asked to cite from
+them; `CitationIntegrity` resolves every url the answer cited against the mission's own retrieval
+records. A citation that resolves to nothing is not a weaker claim — it is a claim about the
+mission's own history that is untrue, and the mission is refused for it, with the url named.
+
+**What it deliberately does NOT check is whether the source SUPPORTS the claim.** That is a semantic
+judgment, and a model asserting it is exactly the evidence v2.19.0 stopped accepting. `.98` recorded
+what happens when a gate reaches for semantics it cannot reach — the answer-coverage note — and this
+stays on the side of the line a record can answer: TRACEABILITY is checkable, support is not. The
+gate is honest about being the weaker of the two properties rather than being named for the
+stronger one.
+
+**An unsourced claim is not a failure, and that is load-bearing.** Refusing a mission for admitting
+something it could not attribute would teach exactly the wrong lesson — that deleting the
+unsupported parts is how an answer passes. Unsourced claims are marked and counted, never dropped
+and never fatal. What fails is attribution to something that was never retrieved.
+
+**The marking is rendered from the record, so synthesis cannot paraphrase it away.** `SourcedAnswer`
+is a typed claim record — each claim with its source or an explicit `[UNSOURCED]` — and where one
+exists it IS the final answer, composed ahead of the synthesis path rather than fed through it. A
+rewrite can drop a caveat without dropping the claim it qualified, leaving an answer that reads as
+fully attributed because the doubt did not survive the paraphrase. That is "two channels and the
+prose one wins" (ADR-004) in its most damaging form: the channel that wins is the one that lost the
+doubt. The marking is now a property of the record instead of a promise about it.
+
+**An internal source is a source.** A claim drawn from the colony's own prior missions was
+previously indistinguishable from one nobody could attribute — both rendered `[UNSOURCED]`, which
+flattens "we could not support this" together with "this came from our own history", two different
+facts leading an operator to two different next steps. The researcher's recall now leaves a
+`recall_set` record built from the same query the memory formatter reads, giving each recalled
+mission the citable identity `mission:<id>` in the same field a web source uses. And an internal
+citation is held to the SAME standard: a mission id that was never recalled fails exactly as an
+invented url does, because "cite the colony" must not be the loophole through which anything can be
+asserted. `ArtifactSchemas.CitableRecords` names the citable set once, so the list the builder is
+shown and the set the gate resolves against cannot diverge.
+
+**THE DEFECT THIS RELEASE FOUND IN ITSELF, recorded because the mechanism matters more than the
+bug.** `Json.Dumps` sets no naming policy, so the web ant's `new { src.Title, src.Url }` serialises
+as `"Title"` and `"Url"` — and `JsonElement.TryGetProperty` is case-SENSITIVE. Both readers asked
+for `"url"`. Both found nothing, silently, and the composed mission reported an answer that cited
+nothing at all.
+
+The unit tests passed throughout, and the reason is the part worth keeping: their fixtures wrote the
+payload the way the READERS expected rather than the way the PRODUCER writes it. The test agreed
+with the code under test and both disagreed with the system, so a green suite proved only that two
+things written together matched each other. The fix is not a spelling correction — it is one shared
+parser (`SourceSetPayload`), case-insensitive on the field name because a producer may reasonably
+change its serialisation and a reader that breaks silently when it does will break silently again,
+asserted against BOTH spellings together so this can never again pass by agreeing with one of them.
+Only the composed acceptance mission, entering at the conversation rather than at the unit under
+construction, could see it — the same lesson as `.98`'s dead capability branch, arriving by a
+different road.
+
+**A vacuous negative, and the real defect underneath it.** The fabrication test asserted
+`IsPositive == false`, which any failure satisfies — the mission could have been refused for an
+unrelated reason and the test would have agreed. Strengthening it to demand that the explanation
+NAME the gate ("failure messages must name the layer that said no") immediately failed on
+`"loaded from persisted evaluation"`: the evaluator composes a sentence saying which gate refused
+and what for, and the mission row had been dropping it since v2.26.0. The status columns say WHAT
+the verdict was; only the explanation says WHY, and a message that lives until the process exits
+does not satisfy that rule. `evaluation_explanation` is now a persisted column, added by the
+existing `AddMissing` migration; rows written before it read back as predating recorded
+explanations rather than as having none.
+
+Three consecutive defects in this release were found not by the feature's own tests but by making an
+assertion demand *why* rather than *whether*. That is now written at the call sites rather than
+learned again.
+
+**What is NOT in this release, stated plainly.** No `research` mission class exists at intake, and
+none is added: the gate keys on what a mission DID — it retrieved sources, so its answer owes an
+account of them — rather than on a label a classifier assigned. This means a research mission is not
+yet routed by capability the way an audit is, and it is recorded as a divergence in `PLAN.md` §2c
+rather than presented as a decision that needed no recording. Retrieval TIME is not yet part of the
+mapping; the roadmap line asks for it and the record carries url and title only. Live: no search
+provider has been exercised, no model has written a claim record, and the entire release is
+qualified deterministically through the real composition root and nowhere else.
+
 ## v0.3.8.98 - the universal workflow begins: system audits, and one documented truth
 
 **DETERMINISTICALLY COMPLETE, NOT LIVE-QUALIFIED.** Every claim below is covered by a test that

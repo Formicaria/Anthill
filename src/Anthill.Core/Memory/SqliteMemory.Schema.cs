@@ -631,6 +631,23 @@ public sealed partial class SqliteMemory : IDisposable
             ["deliverable_status"] = "TEXT NOT NULL DEFAULT ''",
             ["evaluator_version"] = "TEXT NOT NULL DEFAULT ''",
             ["evaluated_at"] = "TEXT",
+            // v0.3.8.99: WHY the mission was graded as it was, in the evaluator's own words.
+            //
+            // The status columns above say WHAT the verdict was; they cannot say which gate refused
+            // or what it refused for. The evaluator has always composed that sentence — "assessment
+            // objective NOT satisfied — no 'inspection' evidence…", "citation integrity NOT
+            // satisfied — the answer cites '…', which this mission never retrieved" — and this
+            // table dropped it, so `LoadMissionEvaluation` returned the placeholder "loaded from
+            // persisted evaluation" to every reader that came after the process exited.
+            //
+            // It mattered little while every demotion was structural, because the status columns
+            // carried the whole answer. It matters now: `.98` and `.99` added gates whose entire
+            // value is the specific reason, and "failure messages must name the layer that said no"
+            // is not satisfied by a message that exists only until the process ends.
+            //
+            // Legacy rows read as NULL — the reason was never written and cannot be reconstructed;
+            // inventing one would be worse than admitting it is gone.
+            ["evaluation_explanation"] = "TEXT",
         });
         // v2.26.0: task rows must carry enough to reproduce live evaluation — criticality above
         // all, because row-based evaluation previously guessed it and could disagree with the

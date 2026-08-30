@@ -35,6 +35,9 @@ public static class ArtifactContext
         ArtifactSchemas.UiMap,
         ArtifactSchemas.FileSet,
         ArtifactSchemas.SourceSet,
+        // v0.3.8.99: the verifier grades attribution, so it must receive the claim→source record
+        // rather than the prose rendering of it.
+        ArtifactSchemas.SourcedAnswer,
         ArtifactSchemas.VerificationBundle,
         ArtifactSchemas.WorkspaceSnapshot,
         ArtifactSchemas.FailureDiagnosis,
