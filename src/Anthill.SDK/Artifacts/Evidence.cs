@@ -308,7 +308,7 @@ public static class ArtifactSchemas
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             RepositoryMap, FileSet, UiMap, ChangePlan, PatchSet, TestReport, DeliverableLedger,
-            SourcedAnswer, RecallSet,
+            SourcedAnswer, RecallSet, CreatedArtifact,
             SecurityReview, FailureDiagnosis, VerificationBundle, OperatorSummary,
             ReleaseNotes, MemoryCandidate, RepairRecommendation, SourceSet, WorkspaceSnapshot,
             FailureContext, DocsPatchSet, ResearchBrief,
@@ -363,6 +363,7 @@ public static class ArtifactSchemas
         "repair_recommendation" => RepairRecommendation,
         "source_set" => SourceSet,
         "sourced_answer" => SourcedAnswer,
+        "created_artifact" => CreatedArtifact,
         "recall_set" => RecallSet,
         "docs_patch_set" => DocsPatchSet,
         "research_brief" => ResearchBrief,
