@@ -721,11 +721,44 @@ public sealed class MedicAnt : BaseAnt
     public const int MaxDiagnosesPerMission = 2;
 
     private readonly Anthill.SDK.Artifacts.IArtifactStore? _artifacts;
+    private readonly Memory.SqliteMemory? _memory;
 
     /// <summary>Optional store, same pattern as SoldierAnt: call sites without one keep working,
-    /// and in that configuration the medic falls back to structured task state (never prose-first).</summary>
-    public MedicAnt(Anthill.SDK.Artifacts.IArtifactStore? artifacts = null) : base("medic") =>
-        _artifacts = artifacts;
+    /// and in that configuration the medic falls back to structured task state (never prose-first).
+    /// v0.3.8.101: the memory is optional the same way — with it, the diagnosis stamps the failed
+    /// task's check receipts; without it, the diagnosis carries no receipt lines and the
+    /// troubleshooting gate says so rather than anything here guessing.</summary>
+    public MedicAnt(Anthill.SDK.Artifacts.IArtifactStore? artifacts = null,
+        Memory.SqliteMemory? memory = null) : base("medic")
+    { _artifacts = artifacts; _memory = memory; }
+
+    /// <summary>
+    /// The failed task's check receipts, as `supporting_receipt:` lines — STAMPED from the task's
+    /// own recorded evidence, never written by a model, for `.100`'s reason: an identity a model
+    /// wrote is an identity it could have invented. Read from `LoadTaskResult`, the reconstructed
+    /// record, not from the narrative. Empty when the failure was not a check failure or nothing
+    /// was recorded — and empty is the honest answer, because `DiagnosisIntegrity` refuses a
+    /// troubleshooting diagnosis that rests on nothing rather than this method inventing a rest.
+    /// </summary>
+    private string SupportingReceipts(Task failed)
+    {
+        if (_memory is null) return "";
+        try
+        {
+            var recorded = _memory.LoadTaskResult(failed.Id);
+            var checks = recorded?.Evidence?
+                .Where(e => string.Equals(e.Kind, AntEvidenceKinds.Check, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (checks is null || checks.Count == 0) return "";
+            return "\n" + string.Join("\n", checks.Select(c =>
+                $"supporting_receipt: {c.Value} {c.Detail}"));
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"[medic] could not read check receipts for {failed.Id}: {error.Message}");
+            return "";
+        }
+    }
 
     public override AntExecutionResult Execute(Task task, Mission mission)
     {
@@ -817,7 +850,10 @@ public sealed class MedicAnt : BaseAnt
             $"failure_context: {(context is not null ? "consumed (typed artifact)" : "ABSENT — legacy prose fallback used")}\n" +
             $"recommended_role: {targetRole}\nrecommended_task_type: {targetType}\nroute_reason: {routeReason}\n" +
             $"verification_plan: fresh build/test of the repaired artifact, then verifier bound to its revision\n" +
-            $"source_task: {failed.Id} ({failed.Title})";
+            // v0.3.8.101 — the receipts this diagnosis rests on, stamped from the failed task's own
+            // recorded check evidence. Empty for a non-check failure, and DiagnosisIntegrity is the
+            // layer that decides what an empty citation list means for a troubleshooting mission.
+            $"source_task: {failed.Id} ({failed.Title})" + SupportingReceipts(failed);
 
         return new AntExecutionResult
         {
