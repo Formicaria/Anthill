@@ -184,6 +184,45 @@ public class CitationIntegrityTests
     }
 
     /// <summary>
+    /// THE REASON SURVIVES THE PROCESS. v0.3.8.99.
+    ///
+    /// The evaluator composes a sentence naming the gate that refused and what it refused for, and
+    /// until this release the mission row dropped it — every reader that came after the process
+    /// exited saw the placeholder "loaded from persisted evaluation". The status columns say WHAT
+    /// the verdict was; only this says WHY, and "failure messages must name the layer that said no"
+    /// is not satisfied by a message that lives until the process ends.
+    /// </summary>
+    [Fact]
+    public void ThePersistedEvaluation_KeepsTheReasonItWasGraded()
+    {
+        var db = Path.Combine(Path.GetTempPath(), $"anthill-eval-{Guid.NewGuid():N}.db");
+        try
+        {
+            using var memory = new Anthill.Core.Memory.SqliteMemory(db);
+            var mission = new Anthill.Core.Domain.Mission { Goal = "why was this refused?" };
+            memory.SaveMission(mission);
+
+            var reason = "outcome=completed_unverified (…) citation integrity NOT satisfied — "
+                       + "the answer cites 'https://example.invalid/never', which this mission never retrieved";
+            memory.SaveMissionEvaluation(new Anthill.Core.Outcomes.MissionEvaluation(
+                MissionId: mission.Id,
+                OutcomeCode: Anthill.Core.Domain.MissionOutcome.CompletedUnverified,
+                StructuralStatus: "complete",
+                VerificationStatus: Anthill.Core.Outcomes.MissionEvaluation.Verification.Passed,
+                DeliverableStatus: Anthill.Core.Outcomes.MissionEvaluation.Deliverable.NotSatisfied,
+                StopReason: null,
+                EvaluatorVersion: "evaluator-v3",
+                EvaluatedAt: "now",
+                Explanation: reason));
+
+            var loaded = memory.LoadMissionEvaluation(mission.Id);
+            Assert.NotNull(loaded);
+            Assert.Equal(reason, loaded!.Explanation);
+        }
+        finally { try { File.Delete(db); } catch { } }
+    }
+
+    /// <summary>
     /// THE BOUNDARIES. A mission that retrieved nothing, or whose builder wrote prose, has nothing
     /// for this layer to judge — which is every mission that ran before this release.
     /// </summary>
