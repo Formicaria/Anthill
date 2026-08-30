@@ -357,6 +357,21 @@ Required JSON:
                     RequiredCapability = Anthill.Core.Missions.WorkerCapabilities.ExecuteDiagnosticChecks,
                 });
 
+            // THE REPRODUCTION IS NOT CRITICAL, and this single demotion is what lets every layer
+            // downstream tell a reproduced symptom from a broken mission without re-deriving the
+            // class for itself. `Critical` is the disqualifier the colony already honours in three
+            // places — `MissionVerification.IsSatisfied` refuses a mission with a failed critical
+            // task "regardless of what else passed", the adaptive controller repairs-then-escalates
+            // on one, and the Queen grades the mission Failed over Partial for one. A troubleshooting
+            // mission's check task fails BY DESIGN when the symptom reproduces: that failure is the
+            // deliverable's input, and marking the task critical wires the mission to grade itself
+            // broken for succeeding. Applied to EVERY tester task in the class (planner-authored or
+            // inserted), at the one chokepoint every plan passes through. A failed researcher or
+            // builder keeps full criticality — only the check lane is expected to fail here.
+            foreach (var check in tasks.Where(t =>
+                    string.Equals(t.AssignedAnt, "tester", StringComparison.OrdinalIgnoreCase)))
+                check.Critical = false;
+
             if (!tasks.Any(t => string.Equals(t.AssignedAnt, "builder", StringComparison.OrdinalIgnoreCase)))
                 tasks.Add(new Task
                 {
