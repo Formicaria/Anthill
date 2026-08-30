@@ -18,17 +18,18 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.98**.
+Shipping release: **v0.3.8.99**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
 that sentence was true when written and is not edited, because a tagged entry records what a
 release said and shipped. What happened after: the pack was blocked on operator switches having no
 UI control, and the operator authorized the tag on `.97`'s own evidence. The unfinished pack items
-did **not** lapse — they are `.98` exit-gate items (§2c). One `.97` residual is carried openly and
-is not a `.98` gate: the Windows materialized-revision `dotnet_test` failure, which is a coding-lane
-defect and must not pull `.98` back into a coding release. It blocks `.98` only if it breaks `.98`'s
-suite or the audit path.
+did **not** lapse — they were `.98` exit-gate items and, still unmet, are carried forward in §2c
+rather than deleted with the shipped release's row. One `.97` residual is carried openly and has
+never been a gate for either release: the Windows materialized-revision `dotnet_test` failure, which
+is a coding-lane defect and must not pull a universal-workflow release back into a coding one. It
+blocks the current release only if it breaks its suite or its acceptance path.
 
 ---
 
@@ -42,15 +43,23 @@ complete execution and verification lifecycle — `ObjectiveVerification` recogn
 deliverable kind (`FileChange`), worker specialization is chosen by substring match, and the
 assembled answer is never compared to what the operator asked.
 
-**What v0.3.8.98 changes, and how far.** ONE non-code class — `system_audit` — now has a complete
+**What v0.3.8.98 changed, and how far.** ONE non-code class — `system_audit` — now has a complete
 lifecycle: classified at intake into declared dimensions, routed by declared worker capability
 rather than by substring, inspecting the repository AND the live colony state with `inspection`
 evidence to show for it, and graded against a deliverable ledger that refuses an audit which
 inspected nothing, a verifier that read nothing, or a requested deliverable nothing produced. That
-is DETERMINISTICALLY qualified and NOT live-qualified: no audit has run against a real provider. And
-it is one class of the seven — research, documents, data, troubleshooting, system and external
-missions are untouched, and every one of them still resolves `not_applicable` at the deliverable
-layer exactly as before. See
+is DETERMINISTICALLY qualified and NOT live-qualified: no audit has run against a real provider.
+
+**What v0.3.8.99 changes, and how far.** A research answer's claims are now TRACEABLE: every url an
+answer cites is resolved against what the mission actually retrieved — the world's sources and the
+colony's own recalled missions alike — and a citation that resolves to nothing refuses the mission
+by name. Claims the mission could not attribute are marked and counted, never dropped and never
+fatal, and the marking is rendered from the claim record rather than trusted to survive synthesis.
+What is NOT claimed: that a source SUPPORTS the claim it was cited for (semantic, and deliberately
+out of reach — §2c), retrieval TIME as part of the mapping, any routing of research by declared
+capability, and anything live. Two of the seven classes are now served; documents, data,
+troubleshooting, system and external missions are untouched, and every one of them still resolves
+`not_applicable` at the deliverable layer exactly as before. See
 [`ADR-008`](adr/ADR-008-universal-mission-lifecycle.md) §1 for the evidence and §2 for the contract
 the `.98`–`.107` sequence exists to satisfy.
 
@@ -109,7 +118,10 @@ through the real application. **Ext.** = requires an external adapter, connectio
 | Coding: patch promotion and apply | yes | gates off by default | yes | yes | target identity, atomic sets (.97) |
 | Repository inspection | yes | yes | **yes** | no | audit missions resolve `repo_researcher` + file inspection by declared capability and leave `inspection` evidence (.98); live run pending |
 | Runtime/state inspection (read-only) | yes | yes | **yes** | no | `colony_state` + `researcher.runtime_researcher` (.98); live run pending |
-| Web research | yes | no | partial | no | `.99` |
+| Web research: claim→source traceability | yes | yes | **yes** | no | every cited url resolved against what was retrieved, or the mission is refused (.99); unsourced claims marked, not dropped |
+| Web research: retrieval | yes | no | partial | no | Ext. — needs a search provider; the retrieval itself is still unqualified, only what is done with it is |
+| Internal-memory research | yes | yes | **yes** | no | recall leaves a `recall_set`, so `mission:<id>` is citable and held to the same standard as a url (.99) |
+| Claim↔source SUPPORT | no | — | no | no | deliberately absent — semantic, see §2c |
 | Artifact/document creation | partial | yes | no | no | `.100` |
 | Data analysis | no | — | no | no | `.100` |
 | Troubleshooting / diagnosis | no | — | no | no | `.101` |
@@ -119,14 +131,14 @@ through the real application. **Ext.** = requires an external adapter, connectio
 | Dynamic repair (Medic) | partial | yes | partial | no | bounded repair exists; not evidence-driven — `.104` |
 | Multi-mission continuity | no | — | no | no | `.105` |
 | Pheromone / skill learning | yes | yes | yes | no | positive learning restricted to `completed_verified` |
-| Objective verification (non-code) | **partial** | `objective_verification_enabled` | **yes** | no | `.98` added `AssessmentObjective` + the deliverable ledger for the `system_audit` class; every other non-code class still resolves `not_applicable` |
+| Objective verification (non-code) | **partial** | `objective_verification_enabled` | **yes** | no | `.98` added `AssessmentObjective` + the deliverable ledger for the `system_audit` class; `.99` added `CitationIntegrity`, which keys on retrieval rather than on class; every remaining non-code class still resolves `not_applicable` |
 
 No row may claim a status stronger than `QUALIFICATION.md` records. That is checked, not trusted:
 see `DocumentationConsistencyTests`.
 
 ---
 
-## 2b. The universal-workflow program — v0.3.8.98 → v0.3.8.107
+## 2b. The universal-workflow program — v0.3.8.99 → v0.3.8.107
 
 **This is the current forward sequence.** It supersedes the earlier framing in which R4–R10 were
 the next thing to run; those items are not deleted, and each release below names the R-items it
@@ -143,12 +155,20 @@ introduces only the universal structure that class actually requires.
 **v0.3.8.97 is not release 1 of this program.** It was an urgent prerequisite: it made the coding
 promotion path correct (project identity through the whole transaction, set-atomic apply, faithful
 capture) and made two operator switches reachable. It strengthened the lane that was already the
-strongest. The program starts at `.98`.
+strongest. The program started at `.98`.
+
+**The table below is the REMAINING sequence, and it shrinks as releases ship.** A shipped release
+leaves it and its story passes to `CHANGELOG.md`, which owns what each release said — this document
+does not keep a release narrative. What does NOT leave with the row is anything the release did not
+finish: unmet items are carried explicitly into the current slice in §2c, so a row can only be
+deleted when its work is either done or written down somewhere still current. The heading names the
+range and `DocumentationConsistencyTests` checks that the rows are exactly that range beginning at
+the shipping version — a program whose first entry has already shipped is a plan describing the
+past.
 
 | Release | Operator-visible capability | Exit gate |
 |---|---|---|
-| **.98** | Repository + read-only runtime **system audits** end to end | §2c below |
-| **.99** | Sourced web research and internal-memory research, with claim→source mapping | a research mission whose every claim maps to a retrieved source with retrieval time; unsourced claims demoted, not dropped |
+| **.99** | Sourced web research and internal-memory research, with claim→source mapping | §2c below |
 | **.100** | Documents, file transformation and structured data artifacts | a created artifact exists, satisfies stated requirements, and its inputs are identified; a data analysis records input identity and transformation |
 | **.101** | Troubleshooting and diagnostic execution | a symptom reaches a diagnosis supported by command receipts and exit statuses; the audit/diagnosis boundary holds in both directions |
 | **.102** | Local system and homelab/infrastructure actions | a reversible operation with before-state, receipt and after-state; existing homelab workers reached through the mission spine, not beside it |
@@ -171,91 +191,83 @@ Rules binding every release in this program:
   became API-editable with no control rendering it, so an operator following the changelog looked
   for a switch that did not exist.
 
-### 2c. v0.3.8.98 — the repository and runtime system-audit slice
+### 2c. v0.3.8.99 — sourced research and citation integrity
 
-**Delivers:** an operator asking what the colony can do, what is good and bad about its workflow,
-and whether the right roles ran, receives an answer that inspected the repository and the runtime,
-cites what supports each conclusion, and is rejected if it omits a requested section.
+**Delivers:** an operator asking a research question receives an answer in which every claim either
+names a source the mission actually retrieved, or says plainly that it could not be attributed —
+and a claim attributed to something the mission never retrieved refuses the mission by name.
 
-**Covers** read-only assessment of both static implementation and current persisted/runtime state:
-what is implemented; what is enabled; which workers are available; which workers actually ran; what
-evidence exists; whether current state is healthy on read-only health, configuration, mission,
-route and evidence records.
+**Covers** both directions a research answer can be sourced from: what the WORLD said (`source_set`,
+from web retrieval) and what the COLONY already knew (`recall_set`, from mission recall). Both are
+records of something consulted, which is the property that makes a citation checkable, and both are
+held to the same standard — `mission:<id>` is refused exactly as an invented url is.
 
-**Does not cover** diagnosis of a symptom, root-cause work, invasive probes, or repair. A fault
-found during an audit is reported as an evidenced finding and a proposed follow-up — never silently
-escalated into diagnosis (`.101`) or modification.
+**Does not cover**, and this is the boundary the release is named against: whether a source
+SUPPORTS the claim it was cited for. TRACEABILITY is answerable from a record; support is a semantic
+judgment, and a model asserting it is the evidence v2.19.0 stopped accepting. The gate is named for
+the weaker property because that is the one it has.
 
-**Classification** for the acceptance prompts, resolved by meaning and never by exact string:
+**Reuses:** the artifact store and schema check (ADR-004) as the carrier for both the retrieval
+records and the claim record, `MissionEvaluator`'s deliverable lane, `ResultAssembler`, and the
+`AddMissing` migration path. No parallel ledger and no second evidence lane.
 
-```text
-mission_class: system_audit
-targets:       repository + runtime
-intent:        assess
-freshness:     current
-authority:     observe
-```
+**Connects:** `WebResearchAnt / ResearcherAnt → source_set + recall_set → BuilderAnt (shown what it
+may cite) → sourced_answer → CitationIntegrity → MissionEvaluator → the persisted explanation`.
 
-**Reuses:** `MissionContext` (ADR-002) as the carrier, the artifact and consumption ledgers
-(ADR-004), the evidence store, `AntRegistry` worker contracts, the existing `QualificationMatrixTests`
-ledger, `ResultAssembler`, `MissionEvaluator`, `MissionReport`.
-
-**Connects:** `ConversationRunner → Queen.RunMission → MissionContext → PlanningService →
-ExecutionService → ResultAssembler → MissionEvaluator → MissionReport`.
-
-**Exit gate** — the composed acceptance mission (`SystemAuditMissionTests`), written before the
-implementation and failing until it landed. **MET deterministically**, over FIVE semantically
-equivalent phrasings rather than four: the fifth was added when the original four turned out to pass
-the worker assertions by luck — none of them contains the word "missions", so the repository
-researcher was the keyword FALLBACK rather than a decision, and the assertions proved nothing about
-resolution until one phrasing said it.
+**Exit gate** — the composed acceptance mission (`SourcedResearchMissionTests`), written before the
+implementation and failing until it landed. **MET deterministically**, over four semantically
+equivalent phrasings, with `AFabricatedCitation_FailsTheMission` proving the gate can refuse.
 
 Proved, each by an assertion that fails without it:
 
-- the plan executed is the plan the fixture wrote, with no generic fallback (`SystemAuditNegativeTests`);
-- `researcher.repo_researcher`, `researcher.runtime_researcher` and `verifier.result_verifier` ran;
-  `mission_researcher` and `safety_verifier` did not;
-- repository AND runtime inspection ran and left `inspection` evidence;
-- outputs became typed artifacts whose consumption was recorded;
-- the verifier consumed what it graded;
-- the builder assembled every requested section, and the final answer addresses every question;
-- the canonical evaluation is positive, and `AssessmentObjective` is what makes that mean something.
+- every claim in the final answer carries either a retrieved source or an explicit `[UNSOURCED]`
+  marker, and the marker is rendered from the record rather than trusted to the model;
+- a citation to a url the mission never retrieved refuses the mission, and the url is named;
+- an internal citation resolves against the recall record, and an unrecalled mission id does not;
+- an answer that admits what it could not attribute PASSES — unsourced claims are counted, never
+  fatal, so deleting the unsupported parts is not how an answer gets through;
+- the source-set parser reads the producer's ACTUAL spelling, asserted against both spellings;
+- the refusal's reason survives the process, in the mission row, naming the gate.
 
-Negative scenarios prove: the old `mission_researcher + safety_verifier` graph is repaired and the
-repair is announced; a plan missing the class's required steps has them supplied; a refusing verifier
-keeps the mission out of a verified outcome; an audit with no inspection evidence, a verifier that
-consumed nothing, and an unserved deliverable are each refused by name.
-
-**Two gate items were deliberately NOT implemented as written, and the difference is recorded rather
+**Divergences — implemented differently from the way the roadmap line was written, recorded rather
 than quietly dropped:**
 
-- *"a missing builder fails preflight"* — it does not fail; `EnsureClassCoverage` SUPPLIES the
-  missing step. Refusing a plan for lacking a step the runtime knows the class requires punishes the
-  operator for the planner's omission, and the same guarantee (an audit always compiles and verifies)
-  is reached by construction. The negative test asserts the supply, not a refusal.
-- *"a missing requested section fails answer coverage"* — coverage is STRUCTURAL, not textual. The
-  obvious implementation asks whether the answer contains a question's words, and an answer reading
-  "Strengths: … Weaknesses: …" addresses "what is good and bad about it" completely while containing
-  neither. The deliverable ledger asks instead whether a task that OWNS each deliverable completed,
-  which is checkable without a model's opinion. It catches a question dropped by a failed step; it
-  does not claim to catch a question answered shallowly.
+- *"a research mission"* — **no `research` mission class is added at intake, and none is planned for
+  this release.** The gate keys on what a mission DID (it retrieved sources, so its answer owes an
+  account of them) rather than on a label a classifier assigned. That is deliberate and it is also a
+  real limitation: research is not routed by declared capability the way `.98`'s audit is, so a
+  research request still reaches whichever researcher keyword resolution finds. Keying on the record
+  makes the gate apply to every mission that retrieved anything — including coding missions that
+  search — which is stronger coverage than a class label would give; it does not give research the
+  specialist routing an audit has. Classifying research explicitly remains available and is not
+  precluded by anything here.
+- *"with retrieval time"* — **not implemented.** The retrieval records carry url and title; no
+  timestamp is part of the claim→source mapping, so the release cannot answer "when was this true".
+  It is not converted into a documented limitation to close the gate: the mapping requirement is met
+  and the freshness half is open, carried below.
+- *"unsourced claims demoted"* — an unsourced claim marks the CLAIM, and does not demote the
+  MISSION. Demoting a mission for admitting what it could not attribute would reward deletion of the
+  unsupported parts, which is the opposite of the property this gate exists to produce.
 
-**Still open, and the release does not claim them:**
+**Carried open from `.98`, unmet and not lapsed:**
 
 - `blocked_missing_capability` for unavailable repository access — no such outcome code exists yet;
-  today an audit that cannot inspect is refused by the assessment objective rather than blocked by
-  name at intake;
-- "removing any production call site breaks the composed scenario" — held for the two sites where it
-  was affordable as a source-shape guard (the planner's worker fill, the trail rule's basis read),
-  not as a general mutation property;
+  an audit that cannot inspect is refused by the assessment objective rather than blocked by name at
+  intake;
+- "removing any production call site breaks the composed scenario" — held for two sites as a
+  source-shape guard, not as a general mutation property;
 - **the live pack carried from `.97`:** objective verification enabled in a live run, an exported
-  `LiveQualificationRecord`, and a live system-audit mission through the composed application. These
-  need a real provider and are the operator's step; `QUALIFICATION.md` §3 remains the authority and
-  still says PARTIAL.
+  `LiveQualificationRecord`, and a live system-audit mission through the composed application.
 
-**Explicitly still unsupported after .98:** research, document/data, troubleshooting, system and
-external mission classes; multi-mission continuity; capability-first resolution for classes other
-than audit.
+**Still open in `.99` itself, and the release does not claim them:**
+
+- **nothing live.** No search provider has been exercised, no model has written a claim record, and
+  a live research mission through the composed application joins the carried live pack above;
+- retrieval time in the claim→source mapping, as recorded in the divergences;
+- capability-first resolution for research, as recorded in the divergences.
+
+**Explicitly still unsupported after .99:** document/data, troubleshooting, system and external
+mission classes; multi-mission continuity; claim↔source SUPPORT in any form.
 
 ---
 

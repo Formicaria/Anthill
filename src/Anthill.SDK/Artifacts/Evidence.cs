@@ -203,6 +203,40 @@ public static class ArtifactSchemas
     public const string DeliverableLedger = "deliverable_ledger";
 
     /// <summary>
+    /// An answer as CLAIMS, each with the retrieved source it rests on or the fact that it has
+    /// none. v0.3.8.99.
+    ///
+    /// Added under the vocabulary's own rule — a schema the colony produces and the vocabulary did
+    /// not name is a gap in the vocabulary — and only now that the colony produces it: the builder
+    /// is ASKED for claims when a mission retrieved sources, so the structure is produced rather
+    /// than imputed from prose. See <see cref="Artifacts.SourcedAnswer"/> for why `ResearchBrief`
+    /// deliberately declined to type the builder, and what had to change first.
+    /// </summary>
+    public const string SourcedAnswer = "sourced_answer";
+
+    /// <summary>
+    /// The colony's OWN prior missions a task was shown, by id. v0.3.8.99.
+    ///
+    /// The internal analogue of <see cref="SourceSet"/>, and it exists for the same reason: a claim
+    /// can only be traced to something that left a record of having been consulted. Without it, an
+    /// answer drawn from the colony's own history has no citable identity and renders as
+    /// `[UNSOURCED]` — which flattens "we could not attribute this" together with "this came from
+    /// what we already knew", two different facts an operator needs to tell apart.
+    /// </summary>
+    public const string RecallSet = "recall_set";
+
+    /// <summary>
+    /// The records a claim may be cited against. v0.3.8.99.
+    ///
+    /// Named once because the builder LISTS them and `CitationIntegrity` RESOLVES against them, and
+    /// a citable set that is spelled twice is one that eventually differs — offering a model a
+    /// source the gate will not accept, which reads to an operator as the model inventing a
+    /// citation it was handed.
+    /// </summary>
+    public static readonly IReadOnlySet<string> CitableRecords =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { SourceSet, RecallSet };
+
+    /// <summary>
     /// v3.8.20 — added when the ant bridge was built, because the medic already emits
     /// <c>repair_recommendation</c> and five of the other six kinds ants emit mapped exactly onto
     /// the list above. A schema the colony already produces and the vocabulary did not name is a
@@ -263,6 +297,7 @@ public static class ArtifactSchemas
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             RepositoryMap, FileSet, UiMap, ChangePlan, PatchSet, TestReport, DeliverableLedger,
+            SourcedAnswer, RecallSet,
             SecurityReview, FailureDiagnosis, VerificationBundle, OperatorSummary,
             ReleaseNotes, MemoryCandidate, RepairRecommendation, SourceSet, WorkspaceSnapshot,
             FailureContext, DocsPatchSet, ResearchBrief,
@@ -316,6 +351,8 @@ public static class ArtifactSchemas
         "ui_map" => UiMap,
         "repair_recommendation" => RepairRecommendation,
         "source_set" => SourceSet,
+        "sourced_answer" => SourcedAnswer,
+        "recall_set" => RecallSet,
         "docs_patch_set" => DocsPatchSet,
         "research_brief" => ResearchBrief,
         "patch_set" => PatchSet,

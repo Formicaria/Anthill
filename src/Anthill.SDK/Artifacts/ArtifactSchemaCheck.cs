@@ -124,6 +124,17 @@ public static class ArtifactSchemaCheck
             [ArtifactSchemas.DeliverableLedger] =
                 AsObject("ResultAssembler.RecordDeliverableLedger", "deliverables"),
 
+            // v0.3.8.99. `claims` is required because an answer with no claims array has recorded
+            // nothing — and a claim's own `sourced` flag is derived, so there is no second field to
+            // require without inviting the two to disagree.
+            [ArtifactSchemas.SourcedAnswer] =
+                AsObject("BuilderAnt (parsed from its claim format)", "claims"),
+
+            // v0.3.8.99: the internal analogue of `source_set`, same required shape for the same
+            // reason — a record whose entries are missing has recorded nothing.
+            [ArtifactSchemas.RecallSet] =
+                AsObject("ResearcherAnt (the prior missions it was shown)", "sources"),
+
             // v0.3.8.64 (S6): `{}` conformed, and a gate that accepts an empty object as a map is
             // an existence check wearing a schema check's name. The old comment worried an honest
             // map of a route-less repository would be invalid — but the cartographer has always
