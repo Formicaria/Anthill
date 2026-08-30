@@ -140,15 +140,33 @@ public static class MissionEvaluator
             ? CitationIntegrity.Evaluate(artifacts)
             : null;
 
+        // v0.3.8.100 — AND A CREATED DELIVERABLE MUST EXIST. The failure this catches is specific
+        // to a mission whose plan typed work as creation: an answer DESCRIBING a deliverable that
+        // was never produced as a record, a requirement traced to a section the content does not
+        // contain, an input naming a record the mission never held. Keyed on the plan's own typing,
+        // so nothing that ran before is affected.
+        var creations = CreationIntegrity.Applies(mission.Tasks.Select(t => t.TaskType), artifacts)
+            ? CreationIntegrity.Evaluate(mission.Tasks.Select(t => t.TaskType), artifacts)
+            : null;
+
         string deliverable;
         if (!objectiveVerificationEnabled)
             deliverable = MissionEvaluation.Deliverable.NotChecked;
         else if (citations is { Satisfied: false })
             deliverable = MissionEvaluation.Deliverable.NotSatisfied;
+        else if (creations is { Satisfied: false })
+            deliverable = MissionEvaluation.Deliverable.NotSatisfied;
         else if (assessment is not null)
             deliverable = assessment.Satisfied
                 ? MissionEvaluation.Deliverable.Satisfied
                 : MissionEvaluation.Deliverable.NotSatisfied;
+        // A SATISFIED creation gate settles the lane — but only where no assessment spoke: the
+        // `.98` ledger's per-request word outranks a single record's presence, while falling all
+        // the way through to the FileChange reading would grade a finished document against a
+        // patch count ("write a document" contains a file-change verb, and the mission correctly
+        // proposed no patch).
+        else if (creations is not null)
+            deliverable = MissionEvaluation.Deliverable.Satisfied;
         else if (ObjectiveVerification.Required(mission.Goal, constraints)
                  == ObjectiveVerification.Deliverable.Unknown)
             deliverable = MissionEvaluation.Deliverable.NotApplicable;
@@ -189,7 +207,8 @@ public static class MissionEvaluator
                 // The gate that said no, named. A demotion an operator cannot locate is one they
                 // cannot answer, and "deliverable=not_satisfied" alone names no gate.
                 + (assessment is null || assessment.Satisfied ? "" : $" {assessment.Explanation}")
-                + (citations is null || citations.Satisfied ? "" : $" {citations.Explanation}"));
+                + (citations is null || citations.Satisfied ? "" : $" {citations.Explanation}")
+                + (creations is null || creations.Satisfied ? "" : $" {creations.Explanation}"));
     }
 
     private static string Resolve(MissionStatus structuralStatus, string? stopReason,
