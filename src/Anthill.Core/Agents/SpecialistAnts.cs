@@ -752,10 +752,16 @@ public sealed class MedicAnt : BaseAnt
             // written per dispatch, before the task's fate is decided, which is exactly what makes
             // them the honest witness — and reading the same record the gate reads is what stops
             // two accounts of one check run existing (the `.99` builder's own rule).
+            //
+            // MISSION-WIDE, deliberately not filtered to the failed task's id: the gate resolves
+            // mission-wide, and a citation scope narrower than the resolution scope is a joint
+            // that can silently produce "cites no receipt" whenever the two ids disagree about
+            // anything — a retry, a regenerated task, a dispatch recorded under another id. The
+            // mission's check receipts ARE the reproduction record; all of them belong in the
+            // diagnosis's account.
             var receipts = ((Anthill.SDK.Artifacts.IEvidenceStore)_memory).ForMission(mission.Id)
                 .Where(e => string.Equals(e.Kind, Anthill.SDK.Artifacts.EvidenceKinds.CommandCheck,
-                        StringComparison.OrdinalIgnoreCase)
-                    && string.Equals(e.TaskId, failed.Id, StringComparison.Ordinal))
+                        StringComparison.OrdinalIgnoreCase))
                 .ToList();
             if (receipts.Count == 0) return "";
 

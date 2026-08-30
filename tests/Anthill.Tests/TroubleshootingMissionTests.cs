@@ -175,28 +175,30 @@ public class TroubleshootingMissionTests : IDisposable
             .ToList();
         Assert.True(receipts.Count > 0,
             "the troubleshooting mission executed no checks — its diagnosis, whatever it says, "
-          + "rests on nothing that ran.");
+          + $"rests on nothing that ran.\n{Dump(memory, run.MissionId)}");
         Assert.All(receipts, r => Assert.Contains("exit_code=", r.Detail, StringComparison.OrdinalIgnoreCase));
 
         // THE SYMPTOM REPRODUCED: at least one receipt is a failure, and it names the check.
         var failing = receipts.Where(r => !r.Passed).ToList();
         Assert.True(failing.Count > 0,
             "no executed check failed — the symptom was never reproduced, and the positive gate "
-          + "requires a reproduction to diagnose.");
+          + $"requires a reproduction to diagnose.\n{Dump(memory, run.MissionId)}");
         Assert.Contains(failing, r => r.Detail.Contains("dotnet_test", StringComparison.OrdinalIgnoreCase));
 
         // ---- 2. A DIAGNOSIS EXISTS, AND IT CITES ITS RECEIPTS BY NAME ---------------------------
         //
-        // The citation is stamped by the deterministic layer from the failed check's own evidence —
-        // never written by the model — for `.100`'s reason: an identity a model wrote is an
-        // identity it could have invented. What the gate then checks is that every cited receipt
-        // resolves to a check this mission actually ran.
+        // The citation is stamped by the deterministic layer from the mission's own check
+        // receipts — never written by the model — for `.100`'s reason: an identity a model wrote
+        // is an identity it could have invented. What the gate then checks is that every cited
+        // receipt resolves to a check this mission actually ran.
         var diagnosis = DiagnosisArtifacts(memory, run.MissionId);
-        Assert.True(diagnosis.Count > 0, "no failure_diagnosis record exists for the mission.");
+        Assert.True(diagnosis.Count > 0,
+            $"no failure_diagnosis record exists for the mission.\n{Dump(memory, run.MissionId)}");
 
         var cited = diagnosis.SelectMany(CitedReceipts).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         Assert.True(cited.Count > 0,
-            "the diagnosis cites no receipt — a root cause resting on nothing that ran.");
+            "the diagnosis cites no receipt — a root cause resting on nothing that ran.\n"
+          + Dump(memory, run.MissionId));
         Assert.All(cited, id => Assert.Contains(receipts, r =>
             r.Detail.Contains(id, StringComparison.OrdinalIgnoreCase)));
         Assert.Contains(cited, id => id.Contains("dotnet_test", StringComparison.OrdinalIgnoreCase));
@@ -216,7 +218,32 @@ public class TroubleshootingMissionTests : IDisposable
         Assert.NotNull(evaluation);
         Assert.True(evaluation!.IsPositive,
             $"a reproduced and diagnosed symptom did not reach a positive canonical evaluation: "
-          + $"{evaluation.OutcomeCode} — {evaluation.Explanation}");
+          + $"{evaluation.OutcomeCode} — {evaluation.Explanation}\n{Dump(memory, run.MissionId)}");
+    }
+
+    /// <summary>
+    /// The mission's own records, rendered for a failure message — the R3 lesson applied in
+    /// advance: a composed failure that does not show the store's state gets debugged by guessing,
+    /// and the first two rounds of this class were.
+    /// </summary>
+    private static string Dump(SqliteMemory memory, string missionId)
+    {
+        try
+        {
+            var taskLines = string.Join("\n", memory.GetTasksForMission(missionId)
+                .Select(t => "    task "
+                    + $"{Anthill.SDK.Common.TextUtil.Truncate(t.GetValueOrDefault("id")?.ToString() ?? "-", 8)} "
+                    + $"ant={t.GetValueOrDefault("assigned_ant")} type={t.GetValueOrDefault("task_type")} "
+                    + $"status={t.GetValueOrDefault("status")}"));
+            var evidenceLines = string.Join("\n", ((IEvidenceStore)memory).ForMission(missionId)
+                .Select(e => $"    evidence kind={e.Kind} task={Anthill.SDK.Common.TextUtil.Truncate(e.TaskId ?? "-", 8)} "
+                           + $"passed={e.Passed} detail={Anthill.SDK.Common.TextUtil.Truncate(e.Detail, 80)}"));
+            var diagnosisLines = string.Join("\n---\n", ((IArtifactStore)memory).ForMission(missionId)
+                .Where(a => string.Equals(a.Schema, ArtifactSchemas.FailureDiagnosis, StringComparison.OrdinalIgnoreCase))
+                .Select(a => Anthill.SDK.Common.TextUtil.Truncate(a.Payload, 500)));
+            return $"\n  TASKS:\n{taskLines}\n  EVIDENCE:\n{evidenceLines}\n  DIAGNOSES:\n{diagnosisLines}";
+        }
+        catch (Exception error) { return $"\n  (dump failed: {error.Message})"; }
     }
 
     // -------------------------------------------------------------------------------------------
