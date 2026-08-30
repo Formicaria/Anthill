@@ -184,6 +184,41 @@ public class CitationIntegrityTests
     }
 
     /// <summary>
+    /// AN INTERNAL SOURCE IS A SOURCE. v0.3.8.99.
+    ///
+    /// A claim drawn from the colony's own prior missions is TRACEABLE — the recall left a record,
+    /// and `mission:<id>` resolves against it. Before the recall record existed, such a claim could
+    /// only render `[UNSOURCED]`, which flattens "we could not attribute this" together with "this
+    /// came from our own history": different facts, leading an operator to different next steps.
+    ///
+    /// And an internal citation is held to the SAME standard: a mission id that was never recalled
+    /// fails exactly as an invented url does. Otherwise "cite the colony" would be the loophole
+    /// through which anything could be asserted.
+    /// </summary>
+    [Fact]
+    public void AClaimCitingARecalledMission_Resolves_AndAnUnrecalledOneDoesNot()
+    {
+        var recall = Artifact.Create(
+            schema: ArtifactSchemas.RecallSet,
+            producerRole: "researcher",
+            missionId: "m",
+            payload: Json.Dumps(new
+            {
+                query = "q",
+                sources = new[] { new { Url = "mission:abc123", Title = "an earlier audit" } },
+            }));
+
+        var honest = new[] { recall, Answer(Claims(("We concluded this before.", "mission:abc123"))) };
+        var invented = new[] { recall, Answer(Claims(("We concluded this before.", "mission:never-ran"))) };
+
+        Assert.True(CitationIntegrity.Evaluate(honest).Satisfied);
+
+        var refused = CitationIntegrity.Evaluate(invented);
+        Assert.False(refused.Satisfied);
+        Assert.Equal("mission:never-ran", Assert.Single(refused.Unresolved));
+    }
+
+    /// <summary>
     /// THE REASON SURVIVES THE PROCESS. v0.3.8.99.
     ///
     /// The evaluator composes a sentence naming the gate that refused and what it refused for, and

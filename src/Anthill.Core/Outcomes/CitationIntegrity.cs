@@ -85,7 +85,10 @@ public static class CitationIntegrity
             .FirstOrDefault(a => a is not null);
 
     /// <summary>
-    /// Every url this mission actually retrieved, from the `source_set` records the web ant writes.
+    /// Everything this mission may honestly cite: what the world said (`source_set`) and what the
+    /// colony already knew (`recall_set`). Both are records of something CONSULTED, which is the
+    /// only property that makes a citation checkable — the difference between them is where the
+    /// knowledge came from, not whether it can be traced.
     ///
     /// Case-insensitive on the URL, because a model that reproduces one with different
     /// capitalisation has cited the same page and refusing that would grade transcription rather
@@ -97,6 +100,6 @@ public static class CitationIntegrity
         artifacts is null
             ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             : SourceSetPayload.UrlsFrom(artifacts
-                .Where(a => string.Equals(a.Schema, ArtifactSchemas.SourceSet, StringComparison.OrdinalIgnoreCase))
+                .Where(a => ArtifactSchemas.CitableRecords.Contains(a.Schema))
                 .Select(a => a.Payload));
 }

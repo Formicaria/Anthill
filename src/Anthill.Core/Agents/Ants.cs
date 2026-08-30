@@ -282,7 +282,7 @@ Return format:
         // like "the researcher found nothing", and every consumer downstream would believe the
         // second. See ResearchBrief for why the builder gets no equivalent.
         var brief = Anthill.SDK.Artifacts.ResearchBrief.TryParse(call.Content);
-        var text = TextResult(Name, call.Content, call: call);
+        var text = WithRecallRecord(TextResult(Name, call.Content, call: call), mission);
         return brief is null
             ? text with
             {
@@ -292,6 +292,56 @@ Return format:
                           + "sections, so no research_brief artifact was produced").ToList(),
             }
             : WithArtifact(text, "research_brief", "Research brief", brief.ToJson());
+    }
+
+    /// <summary>
+    /// WHAT THE COLONY RECALLED OF ITS OWN HISTORY, as a record a citation can resolve against.
+    /// v0.3.8.99.
+    ///
+    /// The internal analogue of the web ant's `source_set`, and it exists for the symmetric reason:
+    /// a claim can only be traced to something that left a record of having been CONSULTED. Prior
+    /// missions already reach this ant through `FormatRelevantMemory`, as prose, with their ids
+    /// discarded — so an answer drawn from what the colony already knew had no citable identity and
+    /// could only render as `[UNSOURCED]`. That flattens "we could not attribute this" together with
+    /// "this came from our own history", which are different facts and lead an operator to different
+    /// next steps.
+    ///
+    /// The SAME QUERY the formatter uses, so the record cannot describe a recall that did not happen
+    /// — two readings of "what is relevant" would eventually disagree, and the citation would then
+    /// resolve against something the worker was never shown.
+    ///
+    /// Never throws: a mission whose recall record fails to build still answers, unsourced.
+    /// </summary>
+    private AntExecutionResult WithRecallRecord(AntExecutionResult result, Mission mission)
+    {
+        try
+        {
+            var recalled = _memory.SearchRelevantMissions(mission.Goal, AnthillRuntime.RelevantMemoryLimit)
+                .Where(m => (m.GetValueOrDefault("id")?.ToString() ?? "") is { Length: > 0 } id
+                            && !string.Equals(id, mission.Id, StringComparison.Ordinal))
+                .ToList();
+            if (recalled.Count == 0) return result;
+
+            return WithArtifact(result, "recall_set", "Prior missions recalled",
+                Json.Dumps(new
+                {
+                    query = mission.Goal,
+                    sources = recalled.Select(m => new
+                    {
+                        // `url` is the field name the shared parser reads, and an internal source
+                        // gets an internal identity in the same slot: `mission:<id>`. One vocabulary
+                        // for "what may be cited" is what lets one gate resolve both — a second
+                        // shape would mean a second parser and, eventually, a second set of bugs.
+                        Url = $"mission:{m.GetValueOrDefault("id")}",
+                        Title = TextUtil.Truncate(m.GetValueOrDefault("goal")?.ToString() ?? "", 160, "..."),
+                    }),
+                }, indented: true));
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"[researcher] could not record recalled missions for {mission.Id}: {error.Message}");
+            return result;
+        }
     }
 
     private static bool ShouldInspectWorkspace(Task task, Mission mission)
@@ -1246,7 +1296,7 @@ public sealed class BuilderAnt : BaseAnt
         //
         // The sources are LISTED because a model can only cite what it was shown — see
         // `SourcedAnswer` for why the citation is a url and not an id.
-        var retrieved = RetrievedSources(mission.Id);
+        var retrieved = CitableSources(mission.Id);
         var sourcedDirective = retrieved.Count == 0 ? "" : $@"
 This mission retrieved the sources below. Write the answer as CLAIMS, one per line:
 
@@ -1315,14 +1365,16 @@ Create a practical final response.
     /// same record the rest of the graph reads is what stops two accounts of one search existing.
     /// Never throws — a builder that cannot read the store answers unsourced rather than not at all.
     /// </summary>
-    private IReadOnlyList<Anthill.SDK.Artifacts.RetrievedSource> RetrievedSources(string missionId)
+    private IReadOnlyList<Anthill.SDK.Artifacts.RetrievedSource> CitableSources(string missionId)
     {
         if (_artifacts is null) return Array.Empty<Anthill.SDK.Artifacts.RetrievedSource>();
         try
         {
+            // BOTH kinds: what the world said (`source_set`) and what the colony already knew
+            // (`recall_set`). A model may only cite what it was shown, and it is shown both — so
+            // both must be listed, and the gate resolves both from the same records.
             return _artifacts.ForMission(missionId)
-                .Where(a => string.Equals(a.Schema, Anthill.SDK.Artifacts.ArtifactSchemas.SourceSet,
-                                          StringComparison.OrdinalIgnoreCase))
+                .Where(a => Anthill.SDK.Artifacts.ArtifactSchemas.CitableRecords.Contains(a.Schema))
                 .SelectMany(a => Anthill.SDK.Artifacts.SourceSetPayload.Read(a.Payload))
                 .DistinctBy(s => s.Url, StringComparer.OrdinalIgnoreCase)
                 .ToList();
