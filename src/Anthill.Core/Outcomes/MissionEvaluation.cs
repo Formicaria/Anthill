@@ -149,6 +149,15 @@ public static class MissionEvaluator
             ? CreationIntegrity.Evaluate(mission.Tasks.Select(t => t.TaskType), artifacts)
             : null;
 
+        // v0.3.8.101 — AND A DIAGNOSIS MUST REST ON RECEIPTS. Specification-keyed like the
+        // assessment gate (intake classifies this class deterministically), and mutually exclusive
+        // with it by class, so the two arms below can never both speak. The failure this catches:
+        // a troubleshooting mission that executed nothing, diagnosed nothing, or cited a receipt
+        // no check this mission ran can account for.
+        var diagnosis = DiagnosisIntegrity.Applies(specification)
+            ? DiagnosisIntegrity.Evaluate(specification!, evidence, artifacts)
+            : null;
+
         string deliverable;
         if (!objectiveVerificationEnabled)
             deliverable = MissionEvaluation.Deliverable.NotChecked;
@@ -156,6 +165,10 @@ public static class MissionEvaluator
             deliverable = MissionEvaluation.Deliverable.NotSatisfied;
         else if (creations is { Satisfied: false })
             deliverable = MissionEvaluation.Deliverable.NotSatisfied;
+        else if (diagnosis is not null)
+            deliverable = diagnosis.Satisfied
+                ? MissionEvaluation.Deliverable.Satisfied
+                : MissionEvaluation.Deliverable.NotSatisfied;
         else if (assessment is not null)
             deliverable = assessment.Satisfied
                 ? MissionEvaluation.Deliverable.Satisfied
@@ -191,7 +204,26 @@ public static class MissionEvaluator
         // patch set's build failure is not a task — it is a verdict about a task's output.
         var deterministicBlock = mission.Tasks.FirstOrDefault(t => t.DeterministicBlock is not null)?.DeterministicBlock;
 
-        var outcome = Resolve(mission.Status, stopReason, verification, deliverable, generationDegraded,
+        // v0.3.8.101 — A REPRODUCED SYMPTOM IS NOT A BROKEN MISSION. A troubleshooting mission
+        // reproduces its symptom by running a check that FAILS; the tester task carrying that
+        // failure makes the structural status Partial, and Partial cannot reach a verified
+        // outcome. Ungated, that grades every honest reproduction as a degraded run — teaching
+        // the class to prefer missions that reproduce nothing, the exact inversion of its purpose.
+        //
+        // NARROW BY CONSTRUCTION, all three conditions from records: the diagnosis gate is
+        // SATISFIED (receipts held, diagnosis resting on them — a failed check nothing explained
+        // stays Partial); every failed task is a TESTER task (a dead researcher or builder is a
+        // genuinely broken mission, whatever the checks found); and the recorded StructuralStatus
+        // below keeps the honest value — only the GRADING reads the reproduction as completion,
+        // and the explanation says so.
+        var reproducedSymptom = diagnosis is { Satisfied: true }
+            && mission.Status == MissionStatus.Partial
+            && mission.Tasks.Any(t => t.Status == TaskStatus.Failed)
+            && mission.Tasks.Where(t => t.Status == TaskStatus.Failed)
+                .All(t => string.Equals(t.AssignedAnt, "tester", StringComparison.OrdinalIgnoreCase));
+
+        var outcome = Resolve(reproducedSymptom ? MissionStatus.Complete : mission.Status,
+            stopReason, verification, deliverable, generationDegraded,
             deterministicBlock is not null);
         return new MissionEvaluation(
             MissionId: mission.Id,
@@ -208,7 +240,12 @@ public static class MissionEvaluator
                 // cannot answer, and "deliverable=not_satisfied" alone names no gate.
                 + (assessment is null || assessment.Satisfied ? "" : $" {assessment.Explanation}")
                 + (citations is null || citations.Satisfied ? "" : $" {citations.Explanation}")
-                + (creations is null || creations.Satisfied ? "" : $" {creations.Explanation}"));
+                + (creations is null || creations.Satisfied ? "" : $" {creations.Explanation}")
+                + (diagnosis is null || diagnosis.Satisfied ? "" : $" {diagnosis.Explanation}")
+                + (reproducedSymptom
+                    ? " Symptom reproduced: the failed check task is the reproduction the "
+                      + "diagnosis rests on, not a defect of the mission."
+                    : ""));
     }
 
     private static string Resolve(MissionStatus structuralStatus, string? stopReason,

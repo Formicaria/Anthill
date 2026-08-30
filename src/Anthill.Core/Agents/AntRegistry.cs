@@ -356,8 +356,15 @@ public static class AntRegistry
                 W("verifier", "safety_verifier", "SafetyVerifier", "Check constraints, approval boundaries, and risky claims.", ReadMemory, new[] { "read_mission_constraints", "read_patch_metadata" }, noApply)
                     with { Capabilities = new[] { Missions.WorkerCapabilities.VerifySafety } }),
             R("tester", "TesterAnt", "Testing", "Runs or interprets allowlisted verification checks.", false, Checks, new[] { "run_allowlisted_check", "read_test_summary" }, noApply,
-                W("tester", "dotnet_tester", "DotnetTester", "Run or interpret .NET build/test checks.", Checks, new[] { "run_allowlisted_check", "read_test_errors" }, noApply),
-                W("tester", "frontend_tester", "FrontendTester", "Run or interpret frontend checks when present.", Checks, new[] { "run_allowlisted_check", "read_frontend_build_errors" }, noApply)),
+                // v0.3.8.101 — both declare `execute_diagnostic_checks`, and the ambiguity is
+                // honest for the file-ant reason: running the .NET checks and running the frontend
+                // checks are both executing allowlisted checks, and the manifest decides which
+                // catalog this workspace actually offers. The capability is the one the
+                // troubleshooting class requires, landing with the workers that serve it.
+                W("tester", "dotnet_tester", "DotnetTester", "Run or interpret .NET build/test checks.", Checks, new[] { "run_allowlisted_check", "read_test_errors" }, noApply)
+                    with { Capabilities = new[] { Missions.WorkerCapabilities.ExecuteDiagnosticChecks } },
+                W("tester", "frontend_tester", "FrontendTester", "Run or interpret frontend checks when present.", Checks, new[] { "run_allowlisted_check", "read_frontend_build_errors" }, noApply)
+                    with { Capabilities = new[] { Missions.WorkerCapabilities.ExecuteDiagnosticChecks } }),
             R("soldier", "SoldierAnt", "Security", "Security sentinel for runtime and patch risk boundaries.", false, ReadWorkspace, new[] { "read_permission_contracts", "read_patch_metadata" }, noApply,
                 W("soldier", "runtime_sentinel", "RuntimeSentinel", "Check runtime/security-sensitive operations.", ReadWorkspace, new[] { "read_config_file", "read_permission_contracts" }, noApply),
                 W("soldier", "patch_sentinel", "PatchSentinel", "Check patch path, language, and approval boundaries.", ReadWorkspace, new[] { "read_patch_metadata", "read_permission_contracts" }, noApply)),

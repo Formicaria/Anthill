@@ -263,7 +263,7 @@ public sealed class ToolRegistry
             LogToolResult(missionId, taskId, antName, result);
             _memory.UpdatePheromoneTrail($"tool:{name}", "tool", result.Success, result.Success ? 0.02 : -0.04,
                 new() { ["mission_id"] = missionId, ["task_id"] = taskId, ["ant_name"] = antName });
-            RecordEvidence(name, result, missionId, taskId);
+            RecordEvidence(name, result, missionId, taskId, args);
         }
         return result;
     }
@@ -280,7 +280,8 @@ public sealed class ToolRegistry
     /// never fail the tool call: the result has already been produced and returned to the caller, so
     /// losing the record is strictly smaller than losing the work.
     /// </summary>
-    private void RecordEvidence(string toolName, ToolResult result, string missionId, string? taskId)
+    private void RecordEvidence(string toolName, ToolResult result, string missionId, string? taskId,
+        IReadOnlyDictionary<string, object?>? args = null)
     {
         // v0.3.8.98 — EITHER lane: a reproducible verdict, or a read-only observation. Which one
         // this is remains ToolEvidence's decision, and an observation is stamped non-deterministic
@@ -299,6 +300,15 @@ public sealed class ToolRegistry
             var detail = result.Success
                 ? result.Output
                 : (result.Error ?? "") + "\n" + Tail(result.Output ?? "", 1800);
+
+            // v0.3.8.101 — THE RECEIPT NAMES ITS CHECK. A command_check row whose detail carries
+            // only the run's output is a receipt for "something" — a passing run's transcript need
+            // not mention which check produced it, and a diagnosis cannot rest on a receipt that
+            // cannot be told from its siblings. The identity comes from the DISPATCH's own
+            // arguments at this chokepoint, never parsed back out of output text.
+            var checkId = args?.GetValueOrDefault("check_id")?.ToString();
+            if (!string.IsNullOrWhiteSpace(checkId))
+                detail = $"check '{checkId}': {detail}";
             var evidence = ToolEvidence.For(toolName, result.Success, missionId, taskId, detail);
             if (evidence is not null) ((Anthill.SDK.Artifacts.IEvidenceStore)_memory).Put(evidence);
         }

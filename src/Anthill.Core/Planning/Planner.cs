@@ -334,6 +334,51 @@ Required JSON:
     internal static List<Task> EnsureClassCoverage(List<Task> tasks, string goal,
         Anthill.Core.Missions.MissionSpecification? specification)
     {
+        // v0.3.8.101 — the troubleshooting class's own coverage, same doctrine as the audit's
+        // below: the step that DEFINES the class is ensured deterministically, because a plan that
+        // omits it produces a mission the class gate must then refuse — a mission built to fail.
+        if (specification?.MissionClass == Anthill.Core.Missions.MissionSpecification.TroubleshootingClass)
+        {
+            // THE REPRODUCTION STEP. The check task is what separates a diagnosis from a guess:
+            // its receipts are the evidence the diagnosis must cite. The capability names WHAT must
+            // be possible; WorkerResolution decides who serves it. The medic is deliberately NOT
+            // inserted here — it arrives through the tester-failure handoff, bound to the failed
+            // check by parent lineage, which is the binding §1A of its own contract requires.
+            if (!tasks.Any(t => string.Equals(t.RequiredCapability,
+                    Anthill.Core.Missions.WorkerCapabilities.ExecuteDiagnosticChecks, StringComparison.OrdinalIgnoreCase))
+                && !tasks.Any(t => string.Equals(t.AssignedAnt, "tester", StringComparison.OrdinalIgnoreCase)))
+                tasks.Insert(0, new Task
+                {
+                    Title = "Reproduce the reported symptom",
+                    Description = "Run the workspace's allowlisted checks to reproduce the reported "
+                                + "failure and record each check's exit status as a receipt: " + goal,
+                    AssignedAnt = "tester",
+                    TaskType = "validation_check",
+                    RequiredCapability = Anthill.Core.Missions.WorkerCapabilities.ExecuteDiagnosticChecks,
+                });
+
+            if (!tasks.Any(t => string.Equals(t.AssignedAnt, "builder", StringComparison.OrdinalIgnoreCase)))
+                tasks.Add(new Task
+                {
+                    Title = "Compile the diagnosis",
+                    Description = $"Assemble the root cause and its supporting receipts into the answer: {goal}",
+                    AssignedAnt = "builder",
+                    TaskType = "build_answer",
+                });
+
+            if (!tasks.Any(t => string.Equals(t.AssignedAnt, "verifier", StringComparison.OrdinalIgnoreCase)))
+                tasks.Add(new Task
+                {
+                    Title = "Verify the diagnosis",
+                    Description = "Check that the stated root cause is supported by the recorded "
+                                + $"check receipts: {goal}",
+                    AssignedAnt = "verifier",
+                    TaskType = "verification",
+                });
+
+            return tasks;
+        }
+
         if (specification?.MissionClass != Anthill.Core.Missions.MissionSpecification.SystemAuditClass)
             return tasks;
 
