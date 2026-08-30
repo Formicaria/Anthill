@@ -169,7 +169,8 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
             ["scribe"] = new ScribeAnt(Tools),
             // Structural repair §1B: the store, so the diagnosis consumes the typed failure_context
             // recorded at the failure boundary instead of re-inferring a class from prose.
-            ["medic"] = new MedicAnt((Anthill.SDK.Artifacts.IArtifactStore)Memory),
+            // v0.3.8.101: and the memory, so the diagnosis stamps the failed check task's receipts.
+            ["medic"] = new MedicAnt((Anthill.SDK.Artifacts.IArtifactStore)Memory, Memory),
             ["archivist"] = new ArchivistAnt(),
         };
         // Execution framework Stage C: validate the executor catalog at startup. Any problem keeps
