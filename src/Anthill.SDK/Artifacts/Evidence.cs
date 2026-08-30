@@ -203,6 +203,18 @@ public static class ArtifactSchemas
     public const string DeliverableLedger = "deliverable_ledger";
 
     /// <summary>
+    /// An answer as CLAIMS, each with the retrieved source it rests on or the fact that it has
+    /// none. v0.3.8.99.
+    ///
+    /// Added under the vocabulary's own rule — a schema the colony produces and the vocabulary did
+    /// not name is a gap in the vocabulary — and only now that the colony produces it: the builder
+    /// is ASKED for claims when a mission retrieved sources, so the structure is produced rather
+    /// than imputed from prose. See <see cref="Artifacts.SourcedAnswer"/> for why `ResearchBrief`
+    /// deliberately declined to type the builder, and what had to change first.
+    /// </summary>
+    public const string SourcedAnswer = "sourced_answer";
+
+    /// <summary>
     /// v3.8.20 — added when the ant bridge was built, because the medic already emits
     /// <c>repair_recommendation</c> and five of the other six kinds ants emit mapped exactly onto
     /// the list above. A schema the colony already produces and the vocabulary did not name is a
@@ -263,6 +275,7 @@ public static class ArtifactSchemas
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             RepositoryMap, FileSet, UiMap, ChangePlan, PatchSet, TestReport, DeliverableLedger,
+            SourcedAnswer,
             SecurityReview, FailureDiagnosis, VerificationBundle, OperatorSummary,
             ReleaseNotes, MemoryCandidate, RepairRecommendation, SourceSet, WorkspaceSnapshot,
             FailureContext, DocsPatchSet, ResearchBrief,
@@ -316,6 +329,7 @@ public static class ArtifactSchemas
         "ui_map" => UiMap,
         "repair_recommendation" => RepairRecommendation,
         "source_set" => SourceSet,
+        "sourced_answer" => SourcedAnswer,
         "docs_patch_set" => DocsPatchSet,
         "research_brief" => ResearchBrief,
         "patch_set" => PatchSet,

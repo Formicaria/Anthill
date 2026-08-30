@@ -103,7 +103,8 @@ public static class MissionEvaluator
         MissionConstraints constraints, bool objectiveVerificationEnabled,
         IReadOnlyList<Anthill.SDK.Artifacts.Evidence>? evidence = null,
         Missions.MissionSpecification? specification = null,
-        IReadOnlyList<Anthill.SDK.Artifacts.ArtifactConsumption>? consumptions = null)
+        IReadOnlyList<Anthill.SDK.Artifacts.ArtifactConsumption>? consumptions = null,
+        IReadOnlyList<Anthill.SDK.Artifacts.Artifact>? artifacts = null)
     {
         var structural = mission.Status.Value();
 
@@ -131,9 +132,19 @@ public static class MissionEvaluator
                 Missions.DeliverableLedger.Build(specification, mission.Tasks))
             : null;
 
+        // v0.3.8.99 — AND A CITATION MUST RESOLVE. The failure this catches is specific to an
+        // answer built from the outside world: a claim attributed to something the mission never
+        // retrieved, which reads exactly like a real citation. Applies only where there is a claim
+        // record AND retrieved sources to check it against, so nothing that ran before is affected.
+        var citations = CitationIntegrity.Applies(artifacts)
+            ? CitationIntegrity.Evaluate(artifacts)
+            : null;
+
         string deliverable;
         if (!objectiveVerificationEnabled)
             deliverable = MissionEvaluation.Deliverable.NotChecked;
+        else if (citations is { Satisfied: false })
+            deliverable = MissionEvaluation.Deliverable.NotSatisfied;
         else if (assessment is not null)
             deliverable = assessment.Satisfied
                 ? MissionEvaluation.Deliverable.Satisfied
@@ -177,7 +188,8 @@ public static class MissionEvaluator
                 + (deterministicBlock is null ? "" : $" Deterministic block: {deterministicBlock}")
                 // The gate that said no, named. A demotion an operator cannot locate is one they
                 // cannot answer, and "deliverable=not_satisfied" alone names no gate.
-                + (assessment is null || assessment.Satisfied ? "" : $" {assessment.Explanation}"));
+                + (assessment is null || assessment.Satisfied ? "" : $" {assessment.Explanation}")
+                + (citations is null || citations.Satisfied ? "" : $" {citations.Explanation}"));
     }
 
     private static string Resolve(MissionStatus structuralStatus, string? stopReason,
