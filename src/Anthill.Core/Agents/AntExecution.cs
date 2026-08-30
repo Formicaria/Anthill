@@ -370,7 +370,11 @@ public static class AntExecutionCatalog
             Model: new ModelRequirement(StructuredOutput: true, Reasoning: true)),
 
         ["builder"] = new("builder", V,
-            SupportedTaskTypes: S("build_answer", "synthesis"),
+            // v0.3.8.100: the two creation types join the contract, which is what lets a planner's
+            // `document_creation` / `data_analysis` typing SURVIVE plan validation — an unsupported
+            // type is normalised away to `build_answer`, and with it would go the key the creation
+            // gate turns on. The spelling lives in `CreationIntegrity.CreationTaskTypes`.
+            SupportedTaskTypes: S("build_answer", "synthesis", "document_creation", "data_analysis"),
             RequiredCapabilities: S(Capability.ModelInvoke),
             AllowedTools: S(),
             ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),

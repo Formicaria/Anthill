@@ -194,6 +194,7 @@ Do not wrap JSON in markdown code fences.
 - If the goal creates, adds, writes, edits, modifies, or patches ANY file — including documentation (.md), config, or a new source file — you MUST include a coder task with task_type ""patch_proposal"" that proposes the change as a structured JSON patch. This is the only way ANTHILL produces file changes; a research/build answer that merely describes the change is NOT sufficient.
 - Ants never write to disk directly — the coder only PROPOSES a patch, which a human (or gated auto-apply) applies later through /apply after approval. So proposing a patch via the coder is correct and expected, not a violation.
 - Use file/coder for code, scripts, patches, folders, repos, bugs, refactors, and creating or editing any file.
+- When the goal asks for a document, report, guide, or summary the operator will READ AS THE ANSWER (not a change to any file), give the builder task task_type ""document_creation"". When it asks for an analysis, comparison, or transformation OF DATA the mission gathers, use ""data_analysis"". These type the deliverable so it is produced as a checkable record; the file rule above still governs anything that touches files.
 - Final task should usually be verifier.
 - depends_on should usually be [] because ANTHILL auto-wires safe dependencies.
 - skill_id is optional. Set it ONLY to the exact id of a proven procedure listed above that this

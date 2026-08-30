@@ -228,6 +228,13 @@ public sealed class ResultAssembler : IResultAssembler
         // So where a claim record exists, it IS the answer: each claim with its source, and each
         // unattributed claim marked here rather than wherever the model happened to remember. The
         // marking becomes a property of the record instead of a promise about it.
+        //
+        // v0.3.8.100 — AND A CREATED DELIVERABLE OUTRANKS BOTH, for the same reason turned up one
+        // notch: the deliverable's content IS what the operator asked for, and a synthesis of a
+        // document is a smaller document with the unmet-requirements admission at the paraphrase's
+        // mercy. Rendered from the record: content, then its own account of what it lacks and
+        // what it rests on.
+        if (CreatedRendering(mission) is { Length: > 0 } created) return created;
         if (SourcedRendering(mission) is { Length: > 0 } sourced) return sourced;
 
         var raw = mission.UserResult ?? "";
@@ -271,6 +278,27 @@ public sealed class ResultAssembler : IResultAssembler
         {
             Console.Error.WriteLine(
                 $"[results] could not render the sourced answer for {mission.Id}: {error.Message}");
+            return "";
+        }
+    }
+
+    /// <summary>
+    /// The answer as the creation record renders it — the deliverable itself, unmet requirements
+    /// and inputs included — or empty when this mission created nothing. Never throws, for
+    /// <see cref="SourcedRendering"/>'s reason: a rendering failure falls back to the raw answer
+    /// rather than leaving the operator with nothing.
+    /// </summary>
+    private string CreatedRendering(Mission mission)
+    {
+        try
+        {
+            var artifacts = ((Anthill.SDK.Artifacts.IArtifactStore)_memory).ForMission(mission.Id);
+            return Outcomes.CreationIntegrity.Created(artifacts)?.Render() ?? "";
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine(
+                $"[results] could not render the created deliverable for {mission.Id}: {error.Message}");
             return "";
         }
     }
