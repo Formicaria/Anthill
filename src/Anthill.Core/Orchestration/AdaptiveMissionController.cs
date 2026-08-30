@@ -123,7 +123,23 @@ public sealed class AdaptiveMissionController
 
         // 2. A failed CRITICAL task is a repair candidate before it is a replan candidate: the
         //    plan was not wrong, a step of it broke. Repair is focused; delta planning is not.
-        var brokenCritical = mission.Tasks.Where(t => t.Critical && t.Status == TaskStatus.Failed).ToList();
+        //
+        // v0.3.8.101 — EXCEPT THE REPRODUCED SYMPTOM. In a troubleshooting mission the tester's
+        // check task fails BY DESIGN: that failure is the symptom confirmed, the input to the
+        // diagnosis, and the one outcome the mission was dispatched to produce. Reading it as a
+        // broken critical task sent the controller through a repair cycle that could repair
+        // nothing (the medic diagnoses and stops at this class's authority boundary), and then
+        // escalated "the bound is spent" — stopping the mission before its builder and verifier
+        // ever ran. A correctly reproduced symptom graded as an escalated failure, which is the
+        // exact inversion of the class's purpose. A failed NON-tester task keeps the full repair
+        // treatment: a dead researcher is a genuinely broken mission in any class. Intake is pure,
+        // so the class is read from the same resolution every other layer uses.
+        var troubleshooting = Missions.MissionIntake.Resolve(mission.Goal).MissionClass
+            == Missions.MissionSpecification.TroubleshootingClass;
+        var brokenCritical = mission.Tasks
+            .Where(t => t.Critical && t.Status == TaskStatus.Failed)
+            .Where(t => !(troubleshooting && string.Equals(t.AssignedAnt, "tester", StringComparison.OrdinalIgnoreCase)))
+            .ToList();
         if (brokenCritical.Count > 0)
         {
             if (budget.CanRepair)
