@@ -19,13 +19,19 @@ proposal.
 from Change intent plus a Service target — the Service dimension's first resolver since `.98`
 declared it and nothing reached it, this repository's named defect closed the release the first
 class needed it. The model PROPOSES (a colony-database row, the LocalActionRunner precedent);
-execution is listed in the escalation gate's side-effecting set, so the dispatch chokepoint
-demands the operator's conversation-scoped decision before the tool body runs — absence is not
-consent — and the body stamps the approver from that same decision, the lane's identity, never
-the proposing ant's. Underneath, the homelab executor's every gate stands untouched: catalog
-refusal, blast radius, the WaitingForApproval lifecycle, the TOCTOU re-read, the mandatory
-rollback note, the kill switch. ADR-008's sentence — "every existing approval gate is preserved" —
-is this release's implementation note.
+execution is listed in the escalation gate's side-effecting set and runs only under the
+operator's RECORDED decision. Where that record lives is a finding of its own: a mission runs
+OUTSIDE the conversation's ambient scope — deliberately, and `.101`'s composed missions prove it —
+so the execute tool cannot ask the scope. It reads the DURABLE escalation record instead: `.46`
+wrote the rule that every answer an operator gives at mission start is saved as a decision
+"whether or not the work ends up needing it", and this class is the first work that needs it.
+The permission is the record; the tool resolves it through the mission's own conversation lineage
+(`OperatorDecisions.ForMission`), stamps the approver from it — the lane's identity, never the
+proposing ant's — and refuses in so many words when no decision exists, because absence is not
+consent. Underneath, the homelab executor's every gate stands untouched: catalog refusal, blast
+radius, the WaitingForApproval lifecycle, the TOCTOU re-read, the mandatory rollback note, the
+kill switch. ADR-008's sentence — "every existing approval gate is preserved" — is this release's
+implementation note.
 
 **Twelve roles is a load-bearing constant — this release's found defect, in the architecture.**
 The first draft read the exit line — "existing homelab workers reached through the mission

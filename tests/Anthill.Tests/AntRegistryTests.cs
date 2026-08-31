@@ -20,7 +20,10 @@ public class AntRegistryTests
         // 32 at v0.3.8.98: `researcher.runtime_researcher` joined, declaring `inspect_runtime_state`
         // — the capability an audit needs to answer "what is enabled right now" rather than reading
         // the source and calling that the state of the colony.
-        Assert.Equal(32, AntRegistry.Roles.SelectMany(r => r.Workers).Count());
+        // 33 at v0.3.8.102: `tester.action_proposer` — the operation lane's worker, ON the tester
+        // rather than a thirteenth role. The role count above did NOT move, which is this pin
+        // doing its job in the other direction: a lane landed without a roster change.
+        Assert.Equal(33, AntRegistry.Roles.SelectMany(r => r.Workers).Count());
         Assert.Empty(AntRegistry.ValidateRegistry());
         Assert.Contains(AntRegistry.Roles, r => r.RoleId == "queen");
         Assert.Contains(AntRegistry.Roles, r => r.RoleId == "director");
