@@ -74,6 +74,17 @@ public static partial class ApiHost
     // reuses connections. Per-call timeouts are applied via CancellationToken.
     private static readonly HttpClient InternalHttp = new() { Timeout = Timeout.InfiniteTimeSpan };
 
+    /// <summary>
+    /// v0.3.8.103 — the client external sends go out on. Separate from <see cref="InternalHttp"/>
+    /// deliberately: that one talks to this process and waits forever, and neither property is
+    /// remotely appropriate for a request leaving the machine. Redirects are NOT followed, for the
+    /// same reason `HttpToolKind` refuses them — a redirect moves the destination after the operator
+    /// approved it, which is the exact substitution this class's integrity gate exists to refuse,
+    /// arriving from the network instead of from the model.
+    /// </summary>
+    private static readonly HttpClient ExternalSendClient =
+        new(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(20) };
+
     public static int Run(string[] args)
     {
         AnthillRuntime.Initialize();
@@ -200,6 +211,36 @@ public static partial class ApiHost
         // profile is resolved from the registry as it stood at construction: registering without
         // re-resolving would leave /status reporting five tool grants for an eleven-tool colony.
         Queen.AdoptModuleTools(Modules.ContributedTools);
+
+        // v0.3.8.103 — THE SEND LANE, composed here rather than by the Queen or the module.
+        //
+        // The module references only the SDK, so everything that knows about runtime configuration
+        // or the core's escalation lane is handed in from this side. The destination map is read
+        // through a delegate rather than captured, so an operator removing a destination removes it
+        // for the next send rather than for the next restart.
+        //
+        // Registered even when NO destinations are configured, which is the shipped default. A tool
+        // that registers and refuses honestly ("no external destinations are configured") is a
+        // different thing from a contract naming a tool nothing implements — the tester declares
+        // these two, and three separate guards refuse a colony where that declaration reaches
+        // nothing. Registering unconditionally is what keeps the declaration true.
+        Queen.AdoptModuleTools(Anthill.Modules.Tools.ExternalActionTools.For(
+            new Anthill.Modules.Tools.ConfiguredWebhookAdapter(
+                () => AnthillRuntime.ExternalDestinations,
+                () => ExternalSendClient),
+            missionId =>
+            {
+                // The ambient scope for conversational flows, then the SAVED escalation record for
+                // mission-borne ones — a mission runs outside the conversation's ambient scope, so
+                // the durable record is where the permission lives (the v0.3.8.46 rule, and
+                // v0.3.8.102's finding when the composed positives failed without it).
+                var live = Anthill.Core.Conversations.ConversationScope.Evaluate(
+                    Anthill.SDK.Contracts.ExternalActionToolNames.Execute);
+                var decision = live ?? Anthill.Core.Conversations.OperatorDecisions.ForMission(
+                    Queen.Memory, missionId, Anthill.SDK.Contracts.ExternalActionToolNames.Execute);
+                if (decision is null) return null;
+                return (decision.Allowed, decision.Id, decision.Reason ?? "");
+            }));
         // Phase 3: the Director multiplexes its concurrent missions through this same worker
         // pool, so size it to whichever is larger — api_job_workers or autonomy_concurrency —
         // ensuring autonomous missions can actually run side by side without starving user jobs.

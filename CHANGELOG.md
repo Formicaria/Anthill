@@ -1,3 +1,110 @@
+## v0.3.8.103 - external actions: an approved send to a resolved target, or a mission that says it did not send
+
+**DETERMINISTICALLY QUALIFIED, NOT LIVE-QUALIFIED, AND SHIPPED CONFIGURED-OFF.** The class works
+end to end through the real composition root and the composed acceptance mission passes over three
+semantically equivalent phrasings with three negative runs. A production adapter IS composed — the
+API host registers it beside the module tools — and it resolves against an operator-configured map
+of destinations that is EMPTY by default. So a fresh install refuses every send with "no external
+destinations are configured", names what would make it resolvable, and reaches nothing. Not claimed:
+any of it against a real endpoint.
+
+**AND THE FIRST DRAFT OF THIS RELEASE TRIED TO SHIP WITHOUT THE ADAPTER, WITH THE GAP WRITTEN DOWN
+AS AN OPEN ITEM.** Three guards refused it in one run: `AcceptanceGateOne` (the tester was not Ready
+because two declared tools were unregistered), `NoContractNamesAToolThatDoesNotExist`, and
+`EveryAllowedTool_IsEitherBuiltOrKnowinglyPlanned`. They were right and the plan was wrong. A role
+whose contract names tools nothing implements is the declaration-reaching-nobody defect exactly —
+the same one that made `.98`'s capability branch compile and never execute, and the same one that
+left `manage_models` required by an endpoint and absent from every permission table. Documenting it
+as a limitation would have been describing the defect instead of fixing it, and this repository's
+guards do not accept prose as a remedy. "Registered and refusing honestly" and "declared and absent"
+are different facts, and only the first is shippable.
+
+**THE CLASS, AND WHY IT IS NOT `.102` WITH A DIFFERENT NOUN.** An operator asks for something to
+leave the colony — "post the release summary to the team's incident webhook" — and the difference
+from an infrastructure action is who bears the consequence. A restarted container is the operator's
+own machine and the paired action reverses it. A message that reached a third party is irreversible
+the instant it lands and is read by people the colony has no channel to. There is no before-state to
+restore, so the record's centre is not what changed; it is WHERE THE THING WENT.
+
+**TARGET RESOLUTION IS THE POINT.** An operator approves a destination, not a template. "The team's
+incident webhook" is an alias, and approving a name attaches a signature to whatever that name turns
+out to mean at send time. So the adapter resolves the alias to a concrete destination BEFORE
+approval is offered, the resolution is recorded, and what the adapter reports it actually hit is
+recorded beside it. The record therefore carries three target fields, and collapsing them is how it
+would stop being able to catch anything: requested, resolved, executed. The failure this class
+exists for — an approval of one destination and a send to another — has every field populated and no
+absence check would ever see it. `ExternalActionIntegrity` refuses the MISMATCH by name, which is
+`.102`'s TOCTOU re-read in the shape this class needs it.
+
+**DENIED AUTHORITY CANNOT BE REPLACED BY PROSE**, the exit line's second half and the harder one. A
+model whose send was refused several steps upstream still writes "I've posted the summary to the
+team" — not from malice, but because that is what the surrounding text is about and prose has no way
+to know a tool said no. Nothing about that sentence is detectable by reading it. So the answer is
+not composed from it: the outcome line is RENDERED FROM THE RECORD and the assembler leads with it,
+ahead of `.99`'s claim rendering and ahead of every prose path. `.99` established the rule for
+citations; the cost of being wrong is higher here, and the acceptance test scripts a builder that
+lies and asserts the answer EQUALS the record's rendering rather than searching it for "not sent" —
+a word search passes on an answer that says "not sent" in one paragraph and "posted successfully"
+in the next.
+
+**AND A REFUSAL RECORDS ITSELF**, which is the one place this lane deliberately differs from its
+`.102` sibling. The operation lane can leave no artifact when a proposal goes unapproved, because
+the class gate refuses the mission for the artifact's absence. Here the record is also what the
+answer is rendered from — so no record means the builder's prose is the only account of what
+happened. Absence of a record IS the condition under which prose wins, so a send that never happened
+writes an `external_action` row saying so, with the reason, and the gate then refuses the mission on
+it. An honest record and a failed mission are two judgments, not one: letting the record's honesty
+satisfy the deliverable would make "we told you we didn't do it" a passing grade, and teach a colony
+that explaining is cheaper than doing.
+
+**THE CEILING IS FINALLY READ.** `MissionAuthority` has existed since `.98` with a doc comment
+calling it "the ceiling on what the mission may DO, agreed across specification, operator policy,
+worker contract and adapter before dispatch". Intake set it. The mission snapshot showed it. Tests
+asserted it. No dispatch anywhere ever consulted it — five releases of a value that described a
+guarantee nobody enforced. That is this repository's named house defect: the same one that made
+`.98`'s capability branch compile, read correctly and never execute once, and the same one that left
+`manage_models` required by an endpoint and absent from every permission table.
+
+`MissionAuthorityGate` is one table from a side-effecting action to the authority a mission must hold
+to reach it, and one comparison. It is NOT a second escalation gate, and the distinction is the whole
+design: the escalation lane asks "did a human decide?", per action, at dispatch, while this asks "is
+this the KIND of mission that may do this at all?", once, from what intake resolved. An audit mission
+that somehow reached an execute tool is not fixed by an operator clicking approve, because the
+operator approved an audit. Both must pass, and neither is weakened to let the other decide. A tool
+with no entry is unaffected — a ceiling that refused reading would make every audit a Modify mission
+— and what must never happen, a side-effecting action with NO entry, is swept rather than trusted:
+the test walks `EscalationGate.SideEffecting` and fails on any member the table does not name.
+
+**THE ORDER OF THE TWO CHANGE CLASSES AT INTAKE is the release's sharpest classification decision,
+and it is written in the code rather than left to line order.** External is tested BEFORE service.
+"Notify the team's webhook that the media-server container restarted" names a container and does
+nothing to it — the container is the SUBJECT of a message, not the object of an action. Letting the
+service noun win would show an operator who asked to send a message a restart to approve, which is
+the worst direction for this to be wrong in. The reverse misread costs less and is guarded anyway: a
+genuine infrastructure ask names no external destination and cannot reach the branch. The outbound
+verbs (`post`, `publish`, `send`, `notify`) join CHANGE because posting to a third party changes the
+world, and on their own they classify nothing — the class also requires a NAMED destination, so
+"send the report to the team" stays `general` exactly as it did before.
+
+**A SIBLING WORKER, NOT A WIDENED ONE.** `tester.external_action_proposer` joins
+`tester.action_proposer` rather than replacing it: that worker's purpose sentence promises a rollback
+note and a captured before-state, and a message that has already reached other people has neither.
+`.98` recorded what an overstated worker contract costs — resolution BELIEVES it, and the wrong
+worker looks compatible — so the send gets its own honest sentence. Workers move 33 → 34; the twelve
+executable role types did not move, for the second release running, which is that pin doing its job.
+
+**WHAT THIS RELEASE FOUND IN ITS OWN PROCESS, recorded because the mechanism outlives the bug.** The
+exit gate was written first, as always, but its routing was put in a LATER increment than the
+composed missions that needed it — so the first runs produced neither a green nor an honest red. A
+task type no contract admits does not fail an assertion; it goes wrong at dispatch, and that is a
+statement about the harness rather than about the release. `.98` and `.102` both put the routing in
+the gate's own commit. A red gate has to be red for the reason it claims, or it is not a gate.
+
+Separately, the harness pointed `AllowedWorkspaceRoot` at the real repository, copied from `.102`
+where an audit genuinely reads it. This class sends and reads nothing, so that setting could only
+ever have given a stray workspace scan a path to the operator's working tree during a test run. It
+now works in its own temp directory.
+
 ## v0.3.8.102 - system actions: a reversible operation with permission, or a mission that does not pass
 
 **DETERMINISTICALLY COMPLETE, NOT LIVE-QUALIFIED.** Every claim below is covered by a test that

@@ -228,6 +228,12 @@ public static class EscalationGate
             // is deliberately absent (a proposal is a colony-database row, the LocalActionRunner
             // precedent); execution is where the operator's recorded decision IS the permission.
             Anthill.SDK.Contracts.SystemActionToolNames.Execute,
+            // v0.3.8.103: and delivering an external send, which is the only member of this set
+            // nothing in this repository can undo. The PROPOSE tool is absent for the same reason
+            // its `.102` sibling is — resolving a destination and writing a proposal row touches
+            // nothing outside the process, and gating it would ask the operator to approve the act
+            // of preparing the thing they are about to be asked to approve.
+            Anthill.SDK.Contracts.ExternalActionToolNames.Execute,
             // v3.7.0: turning a conversation into a MISSION is itself a side effect, and the most
             // consequential one here — it is the moment bounded conversational work becomes
             // autonomous multi-task execution. Listed here rather than special-cased in the runner,

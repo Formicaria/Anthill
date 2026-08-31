@@ -166,6 +166,14 @@ public static class MissionEvaluator
             ? OperationIntegrity.Evaluate(specification!, artifacts)
             : null;
 
+        // v0.3.8.103 — AND A SEND MUST HAVE LANDED WHERE THE HUMAN AGREED IT WOULD. Specification-
+        // keyed like its siblings and mutually exclusive with them by class. What it catches that
+        // no sibling can: a send that went somewhere OTHER than the approved destination — every
+        // field populated, nothing missing, and still wrong.
+        var sends = ExternalActionIntegrity.Applies(specification)
+            ? ExternalActionIntegrity.Evaluate(specification!, artifacts)
+            : null;
+
         string deliverable;
         if (!objectiveVerificationEnabled)
             deliverable = MissionEvaluation.Deliverable.NotChecked;
@@ -179,6 +187,10 @@ public static class MissionEvaluator
                 : MissionEvaluation.Deliverable.NotSatisfied;
         else if (operations is not null)
             deliverable = operations.Satisfied
+                ? MissionEvaluation.Deliverable.Satisfied
+                : MissionEvaluation.Deliverable.NotSatisfied;
+        else if (sends is not null)
+            deliverable = sends.Satisfied
                 ? MissionEvaluation.Deliverable.Satisfied
                 : MissionEvaluation.Deliverable.NotSatisfied;
         else if (assessment is not null)
@@ -252,6 +264,7 @@ public static class MissionEvaluator
                 // cannot answer, and "deliverable=not_satisfied" alone names no gate.
                 + (assessment is null || assessment.Satisfied ? "" : $" {assessment.Explanation}")
                 + (citations is null || citations.Satisfied ? "" : $" {citations.Explanation}")
+                + (sends is null || sends.Satisfied ? "" : $" {sends.Explanation}")
                 + (creations is null || creations.Satisfied ? "" : $" {creations.Explanation}")
                 + (diagnosis is null || diagnosis.Satisfied ? "" : $" {diagnosis.Explanation}")
                 + (operations is null || operations.Satisfied ? "" : $" {operations.Explanation}")

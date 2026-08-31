@@ -64,6 +64,13 @@ public static class ToolInventory
         // Anthill.SDK.Contracts.SystemActionToolNames because the module may not name Core.
         Anthill.SDK.Contracts.SystemActionToolNames.Propose,
         Anthill.SDK.Contracts.SystemActionToolNames.Execute,
+        // v0.3.8.103: the tester's send lane. Composed by the API host beside the module tools
+        // (ApiHost.cs) rather than by the Queen, because the adapter reads operator configuration
+        // and the module may not name Core. With no destinations configured the tools still
+        // register and refuse honestly — "registered and refusing" is a different fact from
+        // "declared and absent", and only the second is the defect these tables exist to catch.
+        Anthill.SDK.Contracts.ExternalActionToolNames.Propose,
+        Anthill.SDK.Contracts.ExternalActionToolNames.Execute,
     };
 
     /// <summary>
