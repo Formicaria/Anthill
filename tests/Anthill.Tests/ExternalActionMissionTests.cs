@@ -271,8 +271,7 @@ public class ExternalActionMissionTests : IDisposable
         // The answer LEADS with what the record says, and the model's claim is not what was
         // published as the mission's outcome.
         var mission = memory.GetMission(run.MissionId);
-        Assert.NotNull(mission);
-        var answer = mission!.FinalResult ?? mission.UserResult ?? "";
+        var answer = mission?.GetValueOrDefault("final_result")?.ToString() ?? "";
         Assert.StartsWith(action.Render(), answer, StringComparison.Ordinal);
     }
 
