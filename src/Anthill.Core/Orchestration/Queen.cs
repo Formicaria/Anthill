@@ -164,9 +164,6 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
             // registry gate agree by construction.
             ["ui_cartographer"] = new UiCartographerAnt(Tools),
             ["tester"] = new TesterAnt(Tools),
-            // v0.3.8.102: the system operator, deterministic like the tester — its gates are the
-            // escalation lane and the homelab executor's own approval machinery.
-            ["system_operator"] = new SystemOperatorAnt(Tools),
             // v3.8.25: the store, so the review reads the PATCH rather than prose about it.
             ["soldier"] = new SoldierAnt((Anthill.SDK.Artifacts.IArtifactStore)Memory),
             ["scribe"] = new ScribeAnt(Tools),

@@ -72,14 +72,16 @@ public static class SystemActionTools
                     Title: $"{actionType} → {targetId}", Summary: summary,
                     RollbackNote: rollbackNote, Payload: "",
                     ServiceCriticality: "normal", BackupCovered: false, InternetExposed: false),
-                requestedBy: "system_operator");
+                // The audit label the pipeline's rows carry: the tester's operation lane is the
+                // requester — the role that dispatched this tool, not a role of its own.
+                requestedBy: "tester");
             if (proposal is null)
                 return new ToolResult(Name, false, "", error ?? "proposal refused", FailureClass.ValidationFailure);
 
             // THE BEFORE-STATE, from the runner's own dry-run — the pipeline's account of what is
             // and what would change, captured while nothing has. A dry-run failure fails the
             // proposal honestly: a before-state that could not be captured is not one to invent.
-            var dryRun = _executor.DryRunAsync(proposal.ApprovableId, "system_operator").GetAwaiter().GetResult();
+            var dryRun = _executor.DryRunAsync(proposal.ApprovableId, "tester").GetAwaiter().GetResult();
             if (!dryRun.Ok)
                 return new ToolResult(Name, false, "",
                     $"proposed as {proposal.ApprovableId}, but the before-state could not be captured: {dryRun.Message}",
