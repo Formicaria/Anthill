@@ -125,7 +125,8 @@ public class SystemActionMissionTests : IDisposable
 
         // ---- 1. THE OPERATION RECORD EXISTS, AND ITS PIECES ARE ALL PRESENT ---------------------
         var operation = OperationRecord(memory, run.MissionId);
-        Assert.NotNull(operation);
+        Assert.True(operation is not null,
+            "no system_operation record was stored for the mission" + Dump(memory, run.MissionId));
         Assert.False(string.IsNullOrWhiteSpace(operation!.ProposalId), "the record names no proposal.");
         Assert.False(string.IsNullOrWhiteSpace(operation.BeforeState),
             "no before-state was captured — what changed cannot be answered without what was.");
@@ -152,7 +153,9 @@ public class SystemActionMissionTests : IDisposable
         // rows: the proposal exists in the homelab repository and reached the executed state
         // through the lifecycle every prior release hardened.
         var proposal = lab.Repository.GetActionProposal(operation.ProposalId);
-        Assert.NotNull(proposal);
+        Assert.True(proposal is not null,
+            $"the record names proposal '{operation.ProposalId}' and the homelab repository holds "
+          + "no such row" + Dump(memory, run.MissionId));
         Assert.Equal("executed", proposal!.State);
         Assert.Contains(lab.Runner.Executed, e => e.Contains(proposal.TargetId, StringComparison.OrdinalIgnoreCase));
 
@@ -372,12 +375,20 @@ public class SystemActionMissionTests : IDisposable
         var queen = new Queen(memory);
         queen.AdoptModuleTools(host.ContributedTools);
         // The homelab's spine tools, over the REAL executor — same last-write-wins path. The
-        // decision bridge is the composition's job (the module references only the SDK): the
-        // escalation lane's own record, shaped down to what the operation record needs.
+        // decision bridge is the composition's job (the module references only the SDK), and it
+        // is WIRED THE WAY PRODUCTION WIRES IT: the ambient scope for conversational flows, then
+        // the SAVED escalation record for mission flows — the runner records every answer as a
+        // decision at mission start (the v0.3.8.46 rule), and the mission runs outside the
+        // ambient scope, so the record is where the permission lives.
         queen.AdoptModuleTools(SystemActionTools.For(lab.Executor,
-            () => ConversationScope.Evaluate(SystemActionTools.ExecuteToolName) is { } decision
-                ? (decision.Allowed, decision.Id, decision.Reason ?? "")
-                : null));
+            missionId =>
+            {
+                var live = ConversationScope.Evaluate(SystemActionTools.ExecuteToolName);
+                var decision = live ?? OperatorDecisions.ForMission(
+                    memory, missionId, SystemActionTools.ExecuteToolName);
+                if (decision is null) return null;
+                return (decision.Allowed, decision.Id, decision.Reason ?? "");
+            }));
 
         string? missionId = null;
         using var settled = new ManualResetEventSlim(false);
@@ -420,10 +431,16 @@ public class SystemActionMissionTests : IDisposable
                 .Select(t => "    task "
                     + $"{Anthill.SDK.Common.TextUtil.Truncate(t.GetValueOrDefault("id")?.ToString() ?? "-", 8)} "
                     + $"ant={t.GetValueOrDefault("assigned_ant")} type={t.GetValueOrDefault("task_type")} "
-                    + $"status={t.GetValueOrDefault("status")}"));
+                    + $"status={t.GetValueOrDefault("status")} "
+                    + $"summary={Anthill.SDK.Common.TextUtil.Truncate(t.GetValueOrDefault("result_summary")?.ToString() ?? "-", 160)}"));
             var artifactLines = string.Join("\n", ((IArtifactStore)memory).ForMission(missionId)
                 .Select(a => $"    artifact schema={a.Schema} payload={Anthill.SDK.Common.TextUtil.Truncate(a.Payload, 120)}"));
-            return $"\n  TASKS:\n{taskLines}\n  ARTIFACTS:\n{artifactLines}";
+            // The tool dispatches' own account — a refused escalation, a denied authorization or a
+            // failed proposal each leave their reason HERE, which is what a red run needs to say.
+            var evidenceLines = string.Join("\n", ((Anthill.SDK.Artifacts.IEvidenceStore)memory).ForMission(missionId)
+                .Select(e => $"    evidence kind={e.Kind} passed={e.Passed} "
+                    + $"detail={Anthill.SDK.Common.TextUtil.Truncate(e.Detail, 160)}"));
+            return $"\n  TASKS:\n{taskLines}\n  EVIDENCE:\n{evidenceLines}\n  ARTIFACTS:\n{artifactLines}";
         }
         catch (Exception error) { return $"\n  (dump failed: {error.Message})"; }
     }

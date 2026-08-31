@@ -95,6 +95,18 @@ public class AcceptanceGatesOneAndTwoTests : IDisposable
         var queen = new Queen(memory);
         queen.AdoptModuleTools(host.ContributedTools);
 
+        // v0.3.8.102 — the THIRD half of the registry: the system-action tools are adopted by the
+        // API host where the homelab executor is built, so a full composition includes them the
+        // same way it includes the tools module. Composed here over the module's own deterministic
+        // pieces (a real repository, the mock runner) — the same fixture-versus-runtime rule the
+        // header states: gate 1 measures the colony production composes, not a half of it.
+        var homelab = new Anthill.Modules.Homelab.HomelabRepository(Path.Combine(dir, "gates-homelab.db"));
+        var homelabExecutor = new Anthill.Modules.Homelab.Actions.ActionExecutor(
+            homelab, new Anthill.Modules.Homelab.Actions.IHomelabActionRunner[]
+                { new Anthill.Modules.Homelab.Actions.MockActionRunner() }, isStopped: () => false);
+        queen.AdoptModuleTools(Anthill.Modules.Homelab.Actions.SystemActionTools.For(
+            homelabExecutor, _ => null));
+
         var registered = queen.Tools.Names.ToList();
 
         // Every capability any contract requires — the operator who said yes to everything. A

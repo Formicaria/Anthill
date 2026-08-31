@@ -181,6 +181,13 @@ public class CallSiteAuditTests
         {
             Path.Combine(RepoRoot(), "src", "Anthill.Core", "Orchestration", "Queen.cs"),
             Path.Combine(RepoRoot(), "src", "Anthill.Modules", "Anthill.Modules.Tools", "ToolsModule.cs"),
+            // v0.3.8.102 — the THIRD place: the system-action tools are constructed by
+            // SystemActionTools.For, which the API host invokes where the homelab executor is
+            // built (ApiHost.Actions.cs). The `new ProposeTool(` / `new ExecuteTool(`
+            // expressions live in the factory, so the factory is the named file — same rule as
+            // the other two: a construction in a test satisfies nothing.
+            Path.Combine(RepoRoot(), "src", "Anthill.Modules", "Anthill.Modules.Homelab",
+                "Homelab", "Actions", "SystemActionTools.cs"),
         };
 
         foreach (var root in roots)
@@ -204,6 +211,11 @@ public class CallSiteAuditTests
             ["read_changed_files_summary"] = "ChangedFilesSummaryTool",
             ["repository_index"] = "RepositoryIndexTool",
             ["colony_state"] = "ColonyStateTool",
+            // v0.3.8.102 — nested private types inside SystemActionTools; their Name properties
+            // forward the SDK constants rather than holding literals, which is why the inventory
+            // guard admits them by constant too.
+            ["propose_system_action"] = "ProposeTool",
+            ["execute_system_action"] = "ExecuteTool",
         };
 
         // A new tool must be added HERE as well as to the inventory. That is deliberate friction:

@@ -319,8 +319,13 @@ public sealed class TesterAnt : BaseAnt
         var beforeState = proposal.GetValueOrDefault("before_state") ?? "";
 
         // ---- 3. EXECUTE, UNDER THE OPERATOR'S RECORDED DECISION ---------------------------------
+        //
+        // The mission id travels IN THE ARGS because the decision bridge resolves the operator's
+        // saved escalation record through the mission's own conversation lineage — a mission does
+        // not run inside the conversation's ambient scope, so the record is the only place the
+        // permission lives.
         var executed = _tools.RunTool(Anthill.SDK.Contracts.SystemActionToolNames.Execute,
-            mission.Id, task.Id, Name, new() { ["proposal_id"] = proposalId });
+            mission.Id, task.Id, Name, new() { ["proposal_id"] = proposalId, ["mission_id"] = mission.Id });
         if (!executed.Success)
             // Proposed, not approved — the mission runs on and the class gate refuses it with the
             // honest reason. A structured warning, never a silent pass and never a dead task.

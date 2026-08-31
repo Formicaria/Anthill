@@ -30,14 +30,19 @@ public static class SystemActionTools
     public const string ExecuteToolName = SystemActionToolNames.Execute;
 
     /// <summary>
-    /// The operator's decision for the execute action, or null when no conversation is in scope.
+    /// The operator's decision for the execute action, or null when nobody has decided.
     /// A DELEGATE rather than a type, deliberately: this module references only the SDK — the
     /// seam its own header calls the whole point — and the escalation lane lives in the core. The
-    /// COMPOSITION supplies the bridge (`ConversationScope.Evaluate`, shaped down to what the
-    /// record needs), which keeps the module ignorant of conversations while the identity in the
-    /// record stays the lane's own.
+    /// COMPOSITION supplies the bridge, which keeps the module ignorant of conversations while
+    /// the identity in the record stays the lane's own.
+    ///
+    /// It takes the MISSION ID because a mission does not run inside the conversation's ambient
+    /// scope — the answers the operator gave at mission start are SAVED as escalation decisions
+    /// (the v0.3.8.46 rule: an answer given IS an operator decision, recorded whether or not the
+    /// work ends up needing it), and the bridge reads that durable record. The permission is the
+    /// record, so the record is where the tool looks for it.
     /// </summary>
-    public delegate (bool Allowed, string DecisionId, string Reason)? OperatorDecisionSource();
+    public delegate (bool Allowed, string DecisionId, string Reason)? OperatorDecisionSource(string missionId);
 
     public static ITool[] For(ActionExecutor executor, OperatorDecisionSource operatorDecision) =>
         new ITool[] { new ProposeTool(executor), new ExecuteTool(executor, operatorDecision) };
@@ -116,20 +121,20 @@ public static class SystemActionTools
             var proposalId = (args.GetValueOrDefault("proposal_id")?.ToString() ?? "").Trim();
             if (proposalId.Length == 0)
                 return new ToolResult(Name, false, "", "Missing required argument: proposal_id", FailureClass.ValidationFailure);
+            var missionId = (args.GetValueOrDefault("mission_id")?.ToString() ?? "").Trim();
 
-            // THE HUMAN STEP, read from the escalation lane through the injected bridge. The
-            // dispatch chokepoint has already refused this call if the operator's answer was
-            // absent or negative; reading the decision AGAIN here is not a second gate but the
-            // identity source — the record must carry WHO approved, and that identity is the
-            // lane's decision, never this tool's caller. Outside any conversation there is no
-            // operator to have decided, and the refusal says so rather than treating absence as
-            // anything.
-            var decision = _operatorDecision();
+            // THE HUMAN STEP, read from the escalation lane through the injected bridge. This is
+            // the identity source, not a convenience: the record must carry WHO approved, and
+            // that identity is the lane's recorded decision — never this tool's caller. The
+            // bridge resolves it from the mission's own conversation record (the operator's
+            // answers are saved as escalation decisions at mission start), so a mission with no
+            // recorded decision is refused in so many words — absence is not consent.
+            var decision = _operatorDecision(missionId);
             if (decision is null)
                 return new ToolResult(Name, false, "",
-                    "Execution requires a conversation-scoped operator decision, and no "
-                  + "conversation is in scope — a mission running outside one has nobody to have "
-                  + "approved this.", FailureClass.AuthorizationFailure);
+                    "Execution requires a recorded operator decision, and the mission's "
+                  + "conversation holds none for this action — nobody has approved this.",
+                    FailureClass.AuthorizationFailure);
             if (!decision.Value.Allowed)
                 return new ToolResult(Name, false, "",
                     $"Execution refused: {decision.Value.Reason}", FailureClass.AuthorizationFailure);
