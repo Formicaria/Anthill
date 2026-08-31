@@ -38,8 +38,8 @@ public static class ExternalActionTools
         var pending = new ConcurrentDictionary<string, Proposal>(StringComparer.Ordinal);
         return new ITool[]
         {
-            new ProposeTool(adapter, pending),
-            new ExecuteTool(adapter, operatorDecision, pending),
+            new ProposeSendTool(adapter, pending),
+            new ExecuteSendTool(adapter, operatorDecision, pending),
         };
     }
 
@@ -48,12 +48,12 @@ public static class ExternalActionTools
     /// be an approval looking for something to authorize.</summary>
     private sealed record Proposal(string RequestedTarget, string ResolvedTarget, string Method, string Body);
 
-    private sealed class ProposeTool : ITool
+    private sealed class ProposeSendTool : ITool
     {
         private readonly IExternalActionAdapter _adapter;
         private readonly ConcurrentDictionary<string, Proposal> _pending;
 
-        public ProposeTool(IExternalActionAdapter adapter, ConcurrentDictionary<string, Proposal> pending)
+        public ProposeSendTool(IExternalActionAdapter adapter, ConcurrentDictionary<string, Proposal> pending)
         {
             _adapter = adapter;
             _pending = pending;
@@ -98,13 +98,13 @@ public static class ExternalActionTools
         }
     }
 
-    private sealed class ExecuteTool : ITool
+    private sealed class ExecuteSendTool : ITool
     {
         private readonly IExternalActionAdapter _adapter;
         private readonly OperatorDecisionSource _operatorDecision;
         private readonly ConcurrentDictionary<string, Proposal> _pending;
 
-        public ExecuteTool(IExternalActionAdapter adapter, OperatorDecisionSource operatorDecision,
+        public ExecuteSendTool(IExternalActionAdapter adapter, OperatorDecisionSource operatorDecision,
             ConcurrentDictionary<string, Proposal> pending)
         {
             _adapter = adapter;

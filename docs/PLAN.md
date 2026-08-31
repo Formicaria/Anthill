@@ -109,10 +109,10 @@ refused upstream still writes "I've posted it to the team". And `MissionAuthorit
 since `.98` and read by nothing, is finally read: one table from a side-effecting action to the
 authority a mission must hold, swept so no member of the escalation set can omit an entry.
 
-What is NOT claimed, and the first thing an operator meets: **no adapter is composed in
-production**, so a real external-action mission classifies, plans, dispatches and refuses. Nor is
-the ceiling consulted at the dispatch chokepoint, nor are the other three authority sources the
-`MissionAuthority` doc names. Six of the seven classes are now served deterministically; the
+What is NOT claimed: a send that reached anything. The adapter ships composed and the
+destination map ships EMPTY, so a fresh install refuses every send by name — configured-off rather
+than absent. Nor is the ceiling consulted at the dispatch chokepoint, nor are the other three
+authority sources the `MissionAuthority` doc names. Six of the seven classes are now served deterministically; the
 seventh — and every one of the six on a default install, where `objective_verification_enabled`
 is off — waits on `.104`. See
 [`ADR-008`](adr/ADR-008-universal-mission-lifecycle.md) §1 for the evidence and §2 for the contract
@@ -182,7 +182,7 @@ through the real application. **Ext.** = requires an external adapter, connectio
 | Troubleshooting / diagnosis | yes | yes | **yes** | no | a symptom reproduced by executed checks, diagnosed with receipts cited by name, boundary enforced both ways (.101) |
 | Local system actions | partial | no | partial | no | homelab-catalog operations shipped (.102); a general local-system lane outside the catalog is not claimed |
 | Homelab/infrastructure actions | yes | no | **yes** | no | on the mission spine: propose → operator decision → execute → verify, recorded as a reversible operation (.102) |
-| External actions (approval-gated) | **partial** | no | **yes** | no | Ext. — the class, the record, the ceiling and the gate ship at `.103` and are qualified through the composed root; NO adapter is composed in production, so a real send refuses `Tool not found or not registered` — see §2c's first open item |
+| External actions (approval-gated) | yes | **no destinations configured** | **yes** | no | Ext. — the class, record, ceiling, gate AND a `ConfiguredWebhookAdapter` composed by the API host. `external_destinations` is empty by default and IS the allowlist, so a fresh install resolves nothing and refuses by name |
 | Mission authority ceiling | **partial** | yes | **yes** | no | `MissionAuthorityGate` reads what `MissionAuthority` has declared since `.98`; consulted directly, not yet at the dispatch chokepoint (`.104`) |
 | Dynamic repair (Medic) | partial | yes | partial | no | bounded repair exists; not evidence-driven — `.104` |
 | Multi-mission continuity | no | — | no | no | `.105` |
@@ -291,15 +291,21 @@ Proved, each by an assertion that fails without it:
 - `MissionAuthorityGate` refuses a send under a lower ceiling and names both levels, and every
   member of `EscalationGate.SideEffecting` declares the authority it needs.
 
-**THE RELEASE'S OWN LIMITATION, stated first because it is what an operator will hit:**
+**WHAT AN OPERATOR MEETS FIRST, and why it is a configuration state rather than a gap:**
 
-- **No production adapter ships.** `ExternalActionTools` has one composition site and it is the test
-  harness. On a real install an external-action mission classifies, plans, dispatches and refuses
-  with `NOT SENT — Tool not found or not registered`. That is fail-closed, and it is more honest
-  than the pre-`.103` behaviour (the request resolved `general` and the colony wrote prose about a
-  send that never happened) — and it is not a feature anyone can use. The capability table reads
-  `partial`, and wiring an adapter plus its tool-inventory surfaces is this release's first open
-  item, not a described-as-done one.
+- **A production adapter ships and no destination is configured.** `ConfiguredWebhookAdapter` is
+  composed by the API host beside the module tools; it resolves an alias only against the operator's
+  `external_destinations` map, and that map is empty by default. The map IS the allowlist — there is
+  no second one, because an explicit operator-written name→url pair is the strongest allowlist
+  available and a colony able to reach a host nobody configured would be one whose destination list
+  was advisory. So a fresh install refuses every send before approval is offered, naming what is
+  configured (nothing) so the refusal is actionable.
+- **The first draft of this release tried to ship with no adapter at all**, recording the gap here
+  as an open item. Three guards refused it in one run — `AcceptanceGateOne`,
+  `NoContractNamesAToolThatDoesNotExist`, `EveryAllowedTool_IsEitherBuiltOrKnowinglyPlanned` — and
+  they were right: a role whose contract names tools nothing implements is the
+  declaration-reaching-nobody defect, and describing it in a document is not a remedy for it. The
+  episode is recorded because the standard it enforces is the one this program keeps re-learning.
 
 **Divergences — recorded rather than quietly dropped:**
 
@@ -338,7 +344,7 @@ directions and nothing guards for roles.
 
 **Explicitly still unsupported after .103:** the persisted mission contract (`.104`); dynamic
 replanning and clarification (`.105`); multi-mission continuity (`.106`); claim↔source SUPPORT;
-general local-system operations outside the homelab catalog; any external destination in production.
+general local-system operations outside the homelab catalog; any external destination not written into `external_destinations` by an operator.
 
 ---
 

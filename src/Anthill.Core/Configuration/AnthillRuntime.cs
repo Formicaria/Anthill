@@ -445,6 +445,11 @@ public static class AnthillRuntime
     public static Agents.ActivationTier ActivationTier = Agents.ActivationTier.Full;
     /// <summary>v2.24.0: objective-level verification on top of the interim gate. Off by default.</summary>
     public static bool EnableObjectiveVerification = false;
+
+    /// <summary>v0.3.8.103 — operator-configured external destinations, name → url. Empty means
+    /// the colony can reach nothing outside itself, which is the shipped default.</summary>
+    public static IReadOnlyDictionary<string, string> ExternalDestinations =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     /// <summary>v2.24.0 Phase E: shadow observation of live incidents. Never executes. Off by default.</summary>
     public static bool EnableShadowObservation = false;
 
@@ -1092,6 +1097,8 @@ public static class AnthillRuntime
         EnableSpecialistAntExecution = config.SpecialistAntExecutionEnabled;
         ActivationTier = Agents.ActivationTiers.Parse(config.ActivationTier);
         EnableObjectiveVerification = config.ObjectiveVerificationEnabled;
+        ExternalDestinations = new Dictionary<string, string>(
+            config.ExternalDestinations ?? new(), StringComparer.OrdinalIgnoreCase);
         EnableShadowObservation = config.ShadowObservationEnabled;
         ReadinessMinShadowSample = Math.Max(1, config.ReadinessMinShadowSample);
         ReadinessMinDiagnosisPrecision = Math.Clamp(config.ReadinessMinDiagnosisPrecision, 0, 1);

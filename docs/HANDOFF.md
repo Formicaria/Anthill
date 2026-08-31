@@ -27,14 +27,25 @@ one table from action to required authority plus one comparison, swept against
 escalation gate: that lane asks "did a human decide", per action, at dispatch; this asks "is this the
 KIND of mission that may do this at all", once, from intake. Both must pass.
 
-**THE FIRST THING TO KNOW BEFORE TOUCHING THIS: no production adapter ships.**
-`ExternalActionTools` has exactly one composition site and it is the test harness. On a real install
-an external-action mission classifies, plans, dispatches and refuses with `NOT SENT — Tool not found
-or not registered`. Fail-closed and more honest than the pre-`.103` behaviour (that request used to
-resolve `general` and the colony wrote prose about a send that never happened) — and not a feature
-anyone can use. Wiring an adapter plus its tool-inventory surfaces (`ToolInventory.Implemented`, the
-SDK `SafetyPolicy` mirror, `CallSiteAuditTests.implementedBy`, `ToolInventoryTests`' third
-composition site) is `PLAN.md` §2c's first open item.
+**THE FIRST THING TO KNOW: the adapter ships and the destination map ships EMPTY.**
+`ConfiguredWebhookAdapter` is composed by the API host (ApiHost.cs, beside the module-tool drain).
+It resolves an alias only against the operator's `external_destinations` config — and that map IS
+the allowlist, with no second one, because an explicit name→url pair an operator wrote is stronger
+than any host list. Default is empty, so a fresh install refuses every send with "no external
+destinations are configured" and names what would make it resolvable. Configured-off, not absent.
+
+The first draft tried to ship with no adapter and the gap written down as an open item. Three
+guards refused it in one run — AcceptanceGateOne (tester not Ready: two declared tools
+unregistered), NoContractNamesAToolThatDoesNotExist, EveryAllowedTool_IsEitherBuiltOrKnowinglyPlanned
+— and they were right. A role declaring tools nothing implements is the declaration-reaching-nobody
+defect, and a document describing it is not a remedy. If a future release is tempted by the same
+shortcut: those three guards are the answer, and they are correct.
+
+FOUR COMPOSITION SITES NOW, which the tool guards enumerate by name: Queen.BuildToolRegistry,
+ToolsModule.Register, SystemActionTools.For (ApiHost.Actions.cs), ExternalActionTools.For
+(ApiHost.cs). A fifth means editing ToolInventoryTests and CallSiteAuditTests deliberately — that
+friction is the point, since the pairing is what is being checked and cannot be derived from either
+side alone.
 
 WHAT `.103` FOUND IN ITS OWN PROCESS, and it cost most of a session: the exit gate was written first
 as always, but its ROUTING was put in a later increment than the composed missions that needed it. A

@@ -1,13 +1,23 @@
 ## v0.3.8.103 - external actions: an approved send to a resolved target, or a mission that says it did not send
 
-**DETERMINISTICALLY QUALIFIED, AND NOT USABLE IN PRODUCTION YET.** Read that second half literally.
-The class works end to end through the real composition root and the composed acceptance mission
-passes over three semantically equivalent phrasings with three negative runs. What does NOT ship is
-an adapter: `ExternalActionTools` has one composition site and it is the test harness. On a real
-install an external-action mission classifies, plans, dispatches, and refuses with `NOT SENT —
-Tool not found or not registered`. That is fail-closed and it is honest — and it is not a feature an
-operator can use. The capability table says `partial`, and `PLAN.md` §2c carries the wiring as the
-release's first open item rather than describing it as done.
+**DETERMINISTICALLY QUALIFIED, NOT LIVE-QUALIFIED, AND SHIPPED CONFIGURED-OFF.** The class works
+end to end through the real composition root and the composed acceptance mission passes over three
+semantically equivalent phrasings with three negative runs. A production adapter IS composed — the
+API host registers it beside the module tools — and it resolves against an operator-configured map
+of destinations that is EMPTY by default. So a fresh install refuses every send with "no external
+destinations are configured", names what would make it resolvable, and reaches nothing. Not claimed:
+any of it against a real endpoint.
+
+**AND THE FIRST DRAFT OF THIS RELEASE TRIED TO SHIP WITHOUT THE ADAPTER, WITH THE GAP WRITTEN DOWN
+AS AN OPEN ITEM.** Three guards refused it in one run: `AcceptanceGateOne` (the tester was not Ready
+because two declared tools were unregistered), `NoContractNamesAToolThatDoesNotExist`, and
+`EveryAllowedTool_IsEitherBuiltOrKnowinglyPlanned`. They were right and the plan was wrong. A role
+whose contract names tools nothing implements is the declaration-reaching-nobody defect exactly —
+the same one that made `.98`'s capability branch compile and never execute, and the same one that
+left `manage_models` required by an endpoint and absent from every permission table. Documenting it
+as a limitation would have been describing the defect instead of fixing it, and this repository's
+guards do not accept prose as a remedy. "Registered and refusing honestly" and "declared and absent"
+are different facts, and only the first is shippable.
 
 **THE CLASS, AND WHY IT IS NOT `.102` WITH A DIFFERENT NOUN.** An operator asks for something to
 leave the colony — "post the release summary to the team's incident webhook" — and the difference
