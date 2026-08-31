@@ -1,3 +1,47 @@
+## v0.3.8.102 - system actions: a reversible operation with permission, or a mission that does not pass
+
+**DETERMINISTICALLY COMPLETE, NOT LIVE-QUALIFIED.** Every claim below is covered by a test that
+fails without it; the composed acceptance mission passes over two phrasings with the unapproved
+negative proving the boundary and both class boundaries pinned by their own facts. NOT claimed:
+any of it against a real runner or a real approval card. `PLAN.md` §2c names what remains.
+
+**The failure this release exists for is the described operation.** "I restarted the container
+and it came back healthy" reads identically whether or not anything was restarted, approved, or
+probed afterwards. The system-action class makes each of those a RECORD: a before-state captured
+from the runner's own dry-run while nothing had changed, a receipt of what the pipeline actually
+executed, an after-state probed once it had, a rollback note that existed at PROPOSAL time —
+reversibility as a precondition, not a pre-execution errand — and the identity of the operator
+whose recorded escalation decision was the permission. `OperationIntegrity` refuses each absence
+by name, and a proposed-but-never-approved operation refuses as exactly what it is: a delivered
+proposal.
+
+**The first Modify class, and Modify still does not mean autonomy.** Intake derives the class
+from Change intent plus a Service target — the Service dimension's first resolver since `.98`
+declared it and nothing reached it, this repository's named defect closed the release the first
+class needed it. The model PROPOSES (a colony-database row, the LocalActionRunner precedent);
+execution is listed in the escalation gate's side-effecting set, so the dispatch chokepoint
+demands the operator's conversation-scoped decision before the tool body runs — absence is not
+consent — and the body stamps the approver from that same decision, the lane's identity, never
+the proposing ant's. Underneath, the homelab executor's every gate stands untouched: catalog
+refusal, blast radius, the WaitingForApproval lifecycle, the TOCTOU re-read, the mandatory
+rollback note, the kill switch. ADR-008's sentence — "every existing approval gate is preserved" —
+is this release's implementation note.
+
+**The exit line made literal.** `system_operator` is the first EXECUTABLE homelab role — "existing
+homelab workers reached through the mission spine, not beside it" — and it is deterministic like
+the tester: no model call anywhere in the class. The goal parses into the catalog's vocabulary by
+a fixed mapping that refuses what it cannot name (proposing "something" against "somewhere" would
+put a fabricated target into a real pipeline); the record is stamped from the pipeline's own rows;
+and the unapproved path completes WITH a structured warning and no artifact, so the mission runs
+on to its verifier and is refused by the class gate in words the operator learns something from.
+
+**The module stays SDK-pure.** The spine tools live in the homelab module beside the executor
+they wrap, the tool names live in the SDK (one spelling, because the module registers by them and
+the core's escalation gate lists one of them, and two spellings of one boundary eventually
+disagree), and the operator-decision bridge is an injected delegate — the module never names a
+core type, the seam its own header calls the whole point. Production wires the bridge where the
+executor is built; the composed test wires it the same way.
+
 ## v0.3.8.101 - troubleshooting: a diagnosis that rests on receipts, or a mission that does not pass
 
 **DETERMINISTICALLY COMPLETE, NOT LIVE-QUALIFIED.** Every claim below is covered by a test that
