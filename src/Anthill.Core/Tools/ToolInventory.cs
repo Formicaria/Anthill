@@ -56,6 +56,14 @@ public static class ToolInventory
         // verification policy, and what has already run. Distinct from `system_info`, which
         // answers about the machine.
         "colony_state",
+        // v0.3.8.102: the system-operation lane. Both wrap the homelab ActionExecutor — the SAME
+        // pipeline the console's approval queue drives — so a mission-borne operation passes the
+        // identical blast-radius, kill-switch, TOCTOU and verify gates as a hand-clicked one.
+        // Registered by the API host at composition time (ApiHost.Actions.cs), not by the Queen:
+        // they only exist where a homelab repository exists. The names live in
+        // Anthill.SDK.Contracts.SystemActionToolNames because the module may not name Core.
+        Anthill.SDK.Contracts.SystemActionToolNames.Propose,
+        Anthill.SDK.Contracts.SystemActionToolNames.Execute,
     };
 
     /// <summary>

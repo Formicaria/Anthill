@@ -426,31 +426,22 @@ public static class AntExecutionCatalog
 
         // ---- specialist ants ------------------------------------------------------------------
 
-        // v0.3.8.102 — the system operator: proposes allowlisted infrastructure actions into the
-        // homelab's approval pipeline and, under the operator's recorded escalation decision,
-        // executes and records them. AllowsSideEffects is TRUE and it is the honest flag: this is
-        // the first contract whose tool restarts real containers — behind the escalation gate,
-        // behind the executor's own TOCTOU/rollback/kill-switch gates, and never through a shell
-        // or the patch lane (both forbidden here exactly as everywhere else).
-        ["system_operator"] = new("system_operator", V,
-            SupportedTaskTypes: S("system_operation"),
-            RequiredCapabilities: S(Capability.NetworkHttpHomelab),
-            AllowedTools: S(Anthill.SDK.Contracts.SystemActionToolNames.Propose,
-                            Anthill.SDK.Contracts.SystemActionToolNames.Execute),
-            ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
-            ProducedArtifactTypes: S("system_operation"),
-            AllowedHandoffRoles: S("verifier", "builder"),
-            AllowsModelCalls: false, AllowsSideEffects: true, ProducesPatchProposals: false,
-            // Deterministic: it parses the goal, proposes, and stamps records from the pipeline's
-            // own rows. No model, stated explicitly.
-            Model: ModelRequirement.None),
-
+        // v0.3.8.102 — the tester carries the system-operation lane rather than a thirteenth role
+        // carrying it: twelve roles is a load-bearing constant (the roster's guards said so with
+        // one voice when a first draft tried otherwise), and the tester is already the colony's
+        // deterministic command-runner whose check tool already sits in the escalation set. The
+        // operation task type joins its contract; the two spine tools join its allowlist; the
+        // side-effect flag stays as it is by the standing precedent that `run_allowlisted_check`
+        // is escalation-listed under this same contract — the LANE is gated at dispatch, and the
+        // executor's own TOCTOU/rollback/kill-switch gates stand underneath.
         ["tester"] = new("tester", V,
-            SupportedTaskTypes: S("build_check", "test_execution", "frontend_check", "validation_check", "regression_check", "verification_check"),
+            SupportedTaskTypes: S("build_check", "test_execution", "frontend_check", "validation_check", "regression_check", "verification_check", "system_operation"),
             RequiredCapabilities: S(Capability.ProcessExecuteReadonly, Capability.RepoRead),
-            AllowedTools: S("run_allowlisted_check"),
+            AllowedTools: S("run_allowlisted_check",
+                Anthill.SDK.Contracts.SystemActionToolNames.Propose,
+                Anthill.SDK.Contracts.SystemActionToolNames.Execute),
             ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
-            ProducedArtifactTypes: S("test_report"),
+            ProducedArtifactTypes: S("test_report", "system_operation"),
             AllowedHandoffRoles: S("verifier", "soldier", "medic"),
             AllowsModelCalls: false, AllowsSideEffects: false, ProducesPatchProposals: false,
             // Deterministic: it runs allowlisted checks and reports exit codes. No model, so no
