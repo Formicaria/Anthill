@@ -191,6 +191,11 @@ public static class SafetyPolicy
                 // in a process that never loaded the core, and this table is what answers when the
                 // core's own inventory is unreachable.
                 "colony_state",
+                // v0.3.8.102 — the tester's operation lane. The SDK owns these names
+                // (SystemActionToolNames), so the mirror reads its own constants: one spelling,
+                // and a definition shadowing either would be impersonating the approval pipeline.
+                Contracts.SystemActionToolNames.Propose,
+                Contracts.SystemActionToolNames.Execute,
             };
 
         public IReadOnlySet<string> ForbiddenToolNames { get; } =

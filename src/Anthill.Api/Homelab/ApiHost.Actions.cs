@@ -68,14 +68,21 @@ public static partial class ApiHost
         // v0.3.8.102 — THE SPINE'S DOOR, registered where the executor is built: the system-action
         // tools reach THIS executor, with THESE runners and gates, through the same adoption path
         // every module tool uses. The decision bridge is the composition's job (the module
-        // references only the SDK): the escalation lane's own record, shaped down to what the
-        // operation record needs — so the identity stamped as the approver is the lane's decision,
-        // never the proposing ant's.
+        // references only the SDK): first the ambient scope for conversational flows, then the
+        // SAVED escalation record for mission flows — a mission runs OUTSIDE the conversation's
+        // ambient scope, and the operator's answers were recorded as decisions at mission start
+        // (the v0.3.8.46 rule, consumed for the first time here). Either way the identity stamped
+        // as the approver is the lane's decision, never the proposing ant's.
         Queen.AdoptModuleTools(Anthill.Modules.Homelab.Actions.SystemActionTools.For(HomelabActions,
-            () => Anthill.Core.Conversations.ConversationScope.Evaluate(
-                    Anthill.SDK.Contracts.SystemActionToolNames.Execute) is { } decision
-                ? (decision.Allowed, decision.Id, decision.Reason ?? "")
-                : null));
+            missionId =>
+            {
+                var live = Anthill.Core.Conversations.ConversationScope.Evaluate(
+                    Anthill.SDK.Contracts.SystemActionToolNames.Execute);
+                var decision = live ?? Anthill.Core.Conversations.OperatorDecisions.ForMission(
+                    Queen.Memory, missionId, Anthill.SDK.Contracts.SystemActionToolNames.Execute);
+                if (decision is null) return null;
+                return (decision.Allowed, decision.Id, decision.Reason ?? "");
+            }));
     }
 
     private static void MapHomelabActionEndpoints(WebApplication app)

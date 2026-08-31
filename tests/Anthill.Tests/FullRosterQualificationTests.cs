@@ -44,6 +44,11 @@ public class FullRosterQualificationTests
             // v0.3.8.98 — the researcher's contract declares it, and a fixture that omitted it
             // would fail the qualification for a tool the colony genuinely registers.
             "colony_state",
+            // v0.3.8.102 — the tester's operation lane. Adopted by the API host where the homelab
+            // executor is built rather than by the Queen; "fully equipped" means that composition
+            // happened, exactly as it means the tools module was loaded.
+            Anthill.SDK.Contracts.SystemActionToolNames.Propose,
+            Anthill.SDK.Contracts.SystemActionToolNames.Execute,
         };
 
     /// <summary>
