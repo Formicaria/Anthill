@@ -79,15 +79,15 @@ public static class SystemActionTools
             // THE BEFORE-STATE, from the runner's own dry-run — the pipeline's account of what is
             // and what would change, captured while nothing has. A dry-run failure fails the
             // proposal honestly: a before-state that could not be captured is not one to invent.
-            var dryRun = _executor.DryRunAsync(proposal.Id, "system_operator").GetAwaiter().GetResult();
+            var dryRun = _executor.DryRunAsync(proposal.ApprovableId, "system_operator").GetAwaiter().GetResult();
             if (!dryRun.Ok)
                 return new ToolResult(Name, false, "",
-                    $"proposed as {proposal.Id}, but the before-state could not be captured: {dryRun.Message}",
+                    $"proposed as {proposal.ApprovableId}, but the before-state could not be captured: {dryRun.Message}",
                     FailureClass.DependencyFailure);
 
             return new ToolResult(Name, true, Anthill.SDK.Common.Json.Dumps(new
             {
-                proposal_id = proposal.Id,
+                proposal_id = proposal.ApprovableId,
                 action_type = proposal.ActionType,
                 target_kind = proposal.TargetKind,
                 target_id = proposal.TargetId,
