@@ -23,7 +23,13 @@ public class AntRegistryTests
         // 33 at v0.3.8.102: `tester.action_proposer` — the operation lane's worker, ON the tester
         // rather than a thirteenth role. The role count above did NOT move, which is this pin
         // doing its job in the other direction: a lane landed without a roster change.
-        Assert.Equal(33, AntRegistry.Roles.SelectMany(r => r.Workers).Count());
+        // 34 at v0.3.8.103: `tester.external_action_proposer` — a SIBLING of the operation worker,
+        // not a widening of it. `action_proposer` promises a rollback note and a before-state, and
+        // a message that has already reached other people has neither; `.98` recorded what an
+        // overstated worker contract costs, so the honest answer is a second sentence. The role
+        // count above did not move again, which is this pin doing its job for the second release
+        // running.
+        Assert.Equal(34, AntRegistry.Roles.SelectMany(r => r.Workers).Count());
         Assert.Empty(AntRegistry.ValidateRegistry());
         Assert.Contains(AntRegistry.Roles, r => r.RoleId == "queen");
         Assert.Contains(AntRegistry.Roles, r => r.RoleId == "director");

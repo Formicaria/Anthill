@@ -435,13 +435,15 @@ public static class AntExecutionCatalog
         // is escalation-listed under this same contract — the LANE is gated at dispatch, and the
         // executor's own TOCTOU/rollback/kill-switch gates stand underneath.
         ["tester"] = new("tester", V,
-            SupportedTaskTypes: S("build_check", "test_execution", "frontend_check", "validation_check", "regression_check", "verification_check", "system_operation"),
+            SupportedTaskTypes: S("build_check", "test_execution", "frontend_check", "validation_check", "regression_check", "verification_check", "system_operation", "external_action"),
             RequiredCapabilities: S(Capability.ProcessExecuteReadonly, Capability.RepoRead),
             AllowedTools: S("run_allowlisted_check",
                 Anthill.SDK.Contracts.SystemActionToolNames.Propose,
-                Anthill.SDK.Contracts.SystemActionToolNames.Execute),
+                Anthill.SDK.Contracts.SystemActionToolNames.Execute,
+                Anthill.SDK.Contracts.ExternalActionToolNames.Propose,
+                Anthill.SDK.Contracts.ExternalActionToolNames.Execute),
             ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
-            ProducedArtifactTypes: S("test_report", "system_operation"),
+            ProducedArtifactTypes: S("test_report", "system_operation", "external_action"),
             AllowedHandoffRoles: S("verifier", "soldier", "medic"),
             AllowsModelCalls: false, AllowsSideEffects: false, ProducesPatchProposals: false,
             // Deterministic: it runs allowlisted checks and reports exit codes. No model, so no

@@ -38,6 +38,25 @@ public static class SystemActionToolNames
 }
 
 /// <summary>
+/// The external-action tool names, spelled once. v0.3.8.103 — for the same reason the system-action
+/// names are: the tools module REGISTERS by these names, the core's escalation gate lists the
+/// execute name as side-effecting, and the authority table keys on it. Three readings of one
+/// boundary would eventually disagree about which one is the boundary.
+/// </summary>
+public static class ExternalActionToolNames
+{
+    /// <summary>Resolve a requested destination and propose the send. Writes a colony-database row
+    /// and touches nothing outside the process — the resolution must happen BEFORE approval is
+    /// offered, because an operator cannot consent to an alias.</summary>
+    public const string Propose = "propose_external_action";
+
+    /// <summary>Deliver a resolved, approved send. SIDE-EFFECTING and IRREVERSIBLE: gated at the
+    /// dispatch chokepoint by the conversation escalation lane, and required to sit under
+    /// <c>Modify</c> authority. Nothing in this repository can un-send it.</summary>
+    public const string Execute = "execute_external_action";
+}
+
+/// <summary>
 /// v2.9.0 — Contracted Tasks and Typed Capability Tools (NORTH_STAR V3-track Phase 2).
 /// Machine-readable contracts replace loose prompt tasks and string-parsed tool results as the
 /// control-flow surface: planner output is schema-validated (invalid tasks cannot enter the

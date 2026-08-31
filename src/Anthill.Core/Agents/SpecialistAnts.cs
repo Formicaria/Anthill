@@ -176,6 +176,12 @@ public sealed class TesterAnt : BaseAnt
         if (string.Equals(task.TaskType, "system_operation", StringComparison.OrdinalIgnoreCase))
             return ExecuteSystemOperation(task, mission);
 
+        // v0.3.8.103 — THE SEND LANE, a sibling of the operation lane and on the same role for the
+        // same reason. What it does NOT share with its sibling is what happens when nobody
+        // approves: see the remarks on ExecuteExternalAction.
+        if (string.Equals(task.TaskType, "external_action", StringComparison.OrdinalIgnoreCase))
+            return ExecuteExternalAction(task, mission);
+
         // v3.8.28 — checks come from the WORKSPACE, not from a hard-coded .NET default.
         //
         // The tester selected from `CheckCatalog.Ids` — the global compiled catalog — and when the
@@ -363,6 +369,133 @@ public sealed class TesterAnt : BaseAnt
         result.Artifacts.Add(new AntArtifact("system_operation",
             $"{actionType} → {targetId}", operation.ToJson()));
         return result;
+    }
+
+    /// <summary>
+    /// RESOLVE, PROPOSE, AND — ONLY UNDER A RECORDED DECISION — SEND. v0.3.8.103.
+    ///
+    /// THE ONE THING THIS DOES THAT ITS `.102` SIBLING DOES NOT: it writes a record even when
+    /// nothing was sent. The operation lane can decline to leave an artifact when a proposal goes
+    /// unapproved, because the proposal row lives in the homelab pipeline and the class gate
+    /// refuses the mission for the artifact's absence. Here the record is also what the ANSWER is
+    /// rendered from — so no record means the builder's prose is the only account of what happened,
+    /// and a builder whose tool was refused several steps upstream still writes "I've posted it to
+    /// the team". Absence of a record is exactly the condition under which the prose wins, which is
+    /// the failure this release exists to remove. A refusal therefore records itself.
+    /// </summary>
+    private AntExecutionResult ExecuteExternalAction(Task task, Mission mission)
+    {
+        var text = $"{mission.Goal}\n{task.Title}\n{task.Description}";
+        var requested = ResolveSendTarget(text);
+        if (requested is null)
+            return AntExecutionResult.Blocked(
+                "the request names no external destination this colony could resolve (recognised: "
+              + "a webhook, channel or endpoint named in the request). Nothing was proposed.");
+
+        var body = Anthill.Core.Missions.MissionIntake.OperatorAskOnly(mission.Goal).Trim();
+
+        // ---- 1. RESOLVE AND PROPOSE, BEFORE ANY HUMAN IS ASKED ANYTHING -------------------------
+        //
+        // Resolution comes first because an operator cannot consent to an alias. A destination that
+        // does not resolve is refused HERE, and the refusal is recorded rather than surfaced as an
+        // approval card for a target nobody can name.
+        var proposed = _tools.RunTool(Anthill.SDK.Contracts.ExternalActionToolNames.Propose,
+            mission.Id, task.Id, Name, new() { ["target"] = requested, ["body"] = body });
+        if (!proposed.Success)
+            return NotSent(requested, "", "", proposed.Error ?? proposed.Output, body);
+
+        var proposal = Parse(proposed.Output);
+        var proposalId = proposal.GetValueOrDefault("proposal_id") ?? "";
+        var resolved = proposal.GetValueOrDefault("resolved_target") ?? "";
+        var method = proposal.GetValueOrDefault("method") ?? "";
+
+        // ---- 2. SEND, UNDER THE OPERATOR'S RECORDED DECISION ------------------------------------
+        //
+        // The mission id travels IN THE ARGS for the `.102` reason: a mission does not run inside
+        // the conversation's ambient scope, so the saved escalation record is the only place the
+        // permission lives.
+        var sent = _tools.RunTool(Anthill.SDK.Contracts.ExternalActionToolNames.Execute,
+            mission.Id, task.Id, Name, new() { ["proposal_id"] = proposalId, ["mission_id"] = mission.Id });
+        if (!sent.Success)
+            return NotSent(requested, resolved, method, sent.Error ?? sent.Output, body, proposalId);
+
+        var receipt = Parse(sent.Output);
+        var action = new Anthill.SDK.Artifacts.ExternalAction(
+            ProposalId: proposalId,
+            ActionType: $"{(method.Length == 0 ? "send" : method.ToLowerInvariant())}_external",
+            RequestedTarget: requested,
+            ResolvedTarget: resolved,
+            // Reported by the ADAPTER, never echoed from the proposal — a value this method supplied
+            // would be this method agreeing with itself, and the gate compares the two.
+            ExecutedTarget: receipt.GetValueOrDefault("executed_target") ?? "",
+            Method: method,
+            RequestSummary: $"{body.Length} character(s)",
+            Receipt: receipt.GetValueOrDefault("receipt") ?? "",
+            Outcome: Anthill.SDK.Artifacts.ExternalAction.Outcomes.Sent,
+            RefusedBecause: "",
+            ApprovedBy: receipt.GetValueOrDefault("approved_by") ?? "");
+
+        var result = new AntExecutionResult
+        {
+            Success = true,
+            StatusCode = "succeeded",
+            Summary = $"Sent to {action.ResolvedTarget} under {action.ApprovedBy}.",
+            Narrative = action.Render(),
+            Evidence = { new AntEvidence(AntEvidenceKinds.Tool, Anthill.SDK.Contracts.ExternalActionToolNames.Execute,
+                $"proposal {proposalId} approved by {action.ApprovedBy}") },
+        };
+        result.Artifacts.Add(new AntArtifact("external_action",
+            $"{action.Method} → {action.ResolvedTarget}", action.ToJson()));
+        return result;
+    }
+
+    /// <summary>
+    /// Nothing left, recorded as itself. The mission runs on and the class gate refuses it — this
+    /// is a warning rather than a failure for the `.102` reason, plus one of its own: a dead task
+    /// here would take the record down with it, and the record is what keeps the answer honest.
+    /// </summary>
+    private AntExecutionResult NotSent(string requested, string resolved, string method,
+        string reason, string body, string proposalId = "")
+    {
+        var action = new Anthill.SDK.Artifacts.ExternalAction(
+            ProposalId: proposalId,
+            ActionType: "send_external",
+            RequestedTarget: requested,
+            ResolvedTarget: resolved,
+            ExecutedTarget: "",
+            Method: method,
+            RequestSummary: $"{body.Length} character(s)",
+            Receipt: "",
+            Outcome: Anthill.SDK.Artifacts.ExternalAction.Outcomes.NotSent,
+            RefusedBecause: reason.Trim(),
+            ApprovedBy: "");
+
+        var result = AntExecutionResult.SucceededWithWarnings(
+            action.Render(),
+            new[] { "external_action_not_sent: " + action.RefusedBecause },
+            $"Nothing was sent to {requested}.");
+        result.Artifacts.Add(new AntArtifact("external_action", $"not sent → {requested}", action.ToJson()));
+        return result;
+    }
+
+    /// <summary>
+    /// The destination as the operator named it — the external noun plus the few words that
+    /// qualify it, so "the team's incident webhook" survives whole rather than becoming "webhook".
+    ///
+    /// A SPAN, NOT A SPLIT ON "to". "Notify the team's incident webhook that the container
+    /// restarted" has no "to" and every phrasing that does puts different words around it; anchoring
+    /// on the noun the class already recognises is the one rule that reads all of them. What comes
+    /// back is an ALIAS either way — the adapter resolves it, and refuses when it cannot.
+    /// </summary>
+    private static string? ResolveSendTarget(string text)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(text,
+            @"((?:[\w'’-]+\s+){0,3})(webhook|slack|discord|teams channel|pagerduty|opsgenie|endpoint|https?://\S+)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!match.Success) return null;
+
+        var span = (match.Groups[1].Value + match.Groups[2].Value).Trim();
+        return span.Length == 0 ? null : span;
     }
 
     private static (string? ActionType, string? TargetKind) ClassifyAction(string text)

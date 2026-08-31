@@ -87,6 +87,16 @@ public class ToolInventoryTests
         registeredNames.Add(Anthill.SDK.Contracts.SystemActionToolNames.Propose);
         registeredNames.Add(Anthill.SDK.Contracts.SystemActionToolNames.Execute);
 
+        // v0.3.8.103 — and a FOURTH: the send tools are composed by the API host itself
+        // (ApiHost.cs), beside the module tools rather than with the homelab's, because the
+        // adapter reads operator configuration rather than a homelab repository. Same reason the
+        // literal-lookup regex cannot read them: their Name properties forward the SDK constants.
+        var apiHostBody = File.ReadAllText(Path.Combine(
+            Root(), "src", "Anthill.Api", "ApiHost.cs"));
+        Assert.Contains("ExternalActionTools.For(", apiHostBody);
+        registeredNames.Add(Anthill.SDK.Contracts.ExternalActionToolNames.Propose);
+        registeredNames.Add(Anthill.SDK.Contracts.ExternalActionToolNames.Execute);
+
         var missing = registeredNames.Except(ToolInventory.Implemented, StringComparer.OrdinalIgnoreCase).ToList();
         var phantom = ToolInventory.Implemented.Except(registeredNames, StringComparer.OrdinalIgnoreCase).ToList();
 

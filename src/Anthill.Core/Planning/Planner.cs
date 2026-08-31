@@ -338,6 +338,49 @@ Required JSON:
         // deterministically, the standing doctrine. The medic pattern in reverse — nothing else
         // is inserted, because the operator ant carries the whole propose/approve/execute/record
         // arc itself and the escalation lane is the pause point, not a task boundary.
+        // v0.3.8.103 — the external-action class's coverage. Same doctrine as `.102`'s: whether a
+        // mission class requires a send step is not a modelling question, and a planner that omits
+        // it has not decided the mission needs no send — it has forgotten one.
+        if (specification?.MissionClass == Anthill.Core.Missions.MissionSpecification.ExternalActionClass)
+        {
+            if (!tasks.Any(t => string.Equals(t.TaskType, "external_action", StringComparison.OrdinalIgnoreCase)))
+                tasks.Insert(0, new Task
+                {
+                    Title = "Perform the send",
+                    Description = "Resolve the destination to a concrete allowlisted target, propose "
+                                + "the send, and — under the operator's recorded decision — deliver "
+                                + $"it and record where it actually landed: {goal}",
+                    AssignedAnt = "tester",
+                    TaskType = "external_action",
+                    // The step names the CAPABILITY, not the worker (`.98`'s rule): the tester now
+                    // has two propose-and-execute workers, and with the mission's capability list
+                    // alone the first compatible one wins — which would hand a send to the homelab
+                    // action proposer, silently.
+                    RequiredCapability = Anthill.Core.Missions.WorkerCapabilities.ProposeExternalAction,
+                });
+
+            if (!tasks.Any(t => string.Equals(t.AssignedAnt, "builder", StringComparison.OrdinalIgnoreCase)))
+                tasks.Add(new Task
+                {
+                    Title = "Compile the send report",
+                    Description = $"Assemble the external-action record into the answer: {goal}",
+                    AssignedAnt = "builder",
+                    TaskType = "build_answer",
+                });
+
+            if (!tasks.Any(t => string.Equals(t.AssignedAnt, "verifier", StringComparison.OrdinalIgnoreCase)))
+                tasks.Add(new Task
+                {
+                    Title = "Verify the send record",
+                    Description = "Check that the resolved destination, the destination actually "
+                                + $"reached, the receipt and the operator's approval are recorded: {goal}",
+                    AssignedAnt = "verifier",
+                    TaskType = "verification",
+                });
+
+            return tasks;
+        }
+
         if (specification?.MissionClass == Anthill.Core.Missions.MissionSpecification.SystemActionClass)
         {
             if (!tasks.Any(t => string.Equals(t.TaskType, "system_operation", StringComparison.OrdinalIgnoreCase)))

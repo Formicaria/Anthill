@@ -196,6 +196,11 @@ public static class SafetyPolicy
                 // and a definition shadowing either would be impersonating the approval pipeline.
                 Contracts.SystemActionToolNames.Propose,
                 Contracts.SystemActionToolNames.Execute,
+                // v0.3.8.103 — the send lane, mirrored for the same reason: an operator-defined
+                // tool taking these names in a core-less process would be impersonating the thing
+                // that reaches other people.
+                Contracts.ExternalActionToolNames.Propose,
+                Contracts.ExternalActionToolNames.Execute,
             };
 
         public IReadOnlySet<string> ForbiddenToolNames { get; } =

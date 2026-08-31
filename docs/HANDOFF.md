@@ -4,62 +4,77 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: main carries **v0.3.8.98** (`4a4ed7f`, tagged and released — the first universal vertical
-slice). **`release/v0.3.8.99` is complete and green**: sourced research with claim→source
-traceability, both from the web and from the colony's own memory.
+State: main carries **v0.3.8.102** (`34bc529`, tagged and released). **`release/v0.3.8.103` is
+complete and green**: approval-gated external actions, and the authority ceiling read for the
+first time.
 
-WHAT `.99` DELIVERS, in one paragraph: a research answer is a typed CLAIM RECORD (`sourced_answer`)
-rather than prose — each claim with the url that supports it, or an explicit `[UNSOURCED]` marker —
-and `CitationIntegrity` resolves every cited url against what the mission ACTUALLY retrieved, from
-`source_set` (the web) and `recall_set` (prior missions, citable as `mission:<id>`). A citation that
-resolves to nothing refuses the mission and the url is named. An unsourced claim is marked and
-counted and is NEVER fatal, because refusing a mission for admitting what it could not attribute
-would teach that deleting the unsupported parts is how an answer passes. The rendering comes from
-the record and is composed AHEAD of answer synthesis, so a paraphrase cannot drop a caveat while
-keeping the claim it qualified.
+WHAT `.103` DELIVERS, in one paragraph: something can LEAVE the colony, and only to a destination a
+human approved. The adapter resolves the operator's alias to a concrete target BEFORE approval is
+offered (an operator cannot consent to a name), the resolution is recorded, and what the adapter
+reports it actually hit is recorded beside it — so an approval of one destination and a send to
+another is refused BY NAME, which no absence check could ever catch because every field is
+populated. Delivery happens only under the recorded escalation decision. A refused send writes its
+own `external_action` record with the reason, and `ResultAssembler` leads the answer with that
+record ahead of every prose path — because a builder whose tool was refused several steps upstream
+still writes "I've posted the summary to the team", and absence of a record IS the condition under
+which that prose becomes the answer.
 
-WHAT IT DELIBERATELY DOES NOT DO: judge whether a source SUPPORTS the claim. Traceability is
-answerable from a record; support is semantic, and a model asserting it is the evidence v2.19.0
-stopped accepting.
+AND THE CEILING IS FINALLY READ. `MissionAuthority` has carried a doc comment since `.98` calling
+it "the ceiling on what the mission may DO, agreed across specification, operator policy, worker
+contract and adapter before dispatch" — and no dispatch ever consulted it. `MissionAuthorityGate` is
+one table from action to required authority plus one comparison, swept against
+`EscalationGate.SideEffecting` so no side-effecting action can omit an entry. It is NOT a second
+escalation gate: that lane asks "did a human decide", per action, at dispatch; this asks "is this the
+KIND of mission that may do this at all", once, from intake. Both must pass.
 
-THREE DEFECTS `.99` FOUND IN ITSELF, all found the same way and worth carrying forward:
-(1) `Json.Dumps` sets no naming policy, so `new { src.Title, src.Url }` serialises PascalCase while
-both readers asked `TryGetProperty("url")` — case-SENSITIVE — and silently resolved nothing; the
-unit tests passed because their fixtures wrote the payload the way the READERS expected rather than
-the way the PRODUCER writes it, so a green suite proved only that two things written together
-matched each other. (2) The fabrication test asserted `IsPositive == false`, which ANY failure
-satisfies. (3) Strengthening it to demand the explanation NAME the gate immediately exposed that
-`evaluation_explanation` had never been persisted — since v2.26.0 every reader after the process
-exited saw the placeholder "loaded from persisted evaluation".
+**THE FIRST THING TO KNOW: the adapter ships and the destination map ships EMPTY.**
+`ConfiguredWebhookAdapter` is composed by the API host (ApiHost.cs, beside the module-tool drain).
+It resolves an alias only against the operator's `external_destinations` config — and that map IS
+the allowlist, with no second one, because an explicit name→url pair an operator wrote is stronger
+than any host list. Default is empty, so a fresh install refuses every send with "no external
+destinations are configured" and names what would make it resolvable. Configured-off, not absent.
 
-**The lesson, now written at the call sites:** three consecutive defects were caught not by the
-feature's own tests but by making an assertion demand WHY rather than WHETHER — and by entering at
-the CONVERSATION rather than at the unit being built. `.98` learned the same thing by a different
-road (a capability branch that compiled, read correctly and never executed once).
+The first draft tried to ship with no adapter and the gap written down as an open item. Three
+guards refused it in one run — AcceptanceGateOne (tester not Ready: two declared tools
+unregistered), NoContractNamesAToolThatDoesNotExist, EveryAllowedTool_IsEitherBuiltOrKnowinglyPlanned
+— and they were right. A role declaring tools nothing implements is the declaration-reaching-nobody
+defect, and a document describing it is not a remedy. If a future release is tempted by the same
+shortcut: those three guards are the answer, and they are correct.
 
-NOT CLAIMED: any of it live. No search provider has been exercised and no model has written a claim
-record. `PLAN.md` §2c records `.99`'s three divergences (no `research` mission class at intake — the
-gate keys on what a mission DID, not on a label; no retrieval TIME in the mapping; an unsourced
-claim marks the claim and does not demote the mission) and carries `.98`'s unmet items forward:
-`blocked_missing_capability`, the call-site mutation property, and the `.97` live pack.
+FOUR COMPOSITION SITES NOW, which the tool guards enumerate by name: Queen.BuildToolRegistry,
+ToolsModule.Register, SystemActionTools.For (ApiHost.Actions.cs), ExternalActionTools.For
+(ApiHost.cs). A fifth means editing ToolInventoryTests and CallSiteAuditTests deliberately — that
+friction is the point, since the pairing is what is being checked and cannot be derived from either
+side alone.
 
-STILL THE OPERATOR'S STEP, unchanged across three releases: objective verification ENABLED in a real
-run, an exported `LiveQualificationRecord`, and a live non-code mission (audit or research) through
-the composed application. `QUALIFICATION.md` §3 is the authority and says PARTIAL.
+WHAT `.103` FOUND IN ITS OWN PROCESS, and it cost most of a session: the exit gate was written first
+as always, but its ROUTING was put in a later increment than the composed missions that needed it. A
+task type no contract admits does not fail an assertion — it goes wrong at dispatch, which is a
+statement about the harness rather than about the release. A red gate has to be red for the reason
+it claims. `.98` and `.102` both put the routing in the gate's own commit; do that.
 
-WHAT `.98` SHIPPED (full account in its CHANGELOG entry): an audit request classified at intake into
-declared dimensions and carried on `MissionContext` as a `MissionSpecification`; workers resolved by
-DECLARED CAPABILITY rather than by substring, with a named-but-incompatible worker repaired and the
-repair announced; repository AND live colony state inspected (`colony_state` +
-`researcher.runtime_researcher`) leaving `inspection` evidence — a NON-DETERMINISTIC lane that
-records that an inspection happened and can promote nothing; the answer assembled BEFORE the grade;
-and `AssessmentObjective` plus a deliverable ledger refusing an audit that inspected nothing, a
-verifier that consumed nothing, or a requested deliverable nothing produced.
+Three times in the same session a missing or stale input produced a confident-looking pass: a
+checkout three releases behind (built `.100`–`.102` on another machine and never fetched), a
+PowerShell block with no `&&` where every line ran regardless of the previous one failing, and a
+patch that was never downloaded. Every one would have been invisible if the green had been taken at
+face value. **Verify the base before trusting a run**: `git log --oneline -1` must show the expected
+commit before the patch, and the filtered test count must be non-zero.
 
-One `.97` residual is explicitly carried and is NOT a gate for either release: the Windows
-materialized-revision `dotnet_test` failure. It is real, unresolved, and a CODING-lane defect, so it
-must not pull a universal-workflow release back into a coding one. A failed check now keeps its
-output tail (.97), so the next occurrence is the first one that can be read rather than guessed at.
+NEXT RELEASE IS `.104`, AND IT IS A PREREQUISITE rather than the next feature — the recovery and
+answer-coverage work moved to `.105` and `.106`. The mission specification is NOT persisted:
+`MissionContext.Create` re-resolves it from the goal on every context build, and three more sites
+re-derive meaning from `mission.Goal` independently (`AdaptiveMissionController:137`,
+`SpecialistAnts:1039`, and `Ants:819` for constraints). `.103` changed intake, so a `.102` mission
+replayed today reclassifies — and `.98`'s own rule is that a grade must be reproducible from the
+persisted record. Objective verification is also OFF by default, so every gate `.98`–`.103` built is
+inert on a default install. `PLAN.md` §2b's `.104` row carries the full gate.
+
+ROSTER, stated the way it should be quoted: **25 registered roles, 34 workers, 12 executable role
+types** under `activation_tier: full` + `roster_profile: full` (both shipped defaults). Only SIX are
+executable by flag — researcher, file, web, coder, builder, verifier; the other six (tester, soldier,
+medic, archivist, ui_cartographer, scribe) are specialists opened by canary gates, and thirteen are
+never executable (queen, director, planner, constraint, quartermaster, and the eight homelab ants).
+Drop the tier to `adaptive` and it is nine; to `core` and it is six.
 
 Previous state below, kept because the next session runs the live pack against it.
 

@@ -107,6 +107,17 @@ public class AcceptanceGatesOneAndTwoTests : IDisposable
         queen.AdoptModuleTools(Anthill.Modules.Homelab.Actions.SystemActionTools.For(
             homelabExecutor, _ => null));
 
+        // v0.3.8.103 — and the send lane, for exactly the reason the operation lane is here: gate 1
+        // measures the colony PRODUCTION composes. The API host registers these beside the module
+        // tools, so a fixture that omitted them would report the tester unready for tools the real
+        // colony has. The adapter is handed an empty destination map — the shipped default — because
+        // readiness is about whether the tools are REGISTERED, not about what an operator has
+        // configured them to reach.
+        queen.AdoptModuleTools(Anthill.Modules.Tools.ExternalActionTools.For(
+            new Anthill.Modules.Tools.ConfiguredWebhookAdapter(
+                () => new Dictionary<string, string>(), () => new HttpClient()),
+            _ => null));
+
         var registered = queen.Tools.Names.ToList();
 
         // Every capability any contract requires — the operator who said yes to everything. A

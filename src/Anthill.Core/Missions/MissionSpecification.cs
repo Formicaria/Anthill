@@ -24,6 +24,11 @@ public enum MissionTargets
     Runtime = 2,
     Project = 4,
     Service = 8,
+    /// <summary>Something OUTSIDE the colony and outside the operator's own infrastructure — a
+    /// webhook, a third-party endpoint, a channel other people read. v0.3.8.103. Distinct from
+    /// <see cref="Service"/> because the consequence is: a service action is the operator's own
+    /// machine and reverses, and a message that reached other people does not.</summary>
+    External = 16,
 }
 
 /// <summary>How recent the answer must be. "What did we do" and "what is true now" differ.</summary>
@@ -135,6 +140,19 @@ public sealed record MissionSpecification
     /// approval gate is preserved").
     /// </summary>
     public const string SystemActionClass = "system_action";
+
+    /// <summary>
+    /// The outbound class v0.3.8.103 implements end to end: something LEAVES the colony, to a
+    /// destination resolved before a human approved it and recorded beside where the send actually
+    /// landed. The second class to carry <see cref="MissionAuthority.Modify"/>, and the first whose
+    /// authority ceiling is READ at dispatch rather than merely declared.
+    ///
+    /// The boundary with <see cref="SystemActionClass"/> is the VERB, not the noun: "notify the
+    /// team's webhook that the container restarted" does nothing to the container. A resolver that
+    /// let the service noun win would turn a notification into an infrastructure action, which is
+    /// the worst direction for that to be wrong in.
+    /// </summary>
+    public const string ExternalActionClass = "external_action";
 
     /// <summary>
     /// True when this specification carries enough to hold the mission to something. A `general`

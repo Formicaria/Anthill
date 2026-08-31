@@ -258,6 +258,15 @@ public sealed class AnthillConfig
     /// verified. Additive — it can only narrow. Off by default: a change to what counts as success
     /// must be switched on deliberately, not arrive with an upgrade.</summary>
     [JsonPropertyName("objective_verification_enabled")] public bool ObjectiveVerificationEnabled { get; set; } = false;
+
+    /// <summary>
+    /// v0.3.8.103 — the destinations an external-action mission may reach, as name → url. EMPTY by
+    /// default, and the emptiness is the security posture: this map IS the allowlist, so a colony
+    /// that has been told about no destinations can reach none. A send naming something absent from
+    /// here refuses before an operator is ever asked to approve it, with the configured names in the
+    /// message so the refusal is actionable.
+    /// </summary>
+    [JsonPropertyName("external_destinations")] public Dictionary<string, string> ExternalDestinations { get; set; } = new();
     /// <summary>v2.24.0 Phase E: shadow mode observes real incidents and records what it WOULD have
     /// done. It never executes. Off by default — an observer that silently starts writing
     /// recommendations about production incidents should not arrive with an upgrade.</summary>
