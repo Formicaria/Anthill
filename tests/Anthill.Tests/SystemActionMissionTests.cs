@@ -370,8 +370,13 @@ public class SystemActionMissionTests : IDisposable
         host.Load(new ToolsModule(new WorkspacePathGuard()));
         var queen = new Queen(memory);
         queen.AdoptModuleTools(host.ContributedTools);
-        // The homelab's spine tools, over the REAL executor — same last-write-wins path.
-        queen.AdoptModuleTools(SystemActionTools.For(lab.Executor));
+        // The homelab's spine tools, over the REAL executor — same last-write-wins path. The
+        // decision bridge is the composition's job (the module references only the SDK): the
+        // escalation lane's own record, shaped down to what the operation record needs.
+        queen.AdoptModuleTools(SystemActionTools.For(lab.Executor,
+            () => ConversationScope.Evaluate(SystemActionTools.ExecuteToolName) is { } decision
+                ? (decision.Allowed, decision.Id, decision.Reason)
+                : null));
 
         string? missionId = null;
         using var settled = new ManualResetEventSlim(false);
