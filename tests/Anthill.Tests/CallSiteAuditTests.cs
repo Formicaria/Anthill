@@ -188,6 +188,14 @@ public class CallSiteAuditTests
             // the other two: a construction in a test satisfies nothing.
             Path.Combine(RepoRoot(), "src", "Anthill.Modules", "Anthill.Modules.Homelab",
                 "Homelab", "Actions", "SystemActionTools.cs"),
+            // v0.3.8.103 — a FOURTH, by the same rule. The send tools are constructed by
+            // ExternalActionTools.For, which the API host invokes beside the module tools; the
+            // `new ProposeSendTool(` / `new ExecuteSendTool(` expressions live in the factory, so
+            // the factory is the named file. Their type names differ from `.102`'s deliberately:
+            // two lanes with identically-named nested types would make this audit's map ambiguous
+            // about which construction satisfied which tool.
+            Path.Combine(RepoRoot(), "src", "Anthill.Modules", "Anthill.Modules.Tools",
+                "ExternalActionTools.cs"),
         };
 
         foreach (var root in roots)
@@ -216,6 +224,9 @@ public class CallSiteAuditTests
             // guard admits them by constant too.
             ["propose_system_action"] = "ProposeTool",
             ["execute_system_action"] = "ExecuteTool",
+            // v0.3.8.103 — the send lane's own types, distinct from the operation lane's above.
+            ["propose_external_action"] = "ProposeSendTool",
+            ["execute_external_action"] = "ExecuteSendTool",
         };
 
         // A new tool must be added HERE as well as to the inventory. That is deliberate friction:

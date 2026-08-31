@@ -235,6 +235,19 @@ public sealed class ResultAssembler : IResultAssembler
         // mercy. Rendered from the record: content, then its own account of what it lacks and
         // what it rests on.
         if (CreatedRendering(mission) is { Length: > 0 } created) return created;
+        // v0.3.8.103 — AN OUTBOUND MISSION'S ANSWER LEADS WITH WHAT HAPPENED TO THE SEND, and it
+        // is checked before every other path including `.99`'s claim record. The two cannot both
+        // apply — a mission is one class — but the order is stated rather than left to luck,
+        // because the cost of getting it wrong is asymmetric: a research answer rendered as prose
+        // loses its unsourced markers, and a send answer rendered as prose loses the fact that
+        // nothing was sent.
+        //
+        // This is the mechanism the exit line's second half depends on. A builder whose send was
+        // refused writes "I've posted it to the team" — it is writing about the task and has no way
+        // to know a tool said no. Leading with the record's own rendering means the operator reads
+        // what happened before they read what the model believed happened.
+        if (ExternalActionRendering(mission) is { Length: > 0 } send) return send;
+
         if (SourcedRendering(mission) is { Length: > 0 } sourced) return sourced;
 
         var raw = mission.UserResult ?? "";
@@ -267,6 +280,26 @@ public sealed class ResultAssembler : IResultAssembler
     /// in ordinary prose. Never throws: a rendering failure falls back to the raw answer rather than
     /// leaving the operator with nothing.
     /// </summary>
+    /// <summary>
+    /// The send's outcome line, or empty when this mission produced no external-action record —
+    /// which is every mission of every other class. Never throws: a rendering failure falls back to
+    /// the ordinary path rather than leaving the operator with nothing.
+    /// </summary>
+    private string ExternalActionRendering(Mission mission)
+    {
+        try
+        {
+            var artifacts = ((Anthill.SDK.Artifacts.IArtifactStore)_memory).ForMission(mission.Id);
+            return Outcomes.ExternalActionIntegrity.Record(artifacts)?.Render() ?? "";
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine(
+                $"[results] could not render the external action for {mission.Id}: {error.Message}");
+            return "";
+        }
+    }
+
     private string SourcedRendering(Mission mission)
     {
         try

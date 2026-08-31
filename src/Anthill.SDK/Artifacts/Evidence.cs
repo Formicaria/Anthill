@@ -257,6 +257,15 @@ public static class ArtifactSchemas
     public const string SystemOperation = "system_operation";
 
     /// <summary>
+    /// An external action — where it was asked to go, where it resolved to, where it actually went,
+    /// who approved it, and what came back. v0.3.8.103. See <see cref="Artifacts.ExternalAction"/>;
+    /// `ExternalActionIntegrity` refuses each absent piece by name, and refuses a send that landed
+    /// somewhere other than the destination the operator approved. Admitted to the vocabulary, the
+    /// bridge and the shape table in the same change — the `.100` lesson, kept.
+    /// </summary>
+    public const string ExternalAction = "external_action";
+
+    /// <summary>
     /// v3.8.20 — added when the ant bridge was built, because the medic already emits
     /// <c>repair_recommendation</c> and five of the other six kinds ants emit mapped exactly onto
     /// the list above. A schema the colony already produces and the vocabulary did not name is a
@@ -317,7 +326,7 @@ public static class ArtifactSchemas
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             RepositoryMap, FileSet, UiMap, ChangePlan, PatchSet, TestReport, DeliverableLedger,
-            SourcedAnswer, RecallSet, CreatedArtifact, SystemOperation,
+            SourcedAnswer, RecallSet, CreatedArtifact, SystemOperation, ExternalAction,
             SecurityReview, FailureDiagnosis, VerificationBundle, OperatorSummary,
             ReleaseNotes, MemoryCandidate, RepairRecommendation, SourceSet, WorkspaceSnapshot,
             FailureContext, DocsPatchSet, ResearchBrief,
@@ -374,6 +383,7 @@ public static class ArtifactSchemas
         "sourced_answer" => SourcedAnswer,
         "created_artifact" => CreatedArtifact,
         "system_operation" => SystemOperation,
+        "external_action" => ExternalAction,
         "recall_set" => RecallSet,
         "docs_patch_set" => DocsPatchSet,
         "research_brief" => ResearchBrief,

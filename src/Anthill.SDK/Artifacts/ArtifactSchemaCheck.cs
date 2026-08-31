@@ -154,6 +154,15 @@ public static class ArtifactSchemaCheck
                 AsObject("TesterAnt's operation lane (stamped from the homelab pipeline's rows)",
                     "proposal_id", "before_state", "receipt", "after_state"),
 
+            // v0.3.8.103. The shape check requires only what makes the record READABLE: which
+            // proposal, where it was asked to go, and what happened. `resolved_target`,
+            // `executed_target`, `receipt` and `approved_by` are the GATE's to refuse with a reason
+            // — a record saying "not sent, because nobody approved it" is well formed and honest,
+            // and calling it malformed would conflate a truthful refusal with a broken producer.
+            [ArtifactSchemas.ExternalAction] =
+                AsObject("TesterAnt's external-action lane (stamped from the adapter and the escalation decision)",
+                    "proposal_id", "requested_target", "outcome"),
+
             // v0.3.8.64 (S6): `{}` conformed, and a gate that accepts an empty object as a map is
             // an existence check wearing a schema check's name. The old comment worried an honest
             // map of a route-less repository would be invalid — but the cartographer has always

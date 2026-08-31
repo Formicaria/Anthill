@@ -355,7 +355,7 @@ public static class AntRegistry
                     with { Capabilities = new[] { Missions.WorkerCapabilities.VerifyResultCompleteness } },
                 W("verifier", "safety_verifier", "SafetyVerifier", "Check constraints, approval boundaries, and risky claims.", ReadMemory, new[] { "read_mission_constraints", "read_patch_metadata" }, noApply)
                     with { Capabilities = new[] { Missions.WorkerCapabilities.VerifySafety } }),
-            R("tester", "TesterAnt", "Testing", "Runs or interprets allowlisted verification checks.", false, Checks, new[] { "run_allowlisted_check", "read_test_summary", Anthill.SDK.Contracts.SystemActionToolNames.Propose, Anthill.SDK.Contracts.SystemActionToolNames.Execute }, noApply,
+            R("tester", "TesterAnt", "Testing", "Runs or interprets allowlisted verification checks.", false, Checks, new[] { "run_allowlisted_check", "read_test_summary", Anthill.SDK.Contracts.SystemActionToolNames.Propose, Anthill.SDK.Contracts.SystemActionToolNames.Execute, Anthill.SDK.Contracts.ExternalActionToolNames.Propose, Anthill.SDK.Contracts.ExternalActionToolNames.Execute }, noApply,
                 // v0.3.8.101 — both declare `execute_diagnostic_checks`, and the ambiguity is
                 // honest for the file-ant reason: running the .NET checks and running the frontend
                 // checks are both executing allowlisted checks, and the manifest decides which
@@ -377,7 +377,16 @@ public static class AntRegistry
                 W("tester", "action_proposer", "ActionProposer",
                     "Propose a reversible allowlisted homelab action with a rollback note and captured before-state; execute only under a recorded operator decision.",
                     Checks, new[] { Anthill.SDK.Contracts.SystemActionToolNames.Propose, Anthill.SDK.Contracts.SystemActionToolNames.Execute }, noApply)
-                    with { Capabilities = new[] { Missions.WorkerCapabilities.ProposeSystemAction } }),
+                    with { Capabilities = new[] { Missions.WorkerCapabilities.ProposeSystemAction } },
+                // v0.3.8.103 — the SEND worker, a sibling rather than a widening of the one above.
+                // `action_proposer`'s purpose sentence promises a rollback note and a before-state,
+                // and neither exists for a message that has already reached other people. `.98`
+                // recorded what an overstated worker contract costs: resolution BELIEVES it, and the
+                // wrong worker looks compatible. Two workers, two honest sentences, one role.
+                W("tester", "external_action_proposer", "ExternalActionProposer",
+                    "Resolve an external destination to a concrete allowlisted target and propose the send; deliver it only under a recorded operator decision, and record where it actually landed.",
+                    Checks, new[] { Anthill.SDK.Contracts.ExternalActionToolNames.Propose, Anthill.SDK.Contracts.ExternalActionToolNames.Execute }, noApply)
+                    with { Capabilities = new[] { Missions.WorkerCapabilities.ProposeExternalAction } }),
             R("soldier", "SoldierAnt", "Security", "Security sentinel for runtime and patch risk boundaries.", false, ReadWorkspace, new[] { "read_permission_contracts", "read_patch_metadata" }, noApply,
                 W("soldier", "runtime_sentinel", "RuntimeSentinel", "Check runtime/security-sensitive operations.", ReadWorkspace, new[] { "read_config_file", "read_permission_contracts" }, noApply),
                 W("soldier", "patch_sentinel", "PatchSentinel", "Check patch path, language, and approval boundaries.", ReadWorkspace, new[] { "read_patch_metadata", "read_permission_contracts" }, noApply)),

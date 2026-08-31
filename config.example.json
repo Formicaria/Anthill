@@ -170,5 +170,8 @@
   "autonomy_autoapply_max_lines":         40,
   "autonomy_autoapply_verify_cmd":        "",
   "autonomy_autoapply_verify_timeout":   900,
-  "autonomy_autoapply_git_commit":     false
+  "autonomy_autoapply_git_commit":     false,
+
+  "_comment_external_destinations": "v0.3.8.103: the destinations an external-action mission may reach, as name -> url. THIS MAP IS THE ALLOWLIST \u2014 there is no second one, so a colony told about no destinations can reach none, and that is the shipped default. A mission naming something absent from here refuses BEFORE an operator is asked to approve anything, with the configured names in the message. The name is matched case-insensitively inside the operator's request, so \"incident webhook\" resolves \"post the summary to the incident webhook\"; two names matching one request is a refusal rather than a guess. Every send is still gated by the escalation decision and the Modify authority ceiling on top of this.",
+  "external_destinations":                {}
 }
