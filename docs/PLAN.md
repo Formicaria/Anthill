@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.101**.
+Shipping release: **v0.3.8.102**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -81,9 +81,22 @@ receipt nothing ran, whose checks never ran, or whose symptom nothing diagnosed.
 audit/diagnosis boundary is enforced from both sides, and a reproduced symptom grades as the
 success it is. What is NOT claimed: that the root cause is CORRECT (semantic — the standing line),
 "could not reproduce" as a first-class positive answer, symptom-directed check selection beyond
-the workspace's allowlisted catalog, and anything live. Four of the seven classes are now served;
-system and external missions are untouched, and every one of them still resolves `not_applicable`
-at the deliverable layer exactly as before. See
+the workspace's allowlisted catalog, and anything live.
+
+**What v0.3.8.102 changes, and how far.** An infrastructure change now happens as a RECORDED,
+REVERSIBLE OPERATION or the mission does not pass: intake derives the system-action class from
+Change intent plus a Service target — the first class under Modify authority, and the Service
+dimension's first resolver since `.98` declared it — the planner ensures the operation step, and
+the new `system_operator` role (the first executable homelab role: the exit line made literal)
+reaches the homelab's own approval pipeline through two SDK-named spine tools. Propose captures
+the before-state from the runner's dry-run behind a mandatory rollback note; execute sits in the
+escalation gate's side-effecting set, so the operator's conversation-scoped decision is demanded
+at the dispatch chokepoint and stamped into the record as the approver — the lane's identity,
+never the model's. `OperationIntegrity` refuses each absent piece by name. What is NOT claimed:
+general local-system operations outside the homelab catalog, multi-operation missions, typed
+state snapshots per runner, and anything live. Five of the seven classes are now served; external
+missions are untouched, and everything unserved still resolves `not_applicable` at the
+deliverable layer exactly as before. See
 [`ADR-008`](adr/ADR-008-universal-mission-lifecycle.md) §1 for the evidence and §2 for the contract
 the `.98`–`.107` sequence exists to satisfy.
 
@@ -149,8 +162,8 @@ through the real application. **Ext.** = requires an external adapter, connectio
 | Artifact/document creation | yes | yes | **yes** | no | a creation-typed task must leave a `created_artifact` whose content exists, requirements trace or stand unmet, inputs resolve (.100) |
 | Data analysis | yes | yes | **yes** | no | input identity (id + content hash from the store) and a transformation account, or the mission is refused (.100) |
 | Troubleshooting / diagnosis | yes | yes | **yes** | no | a symptom reproduced by executed checks, diagnosed with receipts cited by name, boundary enforced both ways (.101) |
-| Local system actions | partial | no | partial | no | `.102` |
-| Homelab/infrastructure actions | yes | no | yes | no | Ext. — existing homelab workers, not on the mission spine |
+| Local system actions | partial | no | partial | no | homelab-catalog operations shipped (.102); a general local-system lane outside the catalog is not claimed |
+| Homelab/infrastructure actions | yes | no | **yes** | no | on the mission spine: propose → operator decision → execute → verify, recorded as a reversible operation (.102) |
 | External actions (approval-gated) | no | — | no | no | Ext. — `.103` |
 | Dynamic repair (Medic) | partial | yes | partial | no | bounded repair exists; not evidence-driven — `.104` |
 | Multi-mission continuity | no | — | no | no | `.105` |
@@ -162,7 +175,7 @@ see `DocumentationConsistencyTests`.
 
 ---
 
-## 2b. The universal-workflow program — v0.3.8.101 → v0.3.8.107
+## 2b. The universal-workflow program — v0.3.8.102 → v0.3.8.107
 
 **This is the current forward sequence.** It supersedes the earlier framing in which R4–R10 were
 the next thing to run; those items are not deleted, and each release below names the R-items it
@@ -192,8 +205,7 @@ past.
 
 | Release | Operator-visible capability | Exit gate |
 |---|---|---|
-| **.101** | Troubleshooting and diagnostic execution | §2c below |
-| **.102** | Local system and homelab/infrastructure actions | a reversible operation with before-state, receipt and after-state; existing homelab workers reached through the mission spine, not beside it |
+| **.102** | Local system and homelab/infrastructure actions | §2c below |
 | **.103** | Approval-gated external actions, universal authority adapters | a proposed external action pauses at approval with target resolution recorded; denied authority cannot be replaced by prose |
 | **.104** | Dynamic replanning, clarification, bounded Medic repair | wrong worker rerouted before harmful execution; missing operator decision pauses rather than guesses; repeated identical failure stops truthfully |
 | **.105** | Answer coverage, objective outcomes, multi-mission continuity | a second mission consumes the first's verified artifact by id; an omitted requested section fails coverage |
@@ -213,89 +225,72 @@ Rules binding every release in this program:
   became API-editable with no control rendering it, so an operator following the changelog looked
   for a switch that did not exist.
 
-### 2c. v0.3.8.101 — troubleshooting and diagnosis integrity
+### 2c. v0.3.8.102 — system actions and operation integrity
 
-**Delivers:** an operator reporting a symptom — "why is the test suite failing?" — receives a root
-cause that rests on executed checks: the mission runs the workspace's allowlisted checks, each
-dispatch leaves a `command_check` receipt with its exit status at the registry chokepoint (the
-honest witness, never a task's self-report), the failing check routes to the medic through the
-existing failure handoff, and the diagnosis cites its receipts by name. A diagnosis citing a
-receipt no check produced, a troubleshooting mission that executed nothing, and a symptom nothing
-diagnosed all refuse the mission — named.
+**Delivers:** an operator asking for an infrastructure change — "restart the media-server
+container on host pve1" — receives an OPERATION, not a description of one: proposed into the
+homelab's own approval-gated pipeline (catalog, blast radius, WaitingForApproval lifecycle, TOCTOU
+re-read, mandatory rollback note, kill switch — all standing, none re-implemented), executed only
+under the operator's recorded escalation decision, and recorded as a `system_operation` whose
+pieces a gate refuses by name: proposal id, before-state, receipt, after-state, rollback note, and
+the distinct approver. The first class to carry Modify authority — and Modify still does not mean
+autonomy: the model proposes, the human's recorded decision executes.
 
-**The boundary holds in both directions** (ADR-008, restated where enforced): an audit that
-executed checks is refused by the audit's own gate ("assessment observes"), and a troubleshooting
-mission does not pass on assessment-shaped records — no receipts, no diagnosis, no pass. The
-troubleshooting class is the first to carry `ExecuteChecks` authority, and exactly that much:
-the allowlisted catalog, never a shell, never Modify.
+**The exit line made literal:** the `system_operator` role is the first EXECUTABLE homelab role —
+"existing homelab workers reached through the mission spine, not beside it" — deterministic like
+the tester (no model call anywhere in the class), reaching the real `ActionExecutor` through two
+SDK-named tools. Propose writes a colony-database row and captures the before-state from the
+runner's own dry-run, refusing honestly when it cannot; Execute is listed side-effecting, so the
+dispatch chokepoint demands the conversation-scoped operator decision before the tool body runs,
+and the body stamps WHO approved from that same decision — the lane's identity, never the ant's.
 
-**A reproduced symptom is success, by one bit set at one chokepoint.** The check that fails IS
-the symptom confirmed, and four grading layers independently honour `Critical` as a disqualifier —
-verification refuses a failed critical task "regardless of what else passed", the controller
-repairs-then-escalates on one, the Queen grades Failed over Partial for one, and the evaluator
-cannot forgive what the layers before it already condemned. So plan admission marks the class's
-check tasks NON-CRITICAL — planner-authored or inserted — and every layer downstream reads the
-reproduction correctly without re-deriving the class: the verification gate reads a non-critical
-check's exit as its verdict, the evaluator's narrow forgiveness (diagnosis satisfied AND every
-failed task a tester task) grades structural completion while RECORDING the honest Partial and
-saying so in the explanation. A dead researcher or builder keeps full criticality in every class;
-only the check lane is expected to fail here, and only in this class.
+**Reuses:** the homelab pipeline wholesale (nothing bypassed, nothing duplicated), the escalation
+lane where the permission is the record, the artifact store and schema check as the record's
+carrier, `MissionEvaluator`'s deliverable lane, and the `AddMissing` migration path.
 
-**Keyed on the specification**, like the audit gate and unlike `.100`'s plan-typing key, because
-intake now classifies the class deterministically (`Diagnose` intent + a nameable target; change
-still outranks diagnose, so "find out why and fix it" cannot enter this lane carrying repair
-intent). That also decides the null-store rule: specification-keyed gates fail CLOSED (S3 — an
-outage is never permission), where `.99`/`.100`'s record-keyed gates decline to apply. Both
-asymmetries are deliberate and each matches its key.
+**Connects:** `MissionIntake (system_action, Modify) → Planner.EnsureClassCoverage (operation
+step) → SystemOperatorAnt → propose_system_action (before-state) → escalation chokepoint (the
+operator's decision, recorded) → execute_system_action → ActionExecutor (approve → TOCTOU →
+execute → verify) → system_operation record → OperationIntegrity → MissionEvaluator`.
 
-**Reuses:** the tester's real check execution and catalog, `ToolEvidence`'s dispatch-chokepoint
-receipts, the tester→medic failure handoff with its §1A parent-lineage binding, the
-`failure_diagnosis` artifact, `MissionEvaluator`'s deliverable lane, and the `AddMissing`
-migration path. No parallel ledger, no second evidence lane, no new orchestrator.
-
-**Connects:** `MissionIntake (troubleshooting, ExecuteChecks) → Planner.EnsureClassCoverage
-(reproduction step, capability-named) → TesterAnt → run_allowlisted_check → ToolEvidence
-(command_check receipts) → failure handoff → MedicAnt (receipts stamped from the failed task's
-recorded evidence) → failure_diagnosis → DiagnosisIntegrity → MissionEvaluator → the persisted
-explanation`.
-
-**Exit gate** — the composed acceptance mission (`TroubleshootingMissionTests`), written before
-the implementation and failing until it landed. Positive over two symptom phrasings; negative in
-both boundary directions — `AnAudit_ThatExecutedChecks_IsRefusedAtTheBoundary` and
-`ASymptomThatDoesNotReproduce_DoesNotGradeAsADiagnosis` — plus direct gate edges: fail-closed on
-an unreadable store, refusal by name for a receipt that never ran.
+**Exit gate** — the composed acceptance mission (`SystemActionMissionTests`), written before the
+implementation and failing until it landed: two phrasings reach an executed, verified operation
+whose record agrees with the executor's own rows; the unapproved run executes NOTHING (the mock
+runner's own ledger is the witness) and the mission refuses with the gate named; the repository
+change request stays out of the class, and the service symptom stays troubleshooting — both
+boundaries pinned by their own facts.
 
 **Divergences — recorded rather than quietly dropped:**
 
-- *receipt identity is textual* — a receipt is cited by CHECK ID and resolved by content match
-  against the `command_check` row's detail (which now carries the check identity stamped from the
-  dispatch's own arguments). A typed receipt record with a stable row id, and a diagnosis schema
-  that references it as data rather than as a `supporting_receipt:` line, is carried open — the
-  medic's diagnosis remains its structured-text format, stamped deterministically.
-- *"could not reproduce" is not yet an answer* — a troubleshooting mission whose checks all pass
-  produces no diagnosis and FAILS the gate, with the explanation saying exactly why. That is
-  honest and it is also a real limit: "the symptom does not reproduce under these checks" is a
-  legitimate diagnostic conclusion an operator can act on, and until it becomes a first-class
-  positive lane the class refuses it rather than grading it as if it had diagnosed.
-- *the check vocabulary is the workspace's* — reproduction runs the allowlisted catalog the
-  manifest declares (dotnet/node/python detection), not symptom-specific commands. A symptom
-  outside the catalog's reach ("why is nginx slow") reproduces nothing and refuses honestly.
-  Symptom-directed check selection is future work.
+- *"local system actions"* — this release's operations are the HOMELAB ACTION CATALOG's, reached
+  through its pipeline. A general local-system lane (files, processes, OS state outside the
+  catalog) is not claimed: the catalog is the reversibility story, and an action without a
+  rollback pair stays out of it by the catalog's own rule.
+- *before/after state are the runner's probes* — the Mock runner's are deterministic one-liners;
+  live runners' depth varies. A typed state-snapshot contract per runner is carried open.
+- *operational verbs* — `restart`/`reboot`/`power-cycle` joined the CHANGE intent; `start`/`stop`
+  deliberately did not ("start by assessing the colony" must keep classifying as an audit), so a
+  bare "stop the vm" resolves `general` exactly as every change request did before this class.
+  The known cost of `restart` is also recorded: a diagnostic question mentioning it classifies as
+  change and, with a service target, enters this lane — where the worst outcome is a proposal an
+  operator declines, never an action.
+- *one operation per mission* — the composed gate proves a single-operation arc; multi-operation
+  plans and operation ordering are unclaimed.
 
-**Carried open from `.97`–`.100`, unmet and not lapsed:**
+**Carried open from `.97`–`.101`, unmet and not lapsed:**
 
-- `blocked_missing_capability` for unavailable repository access;
-- "removing any production call site breaks the composed scenario" — held for two sites;
-- **the live pack:** objective verification enabled in a live run, an exported
-  `LiveQualificationRecord`, live system-audit, research, and creation missions through the
-  composed application — a live troubleshooting mission joins it;
-- retrieval time in the claim→source mapping; capability-first resolution for research;
-- claim-level sourcing inside a created document; intake-derived requirement coverage (`.105`);
-- classification by meaning for creation requests (the `.100` keying cost).
+- `blocked_missing_capability`; the two-site source-shape guard;
+- **the live pack:** objective verification live, `LiveQualificationRecord`, live audit, research,
+  creation and troubleshooting missions — a live system action (real runner, real approval card)
+  joins it;
+- retrieval time; capability-first research resolution; claim-level sourcing inside creations;
+  intake-derived requirement coverage (`.105`); creation classification by meaning;
+  "could not reproduce" as a positive outcome; symptom-directed check selection; the typed
+  diagnosis receipt record.
 
-**Explicitly still unsupported after .101:** system and external mission classes; multi-mission
-continuity; claim↔source SUPPORT; "could not reproduce" as a positive outcome; symptom-directed
-check selection.
+**Explicitly still unsupported after .102:** external actions (approval-gated remote APIs —
+`.103`); dynamic replanning and clarification (`.104`); multi-mission continuity (`.105`);
+claim↔source SUPPORT; general local-system operations outside the homelab catalog.
 
 ---
 
