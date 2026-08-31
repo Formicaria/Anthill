@@ -355,7 +355,7 @@ public static class AntRegistry
                     with { Capabilities = new[] { Missions.WorkerCapabilities.VerifyResultCompleteness } },
                 W("verifier", "safety_verifier", "SafetyVerifier", "Check constraints, approval boundaries, and risky claims.", ReadMemory, new[] { "read_mission_constraints", "read_patch_metadata" }, noApply)
                     with { Capabilities = new[] { Missions.WorkerCapabilities.VerifySafety } }),
-            R("tester", "TesterAnt", "Testing", "Runs or interprets allowlisted verification checks.", false, Checks, new[] { "run_allowlisted_check", "read_test_summary" }, noApply,
+            R("tester", "TesterAnt", "Testing", "Runs or interprets allowlisted verification checks.", false, Checks, new[] { "run_allowlisted_check", "read_test_summary", Anthill.SDK.Contracts.SystemActionToolNames.Propose, Anthill.SDK.Contracts.SystemActionToolNames.Execute }, noApply,
                 // v0.3.8.101 — both declare `execute_diagnostic_checks`, and the ambiguity is
                 // honest for the file-ant reason: running the .NET checks and running the frontend
                 // checks are both executing allowlisted checks, and the manifest decides which
@@ -364,7 +364,20 @@ public static class AntRegistry
                 W("tester", "dotnet_tester", "DotnetTester", "Run or interpret .NET build/test checks.", Checks, new[] { "run_allowlisted_check", "read_test_errors" }, noApply)
                     with { Capabilities = new[] { Missions.WorkerCapabilities.ExecuteDiagnosticChecks } },
                 W("tester", "frontend_tester", "FrontendTester", "Run or interpret frontend checks when present.", Checks, new[] { "run_allowlisted_check", "read_frontend_build_errors" }, noApply)
-                    with { Capabilities = new[] { Missions.WorkerCapabilities.ExecuteDiagnosticChecks } }),
+                    with { Capabilities = new[] { Missions.WorkerCapabilities.ExecuteDiagnosticChecks } },
+                // v0.3.8.102 — the operation worker, ON THE TESTER rather than a thirteenth role.
+                // The first draft added a `system_operator` role and twenty-seven guards answered
+                // with one voice: twelve roles is a load-bearing constant, and homelab ants are
+                // NEVER executable by the foundation's own test. The exit line's "existing homelab
+                // workers reached through the mission spine" means the spine reaches the PIPELINE —
+                // whose runners are those workers — and the tester is the spine's deterministic
+                // command-runner already: proposing an allowlisted action and executing it under
+                // the operator's recorded decision is the same lane its checks live in, behind the
+                // same escalation set its check tool already sits in.
+                W("tester", "action_proposer", "ActionProposer",
+                    "Propose a reversible allowlisted homelab action with a rollback note and captured before-state; execute only under a recorded operator decision.",
+                    Checks, new[] { Anthill.SDK.Contracts.SystemActionToolNames.Propose, Anthill.SDK.Contracts.SystemActionToolNames.Execute }, noApply)
+                    with { Capabilities = new[] { Missions.WorkerCapabilities.ProposeSystemAction } }),
             R("soldier", "SoldierAnt", "Security", "Security sentinel for runtime and patch risk boundaries.", false, ReadWorkspace, new[] { "read_permission_contracts", "read_patch_metadata" }, noApply,
                 W("soldier", "runtime_sentinel", "RuntimeSentinel", "Check runtime/security-sensitive operations.", ReadWorkspace, new[] { "read_config_file", "read_permission_contracts" }, noApply),
                 W("soldier", "patch_sentinel", "PatchSentinel", "Check patch path, language, and approval boundaries.", ReadWorkspace, new[] { "read_patch_metadata", "read_permission_contracts" }, noApply)),
@@ -386,18 +399,6 @@ public static class AntRegistry
             // v1.9.0). Their deterministic data collection is plain C# service code (HomelabScheduler +
             // providers), never routed through the model router; LLM behavior arrives later strictly
             // for explanation/summarization/recommendation (NORTH_STAR §3.2 rules 5-6).
-            // v0.3.8.102 — the first EXECUTABLE homelab role: the exit line's own ask ("existing
-            // homelab workers reached through the mission spine, not beside it") made literal.
-            // Executable without a specialist canary gate, like the core lane roles: what gates
-            // this ant is not a rollout flag but the escalation lane and the executor's own
-            // approval machinery, which is a stronger gate than any canary.
-            R("system_operator", "SystemOperatorAnt", "Homelab",
-                "Proposes allowlisted infrastructure actions into the approval pipeline and, under a recorded operator decision, executes and records them.",
-                true, Checks, new[] { Anthill.SDK.Contracts.SystemActionToolNames.Propose, Anthill.SDK.Contracts.SystemActionToolNames.Execute }, noApply,
-                W("system_operator", "action_proposer", "ActionProposer",
-                    "Propose a reversible allowlisted action with a rollback note and captured before-state.",
-                    Checks, new[] { Anthill.SDK.Contracts.SystemActionToolNames.Propose }, noApply)
-                    with { Capabilities = new[] { Missions.WorkerCapabilities.ProposeSystemAction } }),
             R("inventory", "InventoryAnt", "Homelab", "Knows what exists: hosts, VMs, containers, storage, and services.", false, ReadMemory, new[] { "read_homelab_inventory" }, noApply),
             R("network_scout", "NetworkScoutAnt", "Homelab", "Knows the network shape: devices, subnets, VLANs, and unknown arrivals.", false, ReadMemory, new[] { "read_network_inventory" }, noApply),
             R("health", "HealthAnt", "Homelab", "Knows what is alive, degraded, or broken from health-check history.", false, ReadMemory, new[] { "read_health_results" }, noApply),

@@ -340,14 +340,17 @@ Required JSON:
         // arc itself and the escalation lane is the pause point, not a task boundary.
         if (specification?.MissionClass == Anthill.Core.Missions.MissionSpecification.SystemActionClass)
         {
-            if (!tasks.Any(t => string.Equals(t.AssignedAnt, "system_operator", StringComparison.OrdinalIgnoreCase)))
+            if (!tasks.Any(t => string.Equals(t.TaskType, "system_operation", StringComparison.OrdinalIgnoreCase)))
                 tasks.Insert(0, new Task
                 {
                     Title = "Perform the operation",
                     Description = "Propose the allowlisted action with a rollback note, capture the "
                                 + "before-state, and — under the operator's recorded decision — "
                                 + $"execute, verify and record it: {goal}",
-                    AssignedAnt = "system_operator",
+                    // The TESTER carries the operation lane (v0.3.8.102): twelve roles is a
+                    // load-bearing constant, and the spine's deterministic command-runner is where
+                    // proposing and executing allowlisted actions honestly lives.
+                    AssignedAnt = "tester",
                     TaskType = "system_operation",
                     RequiredCapability = Anthill.Core.Missions.WorkerCapabilities.ProposeSystemAction,
                 });
@@ -386,7 +389,8 @@ Required JSON:
             // check by parent lineage, which is the binding §1A of its own contract requires.
             if (!tasks.Any(t => string.Equals(t.RequiredCapability,
                     Anthill.Core.Missions.WorkerCapabilities.ExecuteDiagnosticChecks, StringComparison.OrdinalIgnoreCase))
-                && !tasks.Any(t => string.Equals(t.AssignedAnt, "tester", StringComparison.OrdinalIgnoreCase)))
+                && !tasks.Any(t => string.Equals(t.AssignedAnt, "tester", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(t.TaskType, "system_operation", StringComparison.OrdinalIgnoreCase)))
                 tasks.Insert(0, new Task
                 {
                     Title = "Reproduce the reported symptom",

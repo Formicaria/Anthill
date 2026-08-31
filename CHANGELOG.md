@@ -27,13 +27,25 @@ refusal, blast radius, the WaitingForApproval lifecycle, the TOCTOU re-read, the
 rollback note, the kill switch. ADR-008's sentence — "every existing approval gate is preserved" —
 is this release's implementation note.
 
-**The exit line made literal.** `system_operator` is the first EXECUTABLE homelab role — "existing
-homelab workers reached through the mission spine, not beside it" — and it is deterministic like
-the tester: no model call anywhere in the class. The goal parses into the catalog's vocabulary by
-a fixed mapping that refuses what it cannot name (proposing "something" against "somewhere" would
-put a fabricated target into a real pipeline); the record is stamped from the pipeline's own rows;
-and the unapproved path completes WITH a structured warning and no artifact, so the mission runs
-on to its verifier and is refused by the class gate in words the operator learns something from.
+**Twelve roles is a load-bearing constant — this release's found defect, in the architecture.**
+The first draft read the exit line — "existing homelab workers reached through the mission
+spine" — as a role to add, and built a thirteenth: `system_operator`, the first executable
+homelab ant. TWENTY-SEVEN guards refused it with one voice: the named-roles contract, the
+registry shape, the executable set, the acceptance gates, the cancellation matrix, the
+graduation records, the readiness scan, the tool inventory, and the homelab foundation's own
+sentence — homelab ants are visible but NEVER executable. That chorus is ADR-008's "does not
+license adding roles to appear capable" made structural, and the guards were RIGHT about the
+design, not merely strict about a count: the homelab "workers" in the exit line are the
+PIPELINE'S runners, reached by wrapping the executor, not by seating a new ant beside it. So
+the operation lane lives where the spine's deterministic command-runner already lives — the
+TESTER, whose one job has always been running allowlisted things and reporting honestly — as a
+`system_operation` task type, an `action_proposer` worker, and two tools behind the same
+escalation set its check tool already sits in. No model call anywhere in the class: the goal
+parses into the catalog's vocabulary by a fixed mapping that refuses what it cannot name
+(proposing "something" against "somewhere" would put a fabricated target into a real pipeline);
+the record is stamped from the pipeline's own rows; and the unapproved path completes WITH a
+structured warning and no artifact, so the mission runs on to its verifier and is refused by
+the class gate in words the operator learns something from.
 
 **The module stays SDK-pure.** The spine tools live in the homelab module beside the executor
 they wrap, the tool names live in the SDK (one spelling, because the module registers by them and
