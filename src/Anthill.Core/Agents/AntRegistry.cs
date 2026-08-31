@@ -386,6 +386,18 @@ public static class AntRegistry
             // v1.9.0). Their deterministic data collection is plain C# service code (HomelabScheduler +
             // providers), never routed through the model router; LLM behavior arrives later strictly
             // for explanation/summarization/recommendation (NORTH_STAR §3.2 rules 5-6).
+            // v0.3.8.102 — the first EXECUTABLE homelab role: the exit line's own ask ("existing
+            // homelab workers reached through the mission spine, not beside it") made literal.
+            // Executable without a specialist canary gate, like the core lane roles: what gates
+            // this ant is not a rollout flag but the escalation lane and the executor's own
+            // approval machinery, which is a stronger gate than any canary.
+            R("system_operator", "SystemOperatorAnt", "Homelab",
+                "Proposes allowlisted infrastructure actions into the approval pipeline and, under a recorded operator decision, executes and records them.",
+                true, Checks, new[] { Anthill.SDK.Contracts.SystemActionToolNames.Propose, Anthill.SDK.Contracts.SystemActionToolNames.Execute }, noApply,
+                W("system_operator", "action_proposer", "ActionProposer",
+                    "Propose a reversible allowlisted action with a rollback note and captured before-state.",
+                    Checks, new[] { Anthill.SDK.Contracts.SystemActionToolNames.Propose }, noApply)
+                    with { Capabilities = new[] { Missions.WorkerCapabilities.ProposeSystemAction } }),
             R("inventory", "InventoryAnt", "Homelab", "Knows what exists: hosts, VMs, containers, storage, and services.", false, ReadMemory, new[] { "read_homelab_inventory" }, noApply),
             R("network_scout", "NetworkScoutAnt", "Homelab", "Knows the network shape: devices, subnets, VLANs, and unknown arrivals.", false, ReadMemory, new[] { "read_network_inventory" }, noApply),
             R("health", "HealthAnt", "Homelab", "Knows what is alive, degraded, or broken from health-check history.", false, ReadMemory, new[] { "read_health_results" }, noApply),
