@@ -1,3 +1,4 @@
+using Anthill.Core.Agents;
 using Anthill.Core.Configuration;
 using Anthill.Core.Conversations;
 using Anthill.Core.Memory;
