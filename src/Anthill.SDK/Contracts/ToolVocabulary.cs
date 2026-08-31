@@ -21,6 +21,23 @@ namespace Anthill.SDK.Contracts;
 // them in a way that reads as an unrelated ambiguity error.
 
 /// <summary>
+/// The system-action tool names, spelled once. v0.3.8.102 — the homelab module REGISTERS tools by
+/// these names and the core's escalation gate lists the execute name as side-effecting, and two
+/// spellings of one boundary would eventually disagree about it. In the SDK because it is the one
+/// assembly both sides may reference.
+/// </summary>
+public static class SystemActionToolNames
+{
+    /// <summary>Propose an allowlisted action into the approval pipeline and capture its
+    /// before-state. A colony-database row — not side-effecting outside the process.</summary>
+    public const string Propose = "propose_system_action";
+
+    /// <summary>Approve-and-execute a pending proposal. SIDE-EFFECTING: gated at the dispatch
+    /// chokepoint by the conversation escalation lane, where the permission is the record.</summary>
+    public const string Execute = "execute_system_action";
+}
+
+/// <summary>
 /// v2.9.0 — Contracted Tasks and Typed Capability Tools (NORTH_STAR V3-track Phase 2).
 /// Machine-readable contracts replace loose prompt tasks and string-parsed tool results as the
 /// control-flow surface: planner output is schema-validated (invalid tasks cannot enter the
