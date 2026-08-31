@@ -48,7 +48,19 @@ public static class MissionVerification
 
         // Every verification step that exists must have completed. A skipped or failed verifier
         // means the mission's own check did not run to completion.
-        if (!verifications.All(t => t.Status == TaskStatus.Complete)) return false;
+        //
+        // v0.3.8.101 — EXCEPT A NON-CRITICAL CHECK THAT RAN AND FAILED. A failed check DID run to
+        // completion: its exit status is its verdict, and for the troubleshooting class that
+        // failing verdict is the reproduced symptom the mission exists to produce. `Critical=false`
+        // is the marker plan admission stamps on exactly that class's check tasks — nothing else
+        // demotes a verification step — so the exemption is scoped by construction: a failed
+        // critical tester still fails this gate (and already failed the line above), and a skipped
+        // or blocked step of any kind still means the check never ran. The verifier's own verdict
+        // rule below is untouched; it is what actually decides the pass.
+        if (!verifications.All(t => t.Status == TaskStatus.Complete
+                || (t.Status == TaskStatus.Failed && !t.Critical
+                    && string.Equals(t.AssignedAnt, "tester", StringComparison.OrdinalIgnoreCase))))
+            return false;
 
         // v2.19.0 Stage 6: completion is necessary but NOT sufficient. A verifier that ran to
         // completion and reported "Verification Failed" used to satisfy this gate, because the
