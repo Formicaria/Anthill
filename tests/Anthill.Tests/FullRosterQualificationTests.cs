@@ -49,6 +49,9 @@ public class FullRosterQualificationTests
             // happened, exactly as it means the tools module was loaded.
             Anthill.SDK.Contracts.SystemActionToolNames.Propose,
             Anthill.SDK.Contracts.SystemActionToolNames.Execute,
+            // v0.3.8.103 — the tester's send lane, adopted at composition for the same reason.
+            Anthill.SDK.Contracts.ExternalActionToolNames.Propose,
+            Anthill.SDK.Contracts.ExternalActionToolNames.Execute,
         };
 
     /// <summary>

@@ -67,7 +67,14 @@ public static class MissionIntake
         // known cost of `restart` is recorded there too: a diagnostic question that mentions
         // restarting classifies as change and, with a service target, enters this lane — where
         // the worst outcome is a PROPOSAL an operator declines, never an action.
-      + @"deploy|install|write|restart|reboot|power[- ]cycle)\b",
+        // v0.3.8.103: the OUTBOUND verbs. They join CHANGE because posting to a third party
+        // changes the world — irreversibly, and outside the operator's own machine, which is
+        // more than a container restart can say. On their own they classify NOTHING: the
+        // external class below also requires a named destination, so "send the report to the
+        // team" stays `general` exactly as it did before this release. Deliberately NOT
+        // `tell`/`share`/`report`, which are how operators ask for an ANSWER ("report on the
+        // colony's health") and would drag the audit lane into a change intent.
+      + @"deploy|install|write|restart|reboot|power[- ]cycle|post|publish|send|notify)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex RepositoryTargets = new(
@@ -95,6 +102,22 @@ public static class MissionIntake
     private static readonly Regex ServiceTargets = new(
         @"\b(container|docker|compose|vm|virtual machine|proxmox|pve\w*|hyper-?v|vsphere|"
       + @"host|node|homelab|service|daemon|media[- ]server|plex|overseerr|uptime[- ]?kuma)\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// v0.3.8.103 — the EXTERNAL dimension: a destination OUTSIDE the colony and outside the
+    /// operator's own infrastructure. Narrow and concrete for the same reason
+    /// <see cref="ServiceTargets"/> is, and for a sharper one: a word here admits a change request
+    /// into the only lane that does something nothing in this repository can undo.
+    ///
+    /// A NAMED DESTINATION IS REQUIRED, which is what keeps the class honest. An operator saying
+    /// "send the summary to the team" has named no endpoint, so there is nothing to resolve and
+    /// nothing a human could approve — that request resolves `general`, exactly as it did before
+    /// this class existed, rather than entering a lane whose whole premise is an approved target.
+    /// </summary>
+    private static readonly Regex ExternalTargets = new(
+        @"\b(webhook|slack|discord|teams channel|pagerduty|opsgenie|endpoint|"
+      + @"external api|third[- ]party|https?://\S+)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     /// <summary>
@@ -152,6 +175,19 @@ public static class MissionIntake
     };
 
     /// <summary>
+    /// Capability ids an external-action mission requires. v0.3.8.103. `propose_external_action`
+    /// leads for the same reason `propose_system_action` leads its list: order is the tie-break
+    /// `AntRegistry.ResolveByCapability` applies, and the class's DEFINING capability must be the
+    /// one a researcher-shaped task cannot accidentally claim first.
+    /// </summary>
+    public static readonly IReadOnlyList<string> ExternalActionCapabilities = new[]
+    {
+        WorkerCapabilities.ProposeExternalAction,
+        WorkerCapabilities.CompileResult,
+        WorkerCapabilities.VerifyResultCompleteness,
+    };
+
+    /// <summary>
     /// Resolve the specification. Never throws, and never returns null: a request it cannot
     /// classify becomes <see cref="MissionSpecification.General"/>, which constrains nothing.
     /// </summary>
@@ -179,6 +215,42 @@ public static class MissionIntake
         // the repository half of such an ask correctly fails the class gate rather than silently
         // becoming a patch. Misclassification cost is a proposal card an operator declines, never
         // an action.
+        // v0.3.8.103 — THE OUTBOUND CLASS, AND IT IS TESTED BEFORE THE SERVICE ONE. That order is
+        // the release's sharpest classification decision, so it is stated rather than implied.
+        //
+        // A request may name both an external destination and a service: "notify the team's webhook
+        // that the media-server container restarted". Nothing is being done to the container there —
+        // it is the SUBJECT of a message, not the object of an action. The VERB says what is being
+        // done and the destination says to whom, so letting the service noun win would silently turn
+        // a notification into an infrastructure proposal. That is the worst direction for this to be
+        // wrong in: `.102`'s lane proposes real operations, and an operator who asked to send a
+        // message would be shown a restart to approve.
+        //
+        // The reverse misread costs less and is still guarded: a genuine infrastructure ask has no
+        // external destination to match, so "restart the media-server container on pve1" cannot
+        // reach this branch at all.
+        if (intent == MissionIntent.Change && targets.HasFlag(MissionTargets.External))
+            return new MissionSpecification
+            {
+                OriginalRequest = request,
+                MissionClass = MissionSpecification.ExternalActionClass,
+                Intent = MissionIntent.Change,
+                Targets = targets,
+                Freshness = MissionFreshness.Current,
+                // MODIFY, and the second class to carry it — but what Modify grants here is not what
+                // it grants `.102`. There, the executor's paired action reverses the operation. Here
+                // nothing reverses anything: the ceiling admits the mission to a lane whose execute
+                // tool is irreversible, which is why `MissionAuthorityGate` reads the ceiling at
+                // dispatch for the first time in this release instead of trusting that it was set.
+                Authority = MissionAuthority.Modify,
+                Deliverables = ResolveDeliverables(request),
+                RequiredCapabilities = ExternalActionCapabilities,
+                // Record-keyed like `.102`, not evidence-keyed: the send's own pieces — resolved
+                // target, executed target, receipt, approver — are the receipts, and
+                // `ExternalActionIntegrity` refuses each absence, and each MISMATCH, by name.
+                RequiredEvidence = Array.Empty<string>(),
+            };
+
         if (intent == MissionIntent.Change && targets.HasFlag(MissionTargets.Service))
             return new MissionSpecification
             {
@@ -273,6 +345,10 @@ public static class MissionIntake
         // declared and reaching nobody, this repository's named defect, closed the release the
         // first class needs it.
         if (ServiceTargets.IsMatch(request)) targets |= MissionTargets.Service;
+        // v0.3.8.103 — the External flag, declared at `.103` and resolved in the same release
+        // that needs it. `.102` recorded what the other order costs: the Service flag existed
+        // from `.98` with nothing resolving it, a dimension reaching nobody.
+        if (ExternalTargets.IsMatch(request)) targets |= MissionTargets.External;
         return targets;
     }
 
@@ -374,6 +450,14 @@ public static class WorkerCapabilities
     /// PROPOSE: execution is the operator's recorded escalation decision, and no capability
     /// grants it.</summary>
     public const string ProposeSystemAction = "propose_system_action";
+
+    /// <summary>
+    /// Resolve an external destination, propose the send, and — under the operator's recorded
+    /// decision — deliver it and record where it landed. v0.3.8.103. Declared in the same release
+    /// as the worker that serves it: a capability nothing can satisfy is the
+    /// declaration-reaching-nobody defect wearing a specification's clothes.
+    /// </summary>
+    public const string ProposeExternalAction = "propose_external_action";
 
     /// <summary>Read prior mission and objective memory.</summary>
     public const string RecallMissionHistory = "recall_mission_history";
