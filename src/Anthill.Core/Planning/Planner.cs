@@ -334,6 +334,46 @@ Required JSON:
     internal static List<Task> EnsureClassCoverage(List<Task> tasks, string goal,
         Anthill.Core.Missions.MissionSpecification? specification)
     {
+        // v0.3.8.102 — the system-action class's coverage: the operation step is ensured
+        // deterministically, the standing doctrine. The medic pattern in reverse — nothing else
+        // is inserted, because the operator ant carries the whole propose/approve/execute/record
+        // arc itself and the escalation lane is the pause point, not a task boundary.
+        if (specification?.MissionClass == Anthill.Core.Missions.MissionSpecification.SystemActionClass)
+        {
+            if (!tasks.Any(t => string.Equals(t.AssignedAnt, "system_operator", StringComparison.OrdinalIgnoreCase)))
+                tasks.Insert(0, new Task
+                {
+                    Title = "Perform the operation",
+                    Description = "Propose the allowlisted action with a rollback note, capture the "
+                                + "before-state, and — under the operator's recorded decision — "
+                                + $"execute, verify and record it: {goal}",
+                    AssignedAnt = "system_operator",
+                    TaskType = "system_operation",
+                    RequiredCapability = Anthill.Core.Missions.WorkerCapabilities.ProposeSystemAction,
+                });
+
+            if (!tasks.Any(t => string.Equals(t.AssignedAnt, "builder", StringComparison.OrdinalIgnoreCase)))
+                tasks.Add(new Task
+                {
+                    Title = "Compile the operation report",
+                    Description = $"Assemble the operation record into the answer: {goal}",
+                    AssignedAnt = "builder",
+                    TaskType = "build_answer",
+                });
+
+            if (!tasks.Any(t => string.Equals(t.AssignedAnt, "verifier", StringComparison.OrdinalIgnoreCase)))
+                tasks.Add(new Task
+                {
+                    Title = "Verify the operation record",
+                    Description = "Check that before-state, receipt, after-state, rollback note and "
+                                + $"the operator's approval are all recorded: {goal}",
+                    AssignedAnt = "verifier",
+                    TaskType = "verification",
+                });
+
+            return tasks;
+        }
+
         // v0.3.8.101 — the troubleshooting class's own coverage, same doctrine as the audit's
         // below: the step that DEFINES the class is ensured deterministically, because a plan that
         // omits it produces a mission the class gate must then refuse — a mission built to fail.

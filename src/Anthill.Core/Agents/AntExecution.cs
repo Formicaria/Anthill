@@ -426,6 +426,25 @@ public static class AntExecutionCatalog
 
         // ---- specialist ants ------------------------------------------------------------------
 
+        // v0.3.8.102 — the system operator: proposes allowlisted infrastructure actions into the
+        // homelab's approval pipeline and, under the operator's recorded escalation decision,
+        // executes and records them. AllowsSideEffects is TRUE and it is the honest flag: this is
+        // the first contract whose tool restarts real containers — behind the escalation gate,
+        // behind the executor's own TOCTOU/rollback/kill-switch gates, and never through a shell
+        // or the patch lane (both forbidden here exactly as everywhere else).
+        ["system_operator"] = new("system_operator", V,
+            SupportedTaskTypes: S("system_operation"),
+            RequiredCapabilities: S(Capability.NetworkHttpHomelab),
+            AllowedTools: S(Anthill.SDK.Contracts.SystemActionToolNames.Propose,
+                            Anthill.SDK.Contracts.SystemActionToolNames.Execute),
+            ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
+            ProducedArtifactTypes: S("system_operation"),
+            AllowedHandoffRoles: S("verifier", "builder"),
+            AllowsModelCalls: false, AllowsSideEffects: true, ProducesPatchProposals: false,
+            // Deterministic: it parses the goal, proposes, and stamps records from the pipeline's
+            // own rows. No model, stated explicitly.
+            Model: ModelRequirement.None),
+
         ["tester"] = new("tester", V,
             SupportedTaskTypes: S("build_check", "test_execution", "frontend_check", "validation_check", "regression_check", "verification_check"),
             RequiredCapabilities: S(Capability.ProcessExecuteReadonly, Capability.RepoRead),
