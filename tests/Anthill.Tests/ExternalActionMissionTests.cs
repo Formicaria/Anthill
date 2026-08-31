@@ -566,7 +566,12 @@ public class ExternalActionMissionTests : IDisposable
         AnthillRuntime.ActivationTier = ActivationTier.Full;
         AnthillRuntime.UseOllama = true;
         AnthillRuntime.EnableObjectiveVerification = true;
-        AnthillRuntime.AllowedWorkspaceRoot = SourceText.RepoRoot();
+        // NOT the real repository. `.102`'s harness points here at the checkout because an audit
+        // genuinely reads it; this class sends things and reads nothing, so pointing a composed
+        // mission at the operator's working tree only creates a path by which a stray workspace
+        // scan or check runner touches it. The mission's own temp directory is the whole world
+        // this test needs.
+        AnthillRuntime.AllowedWorkspaceRoot = _dir;
 
         using var scripted = ScriptedColony.Begin(book,
             "planner", "researcher", "web", "file", "builder", "verifier", "tester", "soldier",
