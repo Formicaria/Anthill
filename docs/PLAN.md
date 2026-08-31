@@ -251,10 +251,12 @@ whose job has always been running allowlisted things and reporting honestly — 
 `system_operation` task type and an `action_proposer` worker, deterministic like every tester
 lane (no model call anywhere in the class). Propose writes a colony-database row and captures
 the before-state from the runner's own dry-run, refusing honestly when it cannot; Execute is
-listed side-effecting behind the same escalation set `run_allowlisted_check` already sits in, so
-the dispatch chokepoint demands the conversation-scoped operator decision before the tool body
-runs, and the body stamps WHO approved from that same decision — the lane's identity, never the
-ant's.
+listed side-effecting behind the same escalation set `run_allowlisted_check` already sits in,
+and its permission is the operator's RECORDED escalation decision — read from the durable record
+`.46` began saving at mission start (a mission runs outside the conversation's ambient scope, so
+the record is the only place the permission lives; `OperatorDecisions.ForMission` resolves it
+through the mission's own lineage). The body stamps WHO approved from that decision — the lane's
+identity, never the ant's — and refuses by name when nobody has decided.
 
 **Reuses:** the homelab pipeline wholesale (nothing bypassed, nothing duplicated), the escalation
 lane where the permission is the record, the artifact store and schema check as the record's
