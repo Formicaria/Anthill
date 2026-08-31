@@ -64,6 +64,18 @@ public static partial class ApiHost
         // and reported real actions as executed without touching anything.
         if (AnthillRuntime.EnableHomelabMockProviders) runners.Add(new MockActionRunner());
         HomelabActions = new ActionExecutor(Homelab, runners);
+
+        // v0.3.8.102 — THE SPINE'S DOOR, registered where the executor is built: the system-action
+        // tools reach THIS executor, with THESE runners and gates, through the same adoption path
+        // every module tool uses. The decision bridge is the composition's job (the module
+        // references only the SDK): the escalation lane's own record, shaped down to what the
+        // operation record needs — so the identity stamped as the approver is the lane's decision,
+        // never the proposing ant's.
+        Queen.AdoptModuleTools(Anthill.Modules.Homelab.Actions.SystemActionTools.For(HomelabActions,
+            () => Anthill.Core.Conversations.ConversationScope.Evaluate(
+                    Anthill.SDK.Contracts.SystemActionToolNames.Execute) is { } decision
+                ? (decision.Allowed, decision.Id, decision.Reason)
+                : null));
     }
 
     private static void MapHomelabActionEndpoints(WebApplication app)

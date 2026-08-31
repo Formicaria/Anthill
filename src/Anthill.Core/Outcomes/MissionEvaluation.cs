@@ -158,6 +158,14 @@ public static class MissionEvaluator
             ? DiagnosisIntegrity.Evaluate(specification!, evidence, artifacts)
             : null;
 
+        // v0.3.8.102 — AND AN OPERATION MUST HAVE HAPPENED, REVERSIBLY AND WITH PERMISSION.
+        // Specification-keyed like its siblings, mutually exclusive with them by class. The
+        // failure this catches: a system-action mission whose operation was described, or proposed
+        // and never approved, or executed with any of its record's pieces missing.
+        var operations = OperationIntegrity.Applies(specification)
+            ? OperationIntegrity.Evaluate(specification!, artifacts)
+            : null;
+
         string deliverable;
         if (!objectiveVerificationEnabled)
             deliverable = MissionEvaluation.Deliverable.NotChecked;
@@ -167,6 +175,10 @@ public static class MissionEvaluator
             deliverable = MissionEvaluation.Deliverable.NotSatisfied;
         else if (diagnosis is not null)
             deliverable = diagnosis.Satisfied
+                ? MissionEvaluation.Deliverable.Satisfied
+                : MissionEvaluation.Deliverable.NotSatisfied;
+        else if (operations is not null)
+            deliverable = operations.Satisfied
                 ? MissionEvaluation.Deliverable.Satisfied
                 : MissionEvaluation.Deliverable.NotSatisfied;
         else if (assessment is not null)
@@ -242,6 +254,7 @@ public static class MissionEvaluator
                 + (citations is null || citations.Satisfied ? "" : $" {citations.Explanation}")
                 + (creations is null || creations.Satisfied ? "" : $" {creations.Explanation}")
                 + (diagnosis is null || diagnosis.Satisfied ? "" : $" {diagnosis.Explanation}")
+                + (operations is null || operations.Satisfied ? "" : $" {operations.Explanation}")
                 + (reproducedSymptom
                     ? " Symptom reproduced: the failed check task is the reproduction the "
                       + "diagnosis rests on, not a defect of the mission."
