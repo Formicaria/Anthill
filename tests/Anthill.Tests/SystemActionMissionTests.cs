@@ -7,6 +7,7 @@ using Anthill.Core.Modules;
 using Anthill.Core.Orchestration;
 using Anthill.Core.Outcomes;
 using Anthill.Core.Security;
+using Anthill.Modules.Homelab;
 using Anthill.Modules.Homelab.Actions;
 using Anthill.Modules.Tools;
 using Anthill.SDK.Artifacts;
@@ -375,7 +376,7 @@ public class SystemActionMissionTests : IDisposable
         // escalation lane's own record, shaped down to what the operation record needs.
         queen.AdoptModuleTools(SystemActionTools.For(lab.Executor,
             () => ConversationScope.Evaluate(SystemActionTools.ExecuteToolName) is { } decision
-                ? (decision.Allowed, decision.Id, decision.Reason)
+                ? (decision.Allowed, decision.Id, decision.Reason ?? "")
                 : null));
 
         string? missionId = null;
