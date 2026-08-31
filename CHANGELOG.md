@@ -50,6 +50,24 @@ capability behind the class (`execute_diagnostic_checks`) lands ON the tester's 
 same release, per the audit list's own precedent: a requirement nothing serves is a declaration
 reaching nobody.
 
+**THE CASCADE THIS RELEASE FOUND, recorded because the mechanism matters more than any one bug.**
+The composed gate went red four times, and each run's own explanation surrendered one layer:
+`escalated` (the medic routed the reproduced failure into the repair lane its class forbids, and
+the refused handoff became a deterministic block), `escalated` again (the adaptive controller
+spent its repair bound on a failure the medic deliberately does not repair, then stopped the
+mission before builder and verifier ran), `failed_permanent` (the Queen grades Failed over Partial
+for a failed critical task), and `completed_unverified` (the verification gate reads a failed
+verification step as "the mission's own check did not run to completion"). Four grading layers
+each independently honour `Critical`, and a class whose defining step fails BY DESIGN had to teach
+every one of them — which is why the fix converged on ONE bit set at ONE chokepoint: plan
+admission marks the class's check tasks non-critical, and every layer downstream reads the
+reproduction correctly without re-deriving the class. The medic's receipts also moved to the
+store's own `command_check` rows — the failed task's result evidence does not carry the check
+list, because a failing tester returns a failure shape — so producer and gate now read one record.
+The dump instrument added in round two (tasks, evidence rows, diagnosis payloads on every
+load-bearing assertion) is what turned rounds three and four from guesses into one-line reads,
+and it stays in the suite.
+
 ## v0.3.8.100 - created artifacts: a deliverable that exists, or a mission that does not pass
 
 **DETERMINISTICALLY COMPLETE, NOT LIVE-QUALIFIED.** Every claim below is covered by a test that

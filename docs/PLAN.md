@@ -229,11 +229,17 @@ mission does not pass on assessment-shaped records — no receipts, no diagnosis
 troubleshooting class is the first to carry `ExecuteChecks` authority, and exactly that much:
 the allowlisted catalog, never a shell, never Modify.
 
-**A reproduced symptom is success.** The check that fails IS the symptom confirmed, so the failed
-tester task must not demote the grade. The evaluator reads the reproduction narrowly — diagnosis
-gate satisfied AND every failed task a tester task — and grades structural completion while
-RECORDING the honest Partial status and saying so in the explanation. A dead researcher or builder
-still fails the mission; only the reproduction is forgiven, and only when something explained it.
+**A reproduced symptom is success, by one bit set at one chokepoint.** The check that fails IS
+the symptom confirmed, and four grading layers independently honour `Critical` as a disqualifier —
+verification refuses a failed critical task "regardless of what else passed", the controller
+repairs-then-escalates on one, the Queen grades Failed over Partial for one, and the evaluator
+cannot forgive what the layers before it already condemned. So plan admission marks the class's
+check tasks NON-CRITICAL — planner-authored or inserted — and every layer downstream reads the
+reproduction correctly without re-deriving the class: the verification gate reads a non-critical
+check's exit as its verdict, the evaluator's narrow forgiveness (diagnosis satisfied AND every
+failed task a tester task) grades structural completion while RECORDING the honest Partial and
+saying so in the explanation. A dead researcher or builder keeps full criticality in every class;
+only the check lane is expected to fail here, and only in this class.
 
 **Keyed on the specification**, like the audit gate and unlike `.100`'s plan-typing key, because
 intake now classifies the class deterministically (`Diagnose` intent + a nameable target; change
