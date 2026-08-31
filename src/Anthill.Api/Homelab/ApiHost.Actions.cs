@@ -74,7 +74,7 @@ public static partial class ApiHost
         Queen.AdoptModuleTools(Anthill.Modules.Homelab.Actions.SystemActionTools.For(HomelabActions,
             () => Anthill.Core.Conversations.ConversationScope.Evaluate(
                     Anthill.SDK.Contracts.SystemActionToolNames.Execute) is { } decision
-                ? (decision.Allowed, decision.Id, decision.Reason)
+                ? (decision.Allowed, decision.Id, decision.Reason ?? "")
                 : null));
     }
 
