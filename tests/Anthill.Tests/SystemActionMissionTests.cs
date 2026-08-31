@@ -204,7 +204,7 @@ public class SystemActionMissionTests : IDisposable
     private static Artifact OperationRow(string payload) => new()
     {
         Id = "op1", MissionId = "m1", Schema = ArtifactSchemas.SystemOperation,
-        ProducerRole = "system_operator", ContentHash = "sha256:x",
+        ProducerRole = "tester", ContentHash = "sha256:x",
         Visibility = ArtifactVisibility.Colony, Payload = payload,
     };
 
@@ -323,7 +323,7 @@ public class SystemActionMissionTests : IDisposable
             {
               "title": "Perform the operation",
               "description": "Propose the restart with a rollback note, obtain approval, execute and verify.",
-              "assigned_ant": "system_operator",
+              "assigned_ant": "tester",
               "task_type": "system_operation",
               "depends_on": []
             },

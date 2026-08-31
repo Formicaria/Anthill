@@ -87,7 +87,8 @@ the workspace's allowlisted catalog, and anything live.
 REVERSIBLE OPERATION or the mission does not pass: intake derives the system-action class from
 Change intent plus a Service target — the first class under Modify authority, and the Service
 dimension's first resolver since `.98` declared it — the planner ensures the operation step, and
-the new `system_operator` role (the first executable homelab role: the exit line made literal)
+the TESTER's new operation lane (twelve roles is a load-bearing constant; twenty-seven guards
+refused the thirteenth-role draft, and they were right about the design — §2c tells the story)
 reaches the homelab's own approval pipeline through two SDK-named spine tools. Propose captures
 the before-state from the runner's dry-run behind a mandatory rollback note; execute sits in the
 escalation gate's side-effecting set, so the operator's conversation-scoped decision is demanded
@@ -236,21 +237,32 @@ pieces a gate refuses by name: proposal id, before-state, receipt, after-state, 
 the distinct approver. The first class to carry Modify authority — and Modify still does not mean
 autonomy: the model proposes, the human's recorded decision executes.
 
-**The exit line made literal:** the `system_operator` role is the first EXECUTABLE homelab role —
-"existing homelab workers reached through the mission spine, not beside it" — deterministic like
-the tester (no model call anywhere in the class), reaching the real `ActionExecutor` through two
-SDK-named tools. Propose writes a colony-database row and captures the before-state from the
-runner's own dry-run, refusing honestly when it cannot; Execute is listed side-effecting, so the
-dispatch chokepoint demands the conversation-scoped operator decision before the tool body runs,
-and the body stamps WHO approved from that same decision — the lane's identity, never the ant's.
+**Twelve roles is a load-bearing constant — the release's architectural finding.** The first
+draft read the exit line as a role to add and built `system_operator`, a thirteenth executable
+role and the first executable homelab ant. TWENTY-SEVEN guards refused it in one run: the
+named-roles contract, the registry shape, the executable set, both acceptance gates, the
+cancellation matrix, the graduation records, the readiness scan, the tool inventory, and the
+homelab foundation's own pinned sentence — homelab ants are visible but NEVER executable. The
+chorus was ADR-008's "does not license adding roles to appear capable" made structural, and it
+was right about the DESIGN, not merely strict about a count: the "existing homelab workers" of
+the exit line are the PIPELINE's runners, reached by wrapping `ActionExecutor`, not a seat to
+fill beside them. So the lane landed on the TESTER — the spine's deterministic command-runner,
+whose job has always been running allowlisted things and reporting honestly — as a
+`system_operation` task type and an `action_proposer` worker, deterministic like every tester
+lane (no model call anywhere in the class). Propose writes a colony-database row and captures
+the before-state from the runner's own dry-run, refusing honestly when it cannot; Execute is
+listed side-effecting behind the same escalation set `run_allowlisted_check` already sits in, so
+the dispatch chokepoint demands the conversation-scoped operator decision before the tool body
+runs, and the body stamps WHO approved from that same decision — the lane's identity, never the
+ant's.
 
 **Reuses:** the homelab pipeline wholesale (nothing bypassed, nothing duplicated), the escalation
 lane where the permission is the record, the artifact store and schema check as the record's
 carrier, `MissionEvaluator`'s deliverable lane, and the `AddMissing` migration path.
 
 **Connects:** `MissionIntake (system_action, Modify) → Planner.EnsureClassCoverage (operation
-step) → SystemOperatorAnt → propose_system_action (before-state) → escalation chokepoint (the
-operator's decision, recorded) → execute_system_action → ActionExecutor (approve → TOCTOU →
+step) → TesterAnt's operation lane → propose_system_action (before-state) → escalation chokepoint
+(the operator's decision, recorded) → execute_system_action → ActionExecutor (approve → TOCTOU →
 execute → verify) → system_operation record → OperationIntegrity → MissionEvaluator`.
 
 **Exit gate** — the composed acceptance mission (`SystemActionMissionTests`), written before the

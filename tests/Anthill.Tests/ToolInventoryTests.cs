@@ -75,6 +75,18 @@ public class ToolInventoryTests
             registeredNames.Add(name.Groups[1].Value);
         }
 
+        // v0.3.8.102 — a THIRD composition site. The system-action tools are adopted by the API
+        // host (ApiHost.Actions.cs), not by the Queen, because they wrap the homelab ActionExecutor
+        // and only exist where a homelab repository exists. Their Name properties forward the SDK
+        // constants rather than holding string literals — the module may not name Core, and the
+        // SDK is where shared names live — so the literal-lookup regex above cannot read them.
+        // The guard instead asserts the adoption call is present and admits the two SDK names.
+        var apiActionsBody = File.ReadAllText(Path.Combine(
+            Root(), "src", "Anthill.Api", "Homelab", "ApiHost.Actions.cs"));
+        Assert.Contains("SystemActionTools.For(", apiActionsBody);
+        registeredNames.Add(Anthill.SDK.Contracts.SystemActionToolNames.Propose);
+        registeredNames.Add(Anthill.SDK.Contracts.SystemActionToolNames.Execute);
+
         var missing = registeredNames.Except(ToolInventory.Implemented, StringComparer.OrdinalIgnoreCase).ToList();
         var phantom = ToolInventory.Implemented.Except(registeredNames, StringComparer.OrdinalIgnoreCase).ToList();
 

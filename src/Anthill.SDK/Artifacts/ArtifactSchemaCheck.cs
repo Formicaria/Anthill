@@ -151,7 +151,7 @@ public static class ArtifactSchemaCheck
             // (OperationIntegrity names which piece and why), not the shape check's to conflate
             // with malformedness.
             [ArtifactSchemas.SystemOperation] =
-                AsObject("SystemOperatorAnt (stamped from the homelab pipeline's rows)",
+                AsObject("TesterAnt's operation lane (stamped from the homelab pipeline's rows)",
                     "proposal_id", "before_state", "receipt", "after_state"),
 
             // v0.3.8.64 (S6): `{}` conformed, and a gate that accepts an empty object as a map is
