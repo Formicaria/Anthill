@@ -15,7 +15,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "0.3.8.102";
+    public const string Version = "0.3.8.103";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
