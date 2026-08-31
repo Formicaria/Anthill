@@ -145,6 +145,15 @@ public static class ArtifactSchemaCheck
                 AsObject("BuilderAnt (parsed from its deliverable format)",
                     "kind", "content", "requirements", "inputs"),
 
+            // v0.3.8.102. The exit line's three nouns plus the proposal's identity are each
+            // required: a record missing any of them has recorded a description, not an operation.
+            // `rollback_note` and `approved_by` are the GATE's to refuse with a reason
+            // (OperationIntegrity names which piece and why), not the shape check's to conflate
+            // with malformedness.
+            [ArtifactSchemas.SystemOperation] =
+                AsObject("SystemOperatorAnt (stamped from the homelab pipeline's rows)",
+                    "proposal_id", "before_state", "receipt", "after_state"),
+
             // v0.3.8.64 (S6): `{}` conformed, and a gate that accepts an empty object as a map is
             // an existence check wearing a schema check's name. The old comment worried an honest
             // map of a route-less repository would be invalid — but the cartographer has always

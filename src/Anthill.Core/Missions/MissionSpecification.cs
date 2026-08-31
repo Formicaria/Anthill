@@ -126,6 +126,17 @@ public sealed record MissionSpecification
     public const string TroubleshootingClass = "troubleshooting";
 
     /// <summary>
+    /// The infrastructure-action class v0.3.8.102 implements end to end: a change to a SERVICE
+    /// target, reached through the homelab's own approval-gated pipeline and recorded as a
+    /// reversible operation — before-state, receipt, after-state, rollback note, and a distinct
+    /// human approval. The first class to carry <see cref="MissionAuthority.Modify"/>, and Modify
+    /// still does not mean autonomy: the model proposes, the operator's recorded escalation
+    /// decision executes, and every executor gate stands underneath (ADR-008: "every existing
+    /// approval gate is preserved").
+    /// </summary>
+    public const string SystemActionClass = "system_action";
+
+    /// <summary>
     /// True when this specification carries enough to hold the mission to something. A `general`
     /// specification is a record that intake ran and found no class it could serve honestly — the
     /// downstream layers read this rather than testing the class name, so adding a class later

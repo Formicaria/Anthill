@@ -58,7 +58,16 @@ public static class MissionIntake
 
     private static readonly Regex ChangeVerbs = new(
         @"\b(fix|repair|change|modify|add|remove|delete|refactor|implement|rename|update|migrate|"
-      + @"deploy|install|write)\b",
+        // v0.3.8.102: the unambiguous operational verbs — the system-action class's own
+        // vocabulary. They join CHANGE because restarting a container changes the world exactly
+        // as deploying does. Deliberately NOT `start`/`stop`: "start by assessing the colony"
+        // must keep classifying as an audit, and a bare-verb ask like "stop the vm" resolves
+        // `general` — behaving exactly as every change request did before this class existed —
+        // which is recorded in §2c rather than bought with the audit lane's vocabulary. The
+        // known cost of `restart` is recorded there too: a diagnostic question that mentions
+        // restarting classifies as change and, with a service target, enters this lane — where
+        // the worst outcome is a PROPOSAL an operator declines, never an action.
+      + @"deploy|install|write|restart|reboot|power[- ]cycle)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex RepositoryTargets = new(
@@ -73,6 +82,19 @@ public static class MissionIntake
 
     private static readonly Regex CurrentFreshness = new(
         @"\b(now|current(?:ly)?|today|at the moment|right now|present(?:ly)?)\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// v0.3.8.102 — the SERVICE dimension, resolved at last: infrastructure nouns the homelab's
+    /// own action catalog operates on. Deliberately narrow and concrete — a word here admits a
+    /// CHANGE request into the class that proposes real operations, so "the build server is slow"
+    /// must not enter on the strength of "server" alone unless the intent is also Change, and a
+    /// repository-flavoured change ("fix the build in this repo") is excluded by the class
+    /// derivation below rather than by this list guessing.
+    /// </summary>
+    private static readonly Regex ServiceTargets = new(
+        @"\b(container|docker|compose|vm|virtual machine|proxmox|pve\w*|hyper-?v|vsphere|"
+      + @"host|node|homelab|service|daemon|media[- ]server|plex|overseerr|uptime[- ]?kuma)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     /// <summary>
@@ -116,6 +138,20 @@ public static class MissionIntake
     };
 
     /// <summary>
+    /// Capability ids a system-action mission requires. v0.3.8.102. `propose_system_action` leads
+    /// for the standing reason: the class's defining step resolves first, and the capability is
+    /// deliberately named for PROPOSING — what the worker may do alone — not for executing, which
+    /// no capability grants because execution is the operator's recorded decision. Declared by the
+    /// system operator's worker in the same release, per the standing precedent.
+    /// </summary>
+    public static readonly IReadOnlyList<string> SystemActionCapabilities = new[]
+    {
+        WorkerCapabilities.ProposeSystemAction,
+        WorkerCapabilities.CompileResult,
+        WorkerCapabilities.VerifyResultCompleteness,
+    };
+
+    /// <summary>
     /// Resolve the specification. Never throws, and never returns null: a request it cannot
     /// classify becomes <see cref="MissionSpecification.General"/>, which constrains nothing.
     /// </summary>
@@ -130,10 +166,40 @@ public static class MissionIntake
 
         // THE CLASS IS DERIVED, and only when the dimensions agree on something this release can
         // actually serve. Assessment of the repository and/or the runtime is a system audit;
-        // diagnosis of a symptom about a nameable target is troubleshooting (v0.3.8.101). Change
-        // intent remains a real class with no machinery (ADR-008: .102 and later) and resolves to
-        // `general` — and change OUTRANKS diagnose in `ResolveIntent`, so "find out why and fix it"
-        // cannot enter the diagnostic lane carrying repair intent.
+        // diagnosis of a symptom about a nameable target is troubleshooting (v0.3.8.101); a CHANGE
+        // to a SERVICE target is a system action (v0.3.8.102). Change intent aimed anywhere else —
+        // including the repository, which is the coding lane every prior release protects —
+        // resolves to `general` exactly as before.
+        //
+        // v0.3.8.102 — THE FIRST CHANGE CLASS, and the narrowest derivation in this method: it
+        // requires the Service flag SPECIFICALLY, not merely "any target", because admitting a
+        // change request here is admitting it to the lane that proposes real operations. A change
+        // request that names both the repository and a service ("fix the deploy script and restart
+        // the container") still enters — the class only PROPOSES, execution is human-gated, and
+        // the repository half of such an ask correctly fails the class gate rather than silently
+        // becoming a patch. Misclassification cost is a proposal card an operator declines, never
+        // an action.
+        if (intent == MissionIntent.Change && targets.HasFlag(MissionTargets.Service))
+            return new MissionSpecification
+            {
+                OriginalRequest = request,
+                MissionClass = MissionSpecification.SystemActionClass,
+                Intent = MissionIntent.Change,
+                Targets = targets,
+                Freshness = MissionFreshness.Current,
+                // MODIFY — the first class to carry it, and what it grants is exactly the homelab
+                // action catalog behind its own approval gate: the model proposes, the operator's
+                // recorded escalation decision executes, the executor's TOCTOU/rollback/kill-switch
+                // gates stand underneath. Never a shell, never the patch lane.
+                Authority = MissionAuthority.Modify,
+                Deliverables = ResolveDeliverables(request),
+                RequiredCapabilities = SystemActionCapabilities,
+                // The gate is record-keyed on the `system_operation` artifact rather than on an
+                // evidence kind: the operation's own pieces are the receipts, and
+                // `OperationIntegrity` refuses each absence by name.
+                RequiredEvidence = Array.Empty<string>(),
+            };
+
         if (intent == MissionIntent.Diagnose && targets != MissionTargets.None)
             return new MissionSpecification
             {
@@ -203,6 +269,10 @@ public static class MissionIntake
         var targets = MissionTargets.None;
         if (RepositoryTargets.IsMatch(request)) targets |= MissionTargets.Repository;
         if (RuntimeTargets.IsMatch(request)) targets |= MissionTargets.Runtime;
+        // v0.3.8.102: the Service flag existed since `.98` with nothing resolving it — a dimension
+        // declared and reaching nobody, this repository's named defect, closed the release the
+        // first class needs it.
+        if (ServiceTargets.IsMatch(request)) targets |= MissionTargets.Service;
         return targets;
     }
 
@@ -298,6 +368,12 @@ public static class WorkerCapabilities
     /// the capability behind <see cref="MissionAuthority.ExecuteChecks"/>, and deliberately not
     /// "run commands": what it grants is the catalog, not a shell.</summary>
     public const string ExecuteDiagnosticChecks = "execute_diagnostic_checks";
+
+    /// <summary>Propose an allowlisted infrastructure action into the homelab's approval-gated
+    /// pipeline, with a rollback note and a captured before-state. v0.3.8.102 — deliberately
+    /// PROPOSE: execution is the operator's recorded escalation decision, and no capability
+    /// grants it.</summary>
+    public const string ProposeSystemAction = "propose_system_action";
 
     /// <summary>Read prior mission and objective memory.</summary>
     public const string RecallMissionHistory = "recall_mission_history";

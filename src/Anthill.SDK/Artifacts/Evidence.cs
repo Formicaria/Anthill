@@ -248,6 +248,15 @@ public static class ArtifactSchemas
     public const string CreatedArtifact = "created_artifact";
 
     /// <summary>
+    /// A system operation — before-state, receipt, after-state, rollback note, and the distinct
+    /// human approval, stamped from the homelab pipeline's own rows. v0.3.8.102. See
+    /// <see cref="Artifacts.SystemOperation"/>; `OperationIntegrity` refuses each absent piece by
+    /// name. Admitted to the vocabulary, the bridge and the shape table in the same change — the
+    /// `.100` lesson, applied in advance rather than relearned.
+    /// </summary>
+    public const string SystemOperation = "system_operation";
+
+    /// <summary>
     /// v3.8.20 — added when the ant bridge was built, because the medic already emits
     /// <c>repair_recommendation</c> and five of the other six kinds ants emit mapped exactly onto
     /// the list above. A schema the colony already produces and the vocabulary did not name is a
@@ -308,7 +317,7 @@ public static class ArtifactSchemas
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             RepositoryMap, FileSet, UiMap, ChangePlan, PatchSet, TestReport, DeliverableLedger,
-            SourcedAnswer, RecallSet, CreatedArtifact,
+            SourcedAnswer, RecallSet, CreatedArtifact, SystemOperation,
             SecurityReview, FailureDiagnosis, VerificationBundle, OperatorSummary,
             ReleaseNotes, MemoryCandidate, RepairRecommendation, SourceSet, WorkspaceSnapshot,
             FailureContext, DocsPatchSet, ResearchBrief,
@@ -364,6 +373,7 @@ public static class ArtifactSchemas
         "source_set" => SourceSet,
         "sourced_answer" => SourcedAnswer,
         "created_artifact" => CreatedArtifact,
+        "system_operation" => SystemOperation,
         "recall_set" => RecallSet,
         "docs_patch_set" => DocsPatchSet,
         "research_brief" => ResearchBrief,
