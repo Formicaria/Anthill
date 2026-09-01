@@ -156,7 +156,7 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
             ["researcher"] = new ResearcherAnt(Memory, Tools, Router),
             ["web"] = new WebResearchAnt(Memory, Tools, Router),
             ["file"] = new FileAnt(Tools),
-            ["coder"] = new CoderAnt(options.UseOllama, Router, (Anthill.SDK.Artifacts.IArtifactStore)Memory),
+            ["coder"] = new CoderAnt(options.UseOllama, Router, (Anthill.SDK.Artifacts.IArtifactStore)Memory, Memory),
             ["builder"] = new BuilderAnt(options.UseOllama, Router, (Anthill.SDK.Artifacts.IArtifactStore)Memory),
             ["verifier"] = new VerifierAnt(options.UseOllama, Router, (Anthill.SDK.Artifacts.IEvidenceStore)Memory, (Anthill.SDK.Artifacts.IArtifactStore)Memory),
             // Stage D canary 1: handler registered unconditionally (implemented), but the role only
@@ -687,7 +687,18 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // explicitly from here on. Constraints are parsed exactly once; the deadline is an
         // ABSOLUTE instant anchored to the mission's own start, so a resumed run compares against
         // the same wall-clock boundary the original did instead of restarting its clock.
-        var context = MissionContext.Create(mission, profile, missionStartedAt);
+        // Persist the mission row before anything references it: `events`, and as of v0.3.8.104
+        // `mission_contracts`, both carry FK constraints on `missions(id)`. This save used to sit
+        // twelve lines below, which was fine while events were the only dependant and wrong the
+        // moment the contract joined them — the whole suite failed on `FOREIGN KEY constraint
+        // failed` from a table that did not exist a day earlier.
+        Memory.SaveMission(mission);
+
+        // v0.3.8.104 — the contract is RECORDED here, once, before anything reads it. A resumed or
+        // replayed mission loads the one it was admitted under rather than acquiring a new one from
+        // whatever intake says today.
+        var contract = Missions.MissionContracts.LoadOrCreate(Memory, mission);
+        var context = MissionContext.Create(mission, profile, missionStartedAt, contract);
 
         // One token governs the whole mission: external cancel OR the deadline, whichever comes first.
         using var missionCts = CancellationTokenSource.CreateLinkedTokenSource(cancel);
@@ -699,8 +710,6 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         missionCts.CancelAfter(context.Remaining(AnthillTime.NowUtc()));
         using var modelScope = ModelCallScope.Enter(missionCts.Token);
 
-        // Persist the mission row before any LogEvent calls so FK constraints on events(mission_id) are satisfied.
-        Memory.SaveMission(mission);
         onMissionCreated?.Invoke(mission.Id);
 
         // v3.5.0 — a mission permitted to WRITE gets its own workspace, and every file operation for
@@ -764,6 +773,53 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // v3.1.0 (ADR-001): planning is a service. The Queen says WHEN a plan is made and owns
         // everything that happens to it afterwards; it no longer also implements how one is built.
         mission.Tasks = _planning.CreatePlan(context);
+
+        // v0.3.8.104 — PREFLIGHT, BEFORE ANYTHING RUNS.
+        //
+        // Every gate this program built before now answers "did the mission deliver", after the
+        // model calls, the tool dispatches and the operator's wait are already spent. This asks the
+        // half that is answerable in advance: is anything in this plan even POSITIONED to deliver.
+        // It runs after class coverage has supplied what it supplies, so it refuses only what the
+        // runtime cannot repair — the `.98` rule that a plan must not be rejected for a step the
+        // runtime knows how to add.
+        //
+        // A capability blocker is not a failure. Nothing broke and nothing was attempted; the
+        // colony cannot do a thing this mission requires, and it will not be able to on a retry.
+        // `blocked_missing_capability` says that, where `failed_permanent` would invite the one
+        // response guaranteed to be useless.
+        var preflight = Planning.MissionPreflight.Check(mission.Tasks, context.Specification);
+        if (!preflight.Ok)
+        {
+            Memory.LogEvent(mission.Id, "mission_preflight_refused", preflight.Explanation,
+                metadata: new()
+                {
+                    ["blockers"] = preflight.Blockers.Select(b => new Dictionary<string, object?>
+                    {
+                        ["code"] = b.Code, ["subject"] = b.Subject, ["detail"] = b.Detail,
+                    }).ToList(),
+                    ["capability_blocked"] = preflight.IsCapabilityBlocked,
+                });
+
+            mission.Status = MissionStatus.Failed;
+            mission.FinalResult = preflight.Explanation;
+            mission.UserResult = preflight.Explanation;
+            Memory.SaveMission(mission);
+            Memory.SaveMissionEvaluation(new Outcomes.MissionEvaluation(
+                MissionId: mission.Id,
+                OutcomeCode: preflight.IsCapabilityBlocked
+                    ? Outcomes.MissionOutcome.BlockedMissingCapability
+                    : Outcomes.MissionOutcome.FailedPermanent,
+                StructuralStatus: mission.Status.Value(),
+                VerificationStatus: Outcomes.MissionEvaluation.Verification.NotRun,
+                DeliverableStatus: Outcomes.MissionEvaluation.Deliverable.NotSatisfied,
+                StopReason: "preflight_refused",
+                EvaluatorVersion: "preflight-v1",
+                EvaluatedAt: AnthillTime.NowUtc().ToIso(),
+                Explanation: preflight.Explanation));
+            // onMissionCreated already fired at admission — a refused plan is still a mission the
+            // caller was told about, and firing twice would make one mission look like two.
+            return mission.Id;
+        }
 
         foreach (var task in mission.Tasks)
             Memory.LogEvent(mission.Id, "task_created", $"Task created for {task.AssignedAnt}: {task.Title}", task.Id, task.AssignedAnt,

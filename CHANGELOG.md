@@ -1,3 +1,124 @@
+## v0.3.8.104 - the mission contract: what it was admitted as, enforced under ordinary defaults
+
+**THE PREREQUISITE RELEASE.** Not a new mission class — the debt six classes were built on. `.105`
+(recovery) and `.106` (answer coverage) both depend on a mission's specification being a fact rather
+than a re-derivation, so this went in front of them rather than after.
+
+**A MISSION'S CLASS WAS NOT A FACT ABOUT THE MISSION.** `MissionContext.Create` called
+`MissionIntake.Resolve(mission.Goal)` on every context it built, and three further sites re-derived
+meaning from the same string independently — the adaptive controller's troubleshooting check, the
+medic's, and the coder's constraint check. Nothing was persisted. So class, deliverables, authority
+and constraints were facts about whatever the intake rules said at the moment of asking.
+
+`.103` is the proof rather than the hypothesis: it added a mission class and four verbs to intake.
+Every mission stored before it therefore reclassifies when read today — against `.98`'s own stated
+rule that a grade has to be reproducible from the persisted record. It was not, and nothing could
+say so.
+
+**THE CONTRACT IS WRITTEN ONCE AND READ FOREVER AFTER:** specification, constraints, verification
+policy, and the intake ruleset that produced it. A SEPARATE TABLE rather than columns on `missions`,
+because `SaveMission` is an `INSERT OR REPLACE` and the evaluation columns already learned that the
+hard way — a contract an unrelated save could erase would not be one. Write-once is enforced at the
+`INSERT OR IGNORE`, so a resumed or replayed mission cannot acquire a new contract by running again.
+
+A mission older than contracts resolves one at read and is MARKED as such. Its specification is what
+today's rules say, which is not what it was admitted as, and flattening that distinction would
+reintroduce this release's defect one layer down: a record that cannot say whether it is a record.
+
+**FOUR CALL SITES REMOVED, AND A SOURCE-SHAPE GUARD SO A FIFTH CANNOT GROW BACK.** The convention
+already existed and was not enough — ADR-002 said constraints are parsed once at intake, and
+`Ants.cs` parsed them again anyway. Two of the four carried comments arguing that re-resolving was
+SAFE because intake is pure and deterministic. That was true, and it was true only while the rules
+stood still, which is exactly what `.103` stopped being.
+
+**OBJECTIVE VERIFICATION IS NO LONGER OPTIONAL FOR A RECOGNIZED CLASS, and this is the finding an
+operator will feel.** `objective_verification_enabled` ships false. `AssessmentObjective` (`.98`),
+`CitationIntegrity` (`.99`), `CreationIntegrity` (`.100`), `DiagnosisIntegrity` (`.101`),
+`OperationIntegrity` (`.102`) and `ExternalActionIntegrity` (`.103`) all sat behind it. Every one of
+those releases said "deterministically qualified" and meant it honestly — the suite turned the flag
+on. Nobody's install did. On a default colony the entire enforcement layer six releases built was
+inert, and each release's exit gate was proved in a configuration no operator runs.
+
+The flag is not removed: it still governs the general and coding lanes, where flipping it would
+change how existing installs grade work they already do. A recognized class stops asking. And it
+FAILS CLOSED — a gate that could not run grades `not_satisfied` naming the reason, never
+`not_checked`. "We could not tell" must not read as "yes" for a class whose whole promise is that
+something specific happened.
+
+**PREFLIGHT, BEFORE ANYTHING RUNS.** Every gate this program built answers "did the mission
+deliver", after the model calls and the operator's wait are spent. Preflight asks the half that is
+answerable in advance: does every deliverable have a producer, every criterion a verifier, every
+task a resolvable worker, every dependency a real target, and is anything orphaned. It runs AFTER
+class coverage — `.98`'s rule that a plan must not be refused for a step the runtime knows how to
+add — so anything it rejects that coverage could have supplied is a bug in coverage.
+
+**`blocked_missing_capability` JOINS THE OUTCOME VOCABULARY**, seven releases after `.98` named it
+as needed. Not a failure: nothing broke and nothing was attempted. Not a learning signal either — a
+mission blocked for want of a worker says nothing about the workers that exist, so nothing
+reinforces or retires on it. And a mandatory capability nothing serves now refuses instead of
+falling through to a keyword match, narrowly: only a task carrying its OWN `RequiredCapability`,
+because a task measured against the mission-wide list is advisory and refusing those would break
+every mission that plans a role outside its class's list.
+
+**THE `.103` CEILING IS READ AT THE DISPATCH CHOKEPOINT, and two drafts of it were wrong.** The
+first narrowed the ceiling by the role contract's `AllowsSideEffects` — which is FALSE for the
+tester, the role carrying `.102`'s and `.103`'s execute lanes, so it would have refused both classes
+at their own gate. The second applied the ceiling to every mission — and `MissionSpecification.
+General` defaults to `Observe`, meaning "intake did not classify this" rather than "read-only", so
+it would have refused `apply_patch` on every coding mission in the colony. The ceiling applies only
+where intake actually decided one. Both drafts are recorded because the near-miss is the useful part.
+
+And the four-source accounting `.103` deferred turns out to be three gates already standing at that
+chokepoint in sequence: specification here, worker contract in `ToolAuthorization` above, operator
+policy in `ConversationScope` below, adapter in the requirement table itself. Written down so the
+next reader does not collapse them — they refuse different things and none substitutes for another.
+
+**THE LIVE QUALIFICATION RECORD HAS A CALLER FOR THE FIRST TIME.** `LiveQualificationRecord` has
+been complete, tested and correct since `.89`, and `QUALIFICATION.md` §3 has carried "an exported
+`LiveQualificationRecord`" as an open exit item since `.97` — through seven releases. The reason was
+not difficulty. `LiveQualificationRecord.For` had no production caller at all; only tests. The item
+was open because nothing could produce one. `anthill --live-qualification <mission-id> [--json
+<path>]` reads a mission that actually ran, out of the operator's own store, and writes the record —
+printing every unmeasured field under its own heading rather than as a zero, because a report that
+shows `0` for something nothing records satisfies the table while telling the operator something
+false.
+
+**THE DASHBOARD'S ROLE LIST IS DERIVED RATHER THAN REMEMBERED.** `/ants/stats` carried a
+hand-written array of eight names and had drifted from the registry three ways at once: it listed
+`strategist`, which is not a registered role; it showed a model route for `file`, whose contract
+declares `AllowsModelCalls: false`; and it omitted the six specialists executable under the shipped
+profile. A second copy of the truth maintained by hand beside a computed one —
+`ToolInventoryTests` has guarded exactly that shape for tools in both directions for releases, and
+nothing guarded it for roles, which is how one list managed to be wrong three ways at once.
+
+**THE `.97` WINDOWS RESIDUAL: INVESTIGATED, NOT FIXED, AND THE HYPOTHESIS WAS WRONG.** The
+verification sandbox copies the workspace with a bound of 5000 files and, until now, stopped at that
+bound with a bare `break` — silently. A repository over the bound produced a sandbox missing an
+arbitrary, filesystem-enumeration-order-dependent set of files, and the only symptom was a build or
+test failure inside it that said nothing about why. Different order on a different OS means a
+different set missing, which is the exact shape of a failure that reproduces on one machine and not
+another. That fit every observed property of the residual — and this repository has 792 eligible
+files against a bound of 5000, so it is NOT the cause. The truncation is a real defect regardless
+and is now loud: the sandbox records it, and `PatchSetMaterializer` refuses to verify inside an
+incomplete copy rather than reporting a verdict about a tree that does not exist. A second defect
+found in the same path: the `bin`/`obj` exclusion tested for `{sep}bin{sep}`, which a TOP-LEVEL
+`bin/` does not match, so a build output directory at the repository root was copied into every
+sandbox. The residual itself remains undiagnosed and carried.
+
+**WHAT `.104` DID NOT CLOSE, named rather than implied.** The citation gate was asked for two
+triggers — contract-requires-sources OR sources-were-retrieved — and only the second exists. The
+first has nothing to read: there is no `research` mission class (the `.99` divergence), no evidence
+kind meaning "a source was retrieved", and no capability a research mission could require. A trigger
+keyed on any of those would be a branch nothing reaches, which is the defect this release exists to
+close, reintroduced by the release closing it. It needs the research class itself — new verbs, a new
+target, and an ordering decision against four existing branches — and doing that as an addendum is
+how a request gets silently rerouted into the wrong lane. `PLAN.md` §2c carries it as the remaining
+half.
+
+Also still open: `ObjectiveVerification.Required(goal, constraints)` re-reads the goal in the
+UNRECOGNIZED lane only, and changing it would alter coding-lane grading; and the live pack itself,
+which is now one command away but still needs a real provider and an operator to press go.
+
 ## v0.3.8.103 - external actions: an approved send to a resolved target, or a mission that says it did not send
 
 **DETERMINISTICALLY QUALIFIED, NOT LIVE-QUALIFIED, AND SHIPPED CONFIGURED-OFF.** The class works

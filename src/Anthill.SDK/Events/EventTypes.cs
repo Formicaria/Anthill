@@ -151,6 +151,16 @@ public static class EventTypes
     /// capability set, so the repair can be judged rather than merely noticed.
     /// </summary>
     public const string WorkerRepairedByCapability = "worker_repaired_by_capability";
+
+    /// <summary>v0.3.8.104 — a compiled plan was refused before execution, with every blocker
+    /// named. Distinct from a failed mission: nothing ran, and a capability blocker will refuse
+    /// identically on a retry.</summary>
+    public const string MissionPreflightRefused = "mission_preflight_refused";
+
+    /// <summary>v0.3.8.104 — a tool dispatch refused because the mission's authority ceiling does
+    /// not reach it. Distinct from an escalation refusal: nobody was asked, because the answer
+    /// would not have mattered.</summary>
+    public const string AuthorityCeilingRefused = "authority_ceiling_refused";
     public const string SkillCandidateRegistered = "skill_candidate_registered";
     public const string SkillOutcomeRecorded = "skill_outcome_recorded";
     public const string LearningReset = "learning_reset";

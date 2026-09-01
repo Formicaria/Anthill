@@ -39,17 +39,61 @@ public sealed class SandboxWorkspace : IDisposable
         }
         Directory.CreateDirectory(target);
         var copied = 0;
+        var truncated = false;
         foreach (var file in Directory.EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories))
         {
             var rel = Path.GetRelativePath(sourceRoot, file);
-            if (rel.StartsWith(".git") || rel.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
-                || rel.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")) continue;
-            if (++copied > maxCopyFiles) break; // bounded — a sandbox is not a backup
+            if (IsExcluded(rel)) continue;
+            if (++copied > maxCopyFiles)
+            {
+                // v0.3.8.104 — the bound still holds and it no longer holds SILENTLY. This was a
+                // bare `break`, so a repository over the bound produced a sandbox missing an
+                // arbitrary, filesystem-order-dependent set of files — and the only symptom was a
+                // build or test failure inside the sandbox that said nothing about why. Different
+                // enumeration order on a different OS means a different set is missing, which is
+                // the exact shape of a failure that reproduces on one machine and not another.
+                truncated = true;
+                break;
+            }
             var dest = Path.Combine(target, rel);
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
             File.Copy(file, dest);
         }
-        return new SandboxWorkspace(target, "copy", sourceRoot);
+
+        var sandbox = new SandboxWorkspace(target, "copy", sourceRoot) { Truncated = truncated };
+        if (truncated)
+            Console.Error.WriteLine(
+                $"[sandbox] TRUNCATED: {sourceRoot} has more than {maxCopyFiles} eligible files, so "
+              + "this sandbox is an incomplete copy. Any build or test run inside it is measuring a "
+              + "tree that does not exist. Raise maxCopyFiles or use a git worktree.");
+        return sandbox;
+    }
+
+    /// <summary>
+    /// TRUE when this sandbox is an INCOMPLETE copy of its source. v0.3.8.104.
+    ///
+    /// Never true for a worktree sandbox, which is complete by construction. A caller that verifies
+    /// anything inside a truncated sandbox is measuring a tree that does not exist anywhere, so the
+    /// materializer refuses rather than reporting the result.
+    /// </summary>
+    public bool Truncated { get; private init; }
+
+    /// <summary>
+    /// v0.3.8.104 — build outputs and git metadata, excluded at ANY depth including the top level.
+    ///
+    /// The previous test asked whether the relative path CONTAINED `{sep}bin{sep}`, which a
+    /// top-level `bin\Foo.dll` does not: its relative path has no leading separator, so a build
+    /// output directory at the repository root was copied into every sandbox. Segment comparison
+    /// answers the question the check was always trying to ask.
+    /// </summary>
+    private static bool IsExcluded(string relativePath)
+    {
+        foreach (var segment in relativePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+            if (segment.Equals(".git", StringComparison.OrdinalIgnoreCase)
+                || segment.Equals("bin", StringComparison.OrdinalIgnoreCase)
+                || segment.Equals("obj", StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
     }
 
     /// <summary>Copy selected artifacts OUT of the sandbox (relative paths). This is the only
