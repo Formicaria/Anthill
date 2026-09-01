@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.105**.
+Shipping release: **v0.3.8.106**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -112,23 +112,21 @@ authority a mission must hold, swept so no member of the escalation set can omit
 What is NOT claimed: a send that reached anything. The adapter ships composed and the
 destination map ships EMPTY, so a fresh install refuses every send by name.
 
-**What v0.3.8.105 changes, and how far.** A mission that stops short now says WHICH of three
-things stopped it, in words that decide what the operator does next. A task whose worker cannot
-serve the capability it requires is rerouted at the dispatch chokepoint — before the durable claim,
-before the model call — or refused outright when nothing in its role can serve it; that closes the
-gap `.104` left, because `MissionPreflight` checks the compiled plan and every task admitted after
-it (handoffs, delta plans, repairs, inserted reviews) reached dispatch unexamined. A side-effecting
-action nobody answered PAUSES the mission rather than failing it, files an operator decision in the
-existing approval ledger, and grades as `waiting_for_approval` — a code the vocabulary has carried
-since v2.19.0 with no writer. And an exhausted repair loop whose failure was recorded twice now
-stops as `repeated_failure` rather than as a bound that says "not the problem" when reproducibility
-IS the problem — the loop's own generations are untouched, with recovery finally consulting the
-`FailureClass` taxonomy it never asked: a policy denial is no longer retryable because a caller
-passed a hopeful bool.
+**What v0.3.8.106 changes, and how far.** The operator's request is now the OUTLINE of the answer,
+not merely its input. Each thing they asked for is a section; each section's content is the recorded
+output of the task that served it; a request nothing served says so in the answer itself, and fails
+coverage, and the mission is not verified. The role-based pick that produced the answer — last
+completed builder, else coder, else anything — is gone as an answer path: it survives only as the
+single section an unspecified mission has, rendered byte for byte as before, which is what lets one
+assembly path serve the coding lane untouched. And work can now build on work: a mission may read an
+artifact an earlier mission produced, by id, if that mission reached a verified outcome — with the
+consumption ledger finally able to say WHO READ IT as distinct from who produced it, a distinction
+it has been unable to make since `.57` because the two had always been the same value.
 
-What is NOT claimed: a paused mission does not resume itself. Approving the request settles the
-question and the outcome stops saying "waiting"; re-running the refused step is `.106`'s continuity
-work and is recorded as open rather than approximated. Nothing live, still. See
+What is NOT claimed: coverage judges structure, never quality — a section with one dismissive
+sentence is covered, and `.98`'s refusal to grade on vocabulary is honoured rather than revisited.
+Continuity is READ-side: a paused mission still does not resume its refused step, and that is
+recorded in §2c rather than approximated. Nothing live, still. See
 [`ADR-008`](adr/ADR-008-universal-mission-lifecycle.md) §1 for the evidence and §2 for the contract
 the `.98`–`.107` sequence exists to satisfy.
 
@@ -205,7 +203,8 @@ through the real application. **Ext.** = requires an external adapter, connectio
 | Operator-decision pause | yes | yes | **yes** | no | `.105`: an unanswered side-effecting action files a pending `ToolUse` approval and the mission grades `waiting_for_approval` instead of failed. It does NOT resume itself — that is `.106` |
 | Dynamic repair (Medic) | partial | yes | partial | no | bounded repair exists; at its bound the stop now NAMES a reproducible failure instead of only the spent budget (`.105`). The loop's generations are unchanged — a recurrence explains a stop and never causes one. Still not evidence-driven |
 | Recovery decisions | yes | yes | **yes** | no | `.105`: `RecoveryOrchestrator` consults the `FailureClass` taxonomy — a denial is never retried, an unclassified failure escalates for evidence, and a typed class narrows a caller's optimism without ever widening it |
-| Multi-mission continuity | no | — | no | no | `.106` |
+| Multi-mission continuity | yes | yes | **yes** | no | `.106`: `read_artifact` reads an EARLIER mission's artifact by id, refused unless that mission graded `completed_verified`; the consumption ledger records who read it as distinct from who produced it. READ-side only — a paused mission does not resume its refused step |
+| Answer coverage | yes | yes | **yes** | no | `.106`: the answer is assembled section by section from the specification, and an unanswered request demotes the mission. Claim-and-served, never a word search — `MissionDeliverable.Subject` stays unread by design |
 | Pheromone / skill learning | yes | yes | yes | no | positive learning restricted to `completed_verified` |
 | Objective verification (non-code) | yes | **yes — recognized classes** | **yes** | no | `.104`: a recognized class (`system_audit`, `troubleshooting`, `system_action`, `external_action`) no longer consults `objective_verification_enabled` and FAILS CLOSED when its gate cannot run. The flag still governs the general and coding lanes. Six releases of gates were inert on a default install until this |
 
@@ -214,7 +213,7 @@ see `DocumentationConsistencyTests`.
 
 ---
 
-## 2b. The universal-workflow program — v0.3.8.105 → v0.3.8.108
+## 2b. The universal-workflow program — v0.3.8.106 → v0.3.8.108
 
 **This is the current forward sequence.** It supersedes the earlier framing in which R4–R10 were
 the next thing to run; those items are not deleted, and each release below names the R-items it
@@ -244,8 +243,7 @@ past.
 
 | Release | Operator-visible capability | Exit gate |
 |---|---|---|
-| **.105** | Dynamic replanning, clarification, bounded Medic repair | §2c below |
-| **.106** | Answer coverage, objective outcomes, multi-mission continuity | the general last-worker-output fallback is **removed**: every answer is assembled specification → deliverable → evidence → answer section; a second mission consumes the first's verified artifact by id; an omitted requested section fails coverage |
+| **.106** | Answer coverage, objective outcomes, multi-mission continuity | §2c below |
 | **.107** | Verified route learning; the existing qualification matrix extended | a learned route improves a compatible later mission without overriding compatibility, authority or evidence |
 | **.108** | Live multi-class qualification, hardening, documentation reconciliation | the live pack across classes, recorded from the store; every capability-table row reconciled to measured status; **a test ant registers by declaration alone and passes qualification with no change to Queen, planner, scheduler or assembler** |
 
@@ -262,92 +260,88 @@ Rules binding every release in this program:
   became API-editable with no control rendering it, so an operator following the changelog looked
   for a switch that did not exist.
 
-### 2c. v0.3.8.105 — a mission that stops says what it is waiting for
+### 2c. v0.3.8.106 — the answer is built from what was asked
 
-**Delivers:** the three ways a mission can stop short, told apart and told truthfully. A task whose
-worker cannot serve what it requires is rerouted before it runs — or refused, if nothing in its role
-can. A side-effecting action nobody answered PAUSES the mission instead of failing it, and files the
-question the operator has to answer. A defect that has already come back makes the mission stop for THAT
-reason rather than for a bound that says nothing about it, and recovery finally consults the
-failure taxonomy the rest of the colony classifies with.
+**Delivers:** the operator's request becomes the outline of the answer. Each thing they asked for is
+a section; each section's content is the recorded output of the task that served it; a request
+nothing served says so in the answer rather than only in a ledger. A request left unanswered fails
+coverage and the mission is not verified. And a mission can read an artifact an EARLIER mission
+produced, by id, provided that mission reached a verified outcome.
 
-**Why these three together.** They are one property seen from three sides: a mission that cannot
-finish must say WHY in words that decide what the operator does next. A wrong worker, an unanswered
-question and a returning defect were all reaching the same place — a failed mission — and all three
-invited the same useless response, a retry.
+**What "the fallback is removed" means precisely.** `ResultAssembler` picked a task by ROLE — last
+completed builder, else coder, else anything — and handed over its raw text; `.98` recorded that in
+its own words ("never read it at all"). There is now ONE assembly path. A mission whose
+specification declares deliverables is rendered section by section and synthesis is skipped, for
+`.99`'s reason: a rewrite can drop a section. A mission that declares none has exactly one section
+whose content is the raw output byte for byte, and synthesis proceeds as before — which is what
+makes a single path safe for the coding lane, the only lane qualified live.
 
-**Reuses:** the existing `FailureClass` taxonomy and its three predicates (extended into recovery,
-never replaced or flattened); the `approval_requests` ledger and `ApprovalActionType.ToolUse`; the
-`failure_context` artifacts and their semantic signatures; `MissionStopReasons` and the
-`MissionOutcome` vocabulary; `AntRegistry.ResolveByCapability`. No parallel ledger, no second
-vocabulary, no new table.
+**Coverage is claim-and-served, never a word search**, and that is `.98`'s judgement honoured rather
+than revisited: "an answer reading 'Strengths: … Weaknesses: …' addresses 'what is good and bad
+about it' completely and contains neither word, and a gate that demoted it would make every real
+gate less trustworthy." `MissionDeliverable.Subject` is populated at intake, offers itself for
+exactly that check in its own doc comment, and stays unread — with a guard that keeps it so.
 
-**Connects:** `ExecutionService.RunSingleTask → TaskReroute (before the claim) → AntRuntime.Resolve`;
-`ToolRegistry.RunTool → EscalationGate → approval_requests → Queen.Finalize → MissionEvaluator`;
-`ExecutionService.ApplyAdaptiveDecision → FailureRecurrence → AdaptiveMissionController → MedicAnt`.
+**Reuses:** the deliverable ledger and its claim vocabulary; the artifact store, its schema registry
+and the consumption ledger; `MissionOutcome.IsPositiveSuccess` as the lineage gate; the six existing
+integrity gates' shape. No parallel ledger, no second vocabulary.
 
-**Exit gate** — named tests, all against production paths under ordinary defaults:
+**Connects:** `MissionSpecification → DeliverableLedger → AssembledAnswer → ResultAssembler` for what
+is read, and `→ AnswerCoverage → MissionEvaluator` for what is graded;
+`ReadArtifactTool → MissionEvaluation (the producing mission's grade) → ToolRegistry (the consumer
+identity) → artifact_consumptions`.
 
-- reroute: `WrongWorker_IsReroutedBeforeDispatch`, `ARerouteNeverCrossesRoles`,
-  `ACapabilityNoWorkerServes_RefusesDispatch`, `ACompatibleWorker_IsLeftAlone`,
-  `ATaskWithNoDeclaredCapability_IsUntouched`, `TheRerouteRunsBeforeTheClaimAndTheModelCall`
-  (source-shape: the gate's value is positional, and position is invisible to behavioural tests);
-- pause: `AnUnansweredSideEffect_PausesRatherThanFails`, `APausedMission_NamesWhatItIsWaitingFor`,
-  `ARejectionIsAnAnswer_AndAnAbsentDecisionIsAQuestion`, `AStoppedMission_IsNotReportedAsWaiting`,
-  `APendingPatchApproval_DoesNotPauseTheMission`, `APendingToolDecision_IsReadBackByName`,
-  `AMissionWithNoPendingDecision_IsUnaffected`, `TheMissionLane_FilesTheQuestionItRefusesOn`
-  (missions run OUTSIDE the ambient conversation scope, so a pause wired only there would have been
-  invisible to every mission ever run), `AnAnsweredQuestion_IsNotAskedAgain`, and the composed pair
-  through the real composition root in `ExternalActionMissionTests` — the approved run leaves no
-  outstanding question, the unapproved run files one and the evaluation names it;
-- recurrence and recovery: `ARecurrenceIsTwoTasks_NotOneTaskTwice`,
-  `TwoDifferentFailures_AreNotARecurrence`,
-  `ARecurrence_NeverPreemptsARepairGeneration`, `ARepeatedFailure_ExplainsTheStopAtTheBound`,
-  `ARepeatedFailure_StopsWithItsOwnReason`, `OnlyTheArmThatUsedTheRecurrence_ReportsIt`,
-  `RecoveryNeverRetriesADenial`, `RecoveryNeverRetriesARecurrence`,
-  `RecoveryNeverRetriesAnUnclassifiedFailure`, `RecoveryWithoutATypedClass_IsUnchanged`,
-  `ATypedClass_NeverWidensACallersRefusal`, `TheMedicAndTheController_ReadOneRecurrenceRecord`;
-- and `AnOutcomeThatIsNotEvidence_ReinforcesNothing`, for the carried debt below.
+**Exit gate** — named tests, production paths, ordinary defaults:
+
+- assembly and coverage: `ASpecifiedMission_AssemblesOneSectionPerRequest`,
+  `AnOmittedRequest_FailsCoverage`, `AFailedOwner_DoesNotAnswerItsRequest`,
+  `AnEmptyOwner_IsDistinctFromAnUnownedRequest`, `CoverageFailsClosed_WhenTheAnswerCouldNotBeAssembled`,
+  `AnUncoveredMission_IsNotVerified`;
+- the coding lane, unchanged: `AnUnspecifiedMission_RendersItsRawAnswerUnchanged`,
+  `ANullSpecification_IsTreatedAsUnspecified`, `AnUnspecifiedMission_IsGradedAsBefore`;
+- the rule `.98` set: `SubjectIsStillUnread_ByEveryCoverageLayer` (source-shape — a gate that also
+  consulted subject words would pass every behavioural assertion above);
+- continuity: `AVerifiedMissionsArtifact_IsReadableById`, `AnUnverifiedMissionsArtifact_IsRefused`
+  (every non-verified outcome, including `.105`'s two), `AnUngradedMissionsArtifact_IsRefused`,
+  `AnUnknownArtifactId_IsAValidationFailure`, `TheLedger_RecordsWhoReadAsWellAsWhoProduced`,
+  `ASameMissionRead_IsNotCrossMission`,
+  `TheConsumerIdentity_ComesFromTheChokepointAndNotTheModel` (source-shape — identity, invisible to
+  behaviour), `TheTool_IsRegisteredAcrossEveryTable`.
 
 **Carried debt this release CLOSED:**
 
-- **`MissionPreflight` checked the first plan and only the first plan.** It has one call site, in
-  `Queen.RunMission`, over the compiled plan. Handoff tasks, delta-plan tasks, repair tasks,
-  inserted policy reviews and added verification steps all reached dispatch unexamined — the tasks
-  created BECAUSE something went wrong, and therefore the ones most likely to be mis-assigned.
-  `TaskReroute` asks the one question answerable per task, at the dispatch chokepoint.
-- **`MissionOutcome.WaitingForApproval` had no writer.** Declared since v2.19.0; no mission has ever
-  carried it. The seventh instance of this repository's house defect, and the reason a mission that
-  stopped for an unanswered question was graded as one that broke.
-- **`ApprovalActionType.ToolUse` had no producer.** Three declared action types, one reachable —
-  every approval this colony has ever raised is a `PatchProposal`. This is the first caller of one
-  of the other three.
-- **`RecoveryOrchestrator` knew nothing about `FailureClass`.** Four booleans, and the component
-  whose entire job is deciding what to do about a failure consulted none of the taxonomy's three
-  predicates. A policy denial and a rate limit reached the same `Retryable` bool.
-- **`blocked_missing_capability` was charged as a negative pheromone trail**, from `.104`. Its own
-  documentation says "nothing reinforces, promotes or retires on the strength of it"; it fell
-  through to the `-0.08` default and demoted every ant, worker and task-type path in a plan that
-  never ran. `waiting_for_approval` would have been the identical bug on its first day.
+- **`ArtifactConsumption.MissionId` meant two things by coincidence.** It has always been written as
+  the artifact's PRODUCING mission, and the only caller read within one mission — so "who produced
+  it" and "who read it" were the same value since `.57`. Cross-mission consumption is exactly where
+  that ends, and without `ConsumerMissionId` this release's own claim would have been unprovable
+  from the record. Legacy rows read as null and resolve to the producing mission, which is what
+  every one of them means.
+- **Nothing a mission could dispatch reached across missions.** `IArtifactStore.Get(id)` has had the
+  reach since the store existed; `read_artifact` is its first caller, gated on the producing
+  mission's persisted grade.
+- **`ToolInventoryTests` could only read a tool whose name was a string literal**, which is why the
+  `.102` and `.103` tools needed hand-written exemptions. Widened to resolve a const the project
+  declares — where the guard LOOKS, not what it accepts.
 
 **Recorded rather than closed, with the reason:**
 
-- **The citation gate's second trigger**, unchanged from `.104`: it needs a `research` mission class,
-  which needs new verbs, a new target and an ordering decision against five existing branches.
+- **A paused mission still does not resume itself.** `.105` deferred this here, and it does not land
+  here either: approving settles the question and the outcome stops saying "waiting", but replaying
+  the refused step needs a mission to re-enter execution at a task, which no lane does today. The
+  continuity built here is READ-side. Naming it is the honest half.
+- **The citation gate's second trigger**, unchanged since `.99`: it needs a `research` class.
 - **`ObjectiveVerification.Required(goal, constraints)`** still re-reads the goal in the
-  UNRECOGNIZED lane only. Changing it alters coding-lane grading, outside this release's radius.
-- **A paused mission does not RESUME itself.** Approving the request settles the question and the
-  outcome stops saying "waiting"; re-running the refused step is a follow-on, and pretending
-  otherwise would be the "documented limitation" this program forbids. It belongs with `.106`'s
-  continuity work, where a mission consuming a prior mission's verified artifact is already the
-  subject.
+  UNRECOGNIZED lane only.
+- **Evidence is not yet attached per section.** The chain the gate names is
+  specification → deliverable → answer section; evidence attaches to TASKS, and the section knows
+  its serving tasks, so the join exists but is not rendered. Adding a display for it is not the same
+  as making a section's evidence a checkable property, and only the second is worth a release.
 - **The `.97` Windows residual** remains undiagnosed and carried.
-- **The live pack** is one command away and still an operator's step: it needs a real provider and a
-  real request. `QUALIFICATION.md` §3 remains the authority and still says PARTIAL.
+- **The live pack** is still an operator step. `QUALIFICATION.md` §3 remains PARTIAL.
 
-**Explicitly still unsupported after .105:** specification-driven answer assembly and multi-mission
-continuity (`.106`); verified route learning (`.107`); claim↔source SUPPORT; a `research` mission
-class; general local-system operations outside the homelab catalog.
+**Explicitly still unsupported after .106:** verified route learning (`.107`); claim↔source SUPPORT;
+a `research` mission class; resuming a paused mission's refused step; general local-system
+operations outside the homelab catalog.
 
 
 ---

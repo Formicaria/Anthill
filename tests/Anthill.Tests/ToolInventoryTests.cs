@@ -69,10 +69,41 @@ public class ToolInventoryTests
         var registeredNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var type in registeredTypes)
         {
-            var name = Regex.Match(toolSources,
-                $@"class {type}\s*:\s*ITool.*?public string Name => ""([^""]+)""", RegexOptions.Singleline);
-            Assert.True(name.Success, $"Could not find the Name literal for registered tool type {type}.");
-            registeredNames.Add(name.Groups[1].Value);
+            // SCOPED TO THE TYPE'S OWN BODY, and v0.3.8.106 had to fix that before it could widen
+            // anything. The lookup ran `class {type}.*?public string Name => "..."` with a lazy
+            // match over EVERY tool file concatenated together — so for a type whose name is not a
+            // literal, the match simply ran on into the NEXT class and returned ITS name. The guard
+            // could attribute one tool's name to another type, and stayed correct only because
+            // every registered type happened to declare a literal shortly after itself. A tool that
+            // named itself through a const was all it took to expose that.
+            //
+            // The body is everything from this declaration to the next `class X : ITool`, so a name
+            // can only ever be read from the type that declares it.
+            var declaration = Regex.Match(toolSources, $@"class {type}\s*:\s*ITool");
+            Assert.True(declaration.Success, $"Could not find the declaration of registered tool type {type}.");
+
+            var after = toolSources[(declaration.Index + declaration.Length)..];
+            var next = Regex.Match(after, @"class \w+\s*:\s*ITool");
+            var body = next.Success ? after[..next.Index] : after;
+
+            // A LITERAL, or a CONST THIS TYPE DECLARES. The second half is the widening: naming a
+            // tool once as a const is what lets the inventory, the authorization table, the role
+            // contract and the dispatch chokepoint share one spelling. Widening where the guard
+            // LOOKS, never what it accepts — an unresolvable name still fails.
+            var resolved =
+                Regex.Match(body, @"public string Name => ""([^""]+)""") is { Success: true } literal
+                    ? literal.Groups[1].Value
+                    : Regex.Match(body, @"public string Name => (\w+);") is { Success: true } forwarded
+                        && Regex.Match(body, $@"const string {forwarded.Groups[1].Value} = ""([^""]+)"";")
+                            is { Success: true } declared
+                        ? declared.Groups[1].Value
+                        : null;
+
+            Assert.True(resolved is not null,
+                $"Could not resolve the tool name for registered type {type} — its body declares "
+              + "neither a string literal nor a const naming it, so nothing can check it against "
+              + "ToolInventory.");
+            registeredNames.Add(resolved!);
         }
 
         // v0.3.8.102 — a THIRD composition site. The system-action tools are adopted by the API

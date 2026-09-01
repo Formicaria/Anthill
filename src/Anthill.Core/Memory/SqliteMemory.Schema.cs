@@ -622,6 +622,13 @@ public sealed partial class SqliteMemory : IDisposable
         // sets read as NULL — "never captured" — which the promotion gate treats as unmeasurable
         // rather than as unchanged, the same non-retroactive rule the evidence check follows.
         AddMissing("patch_sets", new() { ["base_fingerprint"] = "TEXT" });
+        // v0.3.8.106: WHICH MISSION DID THE READING. `mission_id` on this table has always been the
+        // artifact's PRODUCING mission, and the only caller read within one mission — so the two
+        // were the same value and the column meant both. Multi-mission continuity is where that
+        // coincidence ends. Legacy rows read as NULL, which `ArtifactConsumption.ReadBy` resolves
+        // to the producing mission — correct, because a same-mission read is what every existing
+        // row is, and inventing a consumer for one would be asserting a fact nobody recorded.
+        AddMissing("artifact_consumptions", new() { ["consumer_mission_id"] = "TEXT" });
         // v0.3.8.57 (AUTONOMY-10 Phase 3): evidence identifies the revision it judged. Legacy rows
         // read as NULL — "not about a materialized revision" — which `Evidence.IdentifiesARevision`
         // reports as false, so an old row can never be mistaken for one that matches.

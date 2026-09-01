@@ -196,6 +196,18 @@ public static class MissionEvaluator
             ? ExternalActionIntegrity.Evaluate(specification!, artifacts)
             : null;
 
+        // v0.3.8.106 — AND EVERY REQUEST MUST HAVE AN ANSWER. The seventh gate, and the first that
+        // is not keyed to a mission CLASS: its six siblings each guard one class's own promise,
+        // and this guards what any specified mission owes whatever its class — that the things the
+        // operator itemised were answered.
+        //
+        // ASSEMBLED HERE rather than read from `mission.FinalResult`, for the reason the
+        // deliverable ledger above is also built here: this evaluator's whole claim is that a grade
+        // is reproducible from the persisted record. Reading the rendered prose would grade the
+        // answer by looking at it, which is the word-search `.98` refused.
+        var assembled = AssembledAnswer.Build(specification, mission.Tasks, mission.UserResult);
+        var coverage = AnswerCoverage.Applies(assembled) ? AnswerCoverage.Evaluate(assembled) : null;
+
         // v0.3.8.104 — A RECOGNIZED CLASS IS VERIFIED WHATEVER THE SWITCH SAYS.
         //
         // `objective_verification_enabled` ships false, and every gate `.98` through `.103` built
@@ -222,6 +234,13 @@ public static class MissionEvaluator
             deliverable = MissionEvaluation.Deliverable.NotSatisfied;
         else if (!objectiveVerificationEnabled && !recognized)
             deliverable = MissionEvaluation.Deliverable.NotChecked;
+        // v0.3.8.106 — AN UNANSWERED REQUEST DEMOTES, and it is placed with the other two
+        // cross-cutting refusals rather than in the class chain below. Citations and creations sit
+        // here because they can contradict a mission of ANY class; coverage is the same shape. A
+        // class gate saying "the audit inspected" cannot rescue a mission that never answered the
+        // operator's second question, so this must be able to speak over a satisfied sibling.
+        else if (coverage is { Satisfied: false })
+            deliverable = MissionEvaluation.Deliverable.NotSatisfied;
         else if (citations is { Satisfied: false })
             deliverable = MissionEvaluation.Deliverable.NotSatisfied;
         else if (creations is { Satisfied: false })
@@ -315,6 +334,7 @@ public static class MissionEvaluator
                       + "class and its integrity gate did not run, so nothing could confirm the "
                       + "class's own guarantee. A gate that cannot run is not a pass."
                     : "")
+                + (coverage is null || coverage.Satisfied ? "" : $" {coverage.Explanation}")
                 + (assessment is null || assessment.Satisfied ? "" : $" {assessment.Explanation}")
                 + (citations is null || citations.Satisfied ? "" : $" {citations.Explanation}")
                 + (sends is null || sends.Satisfied ? "" : $" {sends.Explanation}")

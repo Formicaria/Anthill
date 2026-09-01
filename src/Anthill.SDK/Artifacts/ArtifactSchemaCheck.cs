@@ -124,6 +124,12 @@ public static class ArtifactSchemaCheck
             [ArtifactSchemas.DeliverableLedger] =
                 AsObject("ResultAssembler.RecordDeliverableLedger", "deliverables"),
 
+            // v0.3.8.106. `sections` is required for the ledger's reason one entry up: an assembled
+            // answer with no sections has recorded nothing. The counters are derivable from the
+            // rows and are not required, so the two cannot be made to disagree.
+            [ArtifactSchemas.AssembledAnswer] =
+                AsObject("ResultAssembler.RecordAssembledAnswer", "sections"),
+
             // v0.3.8.99. `claims` is required because an answer with no claims array has recorded
             // nothing — and a claim's own `sourced` flag is derived, so there is no second field to
             // require without inviting the two to disagree.
