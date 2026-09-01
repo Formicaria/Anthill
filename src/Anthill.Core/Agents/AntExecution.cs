@@ -298,7 +298,8 @@ public static class AntExecutionCatalog
             // the rule v3.8.30 stated when search was added, applied again. It is granted to the
             // ROLE and used by one WORKER: the runtime researcher, which is what `inspect_runtime_state`
             // means, while the repository researcher never asks for it.
-            AllowedTools: S("system_info", "list_directory", "search_workspace", "repository_index", "colony_state"),
+            AllowedTools: S("system_info", "list_directory", "search_workspace", "repository_index", "colony_state",
+                            Tools.ReadArtifactTool.ToolName),
             ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
             ProducedArtifactTypes: S("text"),
             AllowedHandoffRoles: S("web", "file", "ui_cartographer", "coder", "builder"),

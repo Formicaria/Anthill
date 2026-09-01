@@ -227,6 +227,8 @@ public class CallSiteAuditTests
             // v0.3.8.103 — the send lane's own types, distinct from the operation lane's above.
             ["propose_external_action"] = "ProposeSendTool",
             ["execute_external_action"] = "ExecuteSendTool",
+            // v0.3.8.106 — cross-mission continuity, registered by the Queen like `colony_state`.
+            ["read_artifact"] = "ReadArtifactTool",
         };
 
         // A new tool must be added HERE as well as to the inventory. That is deliberate friction:
