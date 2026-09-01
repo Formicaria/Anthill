@@ -256,7 +256,15 @@ public class RuntimeCompositionTests
         Assert.Equal(0, Occurrences(queen, "MissionConstraints.Parse"));
         Assert.Equal(0, Occurrences(queenViews, "MissionConstraints.Parse"));
         Assert.Equal(0, Occurrences(execution, "MissionConstraints.Parse"));
-        Assert.Equal(1, Occurrences(context, "MissionConstraints.Parse"));
+        // v0.3.8.104 — the ONE site moved out of MissionContext and into MissionContract, which is
+        // now the single place the operator's goal is interpreted at all. The invariant is
+        // unchanged and stronger: it was "parsed once, at intake"; it is now "parsed once, in one
+        // file, and recorded so it is never parsed again". `MissionContractTests` asserts the
+        // whole-tree version of that by reading every source file.
+        Assert.Equal(0, Occurrences(context, "MissionConstraints.Parse"));
+        var contractFile = CodeOnly(File.ReadAllText(
+            Path.Combine(root, "src", "Anthill.Core", "Missions", "MissionContract.cs")));
+        Assert.Equal(1, Occurrences(contractFile, "MissionConstraints.Parse"));
 
         // And the resolved value is what gets consumed — by the Queen at planning and grading, and
         // by the execution service at dispatch and mid-run admission.

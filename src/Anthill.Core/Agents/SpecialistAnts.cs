@@ -1166,11 +1166,19 @@ public sealed class MedicAnt : BaseAnt
         // the exact escalation "an audit that discovers a fault reports it as a finding" forbids
         // for assessment, arriving in the diagnostic class. The first composed run proved the cost:
         // the medic's repair handoff was refused as a near-duplicate, the refusal became a
-        // deterministic block, and a correctly diagnosed mission graded as failed. Intake is pure
-        // and deterministic, so the medic reads the class from the same resolution every other
-        // layer uses rather than being handed a flag someone could forget to pass.
-        var troubleshooting = Missions.MissionIntake.Resolve(mission.Goal).MissionClass
-            == Missions.MissionSpecification.TroubleshootingClass;
+        // deterministic block, and a correctly diagnosed mission graded as failed.
+        //
+        // v0.3.8.104 — READ FROM THE MISSION'S RECORDED CONTRACT. The previous comment argued that
+        // intake is pure and deterministic, so re-resolving here was as good as being handed the
+        // class. That held only while the rules stood still: `.103` added a class and four verbs,
+        // and a medic re-resolving would decide a `.102` mission's lane by `.103`'s rules. The
+        // contract says what the mission was ADMITTED as, which is the only version of this
+        // question that stays true. No store or no contract reads as NOT troubleshooting — the
+        // behaviour every release before `.101` had, and the conservative direction: the cost is a
+        // repair attempt on a diagnostic mission, not a modification nobody authorized.
+        var troubleshooting = string.Equals(
+            _memory?.LoadMissionContract(mission.Id)?.Specification.MissionClass,
+            Missions.MissionSpecification.TroubleshootingClass, StringComparison.OrdinalIgnoreCase);
 
         var diagnosis =
             $"failure_signature: {signature}\nfailure_classification: {Anthill.SDK.Contracts.FailureClassNames.Wire(cls)}\n" +

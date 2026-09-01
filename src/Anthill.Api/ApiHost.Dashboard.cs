@@ -577,11 +577,38 @@ public static partial class ApiHost
 
         // v1.8.22 Ant Inspector + Performance Observatory: per-caste task stats (all history), the
         // model route each role runs on, and the capability gates that apply to each ant.
+        // v0.3.8.104 — every route that actually calls a model, computed rather than listed.
+        // Roles come from the execution contracts (the declaration a dispatch reads); the two
+        // non-role routes are named here because they are the exceptions and the exception list is
+        // asserted against the registry by RoleSurfaceTests rather than trusted.
+        static IEnumerable<string> ModelCallingRoutes() =>
+            Anthill.Core.Agents.AntExecutionCatalog.Contracts
+                .Where(c => c.Value.AllowsModelCalls)
+                .Select(c => c.Key)
+                .Concat(Anthill.Core.Agents.AntRegistry.NonRoleModelRoutes)
+                .OrderBy(r => r, StringComparer.Ordinal);
+
         app.MapGet("/ants/stats", (HttpContext ctx) =>
         {
             var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
             var routes = new Dictionary<string, object?>();
-            foreach (var role in new[] { "researcher", "web", "file", "coder", "builder", "verifier", "planner", "strategist" })
+            // v0.3.8.104 — DERIVED FROM THE REGISTRY, not a hand-maintained array.
+            //
+            // This was eight names written here, and it had drifted from the colony three ways at
+            // once: it listed `strategist`, which is not a registered role at all; it showed a
+            // model route for `file`, whose execution contract declares AllowsModelCalls false; and
+            // it omitted the six specialist roles that ARE executable under the shipped profile. A
+            // second copy of the truth maintained by hand beside a computed one — the same defect
+            // ToolInventoryTests already guards for tools in both directions, and nothing guarded
+            // for roles.
+            //
+            // The set is now every role that DECLARES a model call, plus the two model-calling
+            // routes that are not roles. Those two are named separately and deliberately: `planner`
+            // is a registered non-executable role and `strategist` is not in the registry at all,
+            // and both genuinely call models — so hiding them would trade one wrong answer for
+            // another. What changed is that they are labelled as routes rather than displayed
+            // beside the ants as though they were ants.
+            foreach (var role in ModelCallingRoutes())
             {
                 // v0.3.8.49 (§12): resolve through the AUTHORITATIVE router, not a second inline copy.
                 //

@@ -174,8 +174,31 @@ public static class MissionEvaluator
             ? ExternalActionIntegrity.Evaluate(specification!, artifacts)
             : null;
 
+        // v0.3.8.104 — A RECOGNIZED CLASS IS VERIFIED WHATEVER THE SWITCH SAYS.
+        //
+        // `objective_verification_enabled` ships false, and every gate `.98` through `.103` built
+        // sat behind it — six releases of enforcement that was inert on a default install, and the
+        // reason every one of those releases could only claim "deterministically qualified": the
+        // suite turned the flag on, and nobody's colony did.
+        //
+        // The flag is not removed, because it still governs the general and coding lanes where
+        // flipping it would change how existing installs grade work they already do. What changes
+        // is that a class this runtime RECOGNIZES no longer asks: its gate is the reason the class
+        // exists, and a class whose gate is optional is a class whose guarantee is optional.
+        //
+        // AND IT FAILS CLOSED. A recognized class whose gate could not run — an unreadable store,
+        // a class declaring a gate that resolves to nothing — grades NotSatisfied naming the
+        // reason, never NotChecked. "We could not tell" must not read as "yes" for a mission whose
+        // whole class is a promise that something specific happened.
+        var recognized = specification is not null
+                      && Missions.MissionContracts.RecognizedClasses.Contains(specification.MissionClass);
+        var gateSpoke = assessment is not null || diagnosis is not null
+                     || operations is not null || sends is not null;
+
         string deliverable;
-        if (!objectiveVerificationEnabled)
+        if (recognized && !gateSpoke)
+            deliverable = MissionEvaluation.Deliverable.NotSatisfied;
+        else if (!objectiveVerificationEnabled && !recognized)
             deliverable = MissionEvaluation.Deliverable.NotChecked;
         else if (citations is { Satisfied: false })
             deliverable = MissionEvaluation.Deliverable.NotSatisfied;
@@ -262,6 +285,14 @@ public static class MissionEvaluator
                 + (deterministicBlock is null ? "" : $" Deterministic block: {deterministicBlock}")
                 // The gate that said no, named. A demotion an operator cannot locate is one they
                 // cannot answer, and "deliverable=not_satisfied" alone names no gate.
+                // v0.3.8.104 — the fail-closed case names itself. A recognized class whose gate
+                // could not run is refused, and an operator reading "deliverable=not_satisfied"
+                // with no gate named would have nothing to act on.
+                + (recognized && !gateSpoke
+                    ? $" objective verification: '{specification!.MissionClass}' is a recognized "
+                      + "class and its integrity gate did not run, so nothing could confirm the "
+                      + "class's own guarantee. A gate that cannot run is not a pass."
+                    : "")
                 + (assessment is null || assessment.Satisfied ? "" : $" {assessment.Explanation}")
                 + (citations is null || citations.Satisfied ? "" : $" {citations.Explanation}")
                 + (sends is null || sends.Satisfied ? "" : $" {sends.Explanation}")

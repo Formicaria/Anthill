@@ -78,6 +78,18 @@ public sealed record MissionContext
     /// </summary>
     public MissionSpecification Specification { get; init; } = MissionSpecification.General("");
 
+    /// <summary>
+    /// The recorded contract this mission was admitted under. v0.3.8.104.
+    ///
+    /// <see cref="Constraints"/> and <see cref="Specification"/> are projections of it and stay for
+    /// the callers that only need one of them. What this adds is the PROVENANCE: which intake
+    /// ruleset produced the classification, and whether it was recorded at intake or resolved at
+    /// read because the mission predates contracts. A layer that needs to know how much to trust
+    /// the specification can only ask that here.
+    /// </summary>
+    public Missions.MissionContract Contract { get; init; } =
+        Missions.MissionContracts.ForPreview("");
+
     /// <summary>What this run may do. Resolved at admission, not at each point of use.</summary>
     public required RuntimeProfile Profile { get; init; }
 
@@ -112,17 +124,24 @@ public sealed record MissionContext
     /// start instant, so the deadline is anchored to when the mission actually began rather than to
     /// when this object happened to be constructed.
     /// </summary>
-    public static MissionContext Create(Mission mission, RuntimeProfile profile, DateTime startedAt)
+    public static MissionContext Create(Mission mission, RuntimeProfile profile, DateTime startedAt,
+        Missions.MissionContract? contract = null)
     {
         var options = profile.Options;
+        // v0.3.8.104 — READ, NOT DERIVED. The contract was written at intake and is what this
+        // mission WAS; deriving it here again made a mission's class a fact about today's intake
+        // rules rather than about the mission. A null contract means a caller outside the mission
+        // engine (the plan preview, tooling) and resolves an unpersisted one through the single
+        // interpretation site, so even that path cannot become a second reading of the goal.
+        var resolved = contract ?? Missions.MissionContracts.ForPreview(mission.Goal);
         return new MissionContext
         {
             MissionId = mission.Id,
             CorrelationId = mission.Id,
             Goal = mission.Goal,
-            Constraints = MissionConstraints.Parse(mission.Goal),
-            // Resolved here, once, for the same reason the constraints are — see the field.
-            Specification = Missions.MissionIntake.Resolve(mission.Goal),
+            Contract = resolved,
+            Constraints = resolved.Constraints,
+            Specification = resolved.Specification,
             Profile = profile,
             Deadline = startedAt.AddSeconds(options.MaxMissionSeconds),
             Budgets = new MissionBudgets(
@@ -159,6 +178,7 @@ public sealed record MissionContext
         ["environment"] = EnvironmentFingerprint,
         ["workspace_id"] = WorkspaceId,
         ["specification"] = Specification.Snapshot(),
+        ["contract"] = Contract.Snapshot(),
         ["constraints"] = new Dictionary<string, object?>
         {
             ["no_patches"] = Constraints.NoPatches,
