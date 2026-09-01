@@ -33,7 +33,44 @@ public sealed record ArtifactConsumption
     /// </summary>
     public required string Schema { get; init; }
 
+    /// <summary>
+    /// The mission that PRODUCED the artifact. v0.3.8.106 states that, having found it stated
+    /// nowhere.
+    ///
+    /// It has always been written as <c>artifact.MissionId</c>, and the only caller until now read
+    /// artifacts within one mission — so "who produced it" and "who read it" were the same value
+    /// and the field meant both. That is not a design; it is a coincidence, and cross-mission
+    /// consumption is exactly where it ends. See <see cref="ConsumerMissionId"/>.
+    /// </summary>
     public required string MissionId { get; init; }
+
+    /// <summary>
+    /// The mission that DID the reading. v0.3.8.106.
+    ///
+    /// Null for every row written before this release and for every same-mission read, where it
+    /// would only repeat <see cref="MissionId"/> — <see cref="ReadBy"/> resolves the two. It is
+    /// populated when a mission reads an artifact ANOTHER mission produced, which is the only case
+    /// in which the distinction carries information.
+    ///
+    /// WHY IT IS NOT PART OF THE LEDGER'S PRIMARY KEY, which is
+    /// <c>(artifact_id, consumer_role, consumer_task_id)</c>: two missions reading the same
+    /// artifact under the same role and NO task would collide on that key, and the second read
+    /// would bump the first's counter instead of recording itself. Cross-mission reads always
+    /// carry a task id — they happen at the tool dispatch chokepoint, which has one — so the
+    /// collision is unreachable rather than merely unlikely. Widening the key would mean rebuilding
+    /// the table, and doing that to close a hole nothing can fall into is the kind of migration
+    /// that breaks a store to tidy it.
+    /// </summary>
+    public string? ConsumerMissionId { get; init; }
+
+    /// <summary>Who read it, resolving the legacy case: the consumer when one was recorded,
+    /// otherwise the producing mission, which is what a same-mission row has always meant.</summary>
+    public string ReadBy => string.IsNullOrWhiteSpace(ConsumerMissionId) ? MissionId : ConsumerMissionId!;
+
+    /// <summary>True when this row records one mission reading another mission's artifact.</summary>
+    public bool IsCrossMission =>
+        !string.IsNullOrWhiteSpace(ConsumerMissionId)
+        && !string.Equals(ConsumerMissionId, MissionId, StringComparison.Ordinal);
 
     /// <summary>The role that read it — the question this ledger exists to answer.</summary>
     public required string ConsumerRole { get; init; }

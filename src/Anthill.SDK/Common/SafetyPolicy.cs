@@ -196,6 +196,11 @@ public static class SafetyPolicy
                 // and a definition shadowing either would be impersonating the approval pipeline.
                 Contracts.SystemActionToolNames.Propose,
                 Contracts.SystemActionToolNames.Execute,
+                // v0.3.8.106 — cross-mission artifact reads. Mirrored for the same reason as every
+                // name above: an operator-defined tool must not be able to take a built-in's name,
+                // and this one gates what later work may be built on. The SDK cannot name Core, so
+                // the literal is spelled here and `ToolInventoryTests` holds the two together.
+                "read_artifact",
                 // v0.3.8.103 — the send lane, mirrored for the same reason: an operator-defined
                 // tool taking these names in a core-less process would be impersonating the thing
                 // that reaches other people.

@@ -99,11 +99,53 @@ public sealed class ResultAssembler : IResultAssembler
         }
     }
 
+    /// <summary>
+    /// THE ASSEMBLED ANSWER AS A DURABLE RECORD. v0.3.8.106.
+    ///
+    /// The evaluator BUILDS its own — it must, for the reason the deliverable ledger above is built
+    /// twice: a grade has to be reproducible from the persisted record rather than from whatever a
+    /// caller handed it. This is the operator's copy, and it carries the one thing the rendered
+    /// answer cannot: which section came from which task, and whether the plan declared that
+    /// ownership or the runtime inferred it.
+    ///
+    /// Never throws, like the ledger write beside it — a diagnostic that can fail the mission it
+    /// describes is worse than none.
+    /// </summary>
+    private void RecordAssembledAnswer(Mission mission, Outcomes.AssembledAnswer assembled)
+    {
+        // An unspecified mission's "section" is the raw answer under a synthetic id. Recording it
+        // would put a row in the store claiming the operator asked for something they never
+        // itemised, which is the kind of small invented fact that gets read back as evidence later.
+        if (!assembled.Specified) return;
+
+        try
+        {
+            ((Anthill.SDK.Artifacts.IArtifactStore)_memory).Put(Anthill.SDK.Artifacts.Artifact.Create(
+                schema: Anthill.SDK.Artifacts.ArtifactSchemas.AssembledAnswer,
+                // The QUEEN owns it, like the ledger: no ant decides what the operator asked for.
+                producerRole: "queen",
+                missionId: mission.Id,
+                payload: Json.Dumps(assembled.Snapshot(), indented: true),
+                visibility: Anthill.SDK.Artifacts.ArtifactVisibility.Colony));
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine(
+                $"[results] could not record the assembled answer for {mission.Id}: {error.Message}");
+        }
+    }
+
     // ---- selection -------------------------------------------------------------------------------
 
     /// <summary>
     /// The task whose output best answers the mission: the last completed builder, else the last
     /// completed coder, else the last completed task with any result at all.
+    ///
+    /// v0.3.8.106 — STILL THE SELECTOR FOR `UserResult`, AND NO LONGER THE ANSWER. The distinction
+    /// is the release: `UserResult` is documented as "the raw output of the best completed task,
+    /// never rewritten", and that is a useful thing for an operator to be able to open. What
+    /// changed is that it stopped being what `FinalResult` falls back to whenever the specification
+    /// had something to say — see `ComposeFinalAnswer`.
     /// </summary>
     public static string? SelectBestOutputTaskId(Mission mission)
     {
@@ -250,7 +292,27 @@ public sealed class ResultAssembler : IResultAssembler
 
         if (SourcedRendering(mission) is { Length: > 0 } sourced) return sourced;
 
-        var raw = mission.UserResult ?? "";
+        // v0.3.8.106 — THE ANSWER IS ASSEMBLED FROM WHAT WAS ASKED. PLAN.md §2b `.106`.
+        //
+        // THE FALLBACK THIS REMOVES is the one `.98` named in its own words: "`ResultAssembler`
+        // never read it at all and returned the last builder task's output as the answer." The raw
+        // best-task text is no longer an ANSWER PATH — it is the content of the single section an
+        // unspecified mission has. One path, not a path and an escape hatch.
+        //
+        // WHERE THE SPECIFICATION SAID WHAT WAS ASKED FOR, the assembled render IS the answer and
+        // synthesis is SKIPPED — the same rule and the same reason as `.99`'s claim record and
+        // `.100`'s created deliverable directly above: a rewrite can drop a section, and an answer
+        // whose unanswered questions did not survive the paraphrase reads as complete. The channel
+        // that reports what was answered must be the channel that knows.
+        //
+        // WHERE IT DID NOT, the render is the raw content byte for byte and synthesis proceeds
+        // exactly as before. That is what makes one path safe for the coding lane, which declares
+        // no deliverables by design and is the only lane qualified live.
+        var assembled = Outcomes.AssembledAnswer.Build(context.Specification, mission.Tasks, mission.UserResult);
+        RecordAssembledAnswer(mission, assembled);
+        if (assembled.Specified) return assembled.Render();
+
+        var raw = assembled.Render();
         if (_router is null || !ShouldSynthesizeAnswer(raw, context.Options.AnswerSynthesis)) return raw;
 
         ModelCallResult? synthesized = null;
