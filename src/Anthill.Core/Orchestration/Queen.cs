@@ -173,6 +173,40 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
             ["medic"] = new MedicAnt((Anthill.SDK.Artifacts.IArtifactStore)Memory, Memory),
             ["archivist"] = new ArchivistAnt(),
         };
+
+        // v0.3.8.108 — AND WHATEVER WAS DECLARED. The one line that made the roster non-extensible.
+        //
+        // Every other layer was already generic over roles: the planner reads the registry, the
+        // scheduler reads the task graph, the assembler reads the ledger, the dispatch chokepoint
+        // reads the contract. A role could still not exist, because the thing that EXECUTES it was
+        // a dictionary literal in this constructor — so "add an ant" meant editing the Queen, which
+        // is exactly what `.108`'s exit gate says must not be necessary.
+        //
+        // Built HERE, with the same memory, tools and router the built-ins get. A contributed ant
+        // handed over pre-wired would be operating on a different colony than the one dispatching
+        // to it, which is why the contribution carries a factory rather than an instance.
+        //
+        // A contribution cannot shadow a built-in — `AntExtensions.Declare` refuses that outright —
+        // so this can only add, and `AntExecutorCatalog.Initialize` below still gets the final say
+        // on whether the role is actually available.
+        var dependencies = new AntExecutionDependencies(Memory, Tools, Router);
+        foreach (var contribution in AntExtensions.All)
+        {
+            try
+            {
+                _ants[contribution.Role.RoleId] = contribution.Executor(dependencies);
+            }
+            catch (Exception error)
+            {
+                // Loud and fail-closed, like the catalog validation below: a contributed role whose
+                // factory throws simply has no executor, so it stays unavailable rather than
+                // taking the colony down at construction.
+                Console.Error.WriteLine(
+                    $"[startup-validation] contributed role '{contribution.Role.RoleId}' could not "
+                  + $"be constructed and is unavailable: {error.Message}");
+            }
+        }
+
         // Execution framework Stage C: validate the executor catalog at startup. Any problem keeps
         // the affected role unavailable (fail closed) and is loud, never silent.
         foreach (var problem in AntExecutorCatalog.Initialize(_ants.Keys.ToList()))

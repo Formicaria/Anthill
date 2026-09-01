@@ -9,7 +9,7 @@
 > unverified completions never reinforce positively. Capability enforcement at tool dispatch
 > applies identically during autonomy.
 
-> Status: **Phase 0–5 IMPLEMENTED — the autonomy roadmap is complete.** For the current ordered build order across the whole project, see **[docs/PLAN.md](PLAN.md)** — the canonical roadmap. Rails, Director loop,
+> Status: **Phase 0–5 IMPLEMENTED — the autonomy RAILS are complete.** This describes the objective/Director/backlog rails and NOT sandboxed autonomy, which `PLAN.md` tracks as **R9**, gated behind **R6** (execution sandbox) and not started. A reader who takes this banner as "autonomy is finished" is reading a claim about a narrower scope than the words suggest — the correction v0.3.8.108 made after the drift audit found this and README's release prose saying two different things about the same system. For the current ordered build order across the whole project, see **[docs/PLAN.md](PLAN.md)** — the canonical roadmap. Rails, Director loop,
 > Strategist, Concurrency, Learning loop, and now Phase 5 gated auto-apply. The colony can now run autonomously:
 > the Director works the objective backlog — up to `autonomy_concurrency` missions at once,
 > sized down live by the ResourceGovernor under host/backend pressure — under budgets and the
@@ -17,7 +17,7 @@
 > objective (with a deterministic charter-as-goal fallback), deduped against recent mission
 > history, and the colony can enqueue its own follow-up objectives within depth/rate caps.
 > Scheduling is strict priority with anti-starvation aging plus an outcome-driven learning bias;
-> objectives that stop producing value or loop are auto-paused for review. Target: ANTHILL v1.9.x.
+> objectives that stop producing value or loop are auto-paused for review. Target: ANTHILL v1.9.x for the rails; R6/R9 for sandboxed autonomy.
 
 ## Phase 5 — what landed (gated auto-apply)
 
