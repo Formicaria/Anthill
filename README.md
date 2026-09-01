@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Formicaria/Anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/Formicaria/Anthill/actions/workflows/ci.yml)
 
-**Current version:** v0.3.8.107
+**Current version:** v0.3.8.108
 
 **Runs on:** Windows or Linux
 
@@ -144,8 +144,8 @@ ollama pull llama3.1:8b
 ```bash
 mkdir -p "$HOME/anthill"
 cd "$HOME/anthill"
-curl -fLO https://github.com/Formicaria/Anthill/releases/download/v0.3.8.107/anthill-0.3.8.107-linux-x64.tar.gz
-tar --no-same-owner -xzf anthill-0.3.8.107-linux-x64.tar.gz
+curl -fLO https://github.com/Formicaria/Anthill/releases/download/v0.3.8.108/anthill-0.3.8.108-linux-x64.tar.gz
+tar --no-same-owner -xzf anthill-0.3.8.108-linux-x64.tar.gz
 chmod +x anthill
 ```
 
@@ -297,7 +297,7 @@ Inspect this project and explain what it does. Do not change any files.
 
 ## What is enabled on a new install?
 
-Version `v0.3.8.41` starts with the full twelve-role colony available. Roles still run only when a
+The colony ships with the full twelve-role roster available. Roles still run only when a
 mission actually needs them; enabling the full roster does not force every role into every mission.
 
 These are the fresh-install defaults that matter most:
@@ -577,7 +577,7 @@ docs/                     Architecture, operations, and roadmap documentation
 
 ## Current release
 
-`v0.3.8.41` makes the full twelve-role roster the default for new installations, confines
+The shipped defaults make the full twelve-role roster available to new installations, confine
 write-capable external agents to ANTHILL's workspace boundary, and ensures Archivist output exists
 before the learning pass consumes it. Finalization steps are also recorded so they are not applied
 twice during recovery.
