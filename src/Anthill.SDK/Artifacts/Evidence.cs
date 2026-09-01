@@ -157,6 +157,32 @@ public static class EvidenceKinds
     public const string Inspection = "inspection";
 
     /// <summary>
+    /// A RETRIEVAL FROM OUTSIDE THE COLONY: a search was run, a public source was opened and read.
+    /// v0.3.8.109.
+    ///
+    /// WHY IT IS NOT <see cref="Inspection"/>, which is the question a reader will ask first and the
+    /// reason this kind is separate rather than folded in. `AssessmentObjective` requires inspection
+    /// rows before an audit's conclusions can be believed: an audit that inspected nothing has
+    /// asserted rather than established. If a web search wrote an inspection row, an audit of "what
+    /// is implemented" could satisfy that requirement by searching the internet — a claim about the
+    /// operator's own repository established from somebody else's. The two are read-only observations
+    /// of DIFFERENT WORLDS, and the requirement each satisfies is not interchangeable.
+    ///
+    /// WHY IT IS NOT DETERMINISTIC. <c>ToolEvidence</c>'s own remark already settled this in the
+    /// negative: "<c>web_search</c> does not — the internet changes." A retrieval is bound to no
+    /// tree and repeating it may answer differently, so it sits below the line with inspection and
+    /// model review: recorded, never promoting.
+    ///
+    /// WHAT IT MAKES ANSWERABLE. Whether a research mission RETRIEVED ANYTHING — which, before this,
+    /// was visible only as an artifact the answer might or might not cite. `CitationIntegrity` could
+    /// therefore catch an answer citing something the mission never fetched, and could not catch an
+    /// answer that fetched nothing at all and cited nothing: both left the store empty, and the gate
+    /// read the second as "nothing to check". That is the second trigger `.104` recorded as
+    /// unbuildable for want of exactly this row.
+    /// </summary>
+    public const string SourceRetrieval = "source_retrieval";
+
+    /// <summary>
     /// Which kinds are reproducible. Stated here so <c>Evidence.Deterministic</c> can be CHECKED
     /// against the kind rather than trusted from the caller — a "test_run" that claims to be
     /// non-deterministic, or a "model_review" that claims it is, is a mistake worth catching.

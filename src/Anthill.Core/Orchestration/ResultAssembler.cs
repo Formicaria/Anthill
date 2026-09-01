@@ -308,7 +308,16 @@ public sealed class ResultAssembler : IResultAssembler
         // WHERE IT DID NOT, the render is the raw content byte for byte and synthesis proceeds
         // exactly as before. That is what makes one path safe for the coding lane, which declares
         // no deliverables by design and is the only lane qualified live.
-        var assembled = Outcomes.AssembledAnswer.Build(context.Specification, mission.Tasks, mission.UserResult);
+        // v0.3.8.109 — the evidence goes in, so the recorded `assembled_answer` names the rows each
+        // section's own serving tasks left rather than reporting every section as ungrounded. Read
+        // defensively: an unreadable evidence store must not be able to fail a finished mission on
+        // the presentation path, and null here simply means no section can name any.
+        IReadOnlyList<Anthill.SDK.Artifacts.Evidence>? sectionEvidence = null;
+        try { sectionEvidence = ((Anthill.SDK.Artifacts.IEvidenceStore)_memory).ForMission(mission.Id); }
+        catch (Exception) { /* the section evidence is a record, never a gate on this path */ }
+
+        var assembled = Outcomes.AssembledAnswer.Build(
+            context.Specification, mission.Tasks, mission.UserResult, sectionEvidence);
         RecordAssembledAnswer(mission, assembled);
         if (assembled.Specified) return assembled.Render();
 

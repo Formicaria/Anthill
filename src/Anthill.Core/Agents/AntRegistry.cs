@@ -404,8 +404,15 @@ public static class AntRegistry
                 W("file", "file_reader", "FileReader", "Read exact file content or snippets.", ReadWorkspace, new[] { "read_text_file", "read_file_snippet" }, noApply)
                     with { Capabilities = new[] { Missions.WorkerCapabilities.InspectRepository } }),
             R("web", "WebAnt", "External Research", "Performs external public research when explicitly allowed.", true, Web, new[] { "web_search", "read_public_source" }, noApply,
-                W("web", "source_finder", "SourceFinder", "Find relevant public sources.", Web, new[] { "web_search", "open_public_source" }, noApply),
-                W("web", "source_verifier", "SourceVerifier", "Check source relevance and authority.", Web, new[] { "read_public_source", "compare_sources" }, noApply)),
+                // v0.3.8.109 — the capability these two have served since the roster was written and
+                // could never be ASKED for. Both declare it, and the ambiguity is honest for the
+                // file ant's reason: finding a public source and checking one are both retrieving
+                // from outside, and `WorkerResolution` falls through to the keyword — which is what
+                // still distinguishes "find sources" from "check these sources".
+                W("web", "source_finder", "SourceFinder", "Find relevant public sources.", Web, new[] { "web_search", "open_public_source" }, noApply)
+                    with { Capabilities = new[] { Missions.WorkerCapabilities.RetrieveSources } },
+                W("web", "source_verifier", "SourceVerifier", "Check source relevance and authority.", Web, new[] { "read_public_source", "compare_sources" }, noApply)
+                    with { Capabilities = new[] { Missions.WorkerCapabilities.RetrieveSources } }),
             R("coder", "CoderAnt", "Code", "Creates structured patch proposals only. Never applies changes.", true, ProposeBackend, new[] { "read_workspace_files", "create_patch_proposal" }, noApply,
                 W("coder", "backend_coder", "BackendCoder", "C#/.NET backend, API, runtime, config, and tests patch proposals.", ProposeBackend, new[] { "read_backend_files", "create_patch_proposal" }, noApply),
                 W("coder", "ui_coder", "UICoder", "Frontend/UI, styling, routes, dashboards, and visualizations patch proposals.", ProposeBackend, new[] { "read_frontend_files", "create_patch_proposal" }, noApply),

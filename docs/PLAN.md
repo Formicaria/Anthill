@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.108**.
+Shipping release: **v0.3.8.109**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -123,7 +123,21 @@ it is now either true or checked.
 What is NOT claimed: a MODULE still cannot contribute an ant. `BaseAnt` lives in `Anthill.Core`,
 which a module may not reference — exactly where `RegisterTool` stood before v3.8.10, and the same
 answer applies: the type moves to the SDK first, in a release of its own, and it needs this
-composability underneath it either way. Nothing live, still. See
+composability underneath it either way.
+
+**What v0.3.8.109 changes, and how far.** A question the colony cannot answer from itself is its own
+mission class: derived from a new intent and a new outward target, planned with a retrieval step it
+cannot omit, and graded on whether it went and looked. A retrieval leaves its own evidence kind — not
+`inspection`, because an audit of the operator's repository must not be satisfiable by searching the
+internet — so "did this mission retrieve anything" is answerable from the store rather than inferred
+from an artifact the answer might not cite. `CitationIntegrity`'s second trigger, open since `.99`
+and recorded as unbuildable at `.104`, now fires from the contract as well as the record, which is
+what makes a mission that retrieved NOTHING catchable: an empty store contradicts no citation.
+
+What is NOT claimed: that the sources are any good, or that they support what they are cited for.
+Those are semantic judgments, and a model asserting one is the evidence v2.19.0 stopped accepting.
+Traceability is checkable; support is not. Nor is a request naming both worlds admitted — its answer
+rests half on an inspection this gate cannot speak for. Nothing live, still. See
 [`ADR-008`](adr/ADR-008-universal-mission-lifecycle.md) §1 for the evidence and §2 for the contract
 the `.98`–`.107` sequence exists to satisfy.
 
@@ -183,7 +197,7 @@ through the real application. **Ext.** = requires an external adapter, connectio
 | Repository inspection | yes | yes | **yes** | no | audit missions resolve `repo_researcher` + file inspection by declared capability and leave `inspection` evidence (.98); live run pending |
 | Runtime/state inspection (read-only) | yes | yes | **yes** | no | `colony_state` + `researcher.runtime_researcher` (.98); live run pending |
 | Web research: claim→source traceability | yes | yes | **yes** | no | every cited url resolved against what was retrieved, or the mission is refused (.99); unsourced claims marked, not dropped |
-| Web research: retrieval | yes | no | partial | no | Ext. — needs a search provider; the retrieval itself is still unqualified, only what is done with it is |
+| Web research: retrieval | yes | no | **yes** | no | Ext. — needs a search provider. `.109`: a retrieval now leaves a `source_retrieval` evidence row, so "did this mission go and look" is answerable from the store rather than inferred from an artifact the answer might not cite |
 | Internal-memory research | yes | yes | **yes** | no | recall leaves a `recall_set`, so `mission:<id>` is citable and held to the same standard as a url (.99) |
 | Claim↔source SUPPORT | no | — | no | no | deliberately absent — semantic, the `.99` line |
 | Artifact/document creation | yes | yes | **yes** | no | a creation-typed task must leave a `created_artifact` whose content exists, requirements trace or stand unmet, inputs resolve (.100) |
@@ -205,14 +219,15 @@ through the real application. **Ext.** = requires an external adapter, connectio
 | Pheromone / skill learning | yes | yes | yes | no | positive learning restricted to `completed_verified` |
 | Roster extensibility | yes | yes | **yes** | no | `.108`: a role is declared once — registry entry, runtime kind, execution contract, executor factory — and every table that decides whether it runs reads that declaration. A contribution cannot shadow a built-in. MODULE-contributed ants are not claimed: `BaseAnt` is core, and the SDK move is its own release |
 | Verified route learning | yes | yes | **yes** | no | `.107`: a route that carried missions to `completed_verified` is preferred for a role the operator has NOT routed. Never overrides an explicit route, a priority override or compatibility; reads `verified_route` trails only, never the per-call `model_route` ones |
-| Objective verification (non-code) | yes | **yes — recognized classes** | **yes** | no | `.104`: a recognized class (`system_audit`, `troubleshooting`, `system_action`, `external_action`) no longer consults `objective_verification_enabled` and FAILS CLOSED when its gate cannot run. The flag still governs the general and coding lanes. Six releases of gates were inert on a default install until this |
+| Research (sourced answers) | yes | yes | **yes** | no | `.109`: a question the colony cannot answer from itself is its own class — retrieval step planned deterministically, `source_retrieval` evidence required, every claim resolved against what was fetched, and each requested section traced to a retrieval. A mission that retrieved nothing is refused, which the `.99` gate could not see |
+| Objective verification (non-code) | yes | **yes — recognized classes** | **yes** | no | `.104`: a recognized class (`system_audit`, `troubleshooting`, `system_action`, `external_action`, `research`) no longer consults `objective_verification_enabled` and FAILS CLOSED when its gate cannot run. The flag still governs the general and coding lanes. Six releases of gates were inert on a default install until this |
 
 No row may claim a status stronger than `QUALIFICATION.md` records. That is checked, not trusted:
 see `DocumentationConsistencyTests`.
 
 ---
 
-## 2b. The universal-workflow program — v0.3.8.108 → v0.3.8.111
+## 2b. The universal-workflow program — v0.3.8.109 → v0.3.8.111
 
 **This is the current forward sequence.** It supersedes the earlier framing in which R4–R10 were
 the next thing to run; those items are not deleted, and each release below names the R-items it
@@ -242,9 +257,8 @@ past.
 
 | Release | Operator-visible capability | Exit gate |
 |---|---|---|
-| **.108** | The roster becomes extensible; the live pack runs | §2c below |
-| **.109** | The `research` class, and the five gates waiting on it | the citation gate's second trigger fires from the CONTRACT as well as the record; `ObjectiveVerification.Required` stops re-reading the goal in the unrecognized lane; evidence attaches per answer section; the per-call `model_route` trail gets a reader; Ollama capability discovery extended |
-| **.110** | Mission resumption, enforcement, security residuals | an approved decision REPLAYS the refused step rather than only settling the question; R0's enforcement tooling (warnings-as-errors, analyzers, dependency and secret scanning, complexity budget, module auto-discovery, the guard hierarchy written down); the four security residuals; the `.97` Windows residual diagnosed or its hypothesis retired |
+| **.109** | The `research` class — an answer from outside the colony that can say where it came from | §2c below |
+| **.110** | Mission resumption, enforcement, security residuals | an approved decision REPLAYS the refused step rather than only settling the question; R0's enforcement tooling (warnings-as-errors, analyzers, dependency and secret scanning, complexity budget, module auto-discovery, the guard hierarchy written down); the four security residuals; the `.97` Windows residual diagnosed or its hypothesis retired; `ObjectiveVerification.Required` stops re-reading the goal in the unrecognized lane; the per-call `model_route` trail gets a reader or its absence is made permanent; Ollama capability discovery extended; the literal-only guard sweep; the capability table reconciled against the live records |
 | **.111** | Typed database rows | `Dictionary<string, object?>` leaves the memory layer's public surface and its 89 consumers, one slice at a time, each slice green before the next |
 
 Rules binding every release in this program:
@@ -260,83 +274,97 @@ Rules binding every release in this program:
   became API-editable with no control rendering it, so an operator following the changelog looked
   for a switch that did not exist.
 
-### 2c. v0.3.8.108 — the roster becomes extensible
+### 2c. v0.3.8.109 — the `research` class
 
-**Delivers:** a role can be declared without editing the core. One declaration point — registry
-entry, runtime kind, execution contract, executor factory — supplied together, read by all four
-tables that decide whether a role runs. A test ant is contributed, reaches execution, and is
-withdrawn without a trace.
+**Delivers:** a question the colony cannot answer from itself is admitted as its own class, planned
+with a retrieval step, and graded on whether it actually went and looked. The class that
+`CitationIntegrity` was built for at `.99` and that has not existed since.
 
-**THE FINDING.** The exit gate asks for an ant that registers "with no change to Queen, planner,
-scheduler or assembler", and the layers it names were never the obstacle: the planner reads the
-registry, the scheduler reads the task graph, the assembler reads the deliverable ledger, the
-dispatch chokepoint reads the execution contract. None knows a role by name.
+**THE FINDING.** `.104` recorded the citation gate's second trigger as unbuildable and said exactly
+what was missing: "no `research` mission class, no evidence kind meaning 'a source was retrieved',
+and no worker capability a research mission could require." All three were absent, and any one of
+them invented alone would have been a branch nothing reaches. They ship together here.
 
-A role still could not exist, because the four tables that decide whether one runs were static
-literals — `AntRegistry.BuildRoles()`, `AntExecutionCatalog.Kinds`, `AntExecutionCatalog.Contracts`,
-and `Queen._ants`, a dictionary literal inside a constructor. The last is the sharp end: adding an
-ant meant editing the Queen, which is exactly what the gate forbids. "Extensible" has been an
-implicit claim in every capability table since the roster was written, and this is the release that
-makes it true rather than continuing to make it.
+The consequence of the gap was not that research missions failed — it was that they could not fail.
+A mission asked to find something out ran through the general lane, and the `.99` gate could only
+catch a citation resolving to nothing. A mission that retrieved NOTHING and cited NOTHING left an
+identical empty store, and an empty store contradicts no citation, so the gate correctly read it as
+"nothing to check". A fluent answer written from the model's own weights and an answer built from
+sources were indistinguishable at every layer, which is the exact failure `CitationIntegrity` was
+written to make impossible.
 
-**THE ONE THAT WOULD HAVE BEEN MISSED.** `BaseExecutableRoleIds` was computed once at type
-initialisation, so a role declared afterwards would have been registered, contracted and
-dispatchable — and never executable. Present in every table that describes it, absent from the one
-that decides whether it runs, which is this repository's house defect arriving inside the fix for it.
+**THE DIMENSION, NOT THE LABEL.** The class is derived like its four siblings, from a new intent
+(`Research`) and a new target (`World`). `World` is separated from `External` by DIRECTION and the
+distinction is the sharpest line in that enum, because the two share a noun: External is where
+something GOES — a destination a human approves and an irreversible send lands on — and World is
+where knowledge COMES FROM. The class also refuses any request naming both worlds ("compare our
+retry policy against upstream's"), because its gate can speak only for the retrieval half and
+admitting such a request would let the repository half go unexamined behind a passing grade.
 
-**Reuses:** the registry's own role and worker records, the execution catalog's kinds and contracts,
-`AntExecutorCatalog.Initialize`'s startup validation, and the dispatch chokepoint's contract check —
-a contributed ant offered work outside its contract is refused by the line that refuses a built-in
-one. No parallel roster, no second authorization path.
+**THE ONE THAT WOULD HAVE BEEN MISSED.** The troubleshooting branch read `targets != None`, which
+was exactly right while every target was something the colony could execute a check against. With a
+World target it would have claimed "why is the market moving" — a class whose entire premise is a
+reproduction, applied to something the colony cannot re-run. Narrowed to the inspectable targets,
+which is what "any target" meant on the day it was written, so no request that classified as
+troubleshooting before this release classifies differently after it.
 
-**Connects:** `AntExtensions.Declare → AntRegistry.Roles/ByRole/ByWorker → AntExecutionCatalog.KindOf
-/ContractFor → AntRegistry.ExecutableRoleIds → Queen's executor map → AntExecutorCatalog.Initialize`.
+**Reuses:** `MissionIntake`'s dimension derivation, the existing `source_set`/`recall_set`/
+`sourced_answer` artifacts the web and builder ants already write, `CitationIntegrity`'s url
+resolution (called, never reimplemented — a second resolver would eventually disagree with the
+first about what counts as retrieved), the evidence store, `DeliverableLedger`, and the planner's
+class-coverage chokepoint. No parallel record, no second matrix.
 
-**Exit gate** — named tests:
+**Connects:** `MissionIntake.Resolve → MissionContract → Planner.EnsureClassCoverage (the retrieval
+step) → web.source_finder/source_verifier (retrieve_sources) → ToolEvidence (source_retrieval) →
+AssembledAnswer (per-section evidence) → ResearchIntegrity + CitationIntegrity → MissionEvaluator`.
 
-- `ADeclaredAnt_ReachesEveryTableThatDecidesWhetherItRuns` (all four, including executability),
-  `AWithdrawnAnt_LeavesNoTrace` (the composed views are cached; a stale cache would keep a withdrawn
-  role alive in exactly the tables this release taught to compose),
-  `WithNoContributions_TheRosterIsTheBuiltInOne` (twenty-five, so every count in the documentation
-  stays true);
-- what a contribution may not do: `AContribution_CannotShadowABuiltInRole`,
-  `AContribution_CannotBeDeclaredTwice`, `AContractForADifferentRole_IsRefused`;
-- and `NoOrchestrationLayer_KnowsAnyRoleByName` — source-shape, because the gate's claim is about
-  an absence and no behavioural test can see one.
+**Exit gate** — named tests in `ResearchMissionTests`:
+
+- `AResearchRequest_ClassifiesAsResearch_UnderObserveAuthority`;
+- the boundaries: `AnOutwardWhyQuestion_IsNotTroubleshooting`,
+  `ARequestNamingBothWorlds_IsNotAdmitted`, `ASendToAnEndpoint_IsStillAnExternalAction`,
+  `AnAuditRequest_IsUnaffectedByTheResearchVerbs`;
+- the gate: `AResearchMissionThatRetrievedNothing_IsRefused` (the case the `.99` trigger could not
+  see), `AnAnswerCitingWhatWasNeverRetrieved_IsStillRefused`,
+  `ARetrievalTheEvidenceStoreDoesNotKnowAbout_IsRefused` (the two records disagreeing),
+  `ADeclaredSectionWithNoRetrieval_IsRefused` (per-section evidence, now read by something);
+- and `TheAuditsInspectionRequirement_IsNotSatisfiedByAWebSearch` — the reason `source_retrieval`
+  is its own kind rather than another `inspection`.
 
 **Carried debt this release CLOSED:**
 
-- **`README.md`'s release prose was 66 releases stale.** Line 5 is pinned by tests and was correct;
-  lines 300 and 580 still described `v0.3.8.41` as the current release. The version NUMBER was
-  guarded and the prose about it was not — the guard-adjacent-to-the-claim shape. Rewritten to state
-  the shipped defaults without naming a release, so it cannot go stale the same way again.
-- **`docs/AUTONOMY.md` read as "autonomy is finished".** Its banner said "Phase 0–5 IMPLEMENTED —
-  the autonomy roadmap is complete" while PLAN treats sandboxed autonomy as R9, gated behind R6 and
-  not started. Both were true about different scopes; the banner now says which scope it means and
-  points at R6/R9 for the other.
+- **The citation gate's second trigger**, open since `.99` and recorded as unbuildable at `.104`.
+  Keyed on the specification's REQUIRED EVIDENCE rather than on the class name, so a later class
+  requiring `source_retrieval` inherits the gate without editing that line.
+- **Evidence is not attached per answer section** (`.106`). The join now has a consumer —
+  `ResearchIntegrity` — which is what §2c asked for: "rendering it is not the same as making it a
+  checkable property." It degrades honestly rather than uniformly: a DECLARED section must carry
+  its own retrieval, an INFERRED one falls back to the mission's, because under an inferred claim
+  the compiling builder is credited with every deliverable and leaves no evidence of its own.
+  Requiring per-section grounding there would grade the planner's verbosity, not the work.
+- **The web ant's two workers declared no capability.** They have been the colony's whole outward
+  read surface since the roster was written and nothing could ask for them, so every
+  research-flavoured request was served by whichever worker a keyword matched.
 
 **Recorded rather than closed, with the reason:**
 
-- **A module still cannot contribute an ant.** `IModuleContext` offers reasoning providers,
-  capability probes and tools, and `BaseAnt`/`AntExecutionResult` live in `Anthill.Core`, which a
-  module may not reference. That is exactly where `RegisterTool` stood before v3.8.10, and its own
-  remarks record what was done: the type moved to the SDK first, and the method followed. The same
-  move for the ant contract is a release of its own, and it needs THIS composability underneath it
-  either way. Named rather than half-built.
-- **The literal-only guard sweep moves to `.110`.** Three guards were found reading only string
-  literals where the code had moved to a shared constant — `ToolInventoryTests`,
-  `PheromoneVocabularyTests`, and a class-body scoping bug beneath the first that could attribute
-  one tool's name to another type. All three are fixed; the sweep for the rest belongs with `.110`'s
-  reconciliation work rather than being started and left half-done here.
+- **`ObjectiveVerification.Required` still re-reads the goal** in the unrecognized lane, and now
+  reads the composed goal rather than the operator's ask. Moving it to the contract's
+  `OriginalRequest` is correct and changes coding-lane grading — a goal whose transcript contains
+  "refactor" currently triggers the file-change requirement and would stop doing so. That is a
+  behaviour change with its own blast radius and it does not belong in a release about a new class.
+  `.110`.
+- **The per-call `model_route` trail still has no reader**, deliberately, on `.107`'s own reasoning:
+  it is a reliability signal, not evidence of good work, and giving it a consumer to tidy the loose
+  end is how the overclaim `.107` avoided arrives by another door. `.110` either gives it a reader
+  with a stated purpose or records the absence as permanent.
+- **Ollama capability discovery** stays R1's last item and stays "a contested design decision to
+  extend, not an oversight to fix". `.110`.
+- **The literal-only guard sweep** and the **capability-table reconciliation** move to `.110` with
+  the live records that feed the second.
 - **The §2b terminal-case guard.** `TheUniversalWorkflowProgram_IsExactlyTheRangeItDeclares` asserts
-  `to > from`, which cannot hold when one release remains. It does not bite at `.108` (the range is
-  `.108 → .111`); it bites at `.111`, and that release has to teach the guard how a program ends.
-- **The live pack** is the operator's step and runs against this release. `QUALIFICATION.md` §3
-  stays PARTIALLY RUN until the exported records exist; the capability-table reconciliation they
-  feed is `.110`'s.
-- **The citation gate's second trigger**, `ObjectiveVerification.Required`'s goal re-read, per-section
-  evidence, and the unread `model_route` trail all move to `.109`, which builds the `research` class
-  the first of them has been waiting on since `.99`.
+  `to > from`, which cannot hold when one release remains. It does not bite here (the range is
+  `.109 → .111`); it bites at `.111`, and that release has to teach the guard how a program ends.
 - **A paused mission still does not resume its refused step** — `.110`.
 
 **Explicitly still unsupported after .108:** the `research` mission class (`.109`); mission

@@ -125,6 +125,7 @@ public class RecognizedClassVerificationTests
             MissionSpecification.TroubleshootingClass,
             MissionSpecification.SystemActionClass,
             MissionSpecification.ExternalActionClass,
+            MissionSpecification.ResearchClass,   // v0.3.8.109 — gate: ResearchIntegrity
         };
 
         Assert.Equal(known.OrderBy(c => c, StringComparer.Ordinal),

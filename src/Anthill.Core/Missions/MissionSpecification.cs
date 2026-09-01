@@ -11,6 +11,18 @@ public enum MissionIntent
     Diagnose,
     /// <summary>Change something. Consequential, and gated as such.</summary>
     Change,
+    /// <summary>
+    /// Go and FIND OUT, from outside the colony, and come back with what was found and where it came
+    /// from. v0.3.8.109.
+    ///
+    /// Distinct from <see cref="Assess"/>, which inspects something the colony can reach and holds
+    /// the receipts for, and from <see cref="Explain"/>, which answers from what is already known.
+    /// The separating property is not the question's difficulty but where the answer's evidence
+    /// lives: an assessment's evidence is something the colony DID, and research's evidence is
+    /// something the WORLD said — which is the whole reason its answers need citations and an
+    /// assessment's do not.
+    /// </summary>
+    Research,
 }
 
 /// <summary>What the mission is ABOUT. A mission may name more than one.</summary>
@@ -29,6 +41,21 @@ public enum MissionTargets
     /// <see cref="Service"/> because the consequence is: a service action is the operator's own
     /// machine and reverses, and a message that reached other people does not.</summary>
     External = 16,
+    /// <summary>
+    /// The world outside the colony as a SOURCE. v0.3.8.109.
+    ///
+    /// The boundary with <see cref="External"/> is direction, and it is the sharpest line in this
+    /// enum because the two share a noun. External is where something GOES — a destination a human
+    /// approves and an irreversible send lands on. World is where knowledge COMES FROM — pages the
+    /// colony reads and must then be able to cite. "Post the summary to the team's webhook" and
+    /// "look up what the vendor's changelog says" both name the outside world, and one of them can
+    /// be undone by nobody.
+    ///
+    /// Nothing here is inspectable in the sense the other targets are: the colony cannot re-run the
+    /// internet, which is why a mission aimed only at this target can never be a troubleshooting
+    /// mission however it is worded, and why its evidence kind is a retrieval rather than a check.
+    /// </summary>
+    World = 32,
 }
 
 /// <summary>How recent the answer must be. "What did we do" and "what is true now" differ.</summary>
@@ -153,6 +180,25 @@ public sealed record MissionSpecification
     /// the worst direction for that to be wrong in.
     /// </summary>
     public const string ExternalActionClass = "external_action";
+
+    /// <summary>
+    /// The outward-reading class v0.3.8.109 implements end to end: a question the colony cannot
+    /// answer from itself, answered from sources it retrieved and can name. Open since `.99`, when
+    /// <c>CitationIntegrity</c> was built for a class that did not exist.
+    ///
+    /// IT CARRIES <see cref="MissionAuthority.Observe"/>, the same ceiling as the audit class, and
+    /// the equality is worth stating because this class touches the network and that one does not.
+    /// Observe is a ceiling on what the mission may CHANGE, and research changes nothing: it reads
+    /// pages. The outbound network call is the web ant's own permission contract, which predates
+    /// every class in this list and is unchanged by any of them.
+    ///
+    /// THE BOUNDARY WITH <see cref="SystemAuditClass"/> is the target, not the verb. "Assess the
+    /// colony's retry policy" and "find out what the upstream project's retry policy is" are the
+    /// same question asked of two different worlds, and the receipts differ absolutely: the first
+    /// rests on an inspection the colony performed, the second on a page somebody else wrote. An
+    /// audit answered from the internet is the failure this separation prevents.
+    /// </summary>
+    public const string ResearchClass = "research";
 
     /// <summary>
     /// True when this specification carries enough to hold the mission to something. A `general`

@@ -218,17 +218,25 @@ public class ArtifactBridgeTests : IDisposable
     /// working directory is not evidence that anything about the colony or its repository was
     /// examined, and admitting it would let a mission that inspected nothing produce an inspection
     /// row for free — which is the exact hole this lane was opened to close.
+    ///
+    /// v0.3.8.109 — THE CASE READS AN EXPECTED KIND RATHER THAN A BOOLEAN, and the widening is to
+    /// where the guard LOOKS, never to what it accepts. `web_search` moved from "records nothing" to
+    /// "records a retrieval", so a boolean could only say the wrong thing about it in one direction
+    /// or the other: `false` would demand silence the tool no longer keeps, and `true` would accept
+    /// an `inspection` row from a web search — which is precisely what this lane must never see. The
+    /// rule the case was written for is unchanged and now stated exactly: an inspection row comes
+    /// only from a tool that inspected the colony or its repository.
     /// </summary>
     [Theory]
-    [InlineData("list_directory", true)]
-    [InlineData("read_text_file", true)]
-    [InlineData("search_workspace", true)]
-    [InlineData("repository_index", true)]
-    [InlineData("colony_state", true)]
-    [InlineData("web_search", false)]
-    [InlineData("shell_command", false)]
-    [InlineData("system_info", false)]
-    public void OnlyReadOnlyInspections_AreRecorded(string toolName, bool recorded)
+    [InlineData("list_directory", EvidenceKinds.Inspection)]
+    [InlineData("read_text_file", EvidenceKinds.Inspection)]
+    [InlineData("search_workspace", EvidenceKinds.Inspection)]
+    [InlineData("repository_index", EvidenceKinds.Inspection)]
+    [InlineData("colony_state", EvidenceKinds.Inspection)]
+    [InlineData("web_search", EvidenceKinds.SourceRetrieval)]
+    [InlineData("shell_command", null)]
+    [InlineData("system_info", null)]
+    public void OnlyReadOnlyInspections_AreRecorded(string toolName, string? expectedKind)
     {
         var registry = new ToolRegistry(_memory);
         registry.Register(new FakeTool(toolName, ok: true));
@@ -236,14 +244,14 @@ public class ArtifactBridgeTests : IDisposable
         registry.RunTool(toolName, "m1", "t1");
 
         var evidence = ((IEvidenceStore)_memory).ForMission("m1");
-        if (!recorded)
+        if (expectedKind is null)
         {
             Assert.Empty(evidence);
             return;
         }
 
         var one = Assert.Single(evidence);
-        Assert.Equal(EvidenceKinds.Inspection, one.Kind);
+        Assert.Equal(expectedKind, one.Kind);
         Assert.False(one.Deterministic);
         Assert.False(((IEvidenceStore)_memory).HasDeterministicPass("m1"));
     }
