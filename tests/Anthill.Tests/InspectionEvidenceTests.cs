@@ -35,9 +35,25 @@ public class InspectionEvidenceTests
             Assert.True(ToolEvidence.Records(readOnly));
         }
 
+        // v0.3.8.109 — THE RETRIEVAL LANE, and `web_search` moved into it from the line below.
+        //
+        // This assertion said web_search records NOTHING, and at `.98` that was right: the only
+        // reason to record a read was so an audit could show it had inspected the operator's own
+        // repository, and a search of the internet is no evidence of that. `.109` gives the outward
+        // read its own kind rather than folding it into `inspection`, which keeps that reasoning
+        // intact — an audit still cannot satisfy its inspection requirement by searching the web —
+        // while making "did this research mission retrieve anything" answerable from the store.
+        foreach (var retrieval in new[] { "web_search", "open_public_source", "read_public_source" })
+        {
+            Assert.False(ToolEvidence.IsDeterministic(retrieval));
+            Assert.False(ToolEvidence.IsObservation(retrieval));
+            Assert.True(ToolEvidence.IsRetrieval(retrieval));
+            Assert.True(ToolEvidence.Records(retrieval));
+        }
+
         // Everything else still records nothing at all. The store is not an audit log — the event
         // stream is — and widening it further costs the property that makes it useful.
-        foreach (var unrecorded in new[] { "web_search", "shell_command", "write_text_file", "apply_patch" })
+        foreach (var unrecorded in new[] { "shell_command", "write_text_file", "apply_patch", "system_info" })
             Assert.False(ToolEvidence.Records(unrecorded));
     }
 

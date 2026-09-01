@@ -158,8 +158,13 @@ public static class MissionEvaluator
         // answer built from the outside world: a claim attributed to something the mission never
         // retrieved, which reads exactly like a real citation. Applies only where there is a claim
         // record AND retrieved sources to check it against, so nothing that ran before is affected.
-        var citations = CitationIntegrity.Applies(artifacts)
-            ? CitationIntegrity.Evaluate(artifacts)
+        // v0.3.8.109 — AND THE SECOND TRIGGER IS LIVE. Either is sufficient now: the mission's
+        // contract requires retrieved sources, or it actually retrieved some. The first is what
+        // makes a research mission that searched NOTHING catchable — an empty store contradicts no
+        // citation, so the retrieval trigger alone reads it as "nothing to check", which is exactly
+        // how a mission could be admitted to answer from the world and answer from itself instead.
+        var citations = CitationIntegrity.Applies(specification, artifacts)
+            ? CitationIntegrity.Evaluate(specification, artifacts)
             : null;
 
         // v0.3.8.100 — AND A CREATED DELIVERABLE MUST EXIST. The failure this catches is specific
@@ -205,8 +210,20 @@ public static class MissionEvaluator
         // deliverable ledger above is also built here: this evaluator's whole claim is that a grade
         // is reproducible from the persisted record. Reading the rendered prose would grade the
         // answer by looking at it, which is the word-search `.98` refused.
-        var assembled = AssembledAnswer.Build(specification, mission.Tasks, mission.UserResult);
+        // v0.3.8.109 — the evidence goes in, so each section can name the rows its own serving tasks
+        // left. `.106` built the join and left it unread; §2c recorded that rendering a join is not
+        // the same as making it a checkable property. `ResearchIntegrity` below is what reads it.
+        var assembled = AssembledAnswer.Build(specification, mission.Tasks, mission.UserResult, evidence);
         var coverage = AnswerCoverage.Applies(assembled) ? AnswerCoverage.Evaluate(assembled) : null;
+
+        // v0.3.8.109 — AND A RESEARCH ANSWER MUST HAVE GONE AND LOOKED. Specification-keyed like its
+        // class siblings and mutually exclusive with them by class. What it catches that no sibling
+        // can: a mission admitted to answer from the outside world that retrieved nothing, or whose
+        // two accounts of itself — the artifacts it cites and the retrievals its evidence records —
+        // do not agree, or whose plan named a step for a question and that step consulted nothing.
+        var research = ResearchIntegrity.Applies(specification)
+            ? ResearchIntegrity.Evaluate(specification!, artifacts, evidence, assembled)
+            : null;
 
         // v0.3.8.104 — A RECOGNIZED CLASS IS VERIFIED WHATEVER THE SWITCH SAYS.
         //
@@ -227,7 +244,8 @@ public static class MissionEvaluator
         var recognized = specification is not null
                       && Missions.MissionContracts.RecognizedClasses.Contains(specification.MissionClass);
         var gateSpoke = assessment is not null || diagnosis is not null
-                     || operations is not null || sends is not null;
+                     || operations is not null || sends is not null
+                     || research is not null;   // v0.3.8.109
 
         string deliverable;
         if (recognized && !gateSpoke)
@@ -245,6 +263,14 @@ public static class MissionEvaluator
             deliverable = MissionEvaluation.Deliverable.NotSatisfied;
         else if (creations is { Satisfied: false })
             deliverable = MissionEvaluation.Deliverable.NotSatisfied;
+        // v0.3.8.109 — the research gate joins the class chain ahead of its siblings only because
+        // the chain is ordered and it has to sit somewhere; the arms are mutually exclusive by
+        // class, so no order among them can change an answer. It is placed FIRST of the class arms
+        // so that a reader adding the next class finds the newest one where the pattern is clearest.
+        else if (research is not null)
+            deliverable = research.Satisfied
+                ? MissionEvaluation.Deliverable.Satisfied
+                : MissionEvaluation.Deliverable.NotSatisfied;
         else if (diagnosis is not null)
             deliverable = diagnosis.Satisfied
                 ? MissionEvaluation.Deliverable.Satisfied
@@ -336,7 +362,12 @@ public static class MissionEvaluator
                     : "")
                 + (coverage is null || coverage.Satisfied ? "" : $" {coverage.Explanation}")
                 + (assessment is null || assessment.Satisfied ? "" : $" {assessment.Explanation}")
-                + (citations is null || citations.Satisfied ? "" : $" {citations.Explanation}")
+                // v0.3.8.109 — the citation line is suppressed when the research gate spoke, because
+                // that gate's own failure list already carries this explanation verbatim. Saying it
+                // twice in one paragraph reads as two findings and is one.
+                + (citations is null || citations.Satisfied || research is not null
+                    ? "" : $" {citations.Explanation}")
+                + (research is null || research.Satisfied ? "" : $" {research.Explanation}")
                 + (sends is null || sends.Satisfied ? "" : $" {sends.Explanation}")
                 + (creations is null || creations.Satisfied ? "" : $" {creations.Explanation}")
                 + (diagnosis is null || diagnosis.Satisfied ? "" : $" {diagnosis.Explanation}")

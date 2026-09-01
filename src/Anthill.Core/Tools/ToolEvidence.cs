@@ -66,6 +66,31 @@ public static class ToolEvidence
             "colony_state",
         };
 
+    /// <summary>
+    /// Tools that reach OUTSIDE the colony and bring something back. v0.3.8.109.
+    ///
+    /// A THIRD LANE, and it is a lane rather than an addition to the set above for one reason that
+    /// matters more than tidiness: `AssessmentObjective` requires `inspection` rows before an audit's
+    /// conclusions can be believed. Put `web_search` in <see cref="ObservationTools"/> and an audit
+    /// of what is implemented in the operator's own repository could satisfy that requirement by
+    /// searching the internet — a claim about their code established from somebody else's. Both lanes
+    /// record a read-only observation; they observe different worlds, and the requirements they
+    /// satisfy are not interchangeable.
+    ///
+    /// The promotion lane is again UNCHANGED, and for the reason this type stated at the outset:
+    /// "<c>web_search</c> does not — the internet changes." A retrieval is bound to no tree, so its
+    /// row is non-deterministic exactly as an inspection's is.
+    ///
+    /// These are the colony's whole outward read surface — the web ant's two workers dispatch
+    /// nothing else — so "this mission retrieved something" becomes answerable from the store at the
+    /// cost of one row per call.
+    /// </summary>
+    private static readonly IReadOnlySet<string> RetrievalTools =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "web_search", "open_public_source", "read_public_source", "compare_sources",
+        };
+
     /// <summary>True when this tool's outcome is a reproducible VERDICT — the promotion lane.</summary>
     public static bool IsDeterministic(string? toolName) =>
         toolName is not null && DeterministicTools.ContainsKey(toolName);
@@ -74,8 +99,13 @@ public static class ToolEvidence
     public static bool IsObservation(string? toolName) =>
         toolName is not null && ObservationTools.Contains(toolName);
 
-    /// <summary>True when this tool produces an evidence row of EITHER kind.</summary>
-    public static bool Records(string? toolName) => IsDeterministic(toolName) || IsObservation(toolName);
+    /// <summary>True when this tool retrieved something from outside the colony. v0.3.8.109.</summary>
+    public static bool IsRetrieval(string? toolName) =>
+        toolName is not null && RetrievalTools.Contains(toolName);
+
+    /// <summary>True when this tool produces an evidence row of ANY kind.</summary>
+    public static bool Records(string? toolName) =>
+        IsDeterministic(toolName) || IsObservation(toolName) || IsRetrieval(toolName);
 
     /// <summary>
     /// The evidence a completed tool call represents, or null when the tool does not produce any.
@@ -96,6 +126,19 @@ public static class ToolEvidence
             // file read — and the identity fields are deliberately not stamped: an unpatched
             // workspace is not a revision, and labelling one would let an observation of the base
             // tree look like evidence about a candidate.
+            // v0.3.8.109 — the RETRIEVAL lane, checked before the observation one only because the
+            // two sets are disjoint and the order is therefore immaterial; it is stated so a later
+            // reader does not have to work that out. Identity fields are unstamped for the same
+            // reason: the internet is not a revision.
+            if (IsRetrieval(toolName))
+                return Evidence.Create(
+                    kind: EvidenceKinds.SourceRetrieval,
+                    deterministic: false,
+                    passed: success,
+                    missionId: missionId,
+                    detail: TextUtil.Truncate($"{toolName}: {detail ?? ""}", 2400),
+                    taskId: taskId);
+
             if (!ObservationTools.Contains(toolName ?? "")) return null;
             return Evidence.Create(
                 kind: EvidenceKinds.Inspection,

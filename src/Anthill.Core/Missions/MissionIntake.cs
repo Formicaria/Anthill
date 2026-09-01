@@ -77,6 +77,27 @@ public static class MissionIntake
       + @"deploy|install|write|restart|reboot|power[- ]cycle|post|publish|send|notify)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    /// <summary>
+    /// v0.3.8.109 — the RESEARCH verbs: go and find out, from outside. Narrow, and narrower than the
+    /// assessment list on purpose, because these words also appear in ordinary requests about the
+    /// colony's own code — "look up the retry constant" is a file read, not a mission class.
+    ///
+    /// On their own they classify NOTHING. The research branch below also requires the World target
+    /// AND the absence of every colony-side target, so a verb here reaching a repository question
+    /// resolves exactly as it did before this class existed. That is the same discipline `.103` used
+    /// for its outbound verbs, and for the same reason: a class admitted on a verb alone is a class
+    /// that will eventually claim somebody else's mission.
+    ///
+    /// Deliberately NOT `investigate` or `look into`, which are how operators ask WHY something is
+    /// broken — those belong to <see cref="DiagnoseVerbs"/>, and taking them here would let a
+    /// diagnosis be answered by a web search.
+    /// </summary>
+    private static readonly Regex ResearchVerbs = new(
+        @"\b(research|researching|look up|looking up|find out|finding out|survey|surveying|"
+      + @"gather sources|cite|citing|what(?:'s| is| are) (?:the )?(?:latest|current|newest)|"
+      + @"search (?:the )?(?:web|internet|online)|read up on)\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     private static readonly Regex RepositoryTargets = new(
         @"\b(repo|repository|codebase|code base|source|implementation|implemented|workflow|"
       + @"orchestration|architecture|colony|anthill)\b",
@@ -119,6 +140,43 @@ public static class MissionIntake
         @"\b(webhook|slack|discord|teams channel|pagerduty|opsgenie|endpoint|"
       + @"external api|third[- ]party|https?://\S+)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// v0.3.8.109 — the WORLD dimension: somewhere outside the colony that can be READ.
+    ///
+    /// NO URL PATTERN HERE, and that is the one deliberate omission. <see cref="ExternalTargets"/>
+    /// matches a bare url because a url is a destination; matching one here too would set both flags
+    /// on every request carrying a link, and the research branch below refuses any request that also
+    /// names a destination. An operator who pastes a url and says "research this" is asking about a
+    /// page, and the honest way to reach that is a word, not a scheme.
+    ///
+    /// `sources` and `citations` are PLURAL on purpose. <see cref="RepositoryTargets"/> already
+    /// claims the singular `source` — the source tree — and the two mean opposite things. The word
+    /// boundary keeps them apart, which is subtle enough to be worth writing down rather than
+    /// leaving for someone to rediscover by watching a repository question route to the web.
+    /// </summary>
+    private static readonly Regex WorldTargets = new(
+        @"\b(web|internet|online|public(?:ly)? available|sources|citations|references|literature|"
+      + @"papers|articles|publications|news|blogs?|upstream|vendors?|competitors?|market|"
+      // Deliberately NOT "state of the art": `state` is a RuntimeTargets word and has been since
+      // `.98`, so that phrase would set BOTH flags and the research branch would refuse the very
+      // request it matched. A vocabulary entry that can never win is the declaration-reaching-nobody
+      // defect at the smallest possible scale, and it is left out rather than left in to look
+      // thorough.
+      + @"industry|prior art)\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Every target the colony can actually go and look at. v0.3.8.109.
+    ///
+    /// Named because the troubleshooting branch needs it and because naming it is what keeps that
+    /// branch's narrowing behaviour-preserving: before <see cref="MissionTargets.World"/> existed
+    /// this set WAS "any target", so every request that classified as troubleshooting before this
+    /// release still does.
+    /// </summary>
+    private const MissionTargets InspectableTargets =
+        MissionTargets.Repository | MissionTargets.Runtime | MissionTargets.Project
+      | MissionTargets.Service | MissionTargets.External;
 
     /// <summary>
     /// Capability ids a system audit requires. Workers declare against these; the resolver matches
@@ -183,6 +241,23 @@ public static class MissionIntake
     public static readonly IReadOnlyList<string> ExternalActionCapabilities = new[]
     {
         WorkerCapabilities.ProposeExternalAction,
+        WorkerCapabilities.CompileResult,
+        WorkerCapabilities.VerifyResultCompleteness,
+    };
+
+    /// <summary>
+    /// Capability ids a research mission requires. v0.3.8.109. `retrieve_sources` leads for the
+    /// standing reason — order is the tie-break <c>AntRegistry.ResolveByCapability</c> applies, and
+    /// the class's DEFINING capability must be the one a researcher-shaped task cannot claim first.
+    ///
+    /// Declared by the web ant's own workers in this same release. Those two workers have carried no
+    /// capability since `.98` gave workers capabilities at all — they were the outward read surface
+    /// with nothing able to ask for them, which is why every research-flavoured request until now was
+    /// served by whichever worker a keyword happened to match.
+    /// </summary>
+    public static readonly IReadOnlyList<string> ResearchCapabilities = new[]
+    {
+        WorkerCapabilities.RetrieveSources,
         WorkerCapabilities.CompileResult,
         WorkerCapabilities.VerifyResultCompleteness,
     };
@@ -272,7 +347,52 @@ public static class MissionIntake
                 RequiredEvidence = Array.Empty<string>(),
             };
 
-        if (intent == MissionIntent.Diagnose && targets != MissionTargets.None)
+        // v0.3.8.109 — THE RESEARCH CLASS, placed after the two Change branches and before
+        // troubleshooting, which keeps this method's standing order: descending consequence. It
+        // could sit anywhere among the read-only branches without changing a single answer, because
+        // the three are disjoint by construction — this one requires the Research intent AND a World
+        // target AND no colony-side target at all. That is stated rather than relied on silently:
+        // an ordering that happens to be safe today is one a later verb can quietly break.
+        //
+        // THE THIRD CONDITION IS THE CLASS'S HONESTY. A request naming both worlds — "compare our
+        // retry policy against what the upstream project does" — is NOT admitted here. Its answer
+        // rests half on an inspection and half on a retrieval, and this class's gate can only speak
+        // for the retrieval half; admitting it would let a mission pass a research gate while the
+        // repository half of the question went unexamined. Such a request resolves exactly as it did
+        // before this release, which is the outcome §2c records rather than the one this branch
+        // guesses at.
+        if (intent == MissionIntent.Research
+            && targets.HasFlag(MissionTargets.World)
+            && (targets & InspectableTargets) == MissionTargets.None)
+            return new MissionSpecification
+            {
+                OriginalRequest = request,
+                MissionClass = MissionSpecification.ResearchClass,
+                Intent = MissionIntent.Research,
+                Targets = MissionTargets.World,
+                // A retrieval is a claim about what a page says NOW. A research answer assembled
+                // from what the colony read last month is an archive, and it should say so rather
+                // than be presented as the current state of anything.
+                Freshness = MissionFreshness.Current,
+                // OBSERVE. Reading pages changes nothing, and the outbound call is the web ant's own
+                // long-standing permission contract rather than anything this ceiling grants.
+                Authority = MissionAuthority.Observe,
+                Deliverables = ResolveDeliverables(request),
+                RequiredCapabilities = ResearchCapabilities,
+                // EVIDENCE-KEYED, like the audit and the diagnosis and unlike the two action
+                // classes. The class's promise is that the answer rests on something retrieved, and
+                // `source_retrieval` is the row a retrieval leaves — spelled as the store spells it,
+                // which is the audit class's own hard-won lesson kept.
+                RequiredEvidence = new[] { Anthill.SDK.Artifacts.EvidenceKinds.SourceRetrieval },
+            };
+
+        // v0.3.8.109 — AND A PURELY OUTWARD "WHY" IS NOT A TROUBLESHOOTING MISSION. This condition
+        // read `targets != MissionTargets.None` until the World target existed, and that was exactly
+        // right while every target was something the colony could execute a check against. "Why is
+        // the market moving" would now enter the class whose entire premise is a reproduction, and
+        // the colony cannot re-run the world. Behaviour-preserving for every request that predates
+        // this release: `InspectableTargets` is what "any target" meant when it was written.
+        if (intent == MissionIntent.Diagnose && (targets & InspectableTargets) != MissionTargets.None)
             return new MissionSpecification
             {
                 OriginalRequest = request,
@@ -332,6 +452,19 @@ public static class MissionIntake
     {
         if (ChangeVerbs.IsMatch(request)) return MissionIntent.Change;
         if (DiagnoseVerbs.IsMatch(request)) return MissionIntent.Diagnose;
+        // v0.3.8.109 — RESEARCH SITS BELOW DIAGNOSE AND ABOVE ASSESS, and both placements are
+        // decisions rather than an ordering that fell out.
+        //
+        // Below diagnose: "research why the deploy keeps failing" is a diagnosis that used the word
+        // research. Its answer must rest on checks the colony ran, and letting the research verb win
+        // would route a reproducible question to a web search — the worst direction for this to be
+        // wrong in, because the resulting answer would be fluent and unfalsifiable.
+        //
+        // Above assess: "research what the current best practice is" contains no assessment verb
+        // today, but `analyse` and `review` are in that list and both appear in research asks. The
+        // reverse order would let an outward question be classified as an audit of nothing, which is
+        // the misread `.98` exists to prevent, pointed the other way.
+        if (ResearchVerbs.IsMatch(request)) return MissionIntent.Research;
         if (AssessVerbs.IsMatch(request) || CapabilityQuestions.IsMatch(request)) return MissionIntent.Assess;
         return MissionIntent.Explain;
     }
@@ -349,6 +482,9 @@ public static class MissionIntake
         // that needs it. `.102` recorded what the other order costs: the Service flag existed
         // from `.98` with nothing resolving it, a dimension reaching nobody.
         if (ExternalTargets.IsMatch(request)) targets |= MissionTargets.External;
+        // v0.3.8.109 — the World flag, declared and resolved in the release that needs it, per the
+        // precedent `.102` set after the Service flag spent four releases reaching nobody.
+        if (WorldTargets.IsMatch(request)) targets |= MissionTargets.World;
         return targets;
     }
 
@@ -458,6 +594,17 @@ public static class WorkerCapabilities
     /// declaration-reaching-nobody defect wearing a specification's clothes.
     /// </summary>
     public const string ProposeExternalAction = "propose_external_action";
+
+    /// <summary>
+    /// Search outside the colony, open what comes back, and record each source as something this
+    /// mission can be held to having consulted. v0.3.8.109.
+    ///
+    /// Deliberately RETRIEVE rather than "answer": what the capability grants is fetching and
+    /// recording. Whether the answer built on top honestly attributes its claims is
+    /// <c>CitationIntegrity</c>'s question, and no capability can grant an answer the property of
+    /// being true.
+    /// </summary>
+    public const string RetrieveSources = "retrieve_sources";
 
     /// <summary>Read prior mission and objective memory.</summary>
     public const string RecallMissionHistory = "recall_mission_history";

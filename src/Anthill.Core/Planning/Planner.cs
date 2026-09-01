@@ -420,6 +420,61 @@ Required JSON:
             return tasks;
         }
 
+        // v0.3.8.109 — the research class's own coverage, same doctrine as every class above: the
+        // step that DEFINES the class is ensured deterministically, because a plan that omits it
+        // produces a mission the class gate must then refuse — a mission built to fail. Here the
+        // consequence is sharper than elsewhere, because the planner's own standing rule is "use web
+        // only when the mission needs current, public, external, version, price, news, or online
+        // information": a research mission is by construction exactly that mission, and a model that
+        // reads the rule conservatively plans a builder task that answers from its own weights. That
+        // answer would be fluent, sourceless, and indistinguishable from research to anyone reading
+        // it — which is the entire failure this class exists to make detectable.
+        if (specification?.MissionClass == Anthill.Core.Missions.MissionSpecification.ResearchClass)
+        {
+            // THE RETRIEVAL STEP. The capability names WHAT must be possible; WorkerResolution
+            // decides who serves it. `web` is named as the ant because it is the only role holding
+            // an outbound permission contract — that is a fact about the roster, not a routing
+            // preference, and the capability is what a contributed role would have to declare to
+            // take this over.
+            if (!tasks.Any(t => string.Equals(t.RequiredCapability,
+                    Anthill.Core.Missions.WorkerCapabilities.RetrieveSources, StringComparison.OrdinalIgnoreCase))
+                && !tasks.Any(t => string.Equals(t.AssignedAnt, "web", StringComparison.OrdinalIgnoreCase)))
+                tasks.Insert(0, new Task
+                {
+                    Title = "Retrieve the sources",
+                    Description = "Search outside the colony for what this question actually needs, "
+                                + "open the results, and record each source — its url, title and "
+                                + "confidence — as something this answer can be held to having "
+                                + $"consulted: {goal}",
+                    AssignedAnt = "web",
+                    TaskType = "research",
+                    RequiredCapability = Anthill.Core.Missions.WorkerCapabilities.RetrieveSources,
+                });
+
+            if (!tasks.Any(t => string.Equals(t.AssignedAnt, "builder", StringComparison.OrdinalIgnoreCase)))
+                tasks.Add(new Task
+                {
+                    Title = "Compile the sourced answer",
+                    Description = "Assemble the findings into the answer, attributing each claim to "
+                                + "one of the retrieved sources and marking anything you cannot "
+                                + $"attribute as unsourced rather than dropping it: {goal}",
+                    AssignedAnt = "builder",
+                    TaskType = "synthesis",
+                });
+
+            if (!tasks.Any(t => string.Equals(t.AssignedAnt, "verifier", StringComparison.OrdinalIgnoreCase)))
+                tasks.Add(new Task
+                {
+                    Title = "Verify the attribution",
+                    Description = "Check that every claim's cited source is one this mission actually "
+                                + $"retrieved, and that nothing unattributed is presented as sourced: {goal}",
+                    AssignedAnt = "verifier",
+                    TaskType = "verification",
+                });
+
+            return tasks;
+        }
+
         // v0.3.8.101 — the troubleshooting class's own coverage, same doctrine as the audit's
         // below: the step that DEFINES the class is ensured deterministically, because a plan that
         // omits it produces a mission the class gate must then refuse — a mission built to fail.

@@ -26,15 +26,33 @@ public static class AnswerSectionState
 /// section's owner or the runtime inferred it. Carried into the answer rather than left in the
 /// ledger, because "the plan mapped your question to a step" and "one builder was assumed to cover
 /// everything" are different assurances and the operator is the one who should get to tell.</param>
+/// <param name="EvidenceIds">v0.3.8.109 — the evidence rows the tasks that served THIS section
+/// actually left. The join existed at `.106` (a section knows its serving tasks, and evidence knows
+/// its task) and had no consumer; §2c recorded that rendering a join is not the same as making it a
+/// checkable property. <see cref="ResearchIntegrity"/> is its consumer.</param>
 public sealed record AnswerSection(
     string DeliverableId,
     string Request,
     string Content,
     IReadOnlyList<string> ServingTaskIds,
     string Claim,
-    string State)
+    string State,
+    IReadOnlyList<string> EvidenceIds)
 {
     public bool Answered => string.Equals(State, AnswerSectionState.Answered, StringComparison.Ordinal);
+
+    /// <summary>
+    /// This section rests on something the mission recorded doing. v0.3.8.109.
+    ///
+    /// MEANINGFUL ONLY WHERE THE CLAIM IS <see cref="DeliverableClaim.Declared"/>, and any consumer
+    /// has to know that. Under an INFERRED claim the compiling builder is credited with every
+    /// deliverable, and a builder leaves no evidence of its own — it writes prose from other tasks'
+    /// output — so every section of such a mission is ungrounded by this measure however much work
+    /// the mission did. A gate reading this without that distinction would be grading how explicitly
+    /// the plan attributed its steps, which is a property of the planner's verbosity and not of the
+    /// answer.
+    /// </summary>
+    public bool Grounded => EvidenceIds.Count > 0;
 }
 
 /// <summary>
@@ -122,11 +140,23 @@ public sealed record AssembledAnswer(IReadOnlyList<AnswerSection> Sections, bool
     /// <param name="fallbackContent">What the mission produced when it declared no deliverables —
     /// the raw best-task output. Used ONLY for the unspecified single-section case; a specified
     /// mission never falls back to it, because falling back is the behaviour this type removes.</param>
+    /// <param name="evidence">v0.3.8.109 — the mission's evidence rows, so each section can name the
+    /// ones its own serving tasks left. Optional and null-safe: every caller that predates this
+    /// parameter gets sections with an empty evidence list, which is exactly what they had.</param>
     public static AssembledAnswer Build(
-        MissionSpecification? specification, IReadOnlyList<Task>? tasks, string? fallbackContent)
+        MissionSpecification? specification, IReadOnlyList<Task>? tasks, string? fallbackContent,
+        IReadOnlyList<Anthill.SDK.Artifacts.Evidence>? evidence = null)
     {
         var all = tasks ?? Array.Empty<Task>();
         var ledger = DeliverableLedger.Build(specification, all);
+
+        // Evidence indexed by the task that produced it. Rows with no task id are mission-level and
+        // belong to no section — they are deliberately dropped here rather than credited to every
+        // section, which would make "this section rests on something" true by default.
+        var evidenceByTask = (evidence ?? Array.Empty<Anthill.SDK.Artifacts.Evidence>())
+            .Where(e => !string.IsNullOrWhiteSpace(e.TaskId))
+            .GroupBy(e => e.TaskId!, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Select(e => e.Id).ToList(), StringComparer.Ordinal);
 
         // UNSPECIFIED: one section, no headings, content unchanged. Not a special case bolted on —
         // it is the honest reading of a mission that asked for one thing without saying so, and it
@@ -143,7 +173,11 @@ public sealed record AssembledAnswer(IReadOnlyList<AnswerSection> Sections, bool
                         Claim: DeliverableClaim.Inferred,
                         State: string.IsNullOrWhiteSpace(fallbackContent)
                             ? AnswerSectionState.Unanswered
-                            : AnswerSectionState.Answered),
+                            : AnswerSectionState.Answered,
+                        // An unspecified mission has no serving tasks to join on, so it has no
+                        // section-level evidence. Not "none was produced" — nothing declared a
+                        // section for any of it to belong to.
+                        EvidenceIds: Array.Empty<string>()),
                 },
                 Specified: false);
 
@@ -169,7 +203,11 @@ public sealed record AssembledAnswer(IReadOnlyList<AnswerSection> Sections, bool
                 string.Join("\n\n", completed),
                 entry.ServingTaskIds,
                 entry.Claim,
-                state);
+                state,
+                entry.ServingTaskIds
+                    .SelectMany(id => evidenceByTask.GetValueOrDefault(id) ?? new List<string>())
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList());
         }).ToList();
 
         return new AssembledAnswer(sections, Specified: true);
@@ -188,6 +226,8 @@ public sealed record AssembledAnswer(IReadOnlyList<AnswerSection> Sections, bool
             ["claim"] = s.Claim,
             ["state"] = s.State,
             ["serving_task_ids"] = s.ServingTaskIds,
+            ["evidence_ids"] = s.EvidenceIds,
+            ["grounded"] = s.Grounded,
             ["content_chars"] = s.Content.Length,
         }).ToList(),
     };
