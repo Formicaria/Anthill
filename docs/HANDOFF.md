@@ -4,47 +4,71 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: main carries **v0.3.8.103** (`25b0ec1`, tagged and released). **`release/v0.3.8.104` is
-complete and green**: the mission contract, and the debt six classes were built on.
+State: main carries **v0.3.8.104** (`3484e33`, tagged and released). **`release/v0.3.8.105` is
+complete and green**: a mission that stops says what it is waiting for.
 
-WHAT `.104` DELIVERS. A mission is what it was ADMITTED as. Its specification, constraints and
-verification policy are written ONCE at intake into `mission_contracts` (a separate table — the
-missions row is an INSERT OR REPLACE and would erase them) and read by every later stage. Four
-sites that re-derived meaning from `mission.Goal` are gone, and a source-shape guard asserts
-`MissionIntake.Resolve` and `MissionConstraints.Parse` each have exactly ONE production call site.
-Two of those four carried comments arguing re-resolution was safe BECAUSE intake is pure — true
-only while the rules stand still, which `.103` stopped being when it added a class and four verbs.
+WHAT `.105` DELIVERS — three ways a mission stops short, told apart, because the words decide what
+the operator does next. All three used to arrive at `failed_permanent` and invite the same useless
+response, a retry.
 
-THE ONE AN OPERATOR WILL FEEL: objective verification is no longer optional for a recognized class.
-`objective_verification_enabled` ships FALSE, and every gate `.98` through `.103` built sat behind
-it. Six releases each said "deterministically qualified" honestly — the suite turned the flag on,
-and nobody's colony did. A recognized class (`system_audit`, `troubleshooting`, `system_action`,
-`external_action`) now stops asking, and FAILS CLOSED: a gate that could not run grades
-not_satisfied naming why, never not_checked. Expect missions that used to pass to stop passing.
-That is the release working.
+1. THE DISPATCH-TIME REROUTE, and the gap it closes is one `.104` created. `MissionPreflight` has
+exactly ONE call site — `Queen.RunMission`, over the COMPILED plan, before execution — and the plan
+does not stop changing there. Handoff tasks, delta-plan tasks, the medic's repair tasks, inserted
+policy reviews and added verification steps all reached dispatch unexamined, and those are the tasks
+created BECAUSE something already went wrong. `TaskReroute.Evaluate` runs FIRST in
+`ExecutionService.RunSingleTask`, before the durable claim and before `AntRuntime.Resolve`, and asks
+the one question answerable per task: does the worker about to run this declare the capability it
+requires? Rerouted within the role (never across it — a wrong ROLE is a planning error the admission
+gate answers for); ambiguity is not a block; nothing-serves-it refuses as `capability_unserved` with
+a deterministic block.
 
-ALSO CLOSED: preflight before execution (producer, verifier, worker, dependency, orphan — running
-AFTER class coverage, so it refuses only what the runtime cannot repair); blocked_missing_capability,
-open since `.98`; both `.103` authority divergences; the /ants/stats role drift, which was wrong
-three ways at once; and `anthill --live-qualification`, the production caller
-`LiveQualificationRecord` never had in the seven releases its export stayed an open exit item.
+2. AN UNANSWERED QUESTION PAUSES. Under `Ask` a side-effecting action with no recorded answer is
+refused — untouched, absence is not consent — but the refusal used to be the WHOLE response. The
+seam already existed and nothing read it: `EscalationDecision.DecidedBy` is "nobody" when `Ask` got
+no answer and names a person on every other path, so a REJECTION (an answer) and an ABSENT decision
+(a question) were indistinguishable. Now only the second files a pending `ApprovalRequest` and the
+mission grades `waiting_for_approval`. Two constants got their first producer, both the house
+defect: that outcome code has been in the vocabulary since v2.19.0 unused, and
+`ApprovalActionType.ToolUse` has never had a producer — every approval this colony ever raised is a
+`PatchProposal`. NARROWED TO `ToolUse` DELIBERATELY: a pending PATCH approval is the healthy end
+state of every coding mission, and reading those as "waiting" would stop every one of them reaching
+`completed_verified`, which auto-apply consumes. That is `.74`'s defect, nearly recommitted here.
 
-TWO NEAR-MISSES WORTH KEEPING, both caught before shipping. The authority ceiling was first narrowed
-by the role contract's `AllowsSideEffects` — FALSE for the tester, which carries `.102`'s and
-`.103`'s execute lanes, so it would have refused both classes at their own gate. Then it was applied
-to every mission — and `MissionSpecification.General` defaults to Observe, meaning "unclassified"
-rather than "read-only", so it would have refused `apply_patch` on every coding mission. The ceiling
-applies only where intake actually DECIDED one. If a future release widens it, those are the two
-walls.
+3. A RECURRENCE NAMES THE STOP IT NEVER CAUSES. An exhausted repair loop stopped with
+`adaptive_stop` ("the bound is spent, not the problem") while saying nothing about the failure being
+reproducible; it now stops as `repeated_failure` when the store holds a recurrence. THE TRAJECTORY IS
+UNCHANGED, and a draft of this release changed it: reading the recurrence above the repair budget
+deleted the loop's second generation and the medic's only route in, which `CodePatchLifecycleTests`
+refused. A repair generation changes the artifact, so one signature across two generations is the
+loop working. `FailureRecurrence` is the one shared reading. The detector returns NULL when the
+store cannot be read, because the two consumers need OPPOSITE defaults from the same rows: the
+controller treats unknown as no-recurrence (inventing one refuses a repair the mission is owed), the
+medic falls back to its narrative scan (losing the bound is how a bounded loop becomes unbounded).
 
-NOT CLOSED, AND NAMED: the citation gate's second trigger (contract-requires-sources) has nothing to
-read — no `research` class, no evidence kind for a retrieved source, no capability to require. A
-trigger keyed on any of them is a branch nothing reaches, which is the defect this release exists to
-close. It needs the research class itself, and adding one as an addendum is how a request gets
-silently rerouted. The `.97` Windows `dotnet_test` residual is still undiagnosed: the sandbox's
-silent 5000-file truncation fit every symptom (its missing set is filesystem-order-dependent, hence
-OS-dependent) and is NOT the cause — this repo has 792 eligible files. The truncation is now loud
-and verification refuses inside an incomplete sandbox anyway.
+AND RECOVERY FINALLY CONSULTS `FailureClass`. `RecoveryOrchestrator` decided from four booleans and
+knew nothing of the taxonomy's twenty-three members and three predicates; a policy denial and a rate
+limit reached the same `Retryable` bool. EXTENDED, NEVER REPLACED: `FailureClass.None` means "this
+caller has no typed class" and every existing caller (ShadowOperator, the homelab bridge) is
+untouched. A supplied class narrows BY CONJUNCTION and never widens — a caller that said no is never
+overruled into a retry.
+
+CARRIED DEBT CLOSED: `blocked_missing_capability` was charged `-0.08` against every ant, worker and
+task-type path in a plan that never ran, while its own `.104` documentation says nothing reinforces
+or retires on the strength of it. It fell through the pheromone switch's default.
+`waiting_for_approval` would have been the identical bug on day one. Both score zero now.
+
+NOT CLOSED, AND NAMED: a paused mission does NOT resume itself — approving settles the question and
+the outcome stops saying "waiting", but re-running the refused step is `.106`'s continuity work and
+is recorded in `PLAN.md` §2c rather than approximated. The citation gate's second trigger still has
+nothing to read: no `research` class, no evidence kind for a retrieved source, no capability to
+require, and adding one as an addendum is how a request gets silently rerouted. The `.97` Windows
+`dotnet_test` residual is still undiagnosed — the sandbox's silent 5000-file truncation fit every
+symptom and is NOT the cause (792 eligible files); the truncation is loud now and verification
+refuses inside an incomplete sandbox anyway.
+
+THE ONE FROM `.104` STILL WORTH REPEATING: objective verification is no longer optional for a
+recognized class and FAILS CLOSED. Expect missions that used to pass to stop passing. That is the
+release working.
 
 THE LIVE PACK IS ONE COMMAND AWAY AND STILL THE OPERATOR'S STEP. Run a real mission per class with a
 provider attached, then `anthill --live-qualification <mission-id> --json <path>` for each.

@@ -1040,8 +1040,14 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // downstream computes its own answer, and `MissionEvaluation` already maps the stop reason to
         // this vocabulary. Checked BEFORE `TryClaimArchivist` so a skipped run does not consume the
         // once-per-evaluation claim.
+        // v0.3.8.105 — and a mission WAITING on an operator is stopped in exactly the sense this
+        // check means. It did not do the thing it was asked to do; it asked a question and has not
+        // been answered. Extracting lessons from the half of the work that ran would teach the
+        // colony from a mission whose defining step never happened, and `.85`'s rule — a stopped
+        // mission is not a lesson — is the same rule.
         if (evaluation.OutcomeCode is Outcomes.MissionOutcome.Cancelled
-                                   or Outcomes.MissionOutcome.TimedOut)
+                                   or Outcomes.MissionOutcome.TimedOut
+                                   or Outcomes.MissionOutcome.WaitingForApproval)
         {
             Memory.LogEvent(mission.Id, "archivist_skipped",
                 $"Archivist did not run: the mission was {evaluation.OutcomeCode} and a stopped "
@@ -1222,9 +1228,25 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
             Console.Error.WriteLine($"[finalize] could not read artifacts for {mission.Id}: {artifactError.Message}");
         }
 
+        // v0.3.8.105 — and the questions this mission is still waiting on. Read here, beside the
+        // other three store reads, and passed to the evaluator so that type stays a pure function
+        // of its arguments. An unreadable store passes an EMPTY list rather than null, and the
+        // asymmetry with the three reads above is deliberate: those fail CLOSED because a missing
+        // record could be hiding a reason to withhold a pass, and this one would fail closed into
+        // claiming a mission is waiting on a decision nobody ever asked for — inventing a pause is
+        // the worse error, because a paused mission is one the operator is told to go answer.
+        IReadOnlyList<string> pendingDecisions = Array.Empty<string>();
+        try { pendingDecisions = Memory.PendingOperatorDecisions(mission.Id); }
+        catch (Exception decisionError)
+        {
+            Console.Error.WriteLine(
+                $"[finalize] could not read pending operator decisions for {mission.Id}: "
+              + $"{decisionError.Message} — grading as though none were outstanding.");
+        }
+
         var evaluation = _evaluator.Evaluate(
             mission, context, stopReason, Memory.CountPatchProposalsForMission(mission.Id), missionEvidence,
-            missionConsumptions, missionArtifacts);
+            missionConsumptions, missionArtifacts, pendingDecisions);
         // NB: persisted by RunMission AFTER the final SaveMission (INSERT OR REPLACE would erase
         // it here) and before anything publishes completion. In-process consumers below use this
         // same object, so they cannot disagree with what gets persisted.

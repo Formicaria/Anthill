@@ -1,3 +1,4 @@
+using Anthill.Core.Domain;
 using Anthill.Core.Memory;
 
 namespace Anthill.Core.Conversations;
@@ -20,6 +21,23 @@ namespace Anthill.Core.Conversations;
 /// </summary>
 public static class OperatorDecisions
 {
+    /// <summary>
+    /// The mission's standing decision for <paramref name="action"/>, or null.
+    ///
+    /// v0.3.8.105 — AND, WHEN THERE IS NONE, THE QUESTION IS FILED. This method still returns
+    /// exactly what it returned before: null when no decision exists, which every caller refuses
+    /// on. What is new is that the absence stops being invisible.
+    ///
+    /// Why HERE and not in the callers. This is the one site in the mission lane that discovers "a
+    /// side-effecting action needed the operator and the operator has not spoken" — the tools that
+    /// call it each refuse in their own words, and asking each of them to also file a request would
+    /// put one obligation in three places, which is how two of them end up disagreeing about
+    /// whether it was met. The type's subject is the operator's decision for a mission action; an
+    /// unanswered question is a state of that decision and not a different subject.
+    ///
+    /// It is NOT a second gate and it grants nothing. Filing fails silently rather than turning a
+    /// correct refusal into an exception.
+    /// </summary>
     public static EscalationDecision? ForMission(SqliteMemory memory, string? missionId, string action)
     {
         if (string.IsNullOrWhiteSpace(missionId) || string.IsNullOrWhiteSpace(action)) return null;
@@ -27,18 +45,92 @@ public static class OperatorDecisions
         {
             var conversation = memory.LoadConversations()
                 .FirstOrDefault(c => c.MissionIds.Contains(missionId, StringComparer.OrdinalIgnoreCase));
-            if (conversation is null) return null;
 
-            return memory.LoadEscalationDecisions(conversation.Id)
-                .Where(d => string.Equals(d.Action, action, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(d => d.DecidedAt)
-                .LastOrDefault();
+            var decision = conversation is null ? null
+                : memory.LoadEscalationDecisions(conversation.Id)
+                    .Where(d => string.Equals(d.Action, action, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(d => d.DecidedAt)
+                    .LastOrDefault();
+
+            // NOBODY WAS ASKED. A rejection is an answer and needs no request; only an absence
+            // does. A missing CONVERSATION counts as an absence too — an autonomous or CLI mission
+            // that reached a side-effecting action has no channel to have been asked through, and
+            // that is more reason for the question to exist than less.
+            if (decision is null) Request(memory, missionId!, action, "queen");
+
+            return decision;
         }
         catch
         {
             // An unreadable store yields NO decision, which the caller refuses on — the S3 rule:
             // an outage is never permission.
             return null;
+        }
+    }
+
+    /// <summary>
+    /// FILE THE QUESTION THE MISSION IS STOPPING FOR. v0.3.8.105, PLAN.md §2b `.105`.
+    ///
+    /// One pending row in the ledger that already exists — `approval_requests`, with
+    /// <see cref="ApprovalActionType.ToolUse"/>. No new table and no second vocabulary: that action
+    /// type has been declared since the enum was written and had no producer anywhere in the tree,
+    /// because every approval this colony has ever raised is a `PatchProposal`.
+    ///
+    /// It grants nothing and unblocks nothing. The refusal that brought us here stands. What this
+    /// adds is the trace an operator can act on — `escalation_refused` says a thing did not happen,
+    /// and a reader of that alone has no way to make it happen — and the record
+    /// `MissionEvaluator` reads to grade the mission `waiting_for_approval` instead of failed.
+    ///
+    /// DEDUPED ON `&lt;mission&gt;:&lt;action&gt;`. A retried task asks the same question, and three
+    /// identical pending rows would make an operator answer once per attempt to unblock one
+    /// mission. Any existing row for that target — pending, approved or rejected — suppresses a new
+    /// one: re-asking a question that was already answered no is worse than not asking.
+    ///
+    /// BEST-EFFORT BY CONSTRUCTION. Callers are on a refusal path whose safety-relevant half is
+    /// already decided, so a storage failure must not become an exception. It prints, because a
+    /// question that was never filed is a mission that stops with nothing to answer.
+    ///
+    /// `approval_requests` CARRIES A FOREIGN KEY TO `missions(id)`, which is the trap `.104` paid
+    /// for when the contract table was written before the mission row existed. Every caller here is
+    /// mid-execution and the mission was saved long before, so this holds — and if a future caller
+    /// files earlier, the catch below turns the constraint into a printed line rather than a broken
+    /// mission. That is the correct direction: losing the question is smaller than losing the run.
+    /// </summary>
+    public static void Request(SqliteMemory memory, string missionId, string action, string requestedBy)
+    {
+        if (string.IsNullOrWhiteSpace(missionId) || string.IsNullOrWhiteSpace(action)) return;
+        try
+        {
+            var target = $"{missionId}:{action}";
+            if (memory.GetApprovalForTarget(target, ApprovalActionType.ToolUse) is not null) return;
+
+            memory.SaveApprovalRequest(new ApprovalRequest
+            {
+                MissionId = missionId,
+                ActionType = ApprovalActionType.ToolUse,
+                TargetId = target,
+                Status = ApprovalStatus.Pending,
+                RequestedBy = string.IsNullOrWhiteSpace(requestedBy) ? "queen" : requestedBy,
+                Title = $"Approve '{action}' for this mission?",
+                Description =
+                    $"This mission reached the side-effecting action '{action}' and no operator "
+                  + "decision is recorded for it, so the call was refused — absence of an answer is "
+                  + "not consent. The mission is waiting on this, not failing on it. Approving does "
+                  + "not replay the refused step; it settles the question.",
+                Metadata = new() { ["action"] = action, ["requested_by"] = requestedBy },
+            });
+
+            memory.LogEvent(missionId, "operator_decision_requested",
+                $"Waiting on an operator decision for '{action}'.", null, requestedBy,
+                new() { ["action"] = action, ["target_id"] = target,
+                        ["action_type"] = ApprovalActionType.ToolUse.Value() });
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine(
+                $"[escalation] could not file an operator decision request for '{action}' on "
+              + $"{missionId}: {error.Message} — the refusal stands and nothing was approved, but "
+              + "the operator has nothing to answer.");
         }
     }
 }

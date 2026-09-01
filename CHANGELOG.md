@@ -1,3 +1,98 @@
+## v0.3.8.105 - a mission that stops says what it is waiting for
+
+**THREE WAYS A MISSION STOPS SHORT, TOLD APART.** A wrong worker, an unanswered question and a
+defect that came back were all reaching the same place — a failed mission — and all three invited
+the same useless response, a retry. They are different facts and they want different words, because
+the words decide what the operator does next.
+
+**`MissionPreflight` CHECKED THE FIRST PLAN AND ONLY THE FIRST PLAN.** `.104` made "a plan that
+could never deliver is refused before it runs" true, and it has exactly one call site: in
+`Queen.RunMission`, over the compiled plan, before execution. The plan does not stop changing there.
+Handoff-created tasks, delta-plan tasks, the medic's repair tasks, inserted policy reviews and added
+verification steps all reached dispatch unexamined — and those are the tasks created BECAUSE
+something already went wrong, which makes them the ones most likely to be mis-assigned and the ones
+nothing was checking.
+
+`TaskReroute` asks the one question that is answerable about a single task, at the dispatch
+chokepoint, before the durable claim and before the model call: can the worker about to run this
+actually do what the task requires? A worker that cannot serve a capability does not decline the
+work — it runs, spends model calls and tool calls, and produces a confident answer to a question it
+was never equipped to answer, which is `.98`'s finding exactly. Every gate downstream grades the
+output rather than the fitness, so this has to be caught before dispatch or not at all.
+
+It reroutes WITHIN the role and never across it, the rule `.98` set: a wrong role is a planning
+error the admission gate and the authority ceiling answer for. An ambiguous capability is not a
+block — the trail owns that choice. A capability nothing in the role serves refuses the dispatch as
+`capability_unserved` and sets a deterministic block, because the colony cannot do it and will not
+be able to on a retry.
+
+**A REFUSAL NOBODY MADE IS A QUESTION.** Under `Ask`, a side-effecting action with no recorded
+answer is refused — absence of an answer is not consent, and that rule is untouched. What was wrong
+is that the refusal was the ENTIRE response: nothing recorded that an operator had been left a
+decision to make, the task failed, and the mission was graded `failed_permanent`. The colony told
+its operator something untrue about itself.
+
+The seam already existed and nothing read it: `EscalationDecision` records `DecidedBy` as "nobody"
+when `Ask` got no answer, and names a policy author or an operator on every other path. A REJECTION
+is an answer and the mission is finished with it; an ABSENT decision is a question. Only the second
+now files a pending `ApprovalRequest` and pauses the mission as `waiting_for_approval`.
+
+Two constants got their first producer, both of them the house defect. `MissionOutcome.WaitingForApproval`
+has been in the vocabulary since v2.19.0 and no mission has ever carried it.
+`ApprovalActionType.ToolUse` has been declared since the enum was written: every approval this
+colony has ever raised is a `PatchProposal`, three declared action types and one reachable.
+
+Narrowed to `ToolUse` deliberately. A pending PATCH approval is the normal, healthy end state of
+every coding mission — proposed, mission finishes, operator reviews afterwards — and reading those
+as "waiting" would have put every successful coding mission into `waiting_for_approval` and stopped
+it ever reaching `completed_verified`, which auto-apply consumes. That is `.74`'s defect, and this
+is the release where it could have been recommitted.
+
+**A DEFECT THAT CAME BACK STOPS FOR THAT REASON.** An exhausted repair loop stopped with
+`adaptive_stop`, whose reason reads "the bound is spent, not the problem" — true, and silent about
+the fact that the problem was reproducible and the store already knew it. `repeated_failure` is that
+sentence, carried through the same `StopReason` field a timeout and a cancellation already use.
+
+IT DOES NOT CHANGE WHEN A MISSION STOPS, AND A DRAFT OF THIS RELEASE DID. That draft read the
+recurrence ABOVE the repair budget, reasoning that a reproducible defect makes the next cycle
+futile. `CodePatchLifecycleTests` refused it, and was right: a repair GENERATION changes the
+artifact — the coder re-proposes, a fresh patch set is materialised, a fresh tester judges it — so
+one signature across two generations is the loop WORKING, not spinning. Checking first deleted the
+second generation outright and with it the medic's only route into the mission. The medic keeps the
+earlier bound, where it belongs, because it fires after a repair was actually attempted. A
+recurrence explains a stop; it never causes one.
+
+The query moved out of `MedicAnt` into one shared `FailureRecurrence` rather than being copied, and
+it returns NULL when the store cannot be read rather than "no recurrence" — the two consumers need
+opposite defaults from the same rows. The controller, deciding whether to SPEND a cycle, treats an
+unreadable store as no recurrence, because inventing one refuses a repair the mission is entitled
+to. The medic, deciding whether to PERFORM one, falls back to its narrative scan, because losing the
+bound is how a bounded repair loop becomes unbounded.
+
+**RECOVERY FINALLY CONSULTS THE FAILURE TAXONOMY.** `RecoveryOrchestrator` decided recovery from
+four booleans and knew nothing about `FailureClass` — twenty-three members and three predicates the
+rest of the colony classifies failures with. A policy denial and a rate limit reached the same
+`Retryable` bool, and whichever the caller put in it was the answer. The medic has refused to route
+around a policy or security "no" since the structural-repair release; recovery orchestration did
+not, so one denial reached two components and got two answers.
+
+EXTENDED, NEVER REPLACED, as the program requires. `FailureClass.None` means "this caller has no
+typed class" and every existing caller keeps its behaviour to the letter. A supplied class NARROWS
+by conjunction and never widens: a caller claiming retryable alongside a class the taxonomy calls
+permanent loses, and a caller that said no is never overruled into a retry.
+
+**CARRIED DEBT: `blocked_missing_capability` WAS CHARGED AS A NEGATIVE PHEROMONE TRAIL.** From
+`.104`, and its own documentation is the accusation — "nothing reinforces, promotes or retires on
+the strength of it". It fell through to the `-0.08` default, the heaviest negative in the switch,
+applied to the one outcome defined as carrying no information: a colony repeatedly asked for
+something it cannot do was demoting the workers that never ran. `waiting_for_approval` would have
+been the identical bug on its first day. Both now score zero.
+
+**WHAT IS NOT CLAIMED.** A paused mission does not RESUME itself. Approving the request settles the
+question and the outcome stops saying "waiting"; re-running the refused step is `.106`'s continuity
+work and is recorded as open in `PLAN.md` §2c rather than approximated. The citation gate's second
+trigger still needs the research class. Nothing live, still — `QUALIFICATION.md` §3 remains PARTIAL.
+
 ## v0.3.8.104 - the mission contract: what it was admitted as, enforced under ordinary defaults
 
 **THE PREREQUISITE RELEASE.** Not a new mission class — the debt six classes were built on. `.105`

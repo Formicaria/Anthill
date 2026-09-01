@@ -591,6 +591,38 @@ public sealed partial class SqliteMemory
         Query("SELECT * FROM approval_requests WHERE mission_id = @m ORDER BY created_at ASC LIMIT @lim",
             ("@m", missionId), ("@lim", limit));
 
+    /// <summary>
+    /// THE QUESTIONS THIS MISSION IS STILL WAITING ON. v0.3.8.105.
+    ///
+    /// Pending `ToolUse` approvals only, and the narrowing is load-bearing rather than tidy. A
+    /// pending PATCH approval is the normal, healthy end state of every coding mission this colony
+    /// runs — the patch is proposed, the mission finishes, the operator reviews it afterwards.
+    /// Reading those as "the mission is waiting" would put every successful coding mission into
+    /// `waiting_for_approval` and stop it ever reaching `completed_verified`, which auto-apply
+    /// consumes. `ToolUse` means something the mission needed to DO and could not, which is the
+    /// only case where the mission itself is the thing that is unfinished.
+    ///
+    /// Returns the TOOL NAMES, because an outcome that says a mission is waiting must be able to
+    /// say what for; a list of approval ids names nothing an operator recognises.
+    /// </summary>
+    public IReadOnlyList<string> PendingOperatorDecisions(string missionId, int limit = 50) =>
+        Query(@"SELECT target_id, metadata_json FROM approval_requests
+                WHERE mission_id = @m AND action_type = @at AND status = @s
+                ORDER BY created_at ASC LIMIT @lim",
+                ("@m", missionId), ("@at", ApprovalActionType.ToolUse.Value()),
+                ("@s", ApprovalStatus.Pending.Value()), ("@lim", limit))
+            .Select(row =>
+            {
+                // The target is `<mission>:<tool>` — the tool is everything after the LAST colon,
+                // because a mission id may legitimately contain one and the tool name may not.
+                var target = row.GetValueOrDefault("target_id")?.ToString() ?? "";
+                var cut = target.LastIndexOf(':');
+                return cut >= 0 && cut + 1 < target.Length ? target[(cut + 1)..] : target;
+            })
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
     public Dictionary<string, object?>? UpdateApprovalStatus(string approvalId, ApprovalStatus newStatus, string? decisionNote = null)
     {
         if (GetApprovalRequest(approvalId) is null) return null;
@@ -862,6 +894,25 @@ public sealed partial class SqliteMemory
             MissionOutcome.CompletedVerified => 0.05 + score * 0.05,
             MissionOutcome.CompletedUnverified => 0.0,   // finished, unproven — no signal either way
             MissionOutcome.Partial => 0.0,               // ambiguous — no signal either way
+
+            // v0.3.8.105 — A MISSION THAT NEVER RAN IS NOT EVIDENCE ABOUT THE ANTS THAT DID NOT
+            // RUN IT. Carried debt from `.104`, and its own documentation is the accusation:
+            // `MissionOutcome.BlockedMissingCapability` says, in the release that introduced it,
+            // "it is also NOT a signal for learning… nothing reinforces, promotes or retires on the
+            // strength of it." It fell through to `_` and charged -0.08 against every ant, worker
+            // and task-type path in the plan — the heaviest negative in this switch, applied to the
+            // one outcome defined as carrying no information. A colony repeatedly asked for
+            // something it cannot do would have demoted the workers that were never invoked.
+            //
+            // `waiting_for_approval` joins it for the same reason and would have been a fresh
+            // instance of the identical bug on its first release: a mission paused for an operator's
+            // answer says nothing about any worker's competence.
+            //
+            // The default stays -0.08. A mission that FAILED is evidence, and this is not a
+            // widening of what counts as forgiven — it is the removal of two outcomes that were
+            // never failures from a branch that only ever meant failure.
+            MissionOutcome.BlockedMissingCapability => 0.0,
+            MissionOutcome.WaitingForApproval => 0.0,
             _ => -0.08,
         };
         var antPath = mission.Tasks.Select(t => t.AssignedAnt).ToList();

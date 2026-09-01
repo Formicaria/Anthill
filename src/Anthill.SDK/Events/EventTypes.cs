@@ -161,6 +161,21 @@ public static class EventTypes
     /// not reach it. Distinct from an escalation refusal: nobody was asked, because the answer
     /// would not have mattered.</summary>
     public const string AuthorityCeilingRefused = "authority_ceiling_refused";
+
+    /// <summary>v0.3.8.105 — a task's worker was replaced at DISPATCH because it did not declare
+    /// the capability the task requires. The sibling of <see cref="WorkerRepairedByCapability"/>,
+    /// which repairs at plan time; this one reaches the tasks admitted after the plan was
+    /// checked — handoffs, delta plans, repairs — which preflight never sees.</summary>
+    public const string TaskRerouted = "task_rerouted";
+
+    /// <summary>v0.3.8.105 — dispatch refused: no worker in the task's role declares the capability
+    /// it requires. A capability block, not a failure — it will refuse identically on a retry.</summary>
+    public const string TaskCapabilityUnserved = "task_capability_unserved";
+
+    /// <summary>v0.3.8.105 — a side-effecting action was refused because NOBODY WAS ASKED, and a
+    /// pending approval request was filed so the operator has something to answer. Distinct from
+    /// <see cref="EscalationRefused"/>, which also covers an operator who said no.</summary>
+    public const string OperatorDecisionRequested = "operator_decision_requested";
     public const string SkillCandidateRegistered = "skill_candidate_registered";
     public const string SkillOutcomeRecorded = "skill_outcome_recorded";
     public const string LearningReset = "learning_reset";

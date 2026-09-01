@@ -26,6 +26,18 @@ public enum AdaptiveAction
 /// </summary>
 public sealed record AdaptiveDecision(AdaptiveAction Action, string Reason, IReadOnlyList<string> UnmetCriteria)
 {
+    /// <summary>
+    /// v0.3.8.105 — set only by the arm that stopped BECAUSE a failure recurred.
+    ///
+    /// Typed rather than inferred, and that is a correction of a mistake this file could easily have
+    /// shipped: the caller's first draft read "escalating, and a recurrence exists" and labelled the
+    /// stop `repeated_failure`. Those are different claims — a mission can escalate for no progress
+    /// while a recurrence sits unrelated in the store — and a stop reason derived from a coincidence
+    /// is exactly the kind of near-miss this repository keeps paying for. The arm that used the fact
+    /// is the only thing that may report it.
+    /// </summary>
+    public Outcomes.FailureRecurrence.Recurrence? Recurrence { get; init; }
+
     public static AdaptiveDecision Of(AdaptiveAction action, string reason, IReadOnlyList<string>? unmet = null) =>
         new(action, reason, unmet ?? Array.Empty<string>());
 
@@ -108,8 +120,12 @@ public sealed class AdaptiveMissionController
     /// stall check — so a mission that is genuinely progressing is never escalated, and one that
     /// has stopped moving is never left to spin.
     /// </summary>
+    /// <param name="recurrence">v0.3.8.105: a failure already recorded for more than one task in
+    /// this mission, from <see cref="Outcomes.FailureRecurrence"/>. Passed in rather than queried
+    /// so this type stays PURE — the property its own remarks are built on. Null is what every
+    /// caller before this release supplied and changes nothing.</param>
     public AdaptiveDecision Assess(Mission mission, AdaptiveBudget budget, string? previousFingerprint = null,
-        string? missionClass = null)
+        string? missionClass = null, Outcomes.FailureRecurrence.Recurrence? recurrence = null)
     {
         if (mission?.Tasks is null || mission.Tasks.Count == 0)
             return AdaptiveDecision.Of(AdaptiveAction.Escalate, "mission has no tasks to assess");
@@ -154,6 +170,31 @@ public sealed class AdaptiveMissionController
                 return AdaptiveDecision.Of(AdaptiveAction.Repair,
                     $"{brokenCritical.Count} critical task(s) failed; routing a bounded repair",
                     brokenCritical.Select(t => $"critical task failed: {t.Title}").ToList());
+
+            // v0.3.8.105 — THE SAME DEFECT, NAMED. The bound is spent either way; what changes is
+            // whether the mission can say WHY it is spent.
+            //
+            // AND IT IS DELIBERATELY BELOW `CanRepair`, WHICH IS A CORRECTION. The first draft of
+            // this release put the recurrence check ABOVE it, on the reasoning that a recurrence is
+            // reproducible so the next cycle would end where the last one did. That reasoning is
+            // wrong, and `CodePatchLifecycleTests.TheRepairLoop_MaterializesFreshEvidencePerGeneration`
+            // is what said so: a repair GENERATION changes the artifact — the coder re-proposes, a
+            // fresh patch set is materialised, a fresh tester judges it — so the same signature
+            // appearing across two generations is the loop WORKING, not the loop spinning. Checking
+            // first deleted the second generation outright and, with it, the medic's only route
+            // into the mission. A recurrence may explain a stop; it must never cause one.
+            //
+            // The medic keeps the earlier bound, where it belongs: it fires after a repair was
+            // actually attempted and the artifact still did not materially change. That is the
+            // question this controller cannot answer and should not have tried to.
+            if (recurrence is not null)
+                return AdaptiveDecision.Of(AdaptiveAction.Escalate,
+                    $"the repair bound is spent after {budget.RepairCyclesUsed} cycle(s), and the "
+                  + $"reason is reproducible: {recurrence.Explanation}. Further repair generations "
+                  + "would re-derive the same failure.",
+                    brokenCritical.Select(t => $"critical task failed: {t.Title}")
+                        .Append($"repeated failure: {recurrence.Signature}").ToList())
+                    with { Recurrence = recurrence };
 
             return AdaptiveDecision.Of(AdaptiveAction.Escalate,
                 $"critical failure persists after {budget.RepairCyclesUsed} repair cycle(s) — the bound is spent, not the problem",
