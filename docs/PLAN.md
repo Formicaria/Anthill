@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.107**.
+Shipping release: **v0.3.8.108**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -112,22 +112,18 @@ authority a mission must hold, swept so no member of the escalation set can omit
 What is NOT claimed: a send that reached anything. The adapter ships composed and the
 destination map ships EMPTY, so a fresh install refuses every send by name.
 
-**What v0.3.8.107 changes, and how far.** The pheromone layer makes its second deterministic
-decision. Where an operator has not routed a role — where it runs on the `fallback` entry or the
-built-in default — a model route that has carried missions to a VERIFIED outcome is preferred over
-one that has not. It cannot override an explicit route, a model-priority override, or compatibility,
-and it can only reorder routes the operator has already configured somewhere.
+**What v0.3.8.108 changes, and how far.** A role can be declared without editing the core. One
+declaration point carries the registry entry, the runtime kind, the execution contract and the
+executor factory, and all four tables that decide whether a role runs read it. The layers the exit
+gate names — Queen, planner, scheduler, assembler — were never the obstacle and are untouched; what
+blocked extension was four static literals, one of them a dictionary inside the Queen's constructor.
+"Extensible" has been an implicit claim in every capability table since the roster was written, and
+it is now either true or checked.
 
-Closing that loop required a finding: the route trails written on every call since the router
-existed cannot support it. Their positive delta is `result.Ok` — the provider answered — while a
-worker trail is paid only on `completed_verified`, which is the whole reason `.93`'s rule is sound.
-A model that answers promptly, fluently and wrongly carries a strong one indefinitely. So this
-release writes a second signal, `verified_route`, at the one site that pays only for a verified
-mission, and reads only that.
-
-What is NOT claimed: the per-call trail still has no reader, and giving it one to tidy the loose end
-is how the overclaim would arrive by another door. Learning never touches an explicitly routed role
-— that is the bound, not a gap. Nothing live, still. See
+What is NOT claimed: a MODULE still cannot contribute an ant. `BaseAnt` lives in `Anthill.Core`,
+which a module may not reference — exactly where `RegisterTool` stood before v3.8.10, and the same
+answer applies: the type moves to the SDK first, in a release of its own, and it needs this
+composability underneath it either way. Nothing live, still. See
 [`ADR-008`](adr/ADR-008-universal-mission-lifecycle.md) §1 for the evidence and §2 for the contract
 the `.98`–`.107` sequence exists to satisfy.
 
@@ -207,6 +203,7 @@ through the real application. **Ext.** = requires an external adapter, connectio
 | Multi-mission continuity | yes | yes | **yes** | no | `.106`: `read_artifact` reads an EARLIER mission's artifact by id, refused unless that mission graded `completed_verified`; the consumption ledger records who read it as distinct from who produced it. READ-side only — a paused mission does not resume its refused step |
 | Answer coverage | yes | yes | **yes** | no | `.106`: the answer is assembled section by section from the specification, and an unanswered request demotes the mission. Claim-and-served, never a word search — `MissionDeliverable.Subject` stays unread by design |
 | Pheromone / skill learning | yes | yes | yes | no | positive learning restricted to `completed_verified` |
+| Roster extensibility | yes | yes | **yes** | no | `.108`: a role is declared once — registry entry, runtime kind, execution contract, executor factory — and every table that decides whether it runs reads that declaration. A contribution cannot shadow a built-in. MODULE-contributed ants are not claimed: `BaseAnt` is core, and the SDK move is its own release |
 | Verified route learning | yes | yes | **yes** | no | `.107`: a route that carried missions to `completed_verified` is preferred for a role the operator has NOT routed. Never overrides an explicit route, a priority override or compatibility; reads `verified_route` trails only, never the per-call `model_route` ones |
 | Objective verification (non-code) | yes | **yes — recognized classes** | **yes** | no | `.104`: a recognized class (`system_audit`, `troubleshooting`, `system_action`, `external_action`) no longer consults `objective_verification_enabled` and FAILS CLOSED when its gate cannot run. The flag still governs the general and coding lanes. Six releases of gates were inert on a default install until this |
 
@@ -215,7 +212,7 @@ see `DocumentationConsistencyTests`.
 
 ---
 
-## 2b. The universal-workflow program — v0.3.8.107 → v0.3.8.108
+## 2b. The universal-workflow program — v0.3.8.108 → v0.3.8.111
 
 **This is the current forward sequence.** It supersedes the earlier framing in which R4–R10 were
 the next thing to run; those items are not deleted, and each release below names the R-items it
@@ -245,8 +242,10 @@ past.
 
 | Release | Operator-visible capability | Exit gate |
 |---|---|---|
-| **.107** | Verified route learning; the existing qualification matrix extended | §2c below |
-| **.108** | Live multi-class qualification, hardening, documentation reconciliation | the live pack across classes, recorded from the store; every capability-table row reconciled to measured status; **a test ant registers by declaration alone and passes qualification with no change to Queen, planner, scheduler or assembler** |
+| **.108** | The roster becomes extensible; the live pack runs | §2c below |
+| **.109** | The `research` class, and the five gates waiting on it | the citation gate's second trigger fires from the CONTRACT as well as the record; `ObjectiveVerification.Required` stops re-reading the goal in the unrecognized lane; evidence attaches per answer section; the per-call `model_route` trail gets a reader; Ollama capability discovery extended |
+| **.110** | Mission resumption, enforcement, security residuals | an approved decision REPLAYS the refused step rather than only settling the question; R0's enforcement tooling (warnings-as-errors, analyzers, dependency and secret scanning, complexity budget, module auto-discovery, the guard hierarchy written down); the four security residuals; the `.97` Windows residual diagnosed or its hypothesis retired |
+| **.111** | Typed database rows | `Dictionary<string, object?>` leaves the memory layer's public surface and its 89 consumers, one slice at a time, each slice green before the next |
 
 Rules binding every release in this program:
 
@@ -261,76 +260,88 @@ Rules binding every release in this program:
   became API-editable with no control rendering it, so an operator following the changelog looked
   for a switch that did not exist.
 
-### 2c. v0.3.8.107 — a route earns its place, and overrides nothing to get it
+### 2c. v0.3.8.108 — the roster becomes extensible
 
-**Delivers:** the pheromone layer's second deterministic decision. Where an operator has NOT routed a
-role — where it is being served by the `fallback` entry or the built-in default — a route that has
-carried missions to a VERIFIED outcome is preferred over one that has not. It never overrides an
-explicit route, never overrides a model-priority override, never overrides compatibility, and reads
-only evidence that a mission actually succeeded.
+**Delivers:** a role can be declared without editing the core. One declaration point — registry
+entry, runtime kind, execution contract, executor factory — supplied together, read by all four
+tables that decide whether a role runs. A test ant is contributed, reaches execution, and is
+withdrawn without a trace.
 
-**THE FINDING THIS RELEASE RESTS ON.** The obvious implementation was to read the `model_route`
-trails the router has written on every call since it existed. They cannot carry the claim.
-`ModelRouter` pays their positive delta on `result.Ok` — the provider answered without erroring —
-whereas a WORKER trail is paid only for `completed_verified`, and that is precisely why `.93`'s
-selection rule is sound ("a trail above baseline carries net VERIFIED evidence by construction of
-the writer"). A model that answers promptly, fluently and wrongly carries a strong `model_route`
-trail indefinitely. Reading it for a routing decision would have been the overclaim this program
-exists to remove, committed by the release meant to close the learning loop.
+**THE FINDING.** The exit gate asks for an ant that registers "with no change to Queen, planner,
+scheduler or assembler", and the layers it names were never the obstacle: the planner reads the
+registry, the scheduler reads the task graph, the assembler reads the deliverable ledger, the
+dispatch chokepoint reads the execution contract. None knows a role by name.
 
-So `.107` writes a SECOND signal rather than reinterpreting the first: `verified_route`, credited at
-`UpdateMissionPheromones` — the one site that pays only for a verified outcome — to the routes the
-mission actually used, read from its own `model_call` events. The kinds stay separate, under
-different key prefixes, because they are different facts about the same subject.
+A role still could not exist, because the four tables that decide whether one runs were static
+literals — `AntRegistry.BuildRoles()`, `AntExecutionCatalog.Kinds`, `AntExecutionCatalog.Contracts`,
+and `Queen._ants`, a dictionary literal inside a constructor. The last is the sharp end: adding an
+ant meant editing the Queen, which is exactly what the gate forbids. "Extensible" has been an
+implicit claim in every capability table since the roster was written, and this is the release that
+makes it true rather than continuing to make it.
 
-**Reuses:** `TrailGuidedSelection`'s rules verbatim, restated for routes; the trail vocabulary and
-its signal categories; `ModelRouteRequirements` and `AntModelFitness` for compatibility; the circuit
-breaker for health; `model_call` events as the record of what actually served. No parallel ledger,
-no second routing policy.
+**THE ONE THAT WOULD HAVE BEEN MISSED.** `BaseExecutableRoleIds` was computed once at type
+initialisation, so a role declared afterwards would have been registered, contracted and
+dispatchable — and never executable. Present in every table that describes it, absent from the one
+that decides whether it runs, which is this repository's house defect arriving inside the fix for it.
 
-**Connects:** `Queen.Finalize → UpdateMissionPheromones → CreditVerifiedRoutes → verified_route
-trails`, and `ModelRouter.ResolveRoute → PreferLearnedRoute → RouteGuidedSelection → the breaker
-failover that already existed`.
+**Reuses:** the registry's own role and worker records, the execution catalog's kinds and contracts,
+`AntExecutorCatalog.Initialize`'s startup validation, and the dispatch chokepoint's contract check —
+a contributed ant offered work outside its contract is refused by the line that refuses a built-in
+one. No parallel roster, no second authorization path.
 
-**Exit gate** — named tests, pure functions, no live provider:
+**Connects:** `AntExtensions.Declare → AntRegistry.Roles/ByRole/ByWorker → AntExecutionCatalog.KindOf
+/ContractFor → AntRegistry.ExecutableRoleIds → Queen's executor map → AntExecutorCatalog.Initialize`.
 
-- the improvement: `AVerifiedRoute_IsPreferredOverAnUnprovenOne`, `TheStrongestVerifiedRoute_Wins`;
-- evidence: `AnUnprovenRoute_NeverWins`, `ARouteWithMoreFailuresThanSuccesses_NeverWins`,
-  `ATieKeepsTheConfiguredRoute`, `ATrailForAnotherRole_DoesNotApply`;
-- compatibility: `AnIncompatibleRoute_NeverWinsHoweverStrong`,
-  `ACompatibleRoute_BeatsAStrongerIncompatibleOne`;
-- authority: `AnExplicitlyRoutedRole_IsNotLearnable`, `AModelPriorityOverride_IsNotLearnable`,
-  `AFallbackServedRole_IsLearnable`;
-- the signal: `TheVerifiedRouteSignal_IsDistinctFromThePerCallOne`,
-  `OnlyAVerifiedMission_CreditsItsRoutes` (through the real writer, every outcome),
-  `ManyCallsOnOneRoute_CountOnce`.
+**Exit gate** — named tests:
+
+- `ADeclaredAnt_ReachesEveryTableThatDecidesWhetherItRuns` (all four, including executability),
+  `AWithdrawnAnt_LeavesNoTrace` (the composed views are cached; a stale cache would keep a withdrawn
+  role alive in exactly the tables this release taught to compose),
+  `WithNoContributions_TheRosterIsTheBuiltInOne` (twenty-five, so every count in the documentation
+  stays true);
+- what a contribution may not do: `AContribution_CannotShadowABuiltInRole`,
+  `AContribution_CannotBeDeclaredTwice`, `AContractForADifferentRole_IsRefused`;
+- and `NoOrchestrationLayer_KnowsAnyRoleByName` — source-shape, because the gate's claim is about
+  an absence and no behavioural test can see one.
 
 **Carried debt this release CLOSED:**
 
-- **Route trails were written for six releases and read by nothing.** The same shape `.93` closed
-  for workers — a learning system whose output is decoration is indistinguishable from one that does
-  not learn — and closing it required noticing that the existing trails answer a different question.
+- **`README.md`'s release prose was 66 releases stale.** Line 5 is pinned by tests and was correct;
+  lines 300 and 580 still described `v0.3.8.41` as the current release. The version NUMBER was
+  guarded and the prose about it was not — the guard-adjacent-to-the-claim shape. Rewritten to state
+  the shipped defaults without naming a release, so it cannot go stale the same way again.
+- **`docs/AUTONOMY.md` read as "autonomy is finished".** Its banner said "Phase 0–5 IMPLEMENTED —
+  the autonomy roadmap is complete" while PLAN treats sandboxed autonomy as R9, gated behind R6 and
+  not started. Both were true about different scopes; the banner now says which scope it means and
+  points at R6/R9 for the other.
 
 **Recorded rather than closed, with the reason:**
 
-- **A learned route is never chosen for an EXPLICITLY routed role**, by design. That is the bound,
-  not a gap; widening it would make learning a second routing policy competing with the operator's.
-- **The candidate set is the operator's own configured routes.** Learning may reorder what the
-  colony already uses and may never conjure a provider or a model. A colony with one route in
-  `model_routes` has nothing to learn between, which is correct.
-- **The per-call `model_route` trail still has no reader.** It is a genuine reliability signal and
-  the operator dashboards could show it; giving it a consumer is not this release's claim and
-  inventing one to tidy the loose end is how the overclaim above would arrive by another door.
-- **A paused mission still does not resume its refused step** (`.105`, `.106`).
-- **The citation gate's second trigger** still needs a `research` class.
-- **The `.97` Windows residual** remains undiagnosed.
-- **The live pack** is still an operator step. `QUALIFICATION.md` §3 remains PARTIAL — and this
-  release is deliberately proved by PURE tests rather than a live run, because the rule being
-  checked is a function of two trail states and a live provider would prove less, not more.
+- **A module still cannot contribute an ant.** `IModuleContext` offers reasoning providers,
+  capability probes and tools, and `BaseAnt`/`AntExecutionResult` live in `Anthill.Core`, which a
+  module may not reference. That is exactly where `RegisterTool` stood before v3.8.10, and its own
+  remarks record what was done: the type moved to the SDK first, and the method followed. The same
+  move for the ant contract is a release of its own, and it needs THIS composability underneath it
+  either way. Named rather than half-built.
+- **The literal-only guard sweep moves to `.110`.** Three guards were found reading only string
+  literals where the code had moved to a shared constant — `ToolInventoryTests`,
+  `PheromoneVocabularyTests`, and a class-body scoping bug beneath the first that could attribute
+  one tool's name to another type. All three are fixed; the sweep for the rest belongs with `.110`'s
+  reconciliation work rather than being started and left half-done here.
+- **The §2b terminal-case guard.** `TheUniversalWorkflowProgram_IsExactlyTheRangeItDeclares` asserts
+  `to > from`, which cannot hold when one release remains. It does not bite at `.108` (the range is
+  `.108 → .111`); it bites at `.111`, and that release has to teach the guard how a program ends.
+- **The live pack** is the operator's step and runs against this release. `QUALIFICATION.md` §3
+  stays PARTIALLY RUN until the exported records exist; the capability-table reconciliation they
+  feed is `.110`'s.
+- **The citation gate's second trigger**, `ObjectiveVerification.Required`'s goal re-read, per-section
+  evidence, and the unread `model_route` trail all move to `.109`, which builds the `research` class
+  the first of them has been waiting on since `.99`.
+- **A paused mission still does not resume its refused step** — `.110`.
 
-**Explicitly still unsupported after .107:** live multi-class qualification (`.108`); claim↔source
-SUPPORT; a `research` mission class; resuming a paused mission's refused step; general local-system
-operations outside the homelab catalog.
+**Explicitly still unsupported after .108:** the `research` mission class (`.109`); mission
+resumption and R0 enforcement (`.110`); typed database rows (`.111`); claim↔source SUPPORT; module-
+contributed ants; general local-system operations outside the homelab catalog.
 
 
 ---

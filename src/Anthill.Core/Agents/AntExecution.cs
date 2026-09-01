@@ -249,7 +249,14 @@ public static class AntExecutionCatalog
     };
 
     public static AntRuntimeKind KindOf(string roleId) =>
-        Kinds.TryGetValue(roleId ?? "", out var k) ? k : AntRuntimeKind.VisualScaffold;
+        Kinds.TryGetValue(roleId ?? "", out var k) ? k
+        // v0.3.8.108 — a CONTRIBUTED role declares its own kind. Checked after the built-in table
+        // so a contribution can never reclassify a role compiled into this build; `AntExtensions`
+        // refuses to shadow one, and this is the same rule expressed where the answer is given.
+        : AntExtensions.All.FirstOrDefault(c =>
+              string.Equals(c.Role.RoleId, roleId, StringComparison.OrdinalIgnoreCase)) is { } contributed
+            ? contributed.Kind
+            : AntRuntimeKind.VisualScaffold;
 
     /// <summary>Planner eligibility is COMPUTED, never a stored boolean: a role may plan only if it
     /// is a MissionAgent, registry-executable+enabled, and has a runtime handler (Stage C wires the
@@ -278,7 +285,11 @@ public static class AntExecutionCatalog
     /// gap is left visible; a contract that describes an aspiration is a contract the runtime will
     /// enforce against work nobody is doing.
     /// </summary>
-    public static readonly IReadOnlyDictionary<string, AntExecutionContract> Contracts =
+    /// <summary>
+    /// The contracts compiled into this build. v0.3.8.108 named it separately from
+    /// <see cref="Contracts"/>, which composes it with whatever <see cref="AntExtensions"/> holds.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, AntExecutionContract> BuiltInContracts =
         new Dictionary<string, AntExecutionContract>(StringComparer.OrdinalIgnoreCase)
     {
         // ---- core mission ants (v3.8.23) -------------------------------------------------------
@@ -600,6 +611,46 @@ public static class AntExecutionCatalog
             AllowsModelCalls: false, AllowsSideEffects: false, ProducesPatchProposals: true, // docs paths ONLY (enforced at proposal time)
             Model: ModelRequirement.None),
     };
+    /// <summary>
+    /// Every contract this colony has: the built-in ones, plus contributions. v0.3.8.108.
+    ///
+    /// A PROPERTY for <see cref="AntRegistry.Roles"/>'s reason and with the same caching — a role
+    /// can be declared after this type is first touched, and the composed view is rebuilt only when
+    /// <see cref="AntExtensions.Version"/> moves.
+    ///
+    /// `ContractFor` reads this, so a contributed role passes the dispatch chokepoint's contract
+    /// check on the same terms as a built-in one: its declared task types, its declared tools. A
+    /// contributed ant that is offered work outside its contract is refused by the same line that
+    /// refuses a built-in one, which is the property that makes contributing safe rather than
+    /// merely possible.
+    /// </summary>
+    public static IReadOnlyDictionary<string, AntExecutionContract> Contracts => ComposedContracts();
+
+    private static readonly object ContractLock = new();
+    private static IReadOnlyDictionary<string, AntExecutionContract>? _contracts;
+    private static int _contractsVersion = -1;
+
+    private static IReadOnlyDictionary<string, AntExecutionContract> ComposedContracts()
+    {
+        var version = AntExtensions.Version;
+        var cached = _contracts;
+        if (cached is not null && _contractsVersion == version) return cached;
+
+        lock (ContractLock)
+        {
+            if (_contracts is not null && _contractsVersion == version) return _contracts;
+
+            var composed = new Dictionary<string, AntExecutionContract>(
+                BuiltInContracts, StringComparer.OrdinalIgnoreCase);
+            foreach (var contribution in AntExtensions.All)
+                composed[contribution.Role.RoleId] = contribution.Contract;
+
+            _contracts = composed;
+            _contractsVersion = version;
+            return _contracts;
+        }
+    }
+
 
     public static AntExecutionContract? ContractFor(string roleId) =>
         Contracts.TryGetValue(roleId ?? "", out var c) ? c : null;

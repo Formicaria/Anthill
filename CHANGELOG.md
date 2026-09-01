@@ -1,3 +1,67 @@
+## v0.3.8.108 - the roster becomes extensible
+
+**A ROLE CAN NOW BE DECLARED WITHOUT EDITING THE CORE**, which every capability table in this
+repository has implicitly claimed since the roster was written.
+
+**THE EXIT GATE NAMED THE WRONG SUSPECTS, AND THAT IS THE FINDING.** It asks for an ant that
+registers "with no change to Queen, planner, scheduler or assembler" — and those four were never the
+obstacle. The planner reads the registry, the scheduler reads the task graph, the assembler reads the
+deliverable ledger, the dispatch chokepoint reads the execution contract. None of them knows a role
+by name, and that has been true for releases.
+
+A role still could not exist, because the four tables that decide whether one RUNS were static
+literals: `AntRegistry.BuildRoles()`, `AntExecutionCatalog.Kinds`, `AntExecutionCatalog.Contracts`,
+and `Queen._ants` — a dictionary literal inside a constructor. That last one is the sharp end.
+"Add an ant" meant editing the Queen, which is precisely what the gate says must not be necessary.
+
+**`AntExtensions` IS ONE DECLARATION POINT ALL FOUR READ.** A contribution is four facts the core
+already requires of every built-in role — the registry entry, the runtime kind, the execution
+contract, and a factory for the executor — supplied TOGETHER so they cannot be supplied apart. That
+is the actual defect being closed: a role present in three tables and missing from the fourth is one
+that exists, plans, dispatches, and then fails at execution with "no ant found".
+
+The executor is a factory rather than an instance because the built-in ants are constructed with the
+Queen's memory, tools and router. A contributed ant handed over pre-wired would be operating on a
+different colony than the one dispatching to it.
+
+**THE ONE THAT WOULD HAVE BEEN MISSED.** `AntRegistry.BaseExecutableRoleIds` was computed once at
+type initialisation. A role declared afterwards would have been registered, contracted and
+dispatchable — and never executable: present in every table that describes it, absent from the one
+that decides whether it runs. That is this repository's house defect arriving inside the fix for it,
+and it is why `ADeclaredAnt_ReachesEveryTableThatDecidesWhetherItRuns` asserts all four rather than
+stopping at the registry.
+
+**WHAT A CONTRIBUTION MAY NOT DO.** It cannot shadow a built-in role — two things claiming
+`verifier` is not a conflict anyone notices until the wrong one runs, which is the rule
+`IModuleContext.RegisterTool` states for tools applied to the thing that executes them. It cannot be
+declared twice. And its contract must name itself: a role carrying someone else's contract would be
+authorized against permissions that are not its own, which is the failure the contract system exists
+to prevent arriving through the door this release opened.
+
+**THE SHIPPED ROSTER IS UNCHANGED.** Nothing contributes on a real colony, so it is exactly the
+twenty-five built-in roles and every count in the documentation stays true. The test ant is
+contributed, reaches execution, and is withdrawn — a contribution that outlived its test would leak
+into unrelated ones as a twenty-sixth role and break count assertions somewhere with no relationship
+to the cause.
+
+**TWO DOCUMENTATION DEFECTS, BOTH THE GUARD-ADJACENT-TO-THE-CLAIM SHAPE.** `README.md` line 5 is
+pinned equal to the build by tests and was correct; lines 300 and 580 still described `v0.3.8.41` as
+the current release, 66 releases later. The version NUMBER was guarded and the prose about it was
+not. Rewritten to state the shipped defaults without naming a release, so it cannot go stale the same
+way again. And `docs/AUTONOMY.md` bannered "Phase 0–5 IMPLEMENTED — the autonomy roadmap is
+complete" while `PLAN.md` treats sandboxed autonomy as R9, gated behind R6 and not started. Both
+true about different scopes; the banner now says which scope it means.
+
+**WHAT IS NOT CLAIMED.** A MODULE still cannot contribute an ant. `IModuleContext` offers reasoning
+providers, capability probes and tools; `BaseAnt` and `AntExecutionResult` live in `Anthill.Core`,
+which a module may not reference. That is exactly where `RegisterTool` stood before v3.8.10, and its
+own remarks record the answer: the type moved to the SDK first, and the method followed. The same
+move for the ant contract is a release of its own and needs this composability underneath it either
+way — named here rather than half-built.
+
+The live pack runs against this release and remains the operator's step; `QUALIFICATION.md` §3 stays
+PARTIALLY RUN until the exported records exist.
+
 ## v0.3.8.107 - a route earns its place, and overrides nothing to get it
 
 **THE PHEROMONE LAYER'S SECOND DETERMINISTIC DECISION.** `.93` gave trails one consumer: which

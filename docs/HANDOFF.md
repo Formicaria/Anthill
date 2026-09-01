@@ -4,54 +4,63 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: main carries **v0.3.8.106** (`e91b186`, tagged and released). **`release/v0.3.8.107` is
-complete and green**: a route earns its place, and overrides nothing to get it.
+State: main carries **v0.3.8.107** (`b9b4d09`, tagged and released). **`release/v0.3.8.108` is
+complete and green**: the roster becomes extensible.
 
-WHAT `.107` DELIVERS, and the finding underneath it.
+WHAT `.108` DELIVERS, and the finding is that the exit gate named the wrong suspects.
 
-THE FINDING FIRST, because it is the release. Reading the existing `model_route` trails was the
-one-line version of this feature and it is WRONG: `ModelRouter` pays their positive delta on
-`result.Ok` — the provider answered without erroring — while a WORKER trail is paid only on
-`completed_verified`, which is exactly why `.93`'s selection rule is sound. A model that answers
-promptly, fluently and wrongly carries a strong `model_route` trail indefinitely. Six releases of
-them exist and nothing had ever read them for a decision, which is the only reason the ambiguity
-cost nothing.
+The gate asks for an ant registering "with no change to Queen, planner, scheduler or assembler", and
+those four were NEVER the obstacle — the planner reads the registry, the scheduler reads the task
+graph, the assembler reads the ledger, the chokepoint reads the contract. None knows a role by name.
+What blocked extension was four STATIC LITERALS: `AntRegistry.BuildRoles()`,
+`AntExecutionCatalog.Kinds`, `AntExecutionCatalog.Contracts`, and `Queen._ants` — a dictionary
+literal inside a constructor. Adding an ant meant editing the Queen.
 
-SO THERE IS A SECOND KIND. `verified_route` is credited at `UpdateMissionPheromones` — the one site
-that pays only for a verified outcome — to the routes the mission actually used, read from its own
-`model_call` events (which record what ACTUALLY served, not what the route asked for). Different key
-prefix from `model:`, deliberately: one number meaning both facts is the thing being removed.
+`AntExtensions` is one declaration point all four read: registry entry + runtime kind + execution
+contract + executor FACTORY (not an instance — a contributed ant must be built with the Queen's own
+memory, tools and router, or it operates on a different colony than the one dispatching to it).
 
-THE DECISION, with three bounds, each answering one clause of the exit gate:
-- AUTHORITY: only where `model_routes` has NO entry for the role (fallback-served), and never under
-  a model-priority override. An explicit route is an operator's decision, not a tie-break.
-- COMPATIBILITY: checked first and not a tie-break — `ModelRouteRequirements` + `AntModelFitness`,
-  plus the breaker not holding the route open.
-- EVIDENCE: `verified_route` strictly above 0.5 with successes > failures. A tie keeps the
-  configured route.
+THE ONE THAT WOULD HAVE BEEN MISSED: `BaseExecutableRoleIds` was computed once at type
+initialisation, so a declared role would have been registered, contracted, dispatchable and NEVER
+EXECUTABLE — the house defect arriving inside its own fix. It is a property now, and the gate test
+asserts all four tables rather than stopping at the registry.
 
-CANDIDATES ARE THE OPERATOR'S OWN CONFIGURED ROUTES. Learning reorders what the colony already uses
-and never conjures a provider or model.
+A contribution cannot shadow a built-in, cannot be declared twice, and must carry a contract naming
+itself. The shipped roster is unchanged — 25 roles, 34 workers — because nothing contributes on a
+real colony; the test ant is contributed and withdrawn.
 
-NOT CLOSED, AND NAMED: the per-call `model_route` trail STILL has no reader — that is deliberate,
-and giving it one to tidy the loose end is how the overclaim arrives by another door. A learned route
-is never chosen for an explicitly routed role (the bound, not a gap). A paused mission still does not
-resume its refused step (`.105`, `.106`). The citation gate's second trigger still needs a `research`
-class. The `.97` Windows `dotnet_test` residual is still undiagnosed.
+ALSO: `README.md` lines 300/580 described `v0.3.8.41` as current, 66 releases stale — the version
+number was guarded and the prose was not. Rewritten to name no release. `docs/AUTONOMY.md`'s banner
+read as "autonomy is finished" while PLAN treats R9 as gated behind R6; it now says which scope it
+means.
 
-PROVED BY PURE TESTS, deliberately: the rule is a function of two trail states, so a live provider
-would prove less rather than more. `QUALIFICATION.md` §3 is the authority and still says PARTIAL.
+NOT CLOSED, AND NAMED: a MODULE still cannot contribute an ant — `BaseAnt` is in `Anthill.Core`,
+which a module may not reference. That is exactly where `RegisterTool` stood before v3.8.10 and the
+answer is the same: move the type to the SDK in its own release. It needs this composability
+underneath it either way.
 
-THE LIVE PACK IS ONE COMMAND AWAY AND STILL THE OPERATOR'S STEP. Run a real mission per class with a
-provider attached, then `anthill --live-qualification <mission-id> --json <path>` for each. That is
-`.108`, the last release in the program.
+THE PROGRAM NOW RUNS TO `.111`:
+- `.109` — the `research` class, and the five gates waiting on it (citation's second trigger,
+  `ObjectiveVerification.Required`'s goal re-read, per-section evidence, a reader for the per-call
+  `model_route` trail, Ollama capability discovery).
+- `.110` — mission RESUMPTION (an approved decision replays the refused step, not just settles the
+  question), R0 enforcement tooling, the four security residuals, the `.97` Windows residual, and the
+  literal-only guard sweep.
+- `.111` — typed database rows: 509 sites, 47 public methods, 89 consumer files, one slice at a time.
+
+A GUARD THAT WILL BITE AT `.111`: `TheUniversalWorkflowProgram_IsExactlyTheRangeItDeclares` asserts
+`to > from`, which cannot hold when one release remains. The program's last release has to teach it
+how a program ends.
+
+THE LIVE PACK is the operator's step and runs against `.108`. See `anthill/live-pack-runbook.md` in
+the project for the procedure. `QUALIFICATION.md` §3 stays PARTIALLY RUN until the exported records
+exist, and the capability-table reconciliation they feed is `.110`'s.
 
 ROSTER, quoted correctly: **25 registered roles, 34 workers, 12 executable role types** under
 `activation_tier: full` + `roster_profile: full` (both shipped defaults). Only SIX are executable by
 flag — researcher, file, web, coder, builder, verifier; the other six (tester, soldier, medic,
 archivist, ui_cartographer, scribe) are specialists opened by canary gates; thirteen never execute
-(queen, director, planner, constraint, quartermaster, and the eight homelab ants). Drop the tier to
-`adaptive` and it is nine; to `core`, six.
+(queen, director, planner, constraint, quartermaster, and the eight homelab ants).
 
 Previous state below, kept because the next session runs the live pack against it.
 
