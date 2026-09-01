@@ -4,62 +4,65 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: main carries **v0.3.8.108** (tagged and released). **`release/v0.3.8.109` is complete and
-green**: the answer comes from somewhere, and can say where.
+State: main carries **v0.3.8.109** (`e65a6aa`, tagged and released). **`release/v0.3.8.110` is
+complete and green**: an approved decision replays the refused step.
 
-WHAT `.109` DELIVERS. The `research` mission class, end to end — and the finding is that research
-missions were not failing, they were UNABLE to fail.
+NOTE ON HISTORY: every commit SHA changed on 2026-09-01 when authorship was folded to three
+contributors. Anything quoting a SHA from before that date is quoting a commit that no longer
+exists. See the "anthill" project doc `history-rewrite-2026-09-01.md`.
 
-`CitationIntegrity` (`.99`) resolves cited urls against retrieved ones, so it catches a fabricated
-citation. A mission asked to find something out that retrieved nothing and cited nothing left an
-EMPTY STORE, and an empty store contradicts no citation — so the gate correctly read it as "nothing
-to check". A fluent answer written from a model's own weights and an answer built from real sources
-were indistinguishable at every layer.
+WHAT `.110` DELIVERS. Mission resumption — the item deferred from `.105` to `.106` to `.109` to here.
 
-`.104` recorded exactly what was missing and why the second trigger could not be faked: no `research`
-class, no evidence kind meaning "a source was retrieved", no worker capability a research mission
-could require. All three ship together here, because any one alone is a branch nothing reaches.
+WHY IT KEPT SLIPPING, and it was not want of will: there is NO TYPED MISSION LOADER in this tree.
+`GetMission` returns a `Dictionary<string, object?>`, `GetTasksForMission` returns a list of them, and
+`new Mission` appears in exactly four places — every one CREATING a mission. The object graph died
+with `RunMission`, so there was nothing to re-enter execution with. `MissionRehydration` is that
+loader, and `ParseTaskStatus` (declared since the enum was written, called by nothing) has its first
+caller.
 
-THE CLASS IS DERIVED: new intent `Research`, new target `World`, and the branch requires BOTH plus
-the absence of every colony-side target. `World` vs `External` is DIRECTION — External is where
-something goes (a destination a human approves), World is where knowledge comes from. A request
-naming both worlds is REFUSED, not admitted: this class's gate speaks only for the retrieval half,
-and admitting such a request would let the repository half go unexamined behind a pass.
+THE ONE THAT WOULD HAVE BEEN MISSED: approving wrote to `approval_requests`; the mission-lane gate
+`OperatorDecisions.ForMission` read `escalation_decisions`. TWO DISJOINT TABLES. An operator's
+approval was recorded, shown in the UI, counted in the badge — and invisible to the runtime. A replay
+built on the loader alone would have refused identically and re-filed the same question, and the
+feature would have LOOKED implemented while changing nothing. `ForMission` now reads both under
+last-answer-wins. `OperatorDecisions.Decided` is the new read.
 
-THE ONE THAT WOULD HAVE BEEN MISSED: the troubleshooting branch read `targets != None`, right while
-every target was checkable. With a World target it would have claimed "why is the market moving" —
-a class whose premise is a reproduction, applied to something the colony cannot re-run. Narrowed to
-`InspectableTargets`, which is what "any target" meant when that branch was written, so no
-pre-`.109` request reclassifies.
+A COMMENT THAT WAS WRONG IS FIXED: `RunMission` claimed since v3.1.0 that a resumed run keeps the
+original deadline. Written about a resumption that did not exist, and wrong — a mission waiting on a
+person is not running, and charging human latency to its budget would make every slow approval resume
+straight into a timeout. `ResumeMission` anchors its own window.
 
-`source_retrieval` IS ITS OWN EVIDENCE KIND, not another `inspection`, and that is the release's
-sharpest small decision. `AssessmentObjective` requires inspection rows before an audit is believed;
-had `web_search` written one, an audit of the operator's own repository could have been satisfied by
-searching the internet. The deterministic lane still holds exactly one tool.
+SCOPE OF THE REPLAY IS NARROW: only tasks the mission's own `escalation_refused` events name for the
+approved action, never a COMPLETED task (its effects landed), never "every failed task". A rejection
+replays nothing.
 
-PER-SECTION EVIDENCE NOW HAS A READER — `.106`'s join, unread until now. It degrades honestly: a
-DECLARED section must carry its own retrieval, an INFERRED one falls back to the mission's, because
-under an inferred claim the builder is credited with every deliverable and leaves no evidence of its
-own. Requiring per-section grounding there would grade the planner's verbosity, not the work.
+ALSO IN `.110`: `dotnet` subcommands allowlisted to reporting verbs only (it was the one entry on a
+nine-command READ allowlist that could execute workspace-supplied code); a Windows JUNCTION test (the
+one reparse point an unprivileged writer can create — every existing link test needs Developer Mode
+and silently `return`s without it, so seven facts pass green asserting nothing on a bare Windows
+agent); `ObjectiveVerification` reads the contract's `OriginalRequest` instead of the composed goal
+with its transcript; and a guard making the unread `model_route` trail permanent.
 
-DEFERRED TO `.110` WITH THE REASON, not silently: `ObjectiveVerification.Required`'s goal re-read (a
-coding-lane behaviour change that does not belong in a class release), the unread `model_route`
-trail (`.107`'s reasoning stands), Ollama capability discovery, the literal-only guard sweep, and
-the capability-table reconciliation.
+THE PROGRAM GREW A RELEASE — stated, not absorbed:
+- `.111` — R0 enforcement tooling (warnings-as-errors, analyzers, dependency and secret scanning,
+  complexity budget, module auto-discovery, guard hierarchy written down); the S1 filesystem TOCTOU
+  window (needs a HANDLE-returning path guard and P/Invoke — .NET exposes no portable `openat`); the
+  system-prompt channel confirmed for the four agent CLIs that declare none; Ollama capability
+  discovery; the literal-only guard sweep (TEN more instances found — the right fix is one shared
+  `SourceText` helper returning literal-or-resolved-constant, not ten widened regexes); the `.97`
+  Windows residual; the capability-table reconciliation.
+- `.112` — typed database rows: 509 sites, 47 public methods, 89 consumer files, one slice at a time.
 
-THE PROGRAM NOW RUNS TO `.111`:
-- `.110` — mission RESUMPTION (an approved decision replays the refused step, not just settles the
-  question), R0 enforcement tooling, the four security residuals, the `.97` Windows residual, the
-  literal-only guard sweep, the capability-table reconciliation, plus the four items above.
-- `.111` — typed database rows: 509 sites, 47 public methods, 89 consumer files, one slice at a time.
+A GUARD THAT NOW BITES AT `.112`: `TheUniversalWorkflowProgram_IsExactlyTheRangeItDeclares` asserts
+`to > from`, which cannot hold when one release remains.
 
-A GUARD THAT WILL BITE AT `.111`: `TheUniversalWorkflowProgram_IsExactlyTheRangeItDeclares` asserts
-`to > from`, which cannot hold when one release remains. The program's last release has to teach it
-how a program ends.
+THE LIVE PACK is still the operator's step — `anthill/live-pack-runbook.md` in the project.
+`QUALIFICATION.md` §3 stays PARTIALLY RUN. There are now FIVE recognized classes: `system_audit`,
+`troubleshooting`, `system_action`, `external_action`, `research`.
 
-THE LIVE PACK is the operator's step. See `anthill/live-pack-runbook.md` in the project for the
-procedure. `QUALIFICATION.md` §3 stays PARTIALLY RUN until the exported records exist, and the
-capability-table reconciliation they feed is `.110`'s.
+RELEASE_MSG.txt is untracked in the repo root and feeds `git commit -F` / `gh release create
+--notes-file`; `ReleaseNotesTests` requires its first line to equal the changelog's top heading.
+Regenerate it every release — a stale one shipped `.67` under `.60`'s name.
 
 ROSTER, quoted correctly: **25 registered roles, 34 workers, 12 executable role types** under
 `activation_tier: full` + `roster_profile: full` (both shipped defaults). Only SIX are executable by
