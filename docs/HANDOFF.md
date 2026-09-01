@@ -4,56 +4,47 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: main carries **v0.3.8.105** (`08ed777`, tagged and released). **`release/v0.3.8.106` is
-complete and green**: the answer is built from what was asked.
+State: main carries **v0.3.8.106** (`e91b186`, tagged and released). **`release/v0.3.8.107` is
+complete and green**: a route earns its place, and overrides nothing to get it.
 
-WHAT `.106` DELIVERS.
+WHAT `.107` DELIVERS, and the finding underneath it.
 
-1. THE REQUEST IS THE OUTLINE OF THE ANSWER. `ResultAssembler` picked a task by ROLE — last builder,
-else coder, else anything — and handed over its raw text; `.98` named that defect in its own words
-("never read it at all"). Each requested deliverable is now a SECTION whose content is cut from the
-serving task's recorded output, and a request nothing served says so IN THE ANSWER.
+THE FINDING FIRST, because it is the release. Reading the existing `model_route` trails was the
+one-line version of this feature and it is WRONG: `ModelRouter` pays their positive delta on
+`result.Ok` — the provider answered without erroring — while a WORKER trail is paid only on
+`completed_verified`, which is exactly why `.93`'s selection rule is sound. A model that answers
+promptly, fluently and wrongly carries a strong `model_route` trail indefinitely. Six releases of
+them exist and nothing had ever read them for a decision, which is the only reason the ambiguity
+cost nothing.
 
-ONE PATH, and this is the part to protect. A specified mission renders section by section and SKIPS
-synthesis (a rewrite can drop a section — `.99`'s rule). An unspecified mission — every coding
-mission, by design — has exactly ONE section whose content is the raw output BYTE FOR BYTE, and
-synthesis proceeds as before. If a future release makes intake give general missions deliverables,
-that equivalence breaks and the coding lane's answer changes shape. `AnUnspecifiedMission_RendersItsRawAnswerUnchanged`
-is the guard.
+SO THERE IS A SECOND KIND. `verified_route` is credited at `UpdateMissionPheromones` — the one site
+that pays only for a verified outcome — to the routes the mission actually used, read from its own
+`model_call` events (which record what ACTUALLY served, not what the route asked for). Different key
+prefix from `model:`, deliberately: one number meaning both facts is the thing being removed.
 
-2. COVERAGE IS CLAIM-AND-SERVED, NEVER A WORD SEARCH. `.98` rejected the word search in writing and
-`.106` honours it: `MissionDeliverable.Subject` is populated at intake, offers itself for exactly
-that check in its own doc comment, and STAYS UNREAD. `SubjectIsStillUnread_ByEveryCoverageLayer`
-keeps it declined. `AnswerCoverage` is the seventh gate and the first not keyed to a class.
+THE DECISION, with three bounds, each answering one clause of the exit gate:
+- AUTHORITY: only where `model_routes` has NO entry for the role (fallback-served), and never under
+  a model-priority override. An explicit route is an operator's decision, not a tie-break.
+- COMPATIBILITY: checked first and not a tie-break — `ModelRouteRequirements` + `AntModelFitness`,
+  plus the breaker not holding the route open.
+- EVIDENCE: `verified_route` strictly above 0.5 with successes > failures. A tie keeps the
+  configured route.
 
-3. WORK BUILDS ON VERIFIED WORK. `read_artifact` is the first dispatchable caller of the artifact
-store's cross-mission reach, gated on the producing mission's PERSISTED grade
-(`MissionOutcome.IsPositiveSuccess`). Ungraded is refused — absence of a grade is not a pass.
+CANDIDATES ARE THE OPERATOR'S OWN CONFIGURED ROUTES. Learning reorders what the colony already uses
+and never conjures a provider or model.
 
-AND THE LEDGER DEFECT UNDERNEATH IT. `ArtifactConsumption.MissionId` has always been the PRODUCING
-mission, and the only caller read within one mission, so "who produced" and "who read" were the same
-value since `.57` — the column meant both by coincidence. `ConsumerMissionId` splits them; legacy
-rows read null and resolve to the producer. `ConsumptionsForMission` is DELIBERATELY unchanged
-(`.98`'s assessment objective reads it); the new question got `ConsumptionsByMission`.
+NOT CLOSED, AND NAMED: the per-call `model_route` trail STILL has no reader — that is deliberate,
+and giving it one to tidy the loose end is how the overclaim arrives by another door. A learned route
+is never chosen for an explicitly routed role (the bound, not a gap). A paused mission still does not
+resume its refused step (`.105`, `.106`). The citation gate's second trigger still needs a `research`
+class. The `.97` Windows `dotnet_test` residual is still undiagnosed.
 
-The consumer identity is recorded at the DISPATCH CHOKEPOINT, not by the tool — a tool taking it
-from an argument takes it from the model, and a model that can name the mission it read for can
-attribute reads to missions that never made them.
-
-ALSO: `ToolInventoryTests` could only read a tool whose `Name` was a string literal, which is why the
-`.102`/`.103` tools needed hand-written exemptions. Widened to resolve a const the project declares —
-where the guard LOOKS, never what it accepts.
-
-NOT CLOSED, AND NAMED: continuity is READ-side, so a paused mission STILL does not resume its
-refused step (`.105` deferred it to `.106`; `.106` does not land it either — replaying needs a
-mission to re-enter execution at a task and no lane does that). Evidence is not attached per
-section: a section knows its serving tasks, so the join exists, but rendering it is not the same as
-making it checkable. The citation gate's second trigger still needs a `research` class. The `.97`
-Windows `dotnet_test` residual is still undiagnosed.
+PROVED BY PURE TESTS, deliberately: the rule is a function of two trail states, so a live provider
+would prove less rather than more. `QUALIFICATION.md` §3 is the authority and still says PARTIAL.
 
 THE LIVE PACK IS ONE COMMAND AWAY AND STILL THE OPERATOR'S STEP. Run a real mission per class with a
-provider attached, then `anthill --live-qualification <mission-id> --json <path>` for each.
-`QUALIFICATION.md` §3 is the authority and still says PARTIAL.
+provider attached, then `anthill --live-qualification <mission-id> --json <path>` for each. That is
+`.108`, the last release in the program.
 
 ROSTER, quoted correctly: **25 registered roles, 34 workers, 12 executable role types** under
 `activation_tier: full` + `roster_profile: full` (both shipped defaults). Only SIX are executable by
