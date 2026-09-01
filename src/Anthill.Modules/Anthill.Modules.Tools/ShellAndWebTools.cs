@@ -40,6 +40,32 @@ public sealed class ShellCommandTool : ITool
         var baseCommand = parts[0].ToLowerInvariant();
         if (!SafeCommands.Contains(baseCommand)) return new ToolResult(Name, false, "", $"Command is not allowlisted: {baseCommand}", FailureClass.AuthorizationFailure);
 
+        // v0.3.8.110 — `dotnet` IS AN INTERPRETER, AND THE ALLOWLIST TREATED IT AS A READER.
+        //
+        // THE RESIDUAL THIS CLOSES, named in PLAN.md §5 as "`dotnet` on the shell allowlist as
+        // arbitrary workspace code execution". Every other entry in `SafeCommands` reads: `ls`,
+        // `cat`, `grep` and their siblings cannot execute what they find. `dotnet` can, and the
+        // allowlist matched on the PROGRAM alone — so `dotnet run`, `dotnet exec whatever.dll`, and
+        // `dotnet build` of a project carrying an MSBuild `Exec` task all passed every check in this
+        // method and ran workspace-controlled code inside the workspace. An allowlist whose entries
+        // are not equivalent in what they GRANT is a list of names, not a policy.
+        //
+        // The subcommand is allowlisted rather than the program removed, because `dotnet --version`
+        // is a legitimate and pinned capability — it is how a colony answers whether the SDK is
+        // present at all. What is refused is every road from `dotnet` to running code the workspace
+        // supplied.
+        //
+        // BUILD IS REFUSED TOO, and that is the one that looks over-strict. A project file chooses
+        // what happens during a build: `<Exec Command="..."/>` and a build-time task are ordinary
+        // MSBuild, and a mission's workspace is a tree the colony's own agents write into. Admitting
+        // `build` here would mean the shell tool executes whatever the tree says to execute, which
+        // is the property this whole change exists to remove. The verification lane already builds
+        // and tests — through `run_allowlisted_check`, whose catalog is declared outside the
+        // workspace and cannot be edited by anything running in it. That is the difference, and it
+        // is why one of these two is deterministic evidence and the other is a shell.
+        if (baseCommand == "dotnet" && DotnetSubcommandRefusal(parts) is { } dotnetRefusal)
+            return new ToolResult(Name, false, "", dotnetRefusal, FailureClass.AuthorizationFailure);
+
         // v0.3.8.59 (PLAN.md §1b S2) — THE ARGUMENTS ARE CONTAINED, because the cwd never was.
         //
         // Setting WorkingDirectory does not sandbox a process. It sets where RELATIVE paths resolve
@@ -157,6 +183,40 @@ public sealed class ShellCommandTool : ITool
         string[] refused = { "-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprintf", "-fls", "-fprint" };
         return parts.Skip(1).FirstOrDefault(p =>
             refused.Contains(p.Split('=')[0], StringComparer.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// What `dotnet` may be asked to do here. v0.3.8.110.
+    ///
+    /// AN ALLOWLIST, NOT A DENYLIST, and the direction is the whole security value. A denylist of
+    /// `run`/`exec`/`tool` would be a list of the roads to code execution somebody had thought of;
+    /// the SDK adds verbs, `dotnet <toolname>` dispatches to an installed global tool by name alone,
+    /// and `dotnet whatever.dll` executes an assembly with no verb at all. Every one of those is a
+    /// road this list has never heard of and refuses anyway.
+    ///
+    /// What is admitted is the set that reports and cannot execute what the workspace supplied:
+    /// `--version`, `--info`, `--list-sdks`, `--list-runtimes`, `--help`. That is enough to answer
+    /// "is the SDK here and which one", which is the reason `dotnet` was on the allowlist at all.
+    ///
+    /// Returns null when the invocation is permitted, and the refusal sentence otherwise.
+    /// </summary>
+    private static string? DotnetSubcommandRefusal(IReadOnlyList<string> parts)
+    {
+        string[] permitted = { "--version", "--info", "--list-sdks", "--list-runtimes", "--help", "-h" };
+
+        var subcommand = parts.Count > 1 ? parts[1].Trim() : "";
+        if (subcommand.Length == 0)
+            return "'dotnet' with no arguments is refused: the allowlist admits it only as a way to "
+                 + "REPORT the SDK's presence and version.";
+
+        if (permitted.Contains(subcommand, StringComparer.OrdinalIgnoreCase)) return null;
+
+        return $"'dotnet {subcommand}' is refused. `dotnet` is an interpreter, and every other entry "
+             + "on this allowlist can only read — admitting a verb that runs code the workspace "
+             + "supplied would make the allowlist a list of names rather than a policy. Permitted: "
+             + string.Join(", ", permitted) + ". To build or test, use `run_allowlisted_check`, "
+             + "whose catalog is declared outside the workspace and cannot be edited by anything "
+             + "running inside it.";
     }
 
     /// <summary>

@@ -306,4 +306,63 @@ public class RouteLearningTests : IDisposable
         Assert.NotNull(trail);
         Assert.Equal(1, trail!.SuccessCount);
     }
+
+    /// <summary>
+    /// THE PER-CALL `model_route` TRAIL STILL HAS NO READER, AND THAT IS NOW PERMANENT. v0.3.8.110.
+    ///
+    /// `.107` left this deliberately and §2c has carried it as an open item since, which made it
+    /// look like an oversight awaiting a tidy-up. It is not. The reasoning `.107` gave stands and is
+    /// worth restating where a future reader will try to close it:
+    ///
+    /// `ModelRouter` writes a `model_route` trail on EVERY call, with a positive delta whenever the
+    /// provider answered. A provider answering is a reliability signal — the endpoint was up, the
+    /// model returned tokens — and it says nothing whatever about whether the work was any good. A
+    /// route that produced garbage a hundred times carries a strong `model_route` trail the whole
+    /// way. Giving it a consumer to close a loose end is precisely how the overclaim `.107` avoided
+    /// arrives by another door: a preference learned from availability, presented as a preference
+    /// learned from results.
+    ///
+    /// `verified_route` is the signal that means what a reader would want this one to mean, and it
+    /// has a consumer. THIS test is the record that the other one must not get one by accident, and
+    /// it fails loudly rather than leaving the decision as prose in a planning document.
+    ///
+    /// It reads SOURCE rather than behaviour because the claim is about an absence, and no
+    /// behavioural test can observe one. Scoped to the trail's own name so a reader added under any
+    /// other spelling still trips it.
+    /// </summary>
+    [Fact]
+    public void ThePerCallRouteTrail_HasNoConsumer_ByDecision()
+    {
+        var core = Path.Combine(SourceText.RepoRoot(), "src", "Anthill.Core");
+        Assert.True(Directory.Exists(core), "the core project has moved; this guard reads nothing.");
+
+        // The three files entitled to name it: the WRITER, the place the kind is classified for
+        // storage, and the vocabulary that declares the name. None of them is a consumer — a
+        // declaration is not a reader, and neither is the switch that decides which signal category
+        // a written trail belongs to.
+        var writers = new[]
+        {
+            Path.Combine(core, "Models", "ModelRouter.cs"),
+            Path.Combine(core, "Memory", "SqliteMemory.Operations.cs"),
+            Path.Combine(core, "Pheromones", "TrailVocabulary.cs"),
+        };
+
+        var readers = new List<string>();
+        foreach (var path in Directory.GetFiles(core, "*.cs", SearchOption.AllDirectories))
+        {
+            if (writers.Any(w => string.Equals(w, path, StringComparison.OrdinalIgnoreCase))) continue;
+
+            var code = SourceText.CodeOnly(File.ReadAllText(path));
+            if (code.Contains("\"model_route\"", StringComparison.Ordinal))
+                readers.Add(Path.GetFileName(path));
+        }
+
+        Assert.True(readers.Count == 0,
+            "these files reference the per-call `model_route` trail: " + string.Join(", ", readers)
+          + ". That trail records that a PROVIDER ANSWERED, not that the work was good, and a route "
+          + "that produced garbage a hundred times carries a strong one. If a preference is wanted, "
+          + "`verified_route` is the signal that means it — and if this reference is deliberate, "
+          + "change this guard and say why, because the decision to leave it unread is the whole "
+          + "reason `.107` could claim what it claimed.");
+    }
 }
