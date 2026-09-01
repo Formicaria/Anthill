@@ -799,6 +799,7 @@ public sealed class CoderAnt : BaseAnt
     private readonly bool _useOllama;
     private readonly ModelRouter? _router;
     private readonly Anthill.SDK.Artifacts.IArtifactStore? _artifacts;
+    private readonly Memory.SqliteMemory? _memory;
 
     /// <summary>
     /// v3.8.29 (Stage C): the artifact store, so the coder receives TYPED context rather than other
@@ -806,9 +807,16 @@ public sealed class CoderAnt : BaseAnt
     /// produces source changes, and it has been working from narrative summaries of what the file
     /// and cartographer ants found.
     /// </summary>
+    /// <param name="memory">v0.3.8.104 — the store the mission's CONTRACT lives in. Passed
+    /// explicitly rather than reached through an ambient scope, because ADR-002 forbids exactly
+    /// that: "an AsyncLocal context would be a smaller diff and would reproduce the exact defect
+    /// being removed". Null means no contract is readable and the coder treats the mission as
+    /// unconstrained — the same answer an unconstrained mission gives, and the planner's refusal to
+    /// plan coder tasks under a no-patch mission still stands in front of it.</param>
     public CoderAnt(bool useOllama, ModelRouter? router,
-        Anthill.SDK.Artifacts.IArtifactStore? artifacts = null) : base("coder")
-    { _useOllama = useOllama; _router = router; _artifacts = artifacts; }
+        Anthill.SDK.Artifacts.IArtifactStore? artifacts = null,
+        Memory.SqliteMemory? memory = null) : base("coder")
+    { _useOllama = useOllama; _router = router; _artifacts = artifacts; _memory = memory; }
 
 
     // v2.26.0: a file-change task that returns zero proposals is NOT a success — the coder exists
@@ -816,7 +824,12 @@ public sealed class CoderAnt : BaseAnt
     // proposals), never by reading intent out of narrative prose.
     public override AntExecutionResult Execute(Task task, Mission mission)
     {
-        var constraints = MissionConstraints.Parse(mission.Goal);
+        // v0.3.8.104 — FROM THE CONTRACT, not re-parsed. ADR-002 said constraints are parsed once
+        // at intake; this site parsed them again anyway, so a mission's boundaries were whatever
+        // the phrase list said at the moment the coder asked rather than what it was admitted
+        // under. Two readings of one goal is the defect the contract exists to end.
+        var constraints = _memory?.LoadMissionContract(mission.Id)?.Constraints
+                          ?? MissionConstraints.None;
         if (constraints.BlocksPatches)
             return AntExecutionResult.Blocked(
                 "Coder admitted to a read-only / no-patch mission — the planner must not assign coder tasks here, "

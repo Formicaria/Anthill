@@ -50,7 +50,9 @@ public static class WorkerResolution
         var (worker, basis) = Resolve(
             task.AssignedAnt ?? "", task.TaskType ?? "",
             $"{goal} {task.Title} {task.Description}",
-            CapabilitiesFor(task, specification));
+            CapabilitiesFor(task, specification),
+            // Mandatory exactly when the task names its own requirement — see Resolve's remarks.
+            capabilityIsMandatory: !string.IsNullOrWhiteSpace(task.RequiredCapability));
 
         task.AssignedWorker = worker?.WorkerId;
         task.WorkerBasis = basis;
@@ -73,11 +75,27 @@ public static class WorkerResolution
 
     /// <summary>The decision itself, free of the task object, so tests and previews can ask it.</summary>
     public static (AntWorkerDefinition? Worker, WorkerDecisionBasis Basis) Resolve(
-        string roleId, string taskType, string text, IReadOnlyList<string>? requiredCapabilities)
+        string roleId, string taskType, string text, IReadOnlyList<string>? requiredCapabilities,
+        bool capabilityIsMandatory = false)
     {
         var (byCapability, capabilityDecided) = AntRegistry.ResolveByCapability(roleId, requiredCapabilities);
         if (capabilityDecided && byCapability is not null)
             return (byCapability, WorkerDecisionBasis.Specification);
+
+        // v0.3.8.104 — A MANDATORY CAPABILITY NOTHING SERVES IS A BLOCKER, NOT A TIE-BREAK.
+        //
+        // When the RUNTIME created this task for one specific capability — the audit class's
+        // runtime-inspection step, the send class's proposal step — a keyword match is not a weaker
+        // answer to the same question, it is an answer to a different one. Handing that task to
+        // whichever worker the text happened to mention is how a step created to inspect live state
+        // gets served by something that reads mission history, which is the `.98` defect exactly.
+        //
+        // Narrow ON PURPOSE: only a task carrying its OWN `RequiredCapability` is mandatory. A task
+        // measured against the mission-wide list is advisory — a soldier task in an audit mission
+        // declares none of the audit's capabilities and is perfectly legitimate, and refusing it
+        // would break every mission that plans a role outside the class's own list.
+        if (capabilityIsMandatory && requiredCapabilities is { Count: > 0 })
+            return (null, WorkerDecisionBasis.Default);
 
         var (byKeyword, keywordDecided) = AntRegistry.ResolveWorker(roleId, taskType, text);
         if (keywordDecided && byKeyword is not null)

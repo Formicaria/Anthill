@@ -53,6 +53,32 @@ public static class CitationIntegrity
         Retrieved(artifacts).Count > 0 && Answer(artifacts) is not null;
 
     /// <summary>
+    /// THE SECOND TRIGGER, AND WHY IT IS NOT HERE YET. v0.3.8.104.
+    ///
+    /// `.104` was asked to key this gate on two triggers, either sufficient: the mission's CONTRACT
+    /// requires sourced research, OR the mission actually retrieved sources. The second is what
+    /// `.99` built and is the broader of the two — it covers every mission that searched, including
+    /// coding missions that are never classified as research.
+    ///
+    /// The first CANNOT BE BUILT without something to read it from, and nothing declares it. There
+    /// is no `research` mission class (the `.99` divergence, still open), no evidence kind meaning
+    /// "a source was retrieved", and no worker capability a research mission could require. A
+    /// trigger keyed on any of those would be a branch nothing reaches — the declaration-reaching-
+    /// nobody defect this release exists to close, reintroduced by the release closing it.
+    ///
+    /// What it needs is the research class itself: a class that declares a required evidence kind
+    /// for retrieved sources, so this reads `specification.RequiredEvidence` the way
+    /// `DiagnosisIntegrity` reads `command_check` today. That is a classification change — new
+    /// verbs, a new target, and an ordering decision against four existing branches — and doing it
+    /// as an addendum is how a request gets silently rerouted into the wrong lane. It is named in
+    /// `PLAN.md` §2c as the remaining half rather than approximated here.
+    ///
+    /// Recorded as a method so the next reader finds this where they will look for it, rather than
+    /// concluding the second trigger was forgotten.
+    /// </summary>
+    public static bool ContractTriggerAvailable => false;
+
+    /// <summary>
     /// Resolve every citation against what the mission actually retrieved.
     /// </summary>
     /// <param name="artifacts">The mission's artifacts, or null when the store could not be read.
