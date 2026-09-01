@@ -258,12 +258,30 @@ public class CodePatchLifecycleTests : IDisposable
         // The medic ran — and only because a typed retryable failure summoned it.
         Assert.Contains(tasks, t => t.GetValueOrDefault("assigned_ant")?.ToString() == "medic");
 
-        // The loop TERMINATED at its bound with one unambiguous outcome: terminal, adaptive-stop,
-        // and NOT verified — an exhausted repair loop must never leave pending work or buy credit.
+        // The loop TERMINATED at its bound: terminal, ESCALATED, and NOT verified — an exhausted
+        // repair loop must never leave pending work or buy credit.
+        //
+        // v0.3.8.105 — SPLIT, NOT LOOSENED. The permanent half is unchanged and still exact: the
+        // stop escalates and the mission is not verified. What expired is the assumption that
+        // `adaptive_stop` is the ONLY escalating reason, which was true until this release gave the
+        // same stop a second and more precise spelling. `repeated_failure` says the bound is spent
+        // AND the failure was reproducible; `adaptive_stop` says only the first. Both are
+        // escalations, so this pins the property and then pins which reason applies — a strictly
+        // narrower assertion than the string equality it replaces, not a wider one.
         var evaluation = queen.Memory.LoadMissionEvaluation(missionId!);
         Assert.NotNull(evaluation);
-        Assert.Equal("adaptive_stop", evaluation!.StopReason);
-        Assert.NotEqual(Anthill.Core.Outcomes.MissionOutcome.CompletedVerified, evaluation.OutcomeCode);
+        Assert.True(Anthill.Core.Outcomes.MissionStopReasons.IsEscalation(evaluation!.StopReason),
+            $"an exhausted repair loop stopped with '{evaluation.StopReason}', which is not an "
+          + "escalation — the mission would be graded on its tasks as though nothing had stopped it.");
+        Assert.Equal(Anthill.Core.Outcomes.MissionOutcome.Escalated, evaluation.OutcomeCode);
+
+        var recurred = Anthill.Core.Outcomes.FailureRecurrence.InMission(
+            (Anthill.SDK.Artifacts.IArtifactStore)queen.Memory, missionId!).Count > 0;
+        Assert.Equal(
+            recurred
+                ? Anthill.Core.Outcomes.MissionStopReasons.RepeatedFailure
+                : Anthill.Core.Outcomes.MissionStopReasons.AdaptiveStop,
+            evaluation.StopReason);
 
         // And no task was left running or pending behind the stop.
         Assert.DoesNotContain(tasks, t =>

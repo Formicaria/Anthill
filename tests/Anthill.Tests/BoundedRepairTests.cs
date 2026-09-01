@@ -25,6 +25,16 @@ public class BoundedRepairTests
     private static string MedicSource() => SourceText.CodeOnly(File.ReadAllText(
         Path.Combine(SourceText.RepoRoot(), "src", "Anthill.Core", "Agents", "SpecialistAnts.cs")));
 
+    /// <summary>
+    /// v0.3.8.105 — the detector the medic now reads through. The query below moved OUT of the
+    /// medic so the adaptive controller could ask the same question one step earlier, before
+    /// spending a repair cycle to reach a refusal already implied by the store. These guards follow
+    /// the subject rather than staying pointed at the old address: the property they enforce is
+    /// unchanged and it is now enforced in one place instead of about to be enforced in two.
+    /// </summary>
+    private static string RecurrenceSource() => SourceText.CodeOnly(File.ReadAllText(
+        Path.Combine(SourceText.RepoRoot(), "src", "Anthill.Core", "Outcomes", "FailureRecurrence.cs")));
+
     // -------------------------------------------------------------------------------------------
     // One budget, in one place
     // -------------------------------------------------------------------------------------------
@@ -109,10 +119,14 @@ public class BoundedRepairTests
     public void RepeatedFailureDetection_ReadsFailureContextArtifacts()
     {
         var medic = MedicSource();
+        var recurrence = RecurrenceSource();
 
         Assert.Contains("HasSeenSignatureBefore", medic);
-        Assert.Contains("ArtifactSchemas.FailureContext", medic);
-        Assert.Contains("x.Context!.FailureSignature", medic);
+        // The medic asks; the detector reads the typed record. Both halves are asserted, because
+        // either one alone would pass while the bound rested on prose again.
+        Assert.Contains("FailureRecurrence.Recurred(", medic);
+        Assert.Contains("ArtifactSchemas.FailureContext", recurrence);
+        Assert.Contains("x.Context!.FailureSignature", recurrence);
     }
 
     /// <summary>
@@ -127,10 +141,15 @@ public class BoundedRepairTests
     [Fact]
     public void RepeatsAreCountedByTask_NotByArtifact()
     {
-        var medic = MedicSource();
+        var recurrence = RecurrenceSource();
 
-        Assert.Contains("Distinct(StringComparer.Ordinal)", medic);
-        Assert.Contains("tasksWithThisSignature.Count > 1", medic);
+        Assert.Contains("Distinct(StringComparer.Ordinal)", recurrence);
+        Assert.Contains("r.DistinctTasks > 1", recurrence);
+
+        // AND THE MEDIC KEEPS ITS FALLBACK. `Recurred` returns null when the store could not be
+        // read, and the medic must NOT treat that as "no recurrence" — losing the bound is the
+        // failure this whole file is about, and an unreadable store is the newest way to lose it.
+        Assert.Contains("if (recurred is not null) return recurred.Value;", MedicSource());
     }
 
     /// <summary>

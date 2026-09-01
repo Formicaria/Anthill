@@ -288,10 +288,35 @@ public sealed class ToolRegistry
             var refused = new ToolResult(name, false, "",
                 $"escalation_refused: {escalation.Reason}", FailureClass.AuthorizationFailure);
             if (missionId is not null)
+            {
                 _memory.LogEvent(missionId, "escalation_refused",
                     $"Tool REFUSED pending operator decision: {name}", taskId, antName,
                     new() { ["tool_name"] = name, ["decision_id"] = escalation.Id,
-                            ["policy"] = escalation.Policy.ToString(), ["reason"] = escalation.Reason });
+                            ["policy"] = escalation.Policy.ToString(), ["reason"] = escalation.Reason,
+                            ["awaiting_decision"] = escalation.AwaitingDecision });
+
+                // v0.3.8.105 — A REFUSAL NOBODY MADE IS A QUESTION, AND A QUESTION NEEDS SOMETHING
+                // TO ANSWER. PLAN.md §2b `.105`.
+                //
+                // Until now this branch produced a refusal and stopped. Under `Ask`, absence of an
+                // answer is not consent — that rule is right and stays exactly as it is — but the
+                // refusal was the WHOLE response: nothing anywhere recorded that an operator had
+                // been left with a decision to make, so the mission failed and the operator was
+                // never shown the thing they were failing for want of.
+                //
+                // `EscalationDecision.AwaitingDecision` separates the two cases the old code
+                // collapsed: a REJECTION is an answer and the mission is finished with it; an
+                // ABSENT decision is a question. Only the second raises a request.
+                //
+                // THE FILING ITSELF LIVES IN `OperatorDecisions.Request` — see it for which ledger
+                // and why. Shared rather than written twice, because the MISSION lane discovers the
+                // same absence somewhere else entirely: a mission does not run inside the ambient
+                // `ConversationScope`, so this branch is unreachable from one, and a pause wired
+                // only here would have been invisible to every mission the colony has ever run.
+                // That is `.102`'s finding, and it is the trap this release walked up to.
+                if (escalation.AwaitingDecision)
+                    Conversations.OperatorDecisions.Request(_memory, missionId, name, antName ?? "queen");
+            }
             return refused;
         }
 
