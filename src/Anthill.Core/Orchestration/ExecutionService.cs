@@ -432,6 +432,76 @@ public sealed class ExecutionService : IExecutionService
     private void RunSingleTask(Task task, Mission mission, MissionContext context, int index, int total, TaskScheduler? scheduler)
     {
         var taskStartedAt = AnthillTime.NowUtc();
+
+        // v0.3.8.105 — THE REROUTE, BEFORE ANYTHING IRREVERSIBLE. PLAN.md §2b `.105`.
+        //
+        // FIRST in this method, ahead of the durable claim, the runtime resolution, the model call
+        // and every tool the task could reach. `MissionPreflight` asks this question of the compiled
+        // plan and has exactly one call site — in `Queen.RunMission`, before execution — so every
+        // task admitted while the mission is already running reached dispatch unexamined: handoff
+        // tasks, delta-plan tasks, repair tasks, inserted policy reviews, added verification steps.
+        // Those are the tasks created BECAUSE something went wrong, which makes them the ones most
+        // likely to be mis-assigned and the ones nothing was checking.
+        //
+        // Ahead of `AntRuntime.Resolve` deliberately: the resolution below must see the worker this
+        // gate decided on, not the one it replaced.
+        var reroute = TaskReroute.Evaluate(task);
+        if (reroute.Blocks)
+        {
+            lock (_executionLock)
+            {
+                task.Result = reroute.Reason;
+                // A REPRODUCIBLE NO. The colony cannot serve this capability and will not be able to
+                // on a retry, so the mission must not be able to reach `completed_verified` around
+                // it — the same instrument `.98` used for a deterministic refusal, for the same
+                // reason: widening where a check comes from must never weaken what a failure means.
+                task.DeterministicBlock = $"capability_unserved: {reroute.Capability}";
+                task.FinishedAt = AnthillTime.NowUtc();
+                task.ElapsedSeconds = Math.Round((task.FinishedAt.Value - taskStartedAt).TotalSeconds, 3);
+                if (scheduler is not null)
+                    scheduler.MarkFailed(task.Id, task.Result, "capability_unserved", false,
+                        task.FinishedAt, task.ElapsedSeconds);
+                else
+                {
+                    task.Status = TaskStatus.Failed; task.FailedAt = task.FinishedAt;
+                    task.FailureReason = task.Result; task.FailureType = "capability_unserved";
+                }
+                FinalizeTaskResult(mission, task);
+                _memory.LogEvent(mission.Id, "task_capability_unserved", reroute.Reason, task.Id,
+                    task.AssignedWorker ?? task.AssignedAnt,
+                    new()
+                    {
+                        ["assigned_ant"] = task.AssignedAnt,
+                        ["assigned_worker"] = task.AssignedWorker,
+                        ["required_capability"] = reroute.Capability,
+                        ["admitted_after_preflight"] = true,
+                    });
+                Console.WriteLine(task.Result);
+            }
+            return;
+        }
+
+        if (TaskReroute.Apply(task, reroute))
+        {
+            lock (_executionLock)
+            {
+                // ANNOUNCED, never silent. A dispatch-time reassignment an operator cannot
+                // reconstruct is indistinguishable from a planner that never made the mistake, and
+                // the mistake is the thing worth seeing — `worker_repaired_by_capability` carries
+                // the same obligation one layer up and this is its dispatch-time sibling.
+                _memory.SaveTask(mission.Id, task);
+                _memory.LogEvent(mission.Id, "task_rerouted", reroute.Reason, task.Id, task.AssignedWorker,
+                    new()
+                    {
+                        ["assigned_ant"] = task.AssignedAnt,
+                        ["from_worker"] = reroute.FromWorker,
+                        ["to_worker"] = reroute.ToWorker,
+                        ["required_capability"] = reroute.Capability,
+                        ["basis"] = task.WorkerBasis.ToString(),
+                    });
+            }
+        }
+
         AntRuntimeSelection runtimeSelection;
         try
         {
@@ -2674,16 +2744,28 @@ public sealed class ExecutionService : IExecutionService
     /// </summary>
     private bool _adaptiveStopWasSatisfaction;
 
+    /// <summary>
+    /// v0.3.8.105 — whether the stop that just happened was a RECURRENCE rather than a spent bound.
+    ///
+    /// A third state on the same one-shot field pattern as <see cref="_adaptiveStopWasSatisfaction"/>
+    /// and reset with it, for the same reason: three call sites read the bool as "stop now", and the
+    /// reason has to travel beside it rather than through it. Both are false for the ordinary case.
+    /// </summary>
+    private bool _adaptiveStopWasRecurrence;
+
     /// <summary>The stop reason for the decision just applied — see the note at the satisfaction arm.</summary>
     private string AdaptiveStopReason =>
         _adaptiveStopWasSatisfaction
             ? Outcomes.MissionStopReasons.AdaptiveStopSatisfied
-            : Outcomes.MissionStopReasons.AdaptiveStop;
+            : _adaptiveStopWasRecurrence
+                ? Outcomes.MissionStopReasons.RepeatedFailure
+                : Outcomes.MissionStopReasons.AdaptiveStop;
 
     private bool ApplyAdaptiveDecision(Mission mission, MissionContext context, TaskScheduler? scheduler, string? previousFingerprint)
     {
         // Every call answers afresh: a stop is satisfaction only if THIS decision says so.
         _adaptiveStopWasSatisfaction = false;
+        _adaptiveStopWasRecurrence = false;
 
         if (!context.Options.AdaptiveMissionControl) return false;
 
@@ -2691,9 +2773,22 @@ public sealed class ExecutionService : IExecutionService
             ReplansUsed: _memory.GetRecentEvents(200, "adaptive_delta_plan", mission.Id).Count,
             RepairCyclesUsed: _memory.GetRecentEvents(200, "adaptive_repair", mission.Id).Count);
 
+        // v0.3.8.105 — has this mission's defect already come back? Read HERE and handed to the
+        // controller, which stays pure. The same query the medic's loop control uses, through the
+        // same type, so the layer that decides whether to spend a repair cycle and the layer that
+        // refuses to perform one cannot answer differently.
+        var recurrence = Outcomes.FailureRecurrence
+            .InMission(_memory as Anthill.SDK.Artifacts.IArtifactStore, mission.Id)
+            .FirstOrDefault();
+
         var decision = _adaptive.Assess(mission, budget, previousFingerprint,
-            context.Specification.MissionClass);
+            context.Specification.MissionClass, recurrence);
         if (decision.Action is AdaptiveAction.Continue or AdaptiveAction.Finish) return false;
+
+        // FROM THE DECISION, not from the coincidence of a recurrence existing. A mission can
+        // escalate for no progress while an unrelated recurrence sits in its store; only the arm
+        // that actually used the fact reports it.
+        _adaptiveStopWasRecurrence = decision.Recurrence is not null;
 
         var constraints = context.Constraints;
 

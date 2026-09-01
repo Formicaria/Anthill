@@ -200,6 +200,14 @@ public class ExternalActionMissionTests : IDisposable
         Assert.True(evaluation!.IsPositive,
             $"an approved, resolved, receipted send did not reach a positive canonical evaluation: "
           + $"{evaluation.OutcomeCode} — {evaluation.Explanation}\n{Dump(memory, run.MissionId)}");
+
+        // v0.3.8.105 — AND THE COMPOSED POSITIVE FOR THE PAUSE, which is what gives the negative
+        // below its meaning. A mission that WAS answered leaves no outstanding question, so the
+        // pause cannot be a state every mission drifts into: a gate that fired on approved and
+        // unapproved runs alike would stop this mission reaching `completed_verified`, which
+        // auto-apply consumes — `.74`'s defect, and the direction this release could most easily
+        // have been wrong in.
+        Assert.Empty(memory.PendingOperatorDecisions(run.MissionId));
     }
 
     // -------------------------------------------------------------------------------------------
@@ -228,6 +236,26 @@ public class ExternalActionMissionTests : IDisposable
           + "as the send.");
         Assert.Contains("external action", evaluation.Explanation, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(MissionEvaluation.Deliverable.NotSatisfied, evaluation.DeliverableStatus);
+
+        // v0.3.8.105 — THE COMPOSED NEGATIVE FOR THE PAUSE. Through the real composition root, not
+        // against the evaluator directly: the mission reached a side-effecting action, nobody had
+        // answered, and until `.105` that graded as a mission that BROKE. Nothing broke. The
+        // question is filed in the ledger that already exists, and the evaluation names the action
+        // it is waiting on — which is the difference between an operator who retries and one who
+        // answers.
+        Assert.Equal(ExternalActionToolNames.Execute,
+            Assert.Single(memory.PendingOperatorDecisions(run.MissionId)));
+        Assert.NotEmpty(memory.GetRecentEvents(200, "operator_decision_requested", run.MissionId));
+        Assert.Contains(ExternalActionToolNames.Execute, evaluation.Explanation, StringComparison.Ordinal);
+
+        // The OUTCOME CODE is asserted in `OperatorDecisionPauseTests` against the evaluator
+        // directly, and deliberately not pinned here. A composed run can be stopped first by
+        // something else — a cancellation, a timeout, the adaptive controller — and those stops are
+        // NOT overwritten by the pause, by design: a mission the clock ended was not waiting. What
+        // this composed run proves is the half that could silently not happen at all, which is that
+        // the question reaches the mission lane. Missions do not run inside the ambient
+        // `ConversationScope`, so a pause wired only there would have been invisible to every
+        // mission ever run — the `.102` finding, and the trap this release walked up to.
     }
 
     /// <summary>
