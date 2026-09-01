@@ -4,77 +4,58 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: main carries **v0.3.8.102** (`34bc529`, tagged and released). **`release/v0.3.8.103` is
-complete and green**: approval-gated external actions, and the authority ceiling read for the
-first time.
+State: main carries **v0.3.8.103** (`25b0ec1`, tagged and released). **`release/v0.3.8.104` is
+complete and green**: the mission contract, and the debt six classes were built on.
 
-WHAT `.103` DELIVERS, in one paragraph: something can LEAVE the colony, and only to a destination a
-human approved. The adapter resolves the operator's alias to a concrete target BEFORE approval is
-offered (an operator cannot consent to a name), the resolution is recorded, and what the adapter
-reports it actually hit is recorded beside it — so an approval of one destination and a send to
-another is refused BY NAME, which no absence check could ever catch because every field is
-populated. Delivery happens only under the recorded escalation decision. A refused send writes its
-own `external_action` record with the reason, and `ResultAssembler` leads the answer with that
-record ahead of every prose path — because a builder whose tool was refused several steps upstream
-still writes "I've posted the summary to the team", and absence of a record IS the condition under
-which that prose becomes the answer.
+WHAT `.104` DELIVERS. A mission is what it was ADMITTED as. Its specification, constraints and
+verification policy are written ONCE at intake into `mission_contracts` (a separate table — the
+missions row is an INSERT OR REPLACE and would erase them) and read by every later stage. Four
+sites that re-derived meaning from `mission.Goal` are gone, and a source-shape guard asserts
+`MissionIntake.Resolve` and `MissionConstraints.Parse` each have exactly ONE production call site.
+Two of those four carried comments arguing re-resolution was safe BECAUSE intake is pure — true
+only while the rules stand still, which `.103` stopped being when it added a class and four verbs.
 
-AND THE CEILING IS FINALLY READ. `MissionAuthority` has carried a doc comment since `.98` calling
-it "the ceiling on what the mission may DO, agreed across specification, operator policy, worker
-contract and adapter before dispatch" — and no dispatch ever consulted it. `MissionAuthorityGate` is
-one table from action to required authority plus one comparison, swept against
-`EscalationGate.SideEffecting` so no side-effecting action can omit an entry. It is NOT a second
-escalation gate: that lane asks "did a human decide", per action, at dispatch; this asks "is this the
-KIND of mission that may do this at all", once, from intake. Both must pass.
+THE ONE AN OPERATOR WILL FEEL: objective verification is no longer optional for a recognized class.
+`objective_verification_enabled` ships FALSE, and every gate `.98` through `.103` built sat behind
+it. Six releases each said "deterministically qualified" honestly — the suite turned the flag on,
+and nobody's colony did. A recognized class (`system_audit`, `troubleshooting`, `system_action`,
+`external_action`) now stops asking, and FAILS CLOSED: a gate that could not run grades
+not_satisfied naming why, never not_checked. Expect missions that used to pass to stop passing.
+That is the release working.
 
-**THE FIRST THING TO KNOW: the adapter ships and the destination map ships EMPTY.**
-`ConfiguredWebhookAdapter` is composed by the API host (ApiHost.cs, beside the module-tool drain).
-It resolves an alias only against the operator's `external_destinations` config — and that map IS
-the allowlist, with no second one, because an explicit name→url pair an operator wrote is stronger
-than any host list. Default is empty, so a fresh install refuses every send with "no external
-destinations are configured" and names what would make it resolvable. Configured-off, not absent.
+ALSO CLOSED: preflight before execution (producer, verifier, worker, dependency, orphan — running
+AFTER class coverage, so it refuses only what the runtime cannot repair); blocked_missing_capability,
+open since `.98`; both `.103` authority divergences; the /ants/stats role drift, which was wrong
+three ways at once; and `anthill --live-qualification`, the production caller
+`LiveQualificationRecord` never had in the seven releases its export stayed an open exit item.
 
-The first draft tried to ship with no adapter and the gap written down as an open item. Three
-guards refused it in one run — AcceptanceGateOne (tester not Ready: two declared tools
-unregistered), NoContractNamesAToolThatDoesNotExist, EveryAllowedTool_IsEitherBuiltOrKnowinglyPlanned
-— and they were right. A role declaring tools nothing implements is the declaration-reaching-nobody
-defect, and a document describing it is not a remedy. If a future release is tempted by the same
-shortcut: those three guards are the answer, and they are correct.
+TWO NEAR-MISSES WORTH KEEPING, both caught before shipping. The authority ceiling was first narrowed
+by the role contract's `AllowsSideEffects` — FALSE for the tester, which carries `.102`'s and
+`.103`'s execute lanes, so it would have refused both classes at their own gate. Then it was applied
+to every mission — and `MissionSpecification.General` defaults to Observe, meaning "unclassified"
+rather than "read-only", so it would have refused `apply_patch` on every coding mission. The ceiling
+applies only where intake actually DECIDED one. If a future release widens it, those are the two
+walls.
 
-FOUR COMPOSITION SITES NOW, which the tool guards enumerate by name: Queen.BuildToolRegistry,
-ToolsModule.Register, SystemActionTools.For (ApiHost.Actions.cs), ExternalActionTools.For
-(ApiHost.cs). A fifth means editing ToolInventoryTests and CallSiteAuditTests deliberately — that
-friction is the point, since the pairing is what is being checked and cannot be derived from either
-side alone.
+NOT CLOSED, AND NAMED: the citation gate's second trigger (contract-requires-sources) has nothing to
+read — no `research` class, no evidence kind for a retrieved source, no capability to require. A
+trigger keyed on any of them is a branch nothing reaches, which is the defect this release exists to
+close. It needs the research class itself, and adding one as an addendum is how a request gets
+silently rerouted. The `.97` Windows `dotnet_test` residual is still undiagnosed: the sandbox's
+silent 5000-file truncation fit every symptom (its missing set is filesystem-order-dependent, hence
+OS-dependent) and is NOT the cause — this repo has 792 eligible files. The truncation is now loud
+and verification refuses inside an incomplete sandbox anyway.
 
-WHAT `.103` FOUND IN ITS OWN PROCESS, and it cost most of a session: the exit gate was written first
-as always, but its ROUTING was put in a later increment than the composed missions that needed it. A
-task type no contract admits does not fail an assertion — it goes wrong at dispatch, which is a
-statement about the harness rather than about the release. A red gate has to be red for the reason
-it claims. `.98` and `.102` both put the routing in the gate's own commit; do that.
+THE LIVE PACK IS ONE COMMAND AWAY AND STILL THE OPERATOR'S STEP. Run a real mission per class with a
+provider attached, then `anthill --live-qualification <mission-id> --json <path>` for each.
+`QUALIFICATION.md` §3 is the authority and still says PARTIAL.
 
-Three times in the same session a missing or stale input produced a confident-looking pass: a
-checkout three releases behind (built `.100`–`.102` on another machine and never fetched), a
-PowerShell block with no `&&` where every line ran regardless of the previous one failing, and a
-patch that was never downloaded. Every one would have been invisible if the green had been taken at
-face value. **Verify the base before trusting a run**: `git log --oneline -1` must show the expected
-commit before the patch, and the filtered test count must be non-zero.
-
-NEXT RELEASE IS `.104`, AND IT IS A PREREQUISITE rather than the next feature — the recovery and
-answer-coverage work moved to `.105` and `.106`. The mission specification is NOT persisted:
-`MissionContext.Create` re-resolves it from the goal on every context build, and three more sites
-re-derive meaning from `mission.Goal` independently (`AdaptiveMissionController:137`,
-`SpecialistAnts:1039`, and `Ants:819` for constraints). `.103` changed intake, so a `.102` mission
-replayed today reclassifies — and `.98`'s own rule is that a grade must be reproducible from the
-persisted record. Objective verification is also OFF by default, so every gate `.98`–`.103` built is
-inert on a default install. `PLAN.md` §2b's `.104` row carries the full gate.
-
-ROSTER, stated the way it should be quoted: **25 registered roles, 34 workers, 12 executable role
-types** under `activation_tier: full` + `roster_profile: full` (both shipped defaults). Only SIX are
-executable by flag — researcher, file, web, coder, builder, verifier; the other six (tester, soldier,
-medic, archivist, ui_cartographer, scribe) are specialists opened by canary gates, and thirteen are
-never executable (queen, director, planner, constraint, quartermaster, and the eight homelab ants).
-Drop the tier to `adaptive` and it is nine; to `core` and it is six.
+ROSTER, quoted correctly: **25 registered roles, 34 workers, 12 executable role types** under
+`activation_tier: full` + `roster_profile: full` (both shipped defaults). Only SIX are executable by
+flag — researcher, file, web, coder, builder, verifier; the other six (tester, soldier, medic,
+archivist, ui_cartographer, scribe) are specialists opened by canary gates; thirteen never execute
+(queen, director, planner, constraint, quartermaster, and the eight homelab ants). Drop the tier to
+`adaptive` and it is nine; to `core`, six.
 
 Previous state below, kept because the next session runs the live pack against it.
 

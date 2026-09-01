@@ -40,6 +40,18 @@ public static class MissionOutcome
     /// <summary>v2.26.0: the adaptive controller stopped the mission and handed it to a human.
     /// Distinct from failed — nothing broke; the runtime declined to continue without judgment.</summary>
     public const string Escalated = "escalated";
+
+    /// <summary>
+    /// v0.3.8.104: the mission could not be compiled because nothing in the colony can do a thing
+    /// it requires. NOT a failure — nothing broke, and nothing was attempted. The distinction is
+    /// operational: a failed mission invites a retry, and this one will fail identically until the
+    /// colony gains a capability, so retrying it is the one response guaranteed to be useless.
+    ///
+    /// It is also NOT a signal for learning. A mission blocked for want of a worker says nothing
+    /// about the workers that exist, so `IsPositiveSuccess` stays false for it and nothing
+    /// reinforces, promotes or retires on the strength of it.
+    /// </summary>
+    public const string BlockedMissingCapability = "blocked_missing_capability";
     public const string Compensating = "compensating";
     public const string Compensated = "compensated";
     public const string RollbackFailed = "rollback_failed";

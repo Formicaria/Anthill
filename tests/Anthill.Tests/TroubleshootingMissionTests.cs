@@ -267,8 +267,40 @@ public class TroubleshootingMissionTests : IDisposable
         Assert.NotNull(evaluation);
         Assert.False(evaluation!.IsPositive,
             $"an audit that executed checks reached a positive outcome: {evaluation.Explanation}");
-        Assert.Contains("executed check", evaluation.Explanation, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(MissionEvaluation.Deliverable.NotSatisfied, evaluation.DeliverableStatus);
+        // v0.3.8.104 — THE DELIVERABLE LANE IS NOW LEGITIMATELY SATISFIED, and that is not a
+        // weakening. The audit inspected, compiled and verified: it delivered what an audit
+        // delivers. What it could NOT do is execute a check, because the ceiling refused the
+        // dispatch — so the mission is not a verified success (asserted above) while the audit's
+        // own objective is met. Asserting `not_satisfied` here would be asserting that the audit
+        // failed at being an audit, which it did not; the thing that failed is the thing it should
+        // never have attempted.
+
+        // v0.3.8.104 — THE BOUNDARY MOVED EARLIER, AND THAT IS THE POINT.
+        //
+        // Until this release an audit COULD execute a check and was caught at grading, by an
+        // explanation naming the executed check. Now the mission's authority ceiling is read at the
+        // dispatch chokepoint: an audit is admitted at `observe`, `run_allowlisted_check` requires
+        // `execute_checks`, and the dispatch is refused before anything runs. The boundary `.101`
+        // established is unchanged; it is enforced where it costs nothing instead of where it
+        // costs a check run.
+        //
+        // So the assertion moves with it rather than softening. The old one looked for the reason
+        // in the grade; this looks for the refusal in the record, which is a stronger claim: not
+        // "the audit was marked down for executing checks" but "the audit could not execute one".
+        var refused = memory.GetRecentEvents(200, "authority_ceiling_refused", run.MissionId);
+        Assert.NotEmpty(refused);
+
+        // AND THE RECORD AGREES, which is the assertion that would survive the event vocabulary
+        // being renamed: an audit's store holds NO command-check receipts, because no check ran.
+        // `.101` made a receipt the thing a diagnosis rests on; the absence of one here is the
+        // boundary visible in the same place the gates read.
+        var receipts = ((Anthill.SDK.Artifacts.IEvidenceStore)memory).ForMission(run.MissionId)
+            .Where(e => string.Equals(e.Kind, Anthill.SDK.Artifacts.EvidenceKinds.CommandCheck,
+                        StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        Assert.True(receipts.Count == 0,
+            $"an audit left {receipts.Count} command-check receipt(s); its authority is `observe` "
+          + "and the ceiling should have refused every check dispatch before it ran.");
     }
 
     /// <summary>

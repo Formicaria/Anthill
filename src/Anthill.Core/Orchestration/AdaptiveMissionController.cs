@@ -108,7 +108,8 @@ public sealed class AdaptiveMissionController
     /// stall check — so a mission that is genuinely progressing is never escalated, and one that
     /// has stopped moving is never left to spin.
     /// </summary>
-    public AdaptiveDecision Assess(Mission mission, AdaptiveBudget budget, string? previousFingerprint = null)
+    public AdaptiveDecision Assess(Mission mission, AdaptiveBudget budget, string? previousFingerprint = null,
+        string? missionClass = null)
     {
         if (mission?.Tasks is null || mission.Tasks.Count == 0)
             return AdaptiveDecision.Of(AdaptiveAction.Escalate, "mission has no tasks to assess");
@@ -132,10 +133,17 @@ public sealed class AdaptiveMissionController
         // escalated "the bound is spent" — stopping the mission before its builder and verifier
         // ever ran. A correctly reproduced symptom graded as an escalated failure, which is the
         // exact inversion of the class's purpose. A failed NON-tester task keeps the full repair
-        // treatment: a dead researcher is a genuinely broken mission in any class. Intake is pure,
-        // so the class is read from the same resolution every other layer uses.
-        var troubleshooting = Missions.MissionIntake.Resolve(mission.Goal).MissionClass
-            == Missions.MissionSpecification.TroubleshootingClass;
+        // treatment: a dead researcher is a genuinely broken mission in any class.
+        //
+        // v0.3.8.104 — the class arrives from the mission's CONTRACT rather than being re-resolved
+        // here. The previous comment said "intake is pure, so the class is read from the same
+        // resolution every other layer uses", and that was true only while the rules never moved:
+        // `.103` added a class and four verbs, so re-resolving would have graded a mission by rules
+        // it was never admitted under. Null means a caller that has no contract to offer, and the
+        // conservative reading — not troubleshooting — is the behaviour every release before `.101`
+        // had.
+        var troubleshooting = string.Equals(missionClass,
+            Missions.MissionSpecification.TroubleshootingClass, StringComparison.OrdinalIgnoreCase);
         var brokenCritical = mission.Tasks
             .Where(t => t.Critical && t.Status == TaskStatus.Failed)
             .Where(t => !(troubleshooting && string.Equals(t.AssignedAnt, "tester", StringComparison.OrdinalIgnoreCase)))

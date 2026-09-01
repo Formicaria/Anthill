@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.103**.
+Shipping release: **v0.3.8.104**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -110,11 +110,24 @@ since `.98` and read by nothing, is finally read: one table from a side-effectin
 authority a mission must hold, swept so no member of the escalation set can omit an entry.
 
 What is NOT claimed: a send that reached anything. The adapter ships composed and the
-destination map ships EMPTY, so a fresh install refuses every send by name — configured-off rather
-than absent. Nor is the ceiling consulted at the dispatch chokepoint, nor are the other three
-authority sources the `MissionAuthority` doc names. Six of the seven classes are now served deterministically; the
-seventh — and every one of the six on a default install, where `objective_verification_enabled`
-is off — waits on `.104`. See
+destination map ships EMPTY, so a fresh install refuses every send by name.
+
+**What v0.3.8.104 changes, and how far.** A mission is now what it was ADMITTED as: its
+specification, constraints and verification policy are recorded once at intake and read by every
+later stage, so an intake rule change cannot reclassify a mission that already ran — the property
+`.98` required for a reproducible grade and that `.103` proved was absent. Four sites that
+re-derived meaning from the goal are gone, and a source-shape guard keeps a fifth from growing back.
+A recognized class is objectively verified WITHOUT the operator switch and fails closed when its
+gate cannot run, which is the first release in which the enforcement `.98`–`.103` built is live on
+a default install. A plan that could never deliver is refused before it runs, and a mission
+requiring something nothing serves returns `blocked_missing_capability` rather than an arbitrary
+worker. Both `.103` authority divergences are closed, the dashboard's role list is derived rather
+than remembered, and `LiveQualificationRecord` has a production caller for the first time since it
+shipped at `.89`.
+
+What is NOT claimed: anything live, still. And the citation gate's second trigger is recorded as
+open with its reason rather than approximated — it needs the research class, and adding one as an
+addendum is how requests get silently rerouted. See
 [`ADR-008`](adr/ADR-008-universal-mission-lifecycle.md) §1 for the evidence and §2 for the contract
 the `.98`–`.107` sequence exists to satisfy.
 
@@ -183,18 +196,21 @@ through the real application. **Ext.** = requires an external adapter, connectio
 | Local system actions | partial | no | partial | no | homelab-catalog operations shipped (.102); a general local-system lane outside the catalog is not claimed |
 | Homelab/infrastructure actions | yes | no | **yes** | no | on the mission spine: propose → operator decision → execute → verify, recorded as a reversible operation (.102) |
 | External actions (approval-gated) | yes | **no destinations configured** | **yes** | no | Ext. — the class, record, ceiling, gate AND a `ConfiguredWebhookAdapter` composed by the API host. `external_destinations` is empty by default and IS the allowlist, so a fresh install resolves nothing and refuses by name |
-| Mission authority ceiling | **partial** | yes | **yes** | no | `MissionAuthorityGate` reads what `MissionAuthority` has declared since `.98`; consulted directly, not yet at the dispatch chokepoint (`.104`) |
+| Mission authority ceiling | yes | yes | **yes** | no | `.104`: read at the dispatch chokepoint, from the mission's recorded contract, for recognized classes only — `General` defaults to Observe and means "unclassified", not "read-only" |
+| Mission contract (persisted) | yes | yes | **yes** | no | `.104`: written once at intake, read by every stage; an intake rule change cannot reclassify a mission that already ran |
+| Mission preflight | yes | yes | **yes** | no | `.104`: producer, verifier, worker, dependency and orphan checks before execution; runs after class coverage so it refuses only what the runtime cannot repair |
+| Live qualification export | yes | yes | **yes** | no | `.104`: `anthill --live-qualification` — the record type shipped at `.89` and had no production caller until now |
 | Dynamic repair (Medic) | partial | yes | partial | no | bounded repair exists; not evidence-driven — `.104` |
 | Multi-mission continuity | no | — | no | no | `.105` |
 | Pheromone / skill learning | yes | yes | yes | no | positive learning restricted to `completed_verified` |
-| Objective verification (non-code) | **partial** | `objective_verification_enabled` | **yes** | no | `.98` added `AssessmentObjective` + the deliverable ledger for the `system_audit` class; `.99` added `CitationIntegrity`, which keys on retrieval rather than on class; `.100` added `CreationIntegrity`, keyed on the plan's own task typing; `.101` added `DiagnosisIntegrity` (specification-keyed, fail-closed) and the audit gate's boundary refusal; `.102` added `OperationIntegrity`; `.103` added `ExternalActionIntegrity`, the first to refuse a MISMATCH rather than an absence. Still behind `objective_verification_enabled`, OFF by default — every gate these six releases built is inert on a default install, which `.104` closes |
+| Objective verification (non-code) | yes | **yes — recognized classes** | **yes** | no | `.104`: a recognized class (`system_audit`, `troubleshooting`, `system_action`, `external_action`) no longer consults `objective_verification_enabled` and FAILS CLOSED when its gate cannot run. The flag still governs the general and coding lanes. Six releases of gates were inert on a default install until this |
 
 No row may claim a status stronger than `QUALIFICATION.md` records. That is checked, not trusted:
 see `DocumentationConsistencyTests`.
 
 ---
 
-## 2b. The universal-workflow program — v0.3.8.103 → v0.3.8.108
+## 2b. The universal-workflow program — v0.3.8.104 → v0.3.8.108
 
 **This is the current forward sequence.** It supersedes the earlier framing in which R4–R10 were
 the next thing to run; those items are not deleted, and each release below names the R-items it
@@ -224,8 +240,7 @@ past.
 
 | Release | Operator-visible capability | Exit gate |
 |---|---|---|
-| **.103** | Approval-gated external actions, universal authority adapters | §2c below |
-| **.104** | **The mission contract, persisted and enforced end to end** | a mission's specification is written once at intake and every later stage reads that record; an intake rule change does not alter a mission that already ran; a recognized class is objectively verified under ordinary production defaults; preflight refuses an unproducible deliverable, an unverifiable criterion and an invalid dependency by name; a mission with no compatible worker returns `blocked_missing_capability` rather than an arbitrary one |
+| **.104** | The mission contract, persisted and enforced end to end | §2c below |
 | **.105** | Dynamic replanning, clarification, bounded Medic repair | wrong worker rerouted before harmful execution; missing operator decision pauses rather than guesses; repeated identical failure stops truthfully — **extending the existing `FailureClass` taxonomy, never replacing or flattening it** |
 | **.106** | Answer coverage, objective outcomes, multi-mission continuity | the general last-worker-output fallback is **removed**: every answer is assembled specification → deliverable → evidence → answer section; a second mission consumes the first's verified artifact by id; an omitted requested section fails coverage |
 | **.107** | Verified route learning; the existing qualification matrix extended | a learned route improves a compatible later mission without overriding compatibility, authority or evidence |
@@ -244,107 +259,78 @@ Rules binding every release in this program:
   became API-editable with no control rendering it, so an operator following the changelog looked
   for a switch that did not exist.
 
-### 2c. v0.3.8.103 — external actions and the authority ceiling
+### 2c. v0.3.8.104 — the mission contract, and the debt six classes were built on
 
-**Delivers:** an operator asking for something to leave the colony — "post the release summary to
-the team's incident webhook" — gets a send that happened to a destination a human approved, or a
-mission that says plainly it did not send and why. The second class to carry Modify authority, and
-the first whose ceiling is READ at dispatch rather than merely declared.
+**Delivers:** a mission is what it was ADMITTED as. Its specification, constraints and verification
+policy are written once at intake and read by every later stage; an intake rule change does not
+alter a mission that already ran; a recognized class is objectively verified under ordinary
+production defaults; a plan that could never deliver is refused before it runs; and a mission
+requiring something the colony cannot do returns a named blocker rather than an arbitrary worker.
 
-**Covers** the outbound half of Modify: an alias resolved to a concrete destination BEFORE approval
-is offered, the resolution recorded, the destination actually reached recorded beside it, delivery
-only under the operator's recorded escalation decision, and an answer rendered from that record
-rather than composed from the builder's prose.
+**Why it went in FRONT of recovery and answer coverage.** Both depend on the specification being a
+fact rather than a re-derivation — `.106` in particular assembles the answer from
+specification → deliverable → evidence, and cannot do that against a specification that changes
+when intake does.
 
-**Does not cover**, deliberately: whether the message was well written, whether the recipient was
-the right one, or whether sending was wise. Semantic judgments, the standing line since v2.19.0.
+**Reuses:** the `AddMissing`/schema path, the evaluator's deliverable lane, `EnsureClassCoverage`
+(preflight runs after it, never instead of it), the existing `FailureClass` taxonomy untouched, the
+capability-first resolver and the consumption ledger, and the cancellation matrix. No parallel
+ledger, no second vocabulary.
 
-**Why this is not `.102` with a different noun:** who bears the consequence. An infrastructure
-action is the operator's own machine and the paired action reverses it; a message that reached a
-third party is irreversible the instant it lands and is read by people the colony cannot reach.
-There is no before-state to restore, so the record's centre is WHERE THE THING WENT.
+**Connects:** `Queen.RunMission → MissionContracts.LoadOrCreate → MissionContext (Contract) →
+PlanningService → EnsureClassCoverage → MissionPreflight → ExecutionService → ToolRegistry (the
+authority ceiling) → MissionEvaluator`.
 
-**Reuses:** the escalation lane where the permission is the record (`.102`'s finding —
-`OperatorDecisions.ForMission` resolves the saved decision through the mission's own lineage), the
-artifact store and schema check as the record's carrier, `MissionEvaluator`'s deliverable lane, and
-`ResultAssembler`'s rendering precedence. No parallel ledger, no second approval path.
+**Exit gate** — the fourteen named tests, all through production paths with ordinary defaults and
+no runtime switch set by any of them:
 
-**Connects:** `MissionIntake (external_action, Modify) → Planner.EnsureClassCoverage (send step) →
-TesterAnt's send lane → propose_external_action (resolve + propose) → escalation chokepoint (the
-operator's recorded decision) → execute_external_action → IExternalActionAdapter → external_action
-record → ExternalActionIntegrity → MissionEvaluator`, with `ResultAssembler` leading the answer from
-the record.
+- `MissionSpecification_PersistsAcrossRestart`, `MissionReplay_DoesNotReclassifyAfterIntakeRulesChange`,
+  `DownstreamStages_ConsumePersistedSpecification`, `AContract_IsWrittenOnce_AndASecondWriteIsIgnored`,
+  `LegacyMission_WithoutAContract_SaysSoRatherThanInventingOne`,
+  `TheOperatorsGoal_IsInterpretedInExactlyOnePlace` (the source-shape guard, both functions);
+- `RecognizedMission_ObjectiveVerificationRunsUnderDefaultConfiguration`,
+  `RecognizedClass_WithUnavailableVerification_FailsClosed`, `AnUnrecognizedMission_StillHonoursTheFlag`;
+- `MissionPreflight_RejectsUnproducedDeliverable`, `MissionPreflight_RejectsUnverifiedCriterion`,
+  `MissionPreflight_RejectsInvalidDependency`, `MissionPreflight_RejectsOrphanedTask`,
+  `MissingCompatibleWorker_ReturnsBlockedMissingCapability`;
+- and the role-surface guards, both directions, the way tools have been guarded for releases.
 
-**Exit gate** — the composed acceptance mission (`ExternalActionMissionTests`), written before the
-implementation. **MET deterministically**, over three semantically equivalent phrasings, with three
-negative runs: an unapproved send delivers nothing and the mission says so; a builder that LIES about
-a refused send does not become the answer; an unresolvable destination is refused before approval is
-offered.
+**Carried debt this release CLOSED, item by item:**
 
-Proved, each by an assertion that fails without it:
+- the persisted contract and the four goal-reparsing sites (`.104`'s own gate);
+- objective verification inert on a default install — six releases of gates behind a flag nobody
+  turns on;
+- `blocked_missing_capability`, open since `.98`;
+- both `.103` authority divergences: the ceiling is read at the dispatch chokepoint, and the
+  four-source accounting is written down (three gates already stand there in sequence);
+- the `/ants/stats` role drift, wrong three ways at once, now derived and guarded both directions;
+- **the live-pack export**: `LiveQualificationRecord` had no production caller in seven releases,
+  which is why "export a `LiveQualificationRecord`" stayed open. `anthill --live-qualification` is
+  that caller.
 
-- the resolved destination is recorded, and what the adapter reports it hit equals what was approved;
-- the approver is the escalation decision's identity, distinct from the proposing role;
-- a receipt exists — "the request was made" is not "the destination accepted it";
-- a refused send writes its own record, with the reason, and the answer LEADS with it;
-- each missing piece, and the target MISMATCH, is refused by name;
-- `MissionAuthorityGate` refuses a send under a lower ceiling and names both levels, and every
-  member of `EscalationGate.SideEffecting` declares the authority it needs.
+**Recorded rather than closed, with the reason:**
 
-**WHAT AN OPERATOR MEETS FIRST, and why it is a configuration state rather than a gap:**
+- **The citation gate's second trigger.** Asked for as contract-OR-record; only the record trigger
+  exists. Nothing declares "this mission needs sources" — no `research` class (the `.99`
+  divergence), no evidence kind for a retrieved source, no capability a research mission requires.
+  Keying on any of them would be a branch nothing reaches, which is the defect this release exists
+  to close. It needs the research class: new verbs, a new target, and an ordering decision against
+  four existing branches. Doing that as an addendum is how a request is silently rerouted into the
+  wrong lane, and misrouting is the direction this program has consistently refused to be wrong in.
+- **The `.97` Windows residual.** A hypothesis with a mechanism — the sandbox's silent 5000-file
+  truncation, whose missing set is filesystem-order-dependent and therefore differs by OS — fits
+  every observed property and is NOT the cause: this repository has 792 eligible files. The
+  truncation is now loud and verification refuses inside an incomplete sandbox; a second defect in
+  the same path (a top-level `bin/` escaping the exclusion) is fixed. The residual is undiagnosed
+  and still carried.
+- **`ObjectiveVerification.Required(goal, constraints)`** re-reads the goal, in the UNRECOGNIZED
+  lane only. Changing it alters coding-lane grading, which is out of this release's blast radius.
+- **The live pack itself.** One command away and still an operator's step: it needs a real provider
+  and a real request. `QUALIFICATION.md` §3 remains the authority and still says PARTIAL.
 
-- **A production adapter ships and no destination is configured.** `ConfiguredWebhookAdapter` is
-  composed by the API host beside the module tools; it resolves an alias only against the operator's
-  `external_destinations` map, and that map is empty by default. The map IS the allowlist — there is
-  no second one, because an explicit operator-written name→url pair is the strongest allowlist
-  available and a colony able to reach a host nobody configured would be one whose destination list
-  was advisory. So a fresh install refuses every send before approval is offered, naming what is
-  configured (nothing) so the refusal is actionable.
-- **The first draft of this release tried to ship with no adapter at all**, recording the gap here
-  as an open item. Three guards refused it in one run — `AcceptanceGateOne`,
-  `NoContractNamesAToolThatDoesNotExist`, `EveryAllowedTool_IsEitherBuiltOrKnowinglyPlanned` — and
-  they were right: a role whose contract names tools nothing implements is the
-  declaration-reaching-nobody defect, and describing it in a document is not a remedy for it. The
-  episode is recorded because the standard it enforces is the one this program keeps re-learning.
-
-**Divergences — recorded rather than quietly dropped:**
-
-- *"universal authority adapters"* — the ceiling is universal and it is READ; what it reads is a
-  static table from action to required authority, not a negotiation across the four sources the
-  `MissionAuthority` doc names (specification, operator policy, worker contract, adapter). The
-  specification's ceiling is the only one consulted today. The other three are declared and still
-  unread, which is the same defect one layer up, and it is named here rather than implied by the
-  word "universal".
-- *the ceiling is not yet enforced at the dispatch chokepoint* — `MissionAuthorityGate` is proved
-  directly and consulted nowhere in `Tools.RunTool`. A mission cannot currently reach a tool its
-  ceiling forbids because no plan routes it there, which is a property of the planner rather than a
-  gate. `.104`'s preflight is where this becomes structural.
-- *the send body is the operator's request* — the builder has not run when the send lane executes,
-  so what leaves is the ask rather than a composed message. Ordering that properly is a plan-shape
-  question, not a patch.
-
-**Carried open from `.97`–`.102`, unmet and not lapsed:**
-
-- `blocked_missing_capability` (now scheduled: `.104`); the two-site source-shape guard;
-- **the live pack:** objective verification live, `LiveQualificationRecord`, and live audit,
-  research, creation, troubleshooting, system-action and external-action missions;
-- retrieval time; capability-first research resolution; claim-level sourcing inside creations;
-  intake-derived requirement coverage (`.106`); creation classification by meaning; "could not
-  reproduce" as a positive outcome; symptom-directed check selection; the typed diagnosis receipt
-  record; a typed state-snapshot contract per homelab runner; multi-operation plans and ordering.
-
-**Newly recorded open item — the dashboard's role list has drifted from the registry.**
-`/colony/registry` is honest: it serves all 25 roles plus `executable_roles` plus the activation
-ceiling. `/ants/stats` carries a hardcoded eight-element array and disagrees with the registry in
-three ways at once — it lists `strategist`, which is not a registered role at all; it shows a model
-route for `file`, whose contract declares `AllowsModelCalls: false`; and it omits the six specialist
-roles that are executable under the shipped profile. A second copy of the truth maintained by hand
-beside a computed one, which is the defect `ToolInventoryTests` already guards for tools in both
-directions and nothing guards for roles.
-
-**Explicitly still unsupported after .103:** the persisted mission contract (`.104`); dynamic
-replanning and clarification (`.105`); multi-mission continuity (`.106`); claim↔source SUPPORT;
-general local-system operations outside the homelab catalog; any external destination not written into `external_destinations` by an operator.
+**Explicitly still unsupported after .104:** dynamic replanning and clarification (`.105`);
+multi-mission continuity and specification-driven answer assembly (`.106`); claim↔source SUPPORT;
+a `research` mission class; general local-system operations outside the homelab catalog.
 
 ---
 

@@ -72,6 +72,20 @@ public static class AntRegistry
     public static readonly IReadOnlyDictionary<string, AntWorkerDefinition> ByWorker =
         Roles.SelectMany(r => r.Workers).ToDictionary(w => w.WorkerId, StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// MODEL ROUTES THAT ARE NOT ROLES. v0.3.8.104.
+    ///
+    /// `planner` is a registered role that is not executable; `strategist` is not in this registry
+    /// at all (it is `Autonomy.Strategist`). Both genuinely call models and both have model routes
+    /// an operator configures, so a display that omitted them would be as wrong as the hand-written
+    /// array that used to show `strategist` beside the ants as though it were one.
+    ///
+    /// Named here, once, so the dashboard derives rather than remembers — and asserted against the
+    /// registry by `RoleSurfaceTests`, which fails if one of these ever BECOMES an executable role
+    /// and this list keeps calling it an exception.
+    /// </summary>
+    public static readonly IReadOnlyList<string> NonRoleModelRoutes = new[] { "planner", "strategist" };
+
     private static readonly IReadOnlySet<string> BaseExecutableRoleIds =
         Roles.Where(r => r.Executable && r.Enabled).Select(r => r.RoleId).ToHashSet(StringComparer.OrdinalIgnoreCase);
 

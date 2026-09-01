@@ -108,6 +108,23 @@ public static class PatchSetMaterializer
         try { sandbox = SandboxWorkspace.Create(sourceRoot, preferCopy: true); }
         catch (Exception e) { return new(null, $"sandbox could not be created: {e.Message}"); }
 
+        // v0.3.8.104 — A TRUNCATED SANDBOX IS NOT A TREE TO VERIFY IN.
+        //
+        // The copy is bounded, and until now it stopped silently at the bound: the sandbox was an
+        // arbitrary, filesystem-order-dependent subset of the repository, and a build or test run
+        // inside it failed for a reason nothing recorded. Different enumeration order on a
+        // different machine means a different subset is missing, which is precisely how a failure
+        // reproduces on one operating system and not another. Refusing here is the difference
+        // between "verification could not run" and a verdict about code that was never there.
+        if (sandbox.Truncated)
+        {
+            sandbox.Dispose();
+            return new(null,
+                "the verification sandbox is an incomplete copy of the workspace — more eligible "
+              + "files than the copy bound allows — so any result from it would describe a tree "
+              + "that does not exist. Verification refused rather than reported.");
+        }
+
         try
         {
             var sandboxRoot = Path.GetFullPath(sandbox.Root);

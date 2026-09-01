@@ -234,6 +234,17 @@ public sealed partial class SqliteMemory : IDisposable
             user_result TEXT, debug_result TEXT, final_result TEXT,
             best_output_task_id TEXT, success_score REAL,
             created_at TEXT NOT NULL, saved_at TEXT NOT NULL)",
+        // v0.3.8.104 — THE MISSION CONTRACT. A separate table rather than columns on `missions`
+        // because SaveMission is an INSERT OR REPLACE over the whole row: anything written to a
+        // mission column by another path is erased on the next save, which the evaluation columns
+        // already learned and work around with a later UPDATE. A contract an unrelated save could
+        // erase would not be one. Write-once is enforced at the INSERT (OR IGNORE), so a resumed or
+        // replayed mission cannot acquire a new contract by running again.
+        @"CREATE TABLE IF NOT EXISTS mission_contracts (
+            mission_id TEXT PRIMARY KEY, contract_version INTEGER NOT NULL,
+            intake_version TEXT NOT NULL, mission_class TEXT NOT NULL,
+            contract_json TEXT NOT NULL, recorded_at TEXT NOT NULL,
+            FOREIGN KEY (mission_id) REFERENCES missions(id))",
         @"CREATE TABLE IF NOT EXISTS tasks (
             id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, title TEXT NOT NULL,
             description TEXT NOT NULL, assigned_ant TEXT NOT NULL, assigned_worker TEXT, task_type TEXT NOT NULL,

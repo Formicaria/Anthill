@@ -277,6 +277,21 @@ public class ShippedChangelogTests
             // actually about this, and ReleaseNotesTests for the one that prevents it.
             ["0.3.8.60"] = "#16 is this release. #23 is v0.3.8.67 committed under this subject from "
                          + "a stale RELEASE_MSG.txt; its tag and tree are correct.",
+            // v0.3.8.104. `25b0ec1` is the real v0.3.8.103 and carries the tag. `25f26ad` is a
+            // second commit under the same subject, merged during a botched .104 release sequence:
+            // a `git am` failed partway, `git am --abort` rolled the branch back and discarded the
+            // .104 commits while leaving a ZERO-BYTE MissionPreflight.cs on disk, and that empty
+            // file was committed and merged under the notes file's stale .103 title. The tree it
+            // added is one empty file, superseded by .104's real one.
+            //
+            // Recorded rather than rewritten, on this file's own standing policy and the same one
+            // DocsConsistencyTests applies to the duplicate v1.x/v2.x changelog headings: shared
+            // history is not force-pushed to make a guard green. The guard was right, it caught a
+            // real defect within minutes of it landing, and what it caught is now written down
+            // where the next reader will find it.
+            ["0.3.8.103"] = "25b0ec1 is the release and holds the tag. 25f26ad is an empty-file "
+                          + "commit merged under a stale RELEASE_MSG.txt subject during the .104 "
+                          + "sequence; superseded by .104.",
         };
 
     /// <summary>

@@ -234,6 +234,54 @@ public sealed class ToolRegistry
         //
         // Outside a conversation this returns null and nothing changes, which is why missions run
         // exactly as they did.
+        // v0.3.8.104 — THE AUTHORITY CEILING, AT THE CHOKEPOINT. The `.103` divergence, closed.
+        //
+        // `.103` built `MissionAuthorityGate`, proved it directly, and consulted it nowhere. The
+        // release recorded that honestly: nothing routed a mission to a tool its ceiling forbade,
+        // but that was a property of the PLANNER rather than a gate, and a guarantee that depends
+        // on nobody making a mistake upstream is not a guarantee. It is read here.
+        //
+        // THREE QUESTIONS, THREE ANSWERS, ALL REQUIRED. Authorization above asks "may this ROLE
+        // ever do this". This asks "is this the KIND of mission that may do this at all" — settled
+        // once at intake, from the operator's own request. Escalation below asks "has the OPERATOR
+        // agreed to it happening now". None substitutes for another: an audit mission that reached
+        // an execute tool is not made acceptable by a human clicking approve, because what the
+        // human approved was an audit.
+        //
+        // Read from the mission's recorded CONTRACT, so a mission is held to the ceiling it was
+        // admitted under rather than to whatever today's intake rules would give it — the whole
+        // point of `.104`. No mission id means no mission-scoped ceiling to apply, which is the
+        // case for tooling and the CLI and leaves them exactly as they were.
+        // ONLY FOR A RECOGNIZED CLASS, and this condition is load-bearing rather than cautious.
+        // `MissionSpecification.General` defaults its authority to Observe — which means "intake
+        // did not classify this", NOT "this mission is read-only". Applying that as a ceiling would
+        // refuse `apply_patch` on every coding mission in the colony, because the coding lane is
+        // unclassified by design. A ceiling is only a fact where intake actually decided one.
+        if (missionId is not null)
+        {
+            var missionContract = _memory.LoadMissionContract(missionId);
+            var ceiling = missionContract is not null
+                       && Missions.MissionContracts.RecognizedClasses.Contains(
+                              missionContract.Specification.MissionClass)
+                ? missionContract.Specification.Authority
+                : (Missions.MissionAuthority?)null;
+            if (ceiling is not null)
+            {
+                var authority = Missions.MissionAuthorityGate.Evaluate(ceiling.Value, name);
+
+                if (!authority.Allowed)
+                {
+                    var refusedByCeiling = new ToolResult(name, false, "",
+                        $"authority_ceiling: {authority.Reason}", FailureClass.AuthorizationFailure);
+                    _memory.LogEvent(missionId, "authority_ceiling_refused",
+                        $"Tool REFUSED by the mission's authority ceiling: {name}", taskId, antName,
+                        new() { ["tool_name"] = name, ["ceiling"] = ceiling.Value.ToString(),
+                                ["reason"] = authority.Reason });
+                    return refusedByCeiling;
+                }
+            }
+        }
+
         var escalation = Conversations.ConversationScope.Evaluate(name);
         if (escalation is { Allowed: false })
         {

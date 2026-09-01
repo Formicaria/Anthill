@@ -2691,7 +2691,8 @@ public sealed class ExecutionService : IExecutionService
             ReplansUsed: _memory.GetRecentEvents(200, "adaptive_delta_plan", mission.Id).Count,
             RepairCyclesUsed: _memory.GetRecentEvents(200, "adaptive_repair", mission.Id).Count);
 
-        var decision = _adaptive.Assess(mission, budget, previousFingerprint);
+        var decision = _adaptive.Assess(mission, budget, previousFingerprint,
+            context.Specification.MissionClass);
         if (decision.Action is AdaptiveAction.Continue or AdaptiveAction.Finish) return false;
 
         var constraints = context.Constraints;

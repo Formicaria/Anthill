@@ -87,6 +87,16 @@ switch (command)
         // never opened — and exits nonzero when the answer is no. QA's first command.
         return Anthill.Cli.QualificationCommand.Run();
 
+    case "--live-qualification":
+        // v0.3.8.104 — export the LiveQualificationRecord for a mission that actually ran.
+        //
+        // The type has been complete and tested since `.89` and had no production caller at all;
+        // `QUALIFICATION.md` §3 has carried "an exported LiveQualificationRecord" as an open exit
+        // item since `.97` for that reason alone. Distinct from `--qualification`, which asks
+        // whether this installation CAN run a mission against a temporary store: this reads a real
+        // one out of the operator's own colony.
+        return Anthill.Cli.LiveQualificationCommand.Run(rest);
+
     case "--status":
     {
         using var queen = NewQueen();
@@ -189,6 +199,8 @@ Usage:
   anthill --set-password <u> <p>      Reset an operator's password (lock-out recovery).
   anthill --selftest             Run the framework self-test harness.
   anthill --qualification        Can this install run missions? Temp-workspace-only; exit 0 = yes.
+  anthill --live-qualification <mission-id> [--json <path>]
+                                Export the live qualification record for a mission that RAN.
   anthill --status               Print colony system status.
   anthill --config               Print effective configuration and safety gates.
   anthill --routes               Print model routing table.

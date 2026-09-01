@@ -104,4 +104,47 @@ public static class MissionAuthorityGate
           + "for; an operator decision cannot raise it, because the decision approved a mission of "
           + "this kind.");
     }
+
+    /// <summary>
+    /// WHERE THE OTHER THREE SOURCES ARE ENFORCED. v0.3.8.104 — the `.103` divergence, closed by
+    /// accounting rather than by adding a fourth gate.
+    ///
+    /// `MissionAuthority`'s doc has said since `.98` that the ceiling is "agreed across
+    /// specification, operator policy, worker contract and adapter before dispatch", and `.103`
+    /// recorded that it read only the first. The first draft of this release tried to close that by
+    /// having this type consult the worker contract's <c>AllowsSideEffects</c> — and that flag is
+    /// FALSE for the tester, which carries `.102`'s and `.103`'s execute lanes. It would have
+    /// refused both classes at their own chokepoint.
+    ///
+    /// The correct answer was that three of the four are already enforced, at the same chokepoint,
+    /// by gates that predate this one:
+    ///
+    /// * SPECIFICATION — this type, consulted in `ToolRegistry.RunTool` from the mission's recorded
+    ///   contract. The one that genuinely reached nobody until now.
+    /// * WORKER CONTRACT — `ToolAuthorization.Evaluate`, immediately above it, from the role's
+    ///   declared `AllowedTools` and `ForbiddenTools`. A role cannot reach a tool its contract does
+    ///   not name, which is the worker-contract half of the ceiling in the form the contract
+    ///   actually declares. (`AllowsSideEffects` is NOT that form: it means "may modify the
+    ///   workspace directly", which is why the coder proposes patches with it false.)
+    /// * OPERATOR POLICY — `ConversationScope.Evaluate`, immediately below, from the conversation's
+    ///   escalation posture, where an unattributed or cancelled conversation already falls back to
+    ///   `Ask` and nothing proceeds unattended.
+    /// * ADAPTER — <see cref="Required"/> itself: the tool's own declared requirement is the
+    ///   subject of the comparison rather than another input to it.
+    ///
+    /// All four are therefore agreed before dispatch, by three gates in sequence at one chokepoint,
+    /// and this note exists so the next reader does not repeat the mistake of collapsing them into
+    /// one — they refuse different things, and none substitutes for another.
+    /// </summary>
+    public static class Sources
+    {
+        public const string Specification = "mission specification (this gate)";
+        public const string WorkerContract = "role contract (ToolAuthorization)";
+        public const string OperatorPolicy = "escalation policy (ConversationScope)";
+        public const string Adapter = "tool requirement (MissionAuthorityGate.Required)";
+
+        /// <summary>The four, so a test can assert none was quietly dropped.</summary>
+        public static readonly IReadOnlyList<string> All =
+            new[] { Specification, WorkerContract, OperatorPolicy, Adapter };
+    }
 }
