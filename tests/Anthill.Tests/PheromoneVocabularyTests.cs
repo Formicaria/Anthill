@@ -62,8 +62,28 @@ public class PheromoneVocabularyTests
                         if (argIndex == 1)
                         {
                             var arg = segment[start..i];
+
+                            // A LITERAL, or a `TrailKind` MEMBER. v0.3.8.107 added the second half.
+                            //
+                            // Every writer before this one passed the string inline, so the reader
+                            // only ever needed to see literals — and that is precisely the drift
+                            // this file exists to catch: a vocabulary declared in one place and
+                            // spelled by hand in twelve. A writer that references the CONSTANT
+                            // cannot drift at all, so it is the strongest form of what this guard
+                            // asks for, and failing it would have pushed the fix backwards into
+                            // hand-spelling the string again.
+                            //
+                            // Widening where the guard LOOKS, never what it accepts: a second
+                            // argument that is neither a literal nor a declared member still
+                            // contributes nothing, and an undeclared kind still fails.
                             var lit = Regex.Match(arg, "\"([a-z_]+)\"");
                             if (lit.Success) found.Add(lit.Groups[1].Value);
+                            else if (Regex.Match(arg, @"TrailKind\.(\w+)") is { Success: true } named
+                                     && typeof(TrailKind)
+                                         .GetField(named.Groups[1].Value,
+                                             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+                                         ?.GetRawConstantValue() is string value)
+                                found.Add(value);
                             break;
                         }
                         argIndex++;
@@ -196,6 +216,11 @@ public class PheromoneVocabularyTests
             [TrailKind.Capability] = "procedural_learning",
             // Environmental and plannable, as a routing preference rather than as strategy.
             [TrailKind.ModelRoute] = "routing_preference",
+            // v0.3.8.107 — the same category and a DIFFERENT fact: `model_route` says a provider
+            // answered, this says a mission it served was verified. Only the second may steer a
+            // routing decision, which is why they are two kinds sharing one category rather than
+            // one kind meaning both.
+            [TrailKind.VerifiedRoute] = "routing_preference",
             // Advisory only — never proven truth, never steers.
             [TrailKind.SourceDomain] = "quality_signal",
             // Did the thing answer. Reliability, not strategy.
