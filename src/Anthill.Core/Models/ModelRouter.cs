@@ -362,9 +362,74 @@ public sealed class ModelRouter
     private static bool RoleRequiresReasoning(string role) =>
         ModelRouteRequirements.NeedsOf(role).Reasoning;
 
+    /// <summary>
+    /// THE LEARNED ROUTE, OR THE CONFIGURED ONE. v0.3.8.107.
+    ///
+    /// Consulted BEFORE the breaker failover below and never instead of it: this answers "which
+    /// route should serve this role", and the failover answers "is the route we chose usable right
+    /// now". A learned choice still has to survive the breaker, exactly as a configured one does.
+    ///
+    /// It returns the primary unchanged unless every bound in
+    /// <see cref="Pheromones.RouteGuidedSelection"/> is satisfied — no explicit route for this role,
+    /// no priority override, a compatible candidate, and a VERIFIED trail above baseline. The
+    /// candidates are the routes the operator has configured SOMEWHERE in `model_routes`: learning
+    /// may reorder what the colony already uses and may never conjure a provider or a model.
+    /// </summary>
+    private (string Provider, string Model) PreferLearnedRoute(
+        string role, (string Provider, string Model) primary)
+    {
+        if (_memory is null) return primary;
+
+        if (!Pheromones.RouteGuidedSelection.IsLearnable(
+                AnthillRuntime.ModelRouting.ContainsKey(role), AnthillRuntime.HasModelPriority))
+            return primary;
+
+        try
+        {
+            var needs = ModelRouteRequirements.NeedsOf(role);
+
+            // The operator's own universe of routes, plus the one already chosen. Distinct, because
+            // two roles pointing at the same model is one candidate.
+            var configured = AnthillRuntime.ModelRouting.Values
+                .Select(r => (Provider: r.GetValueOrDefault("provider", ""), Model: r.GetValueOrDefault("model", "")))
+                .Append(primary)
+                .Where(r => r.Provider.Length > 0)
+                .Distinct()
+                .ToList();
+
+            var candidates = configured.Select(r =>
+            {
+                var resolved = ResolveEffectiveModel(r.Provider, r.Model);
+                // Unresolvable is incompatible: a route that would REFUSE the call is not a
+                // stronger option than one that answers, however good its history looks.
+                var compatible = resolved.Resolved
+                    && Agents.AntModelFitness.Unmet(needs, ModelCapabilityCatalog.For(r.Provider, resolved.Model)).Count == 0
+                    && _breaker?.Blocked(ModelStats.Key(r.Provider, resolved.Model)) is null;
+
+                return new Pheromones.RouteGuidedSelection.Candidate(r.Provider, resolved.Model, compatible);
+            }).ToList();
+
+            var preferred = Pheromones.RouteGuidedSelection.Prefer(
+                candidates, key => _memory.GetPheromoneTrail(key), role);
+
+            return preferred is null ? primary : (preferred.Provider, preferred.Model);
+        }
+        catch (Exception error)
+        {
+            // A learning layer that can break routing is worse than one that does not learn. The
+            // configured route is always a correct answer; this one is only ever a better one.
+            Console.Error.WriteLine(
+                $"[routing] could not evaluate learned routes for '{role}': {error.Message} — "
+              + "keeping the configured route.");
+            return primary;
+        }
+    }
+
     public (string Provider, string Model, string? RerouteReason) ResolveRoute(string role)
     {
-        var primary = GetRoute(role);
+        var configured = GetRoute(role);
+        var primary = PreferLearnedRoute(role, configured);
+
         if (_breaker is null) return (primary.Provider, primary.Model, null);
 
         // The role's OWN route is what a priority override fails over to, before the global

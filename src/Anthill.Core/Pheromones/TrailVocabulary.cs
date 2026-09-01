@@ -54,12 +54,31 @@ public static class TrailKind
     /// </summary>
     public const string ModelRoute = "model_route";
 
+    /// <summary>
+    /// A route that served a mission which reached `completed_verified`. v0.3.8.107.
+    ///
+    /// SEPARATE FROM <see cref="ModelRoute"/> BECAUSE THEY MEAN DIFFERENT THINGS, and collapsing
+    /// them would be an overclaim with six releases of history behind it. `model_route` is written
+    /// per CALL, and its positive delta is `result.Ok` — the provider answered without erroring.
+    /// That is a reliability fact about a route and it is emphatically not evidence that the work
+    /// was any good: a model can answer promptly, fluently and wrongly for a hundred calls and
+    /// carry a strong `model_route` trail the whole way.
+    ///
+    /// This one is written per MISSION, from the one site that pays only for a verified outcome
+    /// (`SqliteMemory.UpdateMissionPheromones`), to the routes that mission actually used. It is
+    /// the only route signal a routing DECISION may read, for exactly the reason
+    /// <see cref="TrailGuidedSelection"/> gives for worker trails: a trail above baseline must
+    /// carry net verified evidence by construction of its writer, or the rule is a heuristic
+    /// wearing a threshold's clothes.
+    /// </summary>
+    public const string VerifiedRoute = "verified_route";
+
     /// <summary>Every kind this build recognises.</summary>
     public static readonly IReadOnlySet<string> All =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             Ant, Worker, TaskType, PlannerPattern, WorkerPattern, TaskPattern,
-            Capability, Tool, ExternalResearchTool, SourceDomain, ModelRoute,
+            Capability, Tool, ExternalResearchTool, SourceDomain, ModelRoute, VerifiedRoute,
         };
 
     /// <summary>
@@ -79,7 +98,7 @@ public static class TrailKind
     /// </summary>
     public static readonly IReadOnlySet<string> Environmental =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            { Capability, Tool, ExternalResearchTool, SourceDomain, ModelRoute };
+            { Capability, Tool, ExternalResearchTool, SourceDomain, ModelRoute, VerifiedRoute };
 
     public static bool IsKnown(string? kind) => kind is not null && All.Contains(kind);
 

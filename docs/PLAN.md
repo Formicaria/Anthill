@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.106**.
+Shipping release: **v0.3.8.107**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -112,21 +112,22 @@ authority a mission must hold, swept so no member of the escalation set can omit
 What is NOT claimed: a send that reached anything. The adapter ships composed and the
 destination map ships EMPTY, so a fresh install refuses every send by name.
 
-**What v0.3.8.106 changes, and how far.** The operator's request is now the OUTLINE of the answer,
-not merely its input. Each thing they asked for is a section; each section's content is the recorded
-output of the task that served it; a request nothing served says so in the answer itself, and fails
-coverage, and the mission is not verified. The role-based pick that produced the answer — last
-completed builder, else coder, else anything — is gone as an answer path: it survives only as the
-single section an unspecified mission has, rendered byte for byte as before, which is what lets one
-assembly path serve the coding lane untouched. And work can now build on work: a mission may read an
-artifact an earlier mission produced, by id, if that mission reached a verified outcome — with the
-consumption ledger finally able to say WHO READ IT as distinct from who produced it, a distinction
-it has been unable to make since `.57` because the two had always been the same value.
+**What v0.3.8.107 changes, and how far.** The pheromone layer makes its second deterministic
+decision. Where an operator has not routed a role — where it runs on the `fallback` entry or the
+built-in default — a model route that has carried missions to a VERIFIED outcome is preferred over
+one that has not. It cannot override an explicit route, a model-priority override, or compatibility,
+and it can only reorder routes the operator has already configured somewhere.
 
-What is NOT claimed: coverage judges structure, never quality — a section with one dismissive
-sentence is covered, and `.98`'s refusal to grade on vocabulary is honoured rather than revisited.
-Continuity is READ-side: a paused mission still does not resume its refused step, and that is
-recorded in §2c rather than approximated. Nothing live, still. See
+Closing that loop required a finding: the route trails written on every call since the router
+existed cannot support it. Their positive delta is `result.Ok` — the provider answered — while a
+worker trail is paid only on `completed_verified`, which is the whole reason `.93`'s rule is sound.
+A model that answers promptly, fluently and wrongly carries a strong one indefinitely. So this
+release writes a second signal, `verified_route`, at the one site that pays only for a verified
+mission, and reads only that.
+
+What is NOT claimed: the per-call trail still has no reader, and giving it one to tidy the loose end
+is how the overclaim would arrive by another door. Learning never touches an explicitly routed role
+— that is the bound, not a gap. Nothing live, still. See
 [`ADR-008`](adr/ADR-008-universal-mission-lifecycle.md) §1 for the evidence and §2 for the contract
 the `.98`–`.107` sequence exists to satisfy.
 
@@ -206,6 +207,7 @@ through the real application. **Ext.** = requires an external adapter, connectio
 | Multi-mission continuity | yes | yes | **yes** | no | `.106`: `read_artifact` reads an EARLIER mission's artifact by id, refused unless that mission graded `completed_verified`; the consumption ledger records who read it as distinct from who produced it. READ-side only — a paused mission does not resume its refused step |
 | Answer coverage | yes | yes | **yes** | no | `.106`: the answer is assembled section by section from the specification, and an unanswered request demotes the mission. Claim-and-served, never a word search — `MissionDeliverable.Subject` stays unread by design |
 | Pheromone / skill learning | yes | yes | yes | no | positive learning restricted to `completed_verified` |
+| Verified route learning | yes | yes | **yes** | no | `.107`: a route that carried missions to `completed_verified` is preferred for a role the operator has NOT routed. Never overrides an explicit route, a priority override or compatibility; reads `verified_route` trails only, never the per-call `model_route` ones |
 | Objective verification (non-code) | yes | **yes — recognized classes** | **yes** | no | `.104`: a recognized class (`system_audit`, `troubleshooting`, `system_action`, `external_action`) no longer consults `objective_verification_enabled` and FAILS CLOSED when its gate cannot run. The flag still governs the general and coding lanes. Six releases of gates were inert on a default install until this |
 
 No row may claim a status stronger than `QUALIFICATION.md` records. That is checked, not trusted:
@@ -213,7 +215,7 @@ see `DocumentationConsistencyTests`.
 
 ---
 
-## 2b. The universal-workflow program — v0.3.8.106 → v0.3.8.108
+## 2b. The universal-workflow program — v0.3.8.107 → v0.3.8.108
 
 **This is the current forward sequence.** It supersedes the earlier framing in which R4–R10 were
 the next thing to run; those items are not deleted, and each release below names the R-items it
@@ -243,8 +245,7 @@ past.
 
 | Release | Operator-visible capability | Exit gate |
 |---|---|---|
-| **.106** | Answer coverage, objective outcomes, multi-mission continuity | §2c below |
-| **.107** | Verified route learning; the existing qualification matrix extended | a learned route improves a compatible later mission without overriding compatibility, authority or evidence |
+| **.107** | Verified route learning; the existing qualification matrix extended | §2c below |
 | **.108** | Live multi-class qualification, hardening, documentation reconciliation | the live pack across classes, recorded from the store; every capability-table row reconciled to measured status; **a test ant registers by declaration alone and passes qualification with no change to Queen, planner, scheduler or assembler** |
 
 Rules binding every release in this program:
@@ -260,87 +261,75 @@ Rules binding every release in this program:
   became API-editable with no control rendering it, so an operator following the changelog looked
   for a switch that did not exist.
 
-### 2c. v0.3.8.106 — the answer is built from what was asked
+### 2c. v0.3.8.107 — a route earns its place, and overrides nothing to get it
 
-**Delivers:** the operator's request becomes the outline of the answer. Each thing they asked for is
-a section; each section's content is the recorded output of the task that served it; a request
-nothing served says so in the answer rather than only in a ledger. A request left unanswered fails
-coverage and the mission is not verified. And a mission can read an artifact an EARLIER mission
-produced, by id, provided that mission reached a verified outcome.
+**Delivers:** the pheromone layer's second deterministic decision. Where an operator has NOT routed a
+role — where it is being served by the `fallback` entry or the built-in default — a route that has
+carried missions to a VERIFIED outcome is preferred over one that has not. It never overrides an
+explicit route, never overrides a model-priority override, never overrides compatibility, and reads
+only evidence that a mission actually succeeded.
 
-**What "the fallback is removed" means precisely.** `ResultAssembler` picked a task by ROLE — last
-completed builder, else coder, else anything — and handed over its raw text; `.98` recorded that in
-its own words ("never read it at all"). There is now ONE assembly path. A mission whose
-specification declares deliverables is rendered section by section and synthesis is skipped, for
-`.99`'s reason: a rewrite can drop a section. A mission that declares none has exactly one section
-whose content is the raw output byte for byte, and synthesis proceeds as before — which is what
-makes a single path safe for the coding lane, the only lane qualified live.
+**THE FINDING THIS RELEASE RESTS ON.** The obvious implementation was to read the `model_route`
+trails the router has written on every call since it existed. They cannot carry the claim.
+`ModelRouter` pays their positive delta on `result.Ok` — the provider answered without erroring —
+whereas a WORKER trail is paid only for `completed_verified`, and that is precisely why `.93`'s
+selection rule is sound ("a trail above baseline carries net VERIFIED evidence by construction of
+the writer"). A model that answers promptly, fluently and wrongly carries a strong `model_route`
+trail indefinitely. Reading it for a routing decision would have been the overclaim this program
+exists to remove, committed by the release meant to close the learning loop.
 
-**Coverage is claim-and-served, never a word search**, and that is `.98`'s judgement honoured rather
-than revisited: "an answer reading 'Strengths: … Weaknesses: …' addresses 'what is good and bad
-about it' completely and contains neither word, and a gate that demoted it would make every real
-gate less trustworthy." `MissionDeliverable.Subject` is populated at intake, offers itself for
-exactly that check in its own doc comment, and stays unread — with a guard that keeps it so.
+So `.107` writes a SECOND signal rather than reinterpreting the first: `verified_route`, credited at
+`UpdateMissionPheromones` — the one site that pays only for a verified outcome — to the routes the
+mission actually used, read from its own `model_call` events. The kinds stay separate, under
+different key prefixes, because they are different facts about the same subject.
 
-**Reuses:** the deliverable ledger and its claim vocabulary; the artifact store, its schema registry
-and the consumption ledger; `MissionOutcome.IsPositiveSuccess` as the lineage gate; the six existing
-integrity gates' shape. No parallel ledger, no second vocabulary.
+**Reuses:** `TrailGuidedSelection`'s rules verbatim, restated for routes; the trail vocabulary and
+its signal categories; `ModelRouteRequirements` and `AntModelFitness` for compatibility; the circuit
+breaker for health; `model_call` events as the record of what actually served. No parallel ledger,
+no second routing policy.
 
-**Connects:** `MissionSpecification → DeliverableLedger → AssembledAnswer → ResultAssembler` for what
-is read, and `→ AnswerCoverage → MissionEvaluator` for what is graded;
-`ReadArtifactTool → MissionEvaluation (the producing mission's grade) → ToolRegistry (the consumer
-identity) → artifact_consumptions`.
+**Connects:** `Queen.Finalize → UpdateMissionPheromones → CreditVerifiedRoutes → verified_route
+trails`, and `ModelRouter.ResolveRoute → PreferLearnedRoute → RouteGuidedSelection → the breaker
+failover that already existed`.
 
-**Exit gate** — named tests, production paths, ordinary defaults:
+**Exit gate** — named tests, pure functions, no live provider:
 
-- assembly and coverage: `ASpecifiedMission_AssemblesOneSectionPerRequest`,
-  `AnOmittedRequest_FailsCoverage`, `AFailedOwner_DoesNotAnswerItsRequest`,
-  `AnEmptyOwner_IsDistinctFromAnUnownedRequest`, `CoverageFailsClosed_WhenTheAnswerCouldNotBeAssembled`,
-  `AnUncoveredMission_IsNotVerified`;
-- the coding lane, unchanged: `AnUnspecifiedMission_RendersItsRawAnswerUnchanged`,
-  `ANullSpecification_IsTreatedAsUnspecified`, `AnUnspecifiedMission_IsGradedAsBefore`;
-- the rule `.98` set: `SubjectIsStillUnread_ByEveryCoverageLayer` (source-shape — a gate that also
-  consulted subject words would pass every behavioural assertion above);
-- continuity: `AVerifiedMissionsArtifact_IsReadableById`, `AnUnverifiedMissionsArtifact_IsRefused`
-  (every non-verified outcome, including `.105`'s two), `AnUngradedMissionsArtifact_IsRefused`,
-  `AnUnknownArtifactId_IsAValidationFailure`, `TheLedger_RecordsWhoReadAsWellAsWhoProduced`,
-  `ASameMissionRead_IsNotCrossMission`,
-  `TheConsumerIdentity_ComesFromTheChokepointAndNotTheModel` (source-shape — identity, invisible to
-  behaviour), `TheTool_IsRegisteredAcrossEveryTable`.
+- the improvement: `AVerifiedRoute_IsPreferredOverAnUnprovenOne`, `TheStrongestVerifiedRoute_Wins`;
+- evidence: `AnUnprovenRoute_NeverWins`, `ARouteWithMoreFailuresThanSuccesses_NeverWins`,
+  `ATieKeepsTheConfiguredRoute`, `ATrailForAnotherRole_DoesNotApply`;
+- compatibility: `AnIncompatibleRoute_NeverWinsHoweverStrong`,
+  `ACompatibleRoute_BeatsAStrongerIncompatibleOne`;
+- authority: `AnExplicitlyRoutedRole_IsNotLearnable`, `AModelPriorityOverride_IsNotLearnable`,
+  `AFallbackServedRole_IsLearnable`;
+- the signal: `TheVerifiedRouteSignal_IsDistinctFromThePerCallOne`,
+  `OnlyAVerifiedMission_CreditsItsRoutes` (through the real writer, every outcome),
+  `ManyCallsOnOneRoute_CountOnce`.
 
 **Carried debt this release CLOSED:**
 
-- **`ArtifactConsumption.MissionId` meant two things by coincidence.** It has always been written as
-  the artifact's PRODUCING mission, and the only caller read within one mission — so "who produced
-  it" and "who read it" were the same value since `.57`. Cross-mission consumption is exactly where
-  that ends, and without `ConsumerMissionId` this release's own claim would have been unprovable
-  from the record. Legacy rows read as null and resolve to the producing mission, which is what
-  every one of them means.
-- **Nothing a mission could dispatch reached across missions.** `IArtifactStore.Get(id)` has had the
-  reach since the store existed; `read_artifact` is its first caller, gated on the producing
-  mission's persisted grade.
-- **`ToolInventoryTests` could only read a tool whose name was a string literal**, which is why the
-  `.102` and `.103` tools needed hand-written exemptions. Widened to resolve a const the project
-  declares — where the guard LOOKS, not what it accepts.
+- **Route trails were written for six releases and read by nothing.** The same shape `.93` closed
+  for workers — a learning system whose output is decoration is indistinguishable from one that does
+  not learn — and closing it required noticing that the existing trails answer a different question.
 
 **Recorded rather than closed, with the reason:**
 
-- **A paused mission still does not resume itself.** `.105` deferred this here, and it does not land
-  here either: approving settles the question and the outcome stops saying "waiting", but replaying
-  the refused step needs a mission to re-enter execution at a task, which no lane does today. The
-  continuity built here is READ-side. Naming it is the honest half.
-- **The citation gate's second trigger**, unchanged since `.99`: it needs a `research` class.
-- **`ObjectiveVerification.Required(goal, constraints)`** still re-reads the goal in the
-  UNRECOGNIZED lane only.
-- **Evidence is not yet attached per section.** The chain the gate names is
-  specification → deliverable → answer section; evidence attaches to TASKS, and the section knows
-  its serving tasks, so the join exists but is not rendered. Adding a display for it is not the same
-  as making a section's evidence a checkable property, and only the second is worth a release.
-- **The `.97` Windows residual** remains undiagnosed and carried.
-- **The live pack** is still an operator step. `QUALIFICATION.md` §3 remains PARTIAL.
+- **A learned route is never chosen for an EXPLICITLY routed role**, by design. That is the bound,
+  not a gap; widening it would make learning a second routing policy competing with the operator's.
+- **The candidate set is the operator's own configured routes.** Learning may reorder what the
+  colony already uses and may never conjure a provider or a model. A colony with one route in
+  `model_routes` has nothing to learn between, which is correct.
+- **The per-call `model_route` trail still has no reader.** It is a genuine reliability signal and
+  the operator dashboards could show it; giving it a consumer is not this release's claim and
+  inventing one to tidy the loose end is how the overclaim above would arrive by another door.
+- **A paused mission still does not resume its refused step** (`.105`, `.106`).
+- **The citation gate's second trigger** still needs a `research` class.
+- **The `.97` Windows residual** remains undiagnosed.
+- **The live pack** is still an operator step. `QUALIFICATION.md` §3 remains PARTIAL — and this
+  release is deliberately proved by PURE tests rather than a live run, because the rule being
+  checked is a function of two trail states and a live provider would prove less, not more.
 
-**Explicitly still unsupported after .106:** verified route learning (`.107`); claim↔source SUPPORT;
-a `research` mission class; resuming a paused mission's refused step; general local-system
+**Explicitly still unsupported after .107:** live multi-class qualification (`.108`); claim↔source
+SUPPORT; a `research` mission class; resuming a paused mission's refused step; general local-system
 operations outside the homelab catalog.
 
 

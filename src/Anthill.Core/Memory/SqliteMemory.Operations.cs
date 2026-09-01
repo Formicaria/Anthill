@@ -779,7 +779,10 @@ public sealed partial class SqliteMemory
         "planner_pattern" or "worker_pattern" or "task_pattern" or "capability"
             or "ant" or "worker" or "task_type" => "procedural_learning",
         // Which model route serves a role well — a routing preference, also plannable.
-        "model_route" => "routing_preference",
+        // v0.3.8.107 — and the VERIFIED route, which is the same category and a different fact:
+        // `model_route` says a provider answered, this says a mission it served was verified. Only
+        // the second may steer a routing decision.
+        "model_route" or "verified_route" => "routing_preference",
         // Advisory source heuristics — never proven truth.
         "source_domain" => "quality_signal",
         // Did the tool/provider answer — reliability, not strategy.
@@ -861,6 +864,51 @@ public sealed partial class SqliteMemory
         InvalidateCache();
     }
 
+    /// <summary>
+    /// Credit the routes a mission used, from its own `model_call` events. v0.3.8.107.
+    ///
+    /// Never throws: reinforcement is a diagnostic of the run and must not be able to fail the
+    /// finalization that produced it — the same rule the artifact, ledger and consumption writes
+    /// already follow. A mission whose events cannot be read teaches nothing, which is the correct
+    /// answer rather than a reason to stop.
+    /// </summary>
+    private void CreditVerifiedRoutes(string missionId, string outcome, bool success, double delta, double score)
+    {
+        // Nothing to teach: only a verified mission moves a route trail, and the neutral outcomes
+        // resolve to a zero delta that would write a row saying nothing. A FAILED mission does move
+        // it — a route that served a mission into the ground is evidence about that route, and the
+        // negative is what stops one bad route being preferred forever on old credit.
+        if (Math.Abs(delta) < 0.0001) return;
+
+        try
+        {
+            var routes = GetRecentEvents(2000, "model_call", missionId)
+                .Select(e => Json.TryParseObject(e.GetValueOrDefault("metadata_json")?.ToString()))
+                .Select(m => (
+                    Role: m.GetValueOrDefault("role")?.ToString() ?? "",
+                    Provider: m.GetValueOrDefault("provider")?.ToString() ?? "",
+                    Model: m.GetValueOrDefault("model")?.ToString() ?? ""))
+                .Where(r => r.Role.Length > 0 && r.Provider.Length > 0)
+                .Distinct()
+                .ToList();
+
+            foreach (var route in routes)
+                UpdatePheromoneTrail(
+                    Pheromones.RouteGuidedSelection.TrailKeyFor(route.Role, route.Provider, route.Model),
+                    Pheromones.TrailKind.VerifiedRoute, success, delta,
+                    new()
+                    {
+                        ["mission_id"] = missionId, ["outcome"] = outcome, ["score"] = score,
+                        ["role"] = route.Role, ["provider"] = route.Provider, ["model"] = route.Model,
+                    });
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine(
+                $"[pheromone] could not credit verified routes for {missionId}: {error.Message}");
+        }
+    }
+
     private static Dictionary<string, object?> MergeMetadata(string? existingJson, Dictionary<string, object?> incoming)
     {
         var merged = new Dictionary<string, object?>();
@@ -925,6 +973,32 @@ public sealed partial class SqliteMemory
             new() { ["mission_id"] = mission.Id, ["goal"] = mission.Goal, ["score"] = score, ["worker_path"] = workerPath, ["mission_status"] = mission.Status.Value(), ["outcome"] = outcome });
         UpdatePheromoneTrail("task_pattern:" + string.Join("_", taskTypePath), "task_pattern", success, delta,
             new() { ["mission_id"] = mission.Id, ["goal"] = mission.Goal, ["score"] = score, ["task_type_path"] = taskTypePath, ["mission_status"] = mission.Status.Value(), ["outcome"] = outcome });
+
+        // v0.3.8.107 — AND THE ROUTES THIS MISSION ACTUALLY USED, credited HERE and only here.
+        //
+        // `ModelRouter` writes a `model_route` trail on every call, and its positive delta is
+        // `result.Ok` — the provider answered without erroring. That is a reliability fact and it
+        // is not evidence the work was any good: a model can answer promptly, fluently and wrongly
+        // a hundred times and carry a strong `model_route` trail the whole way. Six releases of
+        // those trails exist and nothing has ever read them for a decision, which is the only
+        // reason the ambiguity has cost nothing so far.
+        //
+        // A routing DECISION needs the other fact, so this site writes it: the routes a mission
+        // used, credited when that mission reached `completed_verified`. It is here rather than in
+        // the router for the reason every other line in this method is here — this is the one place
+        // that knows the mission's canonical outcome, and `TrailGuidedSelection`'s rule only holds
+        // if a trail above baseline carries verified evidence BY CONSTRUCTION OF ITS WRITER.
+        //
+        // FROM THE MISSION'S OWN `model_call` EVENTS, which record the model that ACTUALLY served
+        // each call rather than the route's choice — `LiveQualificationRecord` reads them the same
+        // way and for the same reason: a caller-pinned model or a capability reroute means the
+        // route asked for is not always the route that answered, and crediting the wrong one would
+        // teach the colony about a model it never used.
+        //
+        // DISTINCT routes, not per call: a mission that made forty calls on one route observed one
+        // relationship forty times, and counting them would let a chatty mission outvote every
+        // careful one.
+        CreditVerifiedRoutes(mission.Id, outcome, success, delta, score);
 
         foreach (var task in mission.Tasks)
         {

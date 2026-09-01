@@ -1,3 +1,66 @@
+## v0.3.8.107 - a route earns its place, and overrides nothing to get it
+
+**THE PHEROMONE LAYER'S SECOND DETERMINISTIC DECISION.** `.93` gave trails one consumer: which
+WORKER of a role takes a task when the task's own text does not say. This is its sibling one layer
+up — which MODEL ROUTE serves a role when the operator has not said. Where a role runs on the
+`fallback` entry or the built-in default, a route that has carried missions to a verified outcome is
+now preferred over one that has not.
+
+**THE FINDING THIS RELEASE RESTS ON, and it is why the obvious implementation was wrong.** The
+router has written `model_route` trails on every call since it existed, and reading them was the
+one-line version of this feature. They cannot carry the claim. `ModelRouter` pays their positive
+delta on `result.Ok` — the provider answered without erroring. A WORKER trail is paid only for
+`completed_verified`, and `TrailGuidedSelection` says in its own remarks why that matters: "a trail
+above its starting strength with a positive success balance therefore carries net VERIFIED evidence,
+BY CONSTRUCTION OF THE WRITER, and there is no other way for one to get there."
+
+A model that answers promptly, fluently and wrongly satisfies `result.Ok` every time. Six releases of
+those trails exist, and the only reason the ambiguity has cost nothing is that nothing has ever read
+them for a decision. Reading them now would have been the overclaim this program exists to remove,
+committed by the release meant to close the learning loop.
+
+**SO THERE IS A SECOND SIGNAL, NOT A REINTERPRETED ONE.** `verified_route` is credited at
+`SqliteMemory.UpdateMissionPheromones` — the one site that pays only for a verified outcome — to the
+routes the mission actually used, read from its own `model_call` events. Those record the model that
+ACTUALLY served each call rather than the route's choice, which matters because a caller-pinned
+model or a capability reroute means the route asked for is not always the route that answered.
+
+The kinds stay separate, under different key prefixes. `model_route` says a provider answered;
+`verified_route` says a mission it served was verified. One number meaning both is the ambiguity
+this release removes rather than inherits.
+
+DISTINCT ROUTES PER MISSION, not per call: forty calls on one route is one relationship observed
+forty times, and counting them would let a mission that retried a lot outvote one that got it right.
+
+**THREE BOUNDS, EACH ANSWERING ONE CLAUSE OF THE EXIT GATE.**
+
+AUTHORITY. An operator who routed a role explicitly has made a decision, and a trail is not entitled
+to a second opinion about it. Learning applies ONLY where `model_routes` has no entry for the role —
+the `.93` rule that reputation may replace a tie-break and never a fact, and the distinction was
+already in the data because `RoleRoute` reads the role's own entry first and falls through when
+there is none. A model-priority override is authority too, and a louder kind: "use this model
+everywhere" is one instruction, and a trail quietly undoing it for one role would make the setting
+mean something different per role.
+
+COMPATIBILITY. A candidate must satisfy the role's declared `ModelRouteRequirements` and must not be
+held open by the circuit breaker. Compatibility is checked FIRST and is not a tie-break: a route
+that cannot serve the role is not a weaker option, it is not an option. A strong trail on a model
+that cannot emit structured output does not make it able to.
+
+EVIDENCE. Only `verified_route` trails, strictly above the 0.5 baseline, with successes outnumbering
+failures. No qualifying trail, or a tie, keeps the configured route — a guess is beaten only by
+evidence, never by a different guess.
+
+**AND THE CANDIDATES ARE THE OPERATOR'S OWN ROUTES.** Learning may reorder what the colony already
+uses and may never conjure a provider or a model. A colony with one configured route has nothing to
+learn between, which is the correct answer rather than a limitation.
+
+**WHAT IS NOT CLAIMED.** The per-call `model_route` trail still has no reader. It is a genuine
+reliability signal and an operator dashboard could show it; giving it a consumer to tidy the loose
+end is how the overclaim above would arrive by another door. This release is proved by PURE tests
+rather than a live run, deliberately: the rule is a function of two trail states, and a live
+provider would prove less rather than more. `QUALIFICATION.md` §3 remains PARTIAL.
+
 ## v0.3.8.106 - the answer is built from what was asked
 
 **THE REQUEST IS THE OUTLINE, NOT JUST THE INPUT.** `ResultAssembler` picked a task by ROLE — last
