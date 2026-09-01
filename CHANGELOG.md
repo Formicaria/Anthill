@@ -1,3 +1,60 @@
+## v0.3.8.109 - the answer comes from somewhere, and can say where
+
+**A QUESTION THE COLONY CANNOT ANSWER FROM ITSELF IS NOW ITS OWN MISSION CLASS**, planned with a
+retrieval step and graded on whether it actually went and looked. `CitationIntegrity` was built at
+`.99` for a class that did not exist; this is that class.
+
+**THE FAILURE WAS NOT THAT RESEARCH MISSIONS FAILED — IT WAS THAT THEY COULD NOT.** The `.99` gate
+resolves cited urls against retrieved ones, so it can catch a fabricated citation. A mission asked to
+find something out, which retrieved nothing and cited nothing, left an empty store — and an empty
+store contradicts no citation, so the gate correctly read it as "nothing to check". A fluent answer
+written from a model's own weights and an answer built from real sources were indistinguishable at
+every layer of this runtime.
+
+`.104` recorded exactly what was missing and why the second trigger could not be faked: no `research`
+mission class, no evidence kind meaning "a source was retrieved", and no worker capability a research
+mission could require. Any one of the three invented alone would have been a branch nothing reaches.
+All three ship here.
+
+**THE CLASS IS DERIVED, NOT MATCHED.** A new intent (`Research`) and a new target (`World`), and the
+class requires both plus the ABSENCE of every colony-side target. `World` is separated from
+`External` by direction, which is the sharpest line in that enum because the two share a noun:
+External is where something GOES — a destination a human approves and an irreversible send lands on
+— and World is where knowledge COMES FROM. A request naming both worlds ("compare our retry policy
+against upstream's") is refused rather than admitted, because this class's gate can speak only for
+the retrieval half and admitting it would let the repository half go unexamined behind a pass.
+
+**THE ONE THAT WOULD HAVE BEEN MISSED.** The troubleshooting branch read `targets != None`, which
+was exactly right while every target was something the colony could execute a check against. With a
+World target it would have claimed "why is the market moving" — a class whose entire premise is a
+reproduction, applied to something the colony cannot re-run. Narrowed to the inspectable targets,
+which is what "any target" meant on the day that branch was written, so no request that classified
+as troubleshooting before this release classifies differently after it.
+
+**`source_retrieval` IS ITS OWN EVIDENCE KIND, NOT ANOTHER `inspection`.** `AssessmentObjective`
+requires inspection rows before an audit's conclusions can be believed. Had a web search written one,
+an audit of what is implemented in the operator's own repository could have been satisfied by
+searching the internet — a claim about their code established from somebody else's. Both are
+read-only observations; they observe different worlds, and the requirements they satisfy are not
+interchangeable. The deterministic lane still holds exactly one tool.
+
+**PER-SECTION EVIDENCE NOW HAS A READER.** `.106` built the join — a section knows its serving
+tasks, and evidence knows its task — and left it unread; §2c recorded that rendering a join is not
+the same as making it a checkable property. `ResearchIntegrity` reads it, and degrades honestly
+rather than uniformly: a DECLARED section must carry its own retrieval, an INFERRED one falls back
+to the mission's. Under an inferred claim the compiling builder is credited with every deliverable
+and leaves no evidence of its own, so requiring per-section grounding there would grade the
+planner's verbosity rather than the work.
+
+**The web ant's two workers finally declare a capability.** They have been the colony's whole
+outward read surface since the roster was written and nothing could ask for them, so every
+research-flavoured request was served by whichever worker a keyword happened to match.
+
+**Deferred with the reason, not silently:** `ObjectiveVerification.Required`'s goal re-read (a
+coding-lane behaviour change that does not belong in a release about a new class), the unread
+per-call `model_route` trail (`.107`'s own reasoning stands), Ollama capability discovery, the
+literal-only guard sweep, and the capability-table reconciliation — all `.110`.
+
 ## v0.3.8.108 - the roster becomes extensible
 
 **A ROLE CAN NOW BE DECLARED WITHOUT EDITING THE CORE**, which every capability table in this

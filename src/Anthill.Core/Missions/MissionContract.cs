@@ -195,5 +195,6 @@ public static class MissionContracts
             MissionSpecification.TroubleshootingClass,
             MissionSpecification.SystemActionClass,
             MissionSpecification.ExternalActionClass,
+            MissionSpecification.ResearchClass,
         };
 }
