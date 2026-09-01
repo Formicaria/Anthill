@@ -1,3 +1,70 @@
+## v0.3.8.110 - an approved decision replays the refused step
+
+**A MISSION THAT STOPPED FOR AN ANSWER CAN NOW BE FINISHED BY ANSWERING IT.** `.105` shipped the
+pause and said, in the approval request's own description, what it was not: *"Approving does not
+replay the refused step; it settles the question."* `.106` and `.109` each carried that sentence
+forward. This is the release that makes it false.
+
+**THE PIECE THAT DID NOT EXIST**, and the reason this was deferred three times rather than being
+hard. There is no typed mission loader anywhere in this tree. `GetMission` returns a
+`Dictionary<string, object?>`, `GetTasksForMission` returns a list of them, and `new Mission` appears
+in exactly four places — every one of them CREATING a mission. The object graph has always died with
+`RunMission`, so there was nothing to re-enter execution with. `MissionRehydration` is that loader.
+`ParseTaskStatus`, declared since the enum was written and called by nothing, finally has a caller.
+
+**THE ONE THAT WOULD HAVE BEEN MISSED**, and a loader alone would not have caught it. Approving wrote
+to `approval_requests`. The mission-lane gate read `escalation_decisions`. **Two disjoint tables.** An
+operator's approval was recorded, visible in the UI, counted in the pending badge — and completely
+invisible to the runtime. A replay built on top of the loader would have refused identically and
+filed the same question again, and the feature would have looked implemented while changing nothing.
+`OperatorDecisions.ForMission` now reads both ledgers under the same last-answer-wins rule the
+conversation lane already used.
+
+**A COMMENT THAT WAS WRONG IS CORRECTED RATHER THAN LEFT TO CONTRADICT THE CODE.** `RunMission` has
+said since v3.1.0 that the deadline is anchored so "a resumed run compares against the same
+wall-clock boundary the original did instead of restarting its clock." It was written about a
+resumption that did not exist. A resumed mission anchors its own window at the resume, because the
+mission was not running while it waited — it was waiting on a person, and charging human latency to
+its budget would make every slow approval resume straight into a timeout.
+
+**WHAT IS REPLAYED IS NARROW.** Only the tasks this mission's own `escalation_refused` events name
+for the approved action, and never a task that COMPLETED — its effects already landed. Not "every
+failed task", which would replay a coder whose patch was rejected on its merits; not the mission,
+which is the re-run this exists to avoid. A rejection replays nothing, which is the point of asking.
+
+**ALSO, EACH CLOSING A NAMED RESIDUAL:**
+
+- **`dotnet` is no longer arbitrary code execution on the shell allowlist.** Every other entry on
+  that nine-command list can only read; `dotnet` is an interpreter and the allowlist matched the
+  PROGRAM alone, so `dotnet run`, `dotnet exec x.dll` and a `dotnet build` of a project carrying an
+  MSBuild `Exec` task all passed every check in the tool. The subcommand is allowlisted now —
+  reporting verbs only. `build` is refused too, which looks over-strict and is not: a project file
+  chooses what a build executes, and a mission's workspace is a tree the colony's own agents write
+  into. Builds and tests still run through `run_allowlisted_check`, whose catalog is declared outside
+  the workspace and cannot be edited by anything inside it.
+- **Windows junctions are exercised.** Every link test built its link with `CreateSymbolicLink` and
+  opened with `if (!SymlinksAvailable) return;`, so on a Windows agent without Developer Mode seven
+  facts passed green having asserted nothing. A junction needs neither elevation nor Developer Mode
+  — it is the one reparse point an unprivileged writer inside a workspace can actually create, and
+  it was the one the suite could not have caught.
+- **`ObjectiveVerification` stops re-reading the composed goal.** It substring-matched "refactor"
+  against `mission.Goal`, which carries the conversation transcript below a `--- ` marker — so a
+  mission whose TRANSCRIPT contained the word acquired a file-change requirement nobody asked for and
+  was demoted for producing no patch. It reads the contract's `OriginalRequest` now, and so does the
+  operator-facing explanation, which otherwise would have named a different reason than the one that
+  actually demoted the mission.
+- **The per-call `model_route` trail has no reader, and that is now permanent.** It says a PROVIDER
+  ANSWERED — a route that produced garbage a hundred times carries a strong one — and giving it a
+  consumer to tidy a loose end is how the overclaim `.107` avoided arrives by another door. A guard
+  fails if anything starts reading it.
+
+**THE PROGRAM GREW A RELEASE, and that is stated rather than absorbed.** R0's enforcement tooling —
+warnings-as-errors, analyzers, dependency and secret scanning, a complexity budget, module
+auto-discovery, the guard hierarchy written down — is one release together, not a corner of another
+one. It moves to `.111` with the S1 TOCTOU window, the four unverified agent-CLI system-prompt
+channels, Ollama capability discovery and the literal-only guard sweep. Typed database rows move to
+`.112`.
+
 ## v0.3.8.109 - the answer comes from somewhere, and can say where
 
 **A QUESTION THE COLONY CANNOT ANSWER FROM ITSELF IS NOW ITS OWN MISSION CLASS**, planned with a

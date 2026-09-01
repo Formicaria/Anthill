@@ -726,8 +726,15 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
 
         // v3.1.0 (ADR-002): the mission's governing facts, resolved once at intake and passed
         // explicitly from here on. Constraints are parsed exactly once; the deadline is an
-        // ABSOLUTE instant anchored to the mission's own start, so a resumed run compares against
-        // the same wall-clock boundary the original did instead of restarting its clock.
+        // ABSOLUTE instant anchored to the mission's own start.
+        //
+        // v0.3.8.110 — THIS COMMENT USED TO END "so a resumed run compares against the same
+        // wall-clock boundary the original did instead of restarting its clock", and that half is
+        // now WRONG and is removed rather than left to contradict the code. It was written about a
+        // resumption that did not exist; `Queen.ResumeMission` anchors its own window at the
+        // resume, because a mission waiting on a person is not running and human latency must not
+        // be charged against the mission's budget. The claim above — one absolute instant per
+        // dispatch window — is the part that was always true.
         // Persist the mission row before anything references it: `events`, and as of v0.3.8.104
         // `mission_contracts`, both carry FK constraints on `missions(id)`. This save used to sit
         // twelve lines below, which was fine while events were the only dependant and wrong the
@@ -1301,8 +1308,13 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         });
         if (evaluation.DeliverableStatus == Outcomes.MissionEvaluation.Deliverable.NotSatisfied)
             Memory.LogEvent(mission.Id, "objective_verification_failed",
+                // v0.3.8.110 — the SAME string the grade was computed from. The evaluator reads
+                // the contract's `OriginalRequest`; an explanation reading the composed goal would
+                // name a verb from the transcript as the reason for a demotion the transcript had
+                // nothing to do with.
                 Outcomes.ObjectiveVerification.Explain(mission, context.Constraints,
-                    Memory.CountPatchProposalsForMission(mission.Id)),
+                    Memory.CountPatchProposalsForMission(mission.Id),
+                    context.Specification?.OriginalRequest),
                 metadata: new() { ["goal"] = TextUtil.Truncate(mission.Goal, 300) });
 
         // v0.3.8.41 — learning is NOT called here any more. It moved to `RunMission`, after the

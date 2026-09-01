@@ -118,6 +118,29 @@ public static class EventTypes
     public const string AdaptiveEscalated = "adaptive_escalated";
     public const string EscalationRefused = "escalation_refused";
 
+    /// <summary>
+    /// The other end of <see cref="EscalationRefused"/>. v0.3.8.110.
+    ///
+    /// Every prior release, a refusal was the last thing a paused mission ever said about the
+    /// action it stopped for: the operator answered, a row changed, and no event marked the work
+    /// resuming because no work resumed. This is the first event in the colony's history that can
+    /// only be emitted because a person's decision caused something to happen.
+    ///
+    /// It carries the action, the task ids being replayed and the mission's previous status,
+    /// because "resumed" alone tells a reader that state changed and not what changed.
+    /// </summary>
+    public const string MissionResumed = "mission_resumed";
+
+    /// <summary>
+    /// A replay that could not run, and it is deliberately NOT a failure of the approval.
+    ///
+    /// The operator's decision is recorded and stands whatever happens here — the resumption path
+    /// catches everything precisely so a storage or dispatch fault cannot unwind a person's answer.
+    /// A consumer filtering for trouble wants this one; a consumer auditing decisions must not read
+    /// it as one being reversed.
+    /// </summary>
+    public const string MissionResumeFailed = "mission_resume_failed";
+
     // ---- patches and auto-apply --------------------------------------------
 
     public const string PatchSetCreated = "patch_set_created";

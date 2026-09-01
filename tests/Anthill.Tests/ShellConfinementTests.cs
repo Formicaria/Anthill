@@ -20,10 +20,15 @@ namespace Anthill.Tests;
 ///
 /// WHY THE FIX CHECKS ARGUMENTS RATHER THAN ADDING A REAL SANDBOX. A real sandbox — a container, a
 /// seccomp profile, a job object — is the right answer and is not available inside this process on
-/// three platforms. Argument containment is what CAN be enforced here, so it is enforced here, and
-/// the residual is written down in PLAN.md §1b rather than implied away: `dotnet` remains on the
-/// allowlist and `dotnet run` executes arbitrary code by design. That is governed by the enable
-/// flag, not by these checks, and the tool is off by default.
+/// three platforms. Argument containment is what CAN be enforced here, so it is enforced here.
+///
+/// v0.3.8.110 — AND `dotnet run` NO LONGER EXECUTES ARBITRARY CODE BY DESIGN. This paragraph used
+/// to end by recording that residual: "`dotnet` remains on the allowlist and `dotnet run` executes
+/// arbitrary code by design." It was true, it was governed only by the enable flag, and it made
+/// `dotnet` the one entry on a nine-command READ allowlist that could run whatever the workspace
+/// contained. The subcommand is now allowlisted — reporting verbs only — and the reasoning is in
+/// `ShellCommandTool.DotnetSubcommandRefusal`. A real sandbox is still the right answer for the
+/// rest and is still not available in-process on three platforms.
 ///
 /// These tests DO NOT run any of those commands. They assert the refusal happens before a process
 /// starts, which is the property that matters and the only one that is safe to test.
@@ -146,6 +151,51 @@ public class ShellConfinementTests : IDisposable
 
         if (!result.Success)
             Assert.DoesNotContain("outside the workspace", result.Error ?? "");
+    }
+
+    /// <summary>
+    /// v0.3.8.110 — `dotnet` MAY REPORT AND MAY NOT RUN.
+    ///
+    /// The residual this closes is the one the class summary above used to record. Every other
+    /// entry on the allowlist can only read; `dotnet` is an interpreter, and the allowlist matched
+    /// the PROGRAM alone, so three separate roads to executing workspace-supplied code passed every
+    /// check in the tool.
+    ///
+    /// The refusal is asserted by its REASON, not merely by failure — `Run` returns unsuccessfully
+    /// for a disabled tool, a missing binary and a refused argument alike, and a test that accepted
+    /// any of those would go green on a machine with no SDK installed while asserting nothing.
+    /// </summary>
+    [Theory]
+    [InlineData("dotnet run")]
+    [InlineData("dotnet exec payload.dll")]
+    [InlineData("dotnet build")]
+    [InlineData("dotnet test")]
+    [InlineData("dotnet tool run something")]
+    [InlineData("dotnet payload.dll")]
+    [InlineData("dotnet fsi script.fsx")]
+    [InlineData("dotnet")]
+    public void DotnetVerbsThatExecute_AreRefusedBeforeAProcessStarts(string command)
+    {
+        var result = Run(command);
+
+        Assert.False(result.Success, $"'{command}' was not refused — dotnet can execute what the "
+                                   + "workspace supplied, and the allowlist admits it only to report.");
+        Assert.Contains("refused", result.Error ?? "", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>And the reporting verbs still pass the subcommand gate. Without this the change
+    /// above would be indistinguishable from removing `dotnet` from the allowlist entirely, which
+    /// is a different decision and was not the one taken.</summary>
+    [Theory]
+    [InlineData("dotnet --version")]
+    [InlineData("dotnet --info")]
+    [InlineData("dotnet --list-sdks")]
+    public void DotnetReportingVerbs_PassTheSubcommandGate(string command)
+    {
+        var result = Run(command);
+
+        if (!result.Success)
+            Assert.DoesNotContain("is refused", result.Error ?? "", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

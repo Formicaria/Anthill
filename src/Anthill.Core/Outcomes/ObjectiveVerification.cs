@@ -89,21 +89,40 @@ public static class ObjectiveVerification
     /// <param name="constraints">v3.1.0 (ADR-002): the mission's constraints, resolved at intake.
     /// This used to re-parse the goal here, which meant the deliverable check could in principle
     /// read a mission's own instructions differently from the gate that admitted its tasks.</param>
-    public static bool IsSatisfied(Mission? mission, Common.MissionConstraints constraints, int proposedPatchCount)
+    /// <param name="request">v0.3.8.110 — the OPERATOR'S ASK, from the mission's recorded contract,
+    /// rather than <c>mission.Goal</c>.
+    ///
+    /// WHAT WAS WRONG. `mission.Goal` is the COMPOSED goal: `ComposeMissionGoal` appends the
+    /// standing context and the conversation transcript below a `--- ` marker, and this method
+    /// substring-matches verbs like "refactor" and "update the readme" against the whole of it. So a
+    /// mission whose transcript happened to contain someone typing "refactor" acquired a file-change
+    /// requirement it was never given, and was graded not_satisfied for producing no patch. Intake
+    /// has read only the operator's own words since `.98` — `MissionIntake.OperatorAskOnly` exists
+    /// for exactly this, and `.96` paid for the lesson live when the UI gate's own refusal prose
+    /// entered a transcript and re-tripped the gate on every later mission.
+    ///
+    /// Null keeps the previous behaviour exactly, for callers outside the mission engine.</param>
+    public static bool IsSatisfied(Mission? mission, Common.MissionConstraints constraints, int proposedPatchCount,
+        string? request = null)
     {
         if (mission is null) return false;
         if (!MissionVerification.IsSatisfied(mission.Tasks)) return false;   // the floor, unchanged
 
-        return DeliverablePresent(Required(mission.Goal, constraints), proposedPatchCount);
+        return DeliverablePresent(Required(request ?? mission.Goal, constraints), proposedPatchCount);
     }
 
     /// <summary>Why the objective check said no — operator-facing, never a silent downgrade.</summary>
-    public static string Explain(Mission? mission, Common.MissionConstraints constraints, int proposedPatchCount)
+    /// <param name="request">v0.3.8.110 — the operator's ask, for the reason
+    /// <see cref="IsSatisfied"/> gives. This one matters twice over: it is the sentence an operator
+    /// READS, so an explanation derived from a different string than the grade would tell them the
+    /// mission was demoted for something other than what demoted it.</param>
+    public static string Explain(Mission? mission, Common.MissionConstraints constraints, int proposedPatchCount,
+        string? request = null)
     {
         if (mission is null) return "no mission";
         if (!MissionVerification.IsSatisfied(mission.Tasks)) return MissionVerification.Explain(mission.Tasks);
 
-        var required = Required(mission.Goal, constraints);
+        var required = Required(request ?? mission.Goal, constraints);
         if (DeliverablePresent(required, proposedPatchCount)) return "objective satisfied";
 
         return "the goal asks for a file change and the mission proposed none — "

@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.109**.
+Shipping release: **v0.3.8.110**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -134,6 +134,16 @@ from an artifact the answer might not cite. `CitationIntegrity`'s second trigger
 and recorded as unbuildable at `.104`, now fires from the contract as well as the record, which is
 what makes a mission that retrieved NOTHING catchable: an empty store contradicts no citation.
 
+**What v0.3.8.110 changes, and how far.** An approved decision replays the step that was refused. A
+mission that stopped for a side-effecting action it had no answer for is finished by answering it,
+not by running the whole mission again — which needed a typed mission loader, the first in this
+tree, and needed the approval ledger and the mission-lane gate to stop being two disjoint tables that
+could not see each other's answers.
+
+What is NOT claimed: that any mission can be resumed. Only the tasks a mission's own refusal events
+name for the approved action are replayed, and a task that COMPLETED is never touched — its effects
+have already landed. A rejection replays nothing, which is the point of asking.
+
 What is NOT claimed: that the sources are any good, or that they support what they are cited for.
 Those are semantic judgments, and a model asserting one is the evidence v2.19.0 stopped accepting.
 Traceability is checkable; support is not. Nor is a request naming both worlds admitted — its answer
@@ -211,7 +221,7 @@ through the real application. **Ext.** = requires an external adapter, connectio
 | Mission preflight | yes | yes | **yes** | no | `.104`: producer, verifier, worker, dependency and orphan checks before execution; runs after class coverage so it refuses only what the runtime cannot repair |
 | Live qualification export | yes | yes | **yes** | no | `.104`: `anthill --live-qualification` — the record type shipped at `.89` and had no production caller until now |
 | Dispatch-time reroute | yes | yes | **yes** | no | `.105`: a task whose worker does not declare its required capability is rerouted within the role before the durable claim, or refused as `capability_unserved`; covers the tasks admitted after preflight ran |
-| Operator-decision pause | yes | yes | **yes** | no | `.105`: an unanswered side-effecting action files a pending `ToolUse` approval and the mission grades `waiting_for_approval` instead of failed. It does NOT resume itself — that is `.106` |
+| Operator-decision pause and resume | yes | yes | **yes** | no | `.105`: an unanswered side-effecting action files a pending `ToolUse` approval and the mission grades `waiting_for_approval` instead of failed. `.110`: approving now REPLAYS the refused step — the mission is rehydrated, only the tasks its own refusal events name are reset, and it is re-executed and re-graded. A completed task is never replayed; a rejection replays nothing |
 | Dynamic repair (Medic) | partial | yes | partial | no | bounded repair exists; at its bound the stop now NAMES a reproducible failure instead of only the spent budget (`.105`). The loop's generations are unchanged — a recurrence explains a stop and never causes one. Still not evidence-driven |
 | Recovery decisions | yes | yes | **yes** | no | `.105`: `RecoveryOrchestrator` consults the `FailureClass` taxonomy — a denial is never retried, an unclassified failure escalates for evidence, and a typed class narrows a caller's optimism without ever widening it |
 | Multi-mission continuity | yes | yes | **yes** | no | `.106`: `read_artifact` reads an EARLIER mission's artifact by id, refused unless that mission graded `completed_verified`; the consumption ledger records who read it as distinct from who produced it. READ-side only — a paused mission does not resume its refused step |
@@ -227,7 +237,7 @@ see `DocumentationConsistencyTests`.
 
 ---
 
-## 2b. The universal-workflow program — v0.3.8.109 → v0.3.8.111
+## 2b. The universal-workflow program — v0.3.8.110 → v0.3.8.112
 
 **This is the current forward sequence.** It supersedes the earlier framing in which R4–R10 were
 the next thing to run; those items are not deleted, and each release below names the R-items it
@@ -257,9 +267,9 @@ past.
 
 | Release | Operator-visible capability | Exit gate |
 |---|---|---|
-| **.109** | The `research` class — an answer from outside the colony that can say where it came from | §2c below |
-| **.110** | Mission resumption, enforcement, security residuals | an approved decision REPLAYS the refused step rather than only settling the question; R0's enforcement tooling (warnings-as-errors, analyzers, dependency and secret scanning, complexity budget, module auto-discovery, the guard hierarchy written down); the four security residuals; the `.97` Windows residual diagnosed or its hypothesis retired; `ObjectiveVerification.Required` stops re-reading the goal in the unrecognized lane; the per-call `model_route` trail gets a reader or its absence is made permanent; Ollama capability discovery extended; the literal-only guard sweep; the capability table reconciled against the live records |
-| **.111** | Typed database rows | `Dictionary<string, object?>` leaves the memory layer's public surface and its 89 consumers, one slice at a time, each slice green before the next |
+| **.110** | Mission resumption — an approved decision replays the refused step | §2c below |
+| **.111** | Enforcement and the remaining security residuals | R0's enforcement tooling (warnings-as-errors, analyzers, dependency and secret scanning, complexity budget, module auto-discovery, the guard hierarchy written down); the S1 filesystem TOCTOU window; the system-prompt channel confirmed for the four unverified agent CLIs; Ollama capability discovery; the literal-only guard sweep; the `.97` Windows residual diagnosed or its hypothesis retired; the capability table reconciled against the live records |
+| **.112** | Typed database rows | `Dictionary<string, object?>` leaves the memory layer's public surface and its 89 consumers, one slice at a time, each slice green before the next |
 
 Rules binding every release in this program:
 
@@ -274,98 +284,116 @@ Rules binding every release in this program:
   became API-editable with no control rendering it, so an operator following the changelog looked
   for a switch that did not exist.
 
-### 2c. v0.3.8.109 — the `research` class
+### 2c. v0.3.8.110 — mission resumption
 
-**Delivers:** a question the colony cannot answer from itself is admitted as its own class, planned
-with a retrieval step, and graded on whether it actually went and looked. The class that
-`CitationIntegrity` was built for at `.99` and that has not existed since.
+**Delivers:** an approved decision replays the step that was refused. A mission that stopped for a
+side-effecting action it had no answer for can be finished by answering, instead of by running the
+whole thing again from the goal.
 
-**THE FINDING.** `.104` recorded the citation gate's second trigger as unbuildable and said exactly
-what was missing: "no `research` mission class, no evidence kind meaning 'a source was retrieved',
-and no worker capability a research mission could require." All three were absent, and any one of
-them invented alone would have been a branch nothing reaches. They ship together here.
+**THE ITEM, AND WHY IT WAS DEFERRED THREE TIMES.** `.105` shipped the pause and said what it was not,
+in the request's own description: *"Approving does not replay the refused step; it settles the
+question."* `.106` and `.109` each carried the same sentence forward. §2c gave the reason every time
+and it was exact — replaying needs a mission to re-enter execution at a task, and no lane did that.
 
-The consequence of the gap was not that research missions failed — it was that they could not fail.
-A mission asked to find something out ran through the general lane, and the `.99` gate could only
-catch a citation resolving to nothing. A mission that retrieved NOTHING and cited NOTHING left an
-identical empty store, and an empty store contradicts no citation, so the gate correctly read it as
-"nothing to check". A fluent answer written from the model's own weights and an answer built from
-sources were indistinguishable at every layer, which is the exact failure `CitationIntegrity` was
-written to make impossible.
+**THE PIECE THAT DID NOT EXIST.** There is no typed loader anywhere in this tree.
+`SqliteMemory.GetMission` returns a `Dictionary<string, object?>`, `GetTasksForMission` returns a
+list of them, and `new Mission` appears in exactly four places — every one of them CREATING a
+mission. So the object graph has always died with `RunMission`, and every consumer wanting a past
+mission read rows and rendered them. `MissionRehydration` is that loader, and `ParseTaskStatus`,
+declared since the enum was written and called by nothing, is now called by something.
 
-**THE DIMENSION, NOT THE LABEL.** The class is derived like its four siblings, from a new intent
-(`Research`) and a new target (`World`). `World` is separated from `External` by DIRECTION and the
-distinction is the sharpest line in that enum, because the two share a noun: External is where
-something GOES — a destination a human approves and an irreversible send lands on — and World is
-where knowledge COMES FROM. The class also refuses any request naming both worlds ("compare our
-retry policy against upstream's"), because its gate can speak only for the retrieval half and
-admitting such a request would let the repository half go unexamined behind a passing grade.
+**THE ONE THAT WOULD HAVE BEEN MISSED, and a rehydrator alone would not have caught it.** Approving
+writes to `approval_requests`. The mission-lane gate, `OperatorDecisions.ForMission`, reads
+`escalation_decisions`. **Two disjoint tables.** An operator's approval was recorded, visible in the
+UI, counted in the pending-approvals badge — and completely invisible to the runtime. A replay built
+on top would have refused identically and filed the same question again, and the feature would have
+looked implemented while changing nothing at all. `ForMission` now reads both, under the same
+last-answer-wins rule the conversation lane already used.
 
-**THE ONE THAT WOULD HAVE BEEN MISSED.** The troubleshooting branch read `targets != None`, which
-was exactly right while every target was something the colony could execute a check against. With a
-World target it would have claimed "why is the market moving" — a class whose entire premise is a
-reproduction, applied to something the colony cannot re-run. Narrowed to the inspectable targets,
-which is what "any target" meant on the day it was written, so no request that classified as
-troubleshooting before this release classifies differently after it.
+**A COMMENT THAT WAS WRONG AND IS CORRECTED RATHER THAN LEFT.** `RunMission` has said since v3.1.0
+that the deadline is anchored so "a resumed run compares against the same wall-clock boundary the
+original did instead of restarting its clock." That was written about a resumption that did not
+exist, and it is wrong now that one does: the mission was not running while it waited, it was
+waiting on a person. Charging human latency to the mission's budget would make every approval slower
+than `MaxMissionSeconds` resume straight into a timeout — admitted, dispatching nothing, graded as
+having timed out on work it was never given a chance to do.
 
-**Reuses:** `MissionIntake`'s dimension derivation, the existing `source_set`/`recall_set`/
-`sourced_answer` artifacts the web and builder ants already write, `CitationIntegrity`'s url
-resolution (called, never reimplemented — a second resolver would eventually disagree with the
-first about what counts as retrieved), the evidence store, `DeliverableLedger`, and the planner's
-class-coverage chokepoint. No parallel record, no second matrix.
+**Scope of the replay.** Only the tasks this mission's own `escalation_refused` events name for this
+action, and never a task that COMPLETED — its effects already landed and re-running it would
+duplicate them. Not "every failed task", which would replay a coder whose patch was rejected on its
+merits; not the mission, which is the re-run this exists to avoid.
 
-**Connects:** `MissionIntake.Resolve → MissionContract → Planner.EnsureClassCoverage (the retrieval
-step) → web.source_finder/source_verifier (retrieve_sources) → ToolEvidence (source_retrieval) →
-AssembledAnswer (per-section evidence) → ResearchIntegrity + CitationIntegrity → MissionEvaluator`.
+**Reuses:** the same context builder, executor, finalization and persistence ordering `RunMission`
+uses — a resumption running its own version of any of those would be a second answer to "how does a
+mission finish", and the two would eventually disagree about a graded run. `MissionFinalizationLedger`
+already keys its claim on the evaluation fingerprint rather than the mission id, so a second,
+different evaluation was always intended to be learnable.
 
-**Exit gate** — named tests in `ResearchMissionTests`:
+**Connects:** `ApproveRequest → ResumeMission → MissionRehydration.Load → task reset →
+ExecutionService.Execute → FinalizeMission → SaveMission → SaveMissionEvaluation`, with
+`OperatorDecisions.Decided` closing the gate the replay dispatches through.
 
-- `AResearchRequest_ClassifiesAsResearch_UnderObserveAuthority`;
-- the boundaries: `AnOutwardWhyQuestion_IsNotTroubleshooting`,
-  `ARequestNamingBothWorlds_IsNotAdmitted`, `ASendToAnEndpoint_IsStillAnExternalAction`,
-  `AnAuditRequest_IsUnaffectedByTheResearchVerbs`;
-- the gate: `AResearchMissionThatRetrievedNothing_IsRefused` (the case the `.99` trigger could not
-  see), `AnAnswerCitingWhatWasNeverRetrieved_IsStillRefused`,
-  `ARetrievalTheEvidenceStoreDoesNotKnowAbout_IsRefused` (the two records disagreeing),
-  `ADeclaredSectionWithNoRetrieval_IsRefused` (per-section evidence, now read by something);
-- and `TheAuditsInspectionRequirement_IsNotSatisfiedByAWebSearch` — the reason `source_retrieval`
-  is its own kind rather than another `inspection`.
+**Also in this release, each closing a named residual:**
 
-**Carried debt this release CLOSED:**
+- **`dotnet` is no longer arbitrary code execution on the shell allowlist.** Every other entry on
+  that nine-command list can only READ; `dotnet` is an interpreter and the allowlist matched the
+  program alone, so `dotnet run`, `dotnet exec x.dll` and a `dotnet build` of a project carrying an
+  MSBuild `Exec` task all passed every check. The subcommand is now allowlisted — reporting verbs
+  only. `build` is refused too, which looks over-strict and is not: a project file chooses what a
+  build executes, and a mission's workspace is a tree the colony's own agents write into. The
+  verification lane still builds and tests through `run_allowlisted_check`, whose catalog is declared
+  outside the workspace and cannot be edited by anything running in it.
+- **Windows junctions are exercised.** Every link test in `PathContainmentTests` builds its link with
+  `CreateSymbolicLink` and opens with `if (!SymlinksAvailable) return;` — so on a Windows agent
+  without Developer Mode, seven facts pass green having asserted nothing. A junction needs neither
+  elevation nor Developer Mode: it is the one reparse point an unprivileged writer inside a workspace
+  can actually create, and it was the one this suite could not have caught.
+- **`ObjectiveVerification` stops re-reading the composed goal.** It substring-matched "refactor" and
+  "update the readme" against `mission.Goal`, which carries the standing context and the whole
+  conversation transcript below a `--- ` marker — so a mission whose TRANSCRIPT contained the word
+  acquired a file-change requirement nobody asked for and was demoted for producing no patch. It now
+  reads the contract's `OriginalRequest`, and so does the operator-facing explanation, which
+  otherwise would have named a different reason than the one that demoted the mission.
+- **The per-call `model_route` trail has no reader, permanently.** `.107` left it unread deliberately
+  and §2c carrying it as an open item made that look like an oversight awaiting a tidy-up. A
+  `model_route` trail says a PROVIDER ANSWERED — a route that produced garbage a hundred times
+  carries a strong one — and giving it a consumer to close a loose end is how the overclaim `.107`
+  avoided arrives by another door. A guard now fails if anything starts reading it.
 
-- **The citation gate's second trigger**, open since `.99` and recorded as unbuildable at `.104`.
-  Keyed on the specification's REQUIRED EVIDENCE rather than on the class name, so a later class
-  requiring `source_retrieval` inherits the gate without editing that line.
-- **Evidence is not attached per answer section** (`.106`). The join now has a consumer —
-  `ResearchIntegrity` — which is what §2c asked for: "rendering it is not the same as making it a
-  checkable property." It degrades honestly rather than uniformly: a DECLARED section must carry
-  its own retrieval, an INFERRED one falls back to the mission's, because under an inferred claim
-  the compiling builder is credited with every deliverable and leaves no evidence of its own.
-  Requiring per-section grounding there would grade the planner's verbosity, not the work.
-- **The web ant's two workers declared no capability.** They have been the colony's whole outward
-  read surface since the roster was written and nothing could ask for them, so every
-  research-flavoured request was served by whichever worker a keyword matched.
+**Exit gate** — named tests in `MissionResumptionTests`:
+
+- the gap: `AnApprovedRequest_IsADecisionTheMissionLaneCanRead`,
+  `ARejectedRequest_IsADecisionThatRefuses`,
+  `ForMission_ReadsTheApprovalLedger_AndStopsReAskingOnceAnswered`;
+- the loader: `AFinishedMission_ReadsBackAsItsOwnGraph`, `AMissionTheStoreDoesNotHold_IsNull`,
+  `TheStatusVocabularies_RoundTrip`;
+- and in their own files: `DotnetVerbsThatExecute_AreRefusedBeforeAProcessStarts`,
+  `DotnetReportingVerbs_PassTheSubcommandGate`, `AJunctionPointingOutOfTheRoot_IsRefused`,
+  `ThePerCallRouteTrail_HasNoConsumer_ByDecision`.
 
 **Recorded rather than closed, with the reason:**
 
-- **`ObjectiveVerification.Required` still re-reads the goal** in the unrecognized lane, and now
-  reads the composed goal rather than the operator's ask. Moving it to the contract's
-  `OriginalRequest` is correct and changes coding-lane grading — a goal whose transcript contains
-  "refactor" currently triggers the file-change requirement and would stop doing so. That is a
-  behaviour change with its own blast radius and it does not belong in a release about a new class.
-  `.110`.
-- **The per-call `model_route` trail still has no reader**, deliberately, on `.107`'s own reasoning:
-  it is a reliability signal, not evidence of good work, and giving it a consumer to tidy the loose
-  end is how the overclaim `.107` avoided arrives by another door. `.110` either gives it a reader
-  with a stated purpose or records the absence as permanent.
-- **Ollama capability discovery** stays R1's last item and stays "a contested design decision to
-  extend, not an oversight to fix". `.110`.
-- **The literal-only guard sweep** and the **capability-table reconciliation** move to `.110` with
-  the live records that feed the second.
+- **R0's enforcement tooling is `.111`, and the program grew a release to hold it.** Warnings-as-errors,
+  analyzers, dependency and secret scanning, a complexity budget, module auto-discovery and the guard
+  hierarchy written down are a release each would not need, but they are one release TOGETHER and not
+  a corner of another one. Bundling them here would have meant either doing them badly or shipping a
+  resumption nobody had room to get right. Typed database rows move to `.112`.
+- **The S1 filesystem TOCTOU window** stays open and stays named. `IWorkspacePathGuard` returns a
+  `string` and roughly twenty call sites open by path afterwards; closing the race means returning a
+  HANDLE and rewriting every consumer's I/O, plus P/Invoke, because .NET exposes no portable
+  `openat`. `.111`.
+- **Four of five agent CLIs still declare no system-prompt channel.** `AgentCliCatalog` is built so
+  that adding one is a data change, and the cost is not code — each vendor's flag has to be confirmed
+  against an installed binary. Guessing one would put a role contract on a channel that silently
+  discards it, which is worse than the declared absence.
+- **The literal-only guard sweep** found ten more instances and is `.111`. The right fix is one
+  shared `SourceText` helper returning literal-or-resolved-constant rather than ten near-copies of
+  the same widened regex, and that is a refactor with its own blast radius.
+- **The capability-table reconciliation** still needs the live records the qualification pack
+  produces, and no code change moves it.
+- **The `.97` Windows `dotnet_test` residual** needs the machine that reproduces it.
 - **The §2b terminal-case guard.** `TheUniversalWorkflowProgram_IsExactlyTheRangeItDeclares` asserts
-  `to > from`, which cannot hold when one release remains. It does not bite here (the range is
-  `.109 → .111`); it bites at `.111`, and that release has to teach the guard how a program ends.
-- **A paused mission still does not resume its refused step** — `.110`.
+  `to > from`, which cannot hold when one release remains. It now bites at `.112`.
 
 **Explicitly still unsupported after .108:** the `research` mission class (`.109`); mission
 resumption and R0 enforcement (`.110`); typed database rows (`.111`); claim↔source SUPPORT; module-

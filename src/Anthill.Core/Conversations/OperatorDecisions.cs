@@ -1,5 +1,6 @@
 using Anthill.Core.Domain;
 using Anthill.Core.Memory;
+using Anthill.SDK.Common;
 
 namespace Anthill.Core.Conversations;
 
@@ -52,6 +53,23 @@ public static class OperatorDecisions
                     .OrderBy(d => d.DecidedAt)
                     .LastOrDefault();
 
+            // v0.3.8.110 — AND THE APPROVAL LEDGER IS AN ANSWER TOO.
+            //
+            // THE GAP THIS CLOSES, and it is why `.105`'s own description had to say "approving
+            // does not replay the refused step". The question was filed into `approval_requests`
+            // and this method read `escalation_decisions` — two disjoint tables. An operator who
+            // approved through `/approve/{id}` changed a row that nothing on the mission path could
+            // see, so the next dispatch of that action refused identically and filed the same
+            // question again. The approval was real, recorded, visible in the UI, and inert.
+            //
+            // It is resolved by the SAME rule the conversation lane uses, extended rather than
+            // duplicated: last answer wins. An operator who approved in the conversation and then
+            // rejected the request has decided twice, and the second answer stands whichever ledger
+            // it landed in.
+            var filed = Decided(memory, missionId!, action);
+            if (filed is not null && (decision is null || filed.DecidedAt >= decision.DecidedAt))
+                decision = filed;
+
             // NOBODY WAS ASKED. A rejection is an answer and needs no request; only an absence
             // does. A missing CONVERSATION counts as an absence too — an autonomous or CLI mission
             // that reached a side-effecting action has no channel to have been asked through, and
@@ -96,6 +114,62 @@ public static class OperatorDecisions
     /// files earlier, the catch below turns the constraint into a printed line rather than a broken
     /// mission. That is the correct direction: losing the question is smaller than losing the run.
     /// </summary>
+    /// <summary>
+    /// The operator's answer as the APPROVAL LEDGER holds it, or null while the question stands.
+    /// v0.3.8.110.
+    ///
+    /// A pending row is not an answer and returns null — which is the whole reason the row exists,
+    /// and the reason this cannot simply test for the row's presence. Approved is consent, rejected
+    /// is a refusal, and both are decisions; only "nobody has said anything" is an absence.
+    ///
+    /// `DecidedBy` is "operator" because that is what `/approve/{id}` means: a person acted on a
+    /// request in the interface. It matters beyond bookkeeping — <see cref="EscalationDecision.AwaitingDecision"/>
+    /// is true only while `DecidedBy` is <see cref="EscalationDecision.Undecided"/>, so a decision
+    /// synthesised with the wrong attribution would keep re-filing the question it just answered.
+    ///
+    /// The policy is recorded as `Ask` because that is the policy under which the question was
+    /// raised. Reading it back as anything else would say the colony was configured differently from
+    /// how it actually ran.
+    /// </summary>
+    public static EscalationDecision? Decided(SqliteMemory memory, string missionId, string action)
+    {
+        if (string.IsNullOrWhiteSpace(missionId) || string.IsNullOrWhiteSpace(action)) return null;
+        try
+        {
+            var row = memory.GetApprovalForTarget($"{missionId}:{action}", ApprovalActionType.ToolUse);
+            if (row is null) return null;
+
+            var status = row.GetValueOrDefault("status")?.ToString() ?? "";
+            var approved = string.Equals(status, ApprovalStatus.Approved.Value(), StringComparison.Ordinal);
+            var rejected = string.Equals(status, ApprovalStatus.Rejected.Value(), StringComparison.Ordinal);
+            if (!approved && !rejected) return null;
+
+            var decidedAt = row.GetValueOrDefault("decided_at")?.ToString();
+            var when = DateTime.TryParse(decidedAt, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AdjustToUniversal
+              | System.Globalization.DateTimeStyles.AssumeUniversal, out var parsed)
+                ? parsed
+                : AnthillTime.NowUtc();
+
+            return new EscalationDecision(
+                Id: row.GetValueOrDefault("id")?.ToString() ?? Guid.NewGuid().ToString("N")[..12],
+                ConversationId: "",
+                Action: action,
+                Allowed: approved,
+                Policy: EscalationPolicy.Ask,
+                DecidedBy: "operator",
+                DecidedAt: when,
+                Reason: approved
+                    ? "approved by the operator through the approval ledger"
+                    : "rejected by the operator through the approval ledger");
+        }
+        catch
+        {
+            // The S3 rule, unchanged: an outage is never permission.
+            return null;
+        }
+    }
+
     public static void Request(SqliteMemory memory, string missionId, string action, string requestedBy)
     {
         if (string.IsNullOrWhiteSpace(missionId) || string.IsNullOrWhiteSpace(action)) return;
@@ -115,8 +189,9 @@ public static class OperatorDecisions
                 Description =
                     $"This mission reached the side-effecting action '{action}' and no operator "
                   + "decision is recorded for it, so the call was refused — absence of an answer is "
-                  + "not consent. The mission is waiting on this, not failing on it. Approving does "
-                  + "not replay the refused step; it settles the question.",
+                  + "not consent. The mission is waiting on this, not failing on it. Approving "
+                  + "records the decision AND replays the step that was refused (v0.3.8.110); "
+                  + "rejecting records a refusal that stands and replays nothing.",
                 Metadata = new() { ["action"] = action, ["requested_by"] = requestedBy },
             });
 

@@ -247,6 +247,19 @@ public static class MissionEvaluator
                      || operations is not null || sends is not null
                      || research is not null;   // v0.3.8.109
 
+        // v0.3.8.110 — THE UNRECOGNIZED LANE STOPS RE-READING THE COMPOSED GOAL. `mission.Goal`
+        // carries the standing context and the conversation transcript below a `--- ` marker, and
+        // the file-change check substring-matches verbs like "refactor" against all of it — so a
+        // mission whose TRANSCRIPT contained the word acquired a deliverable requirement nobody
+        // asked for and was demoted for producing no patch. `.96` paid for this lesson live in the
+        // other direction: the UI gate's own refusal prose entered a transcript and re-tripped the
+        // gate on every later mission, a self-sustaining refusal seeded by the gate quoting itself.
+        //
+        // The specification's `OriginalRequest` is the operator's own words, resolved once at
+        // intake and persisted in the contract since `.104`. A null specification falls back to the
+        // goal, which is exactly the pre-`.110` behaviour for every caller outside the engine.
+        var operatorAsk = specification?.OriginalRequest ?? mission.Goal;
+
         string deliverable;
         if (recognized && !gateSpoke)
             deliverable = MissionEvaluation.Deliverable.NotSatisfied;
@@ -294,11 +307,11 @@ public static class MissionEvaluator
         // proposed no patch).
         else if (creations is not null)
             deliverable = MissionEvaluation.Deliverable.Satisfied;
-        else if (ObjectiveVerification.Required(mission.Goal, constraints)
+        else if (ObjectiveVerification.Required(operatorAsk, constraints)
                  == ObjectiveVerification.Deliverable.Unknown)
             deliverable = MissionEvaluation.Deliverable.NotApplicable;
         else
-            deliverable = ObjectiveVerification.IsSatisfied(mission, constraints, patchProposalCount)
+            deliverable = ObjectiveVerification.IsSatisfied(mission, constraints, patchProposalCount, operatorAsk)
                 ? MissionEvaluation.Deliverable.Satisfied
                 : MissionEvaluation.Deliverable.NotSatisfied;
 

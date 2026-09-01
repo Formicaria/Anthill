@@ -70,6 +70,71 @@ public class PathContainmentTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// A WINDOWS JUNCTION IS NOT A SYMLINK, AND THIS SUITE HAD NEVER MADE ONE. v0.3.8.110.
+    ///
+    /// THE RESIDUAL THIS CLOSES, named in PLAN.md §5 as "Windows junctions untested separately".
+    /// Every link test above builds its link with `Directory.CreateSymbolicLink`, and each opens
+    /// with `if (!SymlinksAvailable) return;` — so on a Windows agent without Developer Mode or
+    /// elevation, seven facts pass green having asserted nothing at all. A junction needs NEITHER
+    /// privilege: any user can create one with `mklink /J`. So the one link an unprivileged attacker
+    /// can actually make inside a workspace was the one link this suite could not have caught.
+    ///
+    /// The production code was always expected to handle it — <c>PathContainment.LinkTargetOf</c>
+    /// tests `FileAttributes.ReparsePoint` rather than asking whether something is a symlink, and a
+    /// junction is a reparse point exposing `LinkTarget`. That is a claim about .NET's behaviour on
+    /// a filesystem, which is exactly the kind of claim that has to be exercised rather than
+    /// reasoned about; `PatchConformanceTests` already carries a comment saying so.
+    ///
+    /// Skipped by RETURNING on non-Windows, where junctions do not exist — the same shape the
+    /// symlink facts use. `mklink` is a `cmd` builtin, so it cannot be started directly.
+    /// </summary>
+    [Fact]
+    public void AJunctionPointingOutOfTheRoot_IsRefused()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var link = Path.Combine(_root, "junction-escape");
+        var made = TryCreateJunction(link, _sibling);
+        if (!made) return;   // a filesystem that cannot hold one has nothing to assert about
+
+        Assert.False(PathContainment.Resolve(_root, Path.Combine("junction-escape", "key.txt")).Allowed,
+            "a JUNCTION inside the workspace pointing outside it was followed. Junctions need no "
+          + "elevation and no Developer Mode, so this is the reparse point an unprivileged writer "
+          + "in the workspace can actually create — and every symlink test in this file would have "
+          + "passed while it worked.");
+    }
+
+    /// <summary>
+    /// `mklink /J` through `cmd`, because it is a shell builtin rather than a program. Returns false
+    /// rather than throwing when the filesystem or the shell refuses: a machine that cannot make one
+    /// has nothing to say about whether they are followed, and turning that into a failure would be
+    /// the "fails for lack of privilege reads as a broken guard" problem this file already names.
+    /// </summary>
+    private static bool TryCreateJunction(string link, string target)
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe")
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            psi.ArgumentList.Add("/c");
+            psi.ArgumentList.Add("mklink");
+            psi.ArgumentList.Add("/J");
+            psi.ArgumentList.Add(link);
+            psi.ArgumentList.Add(target);
+
+            using var process = System.Diagnostics.Process.Start(psi);
+            if (process is null) return false;
+            if (!process.WaitForExit(15_000)) { try { process.Kill(true); } catch { } return false; }
+            return process.ExitCode == 0 && Directory.Exists(link);
+        }
+        catch { return false; }
+    }
+
     // -------------------------------------------------------------------------------------------
     // The sibling-prefix escape — the P0, and it needs no privileges
     // -------------------------------------------------------------------------------------------

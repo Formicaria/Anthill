@@ -48,11 +48,37 @@ public sealed partial class Queen
         // who approves a paused mission's side-effecting action would have been told to go and look
         // at a patch that does not exist. A release about saying true things must not ship a
         // sentence that is false for half its inputs.
+        // v0.3.8.110 — AND NOW IT REPLAYS. The sentence below used to end "Approving settles the
+        // question; it does not replay the step that was refused", which was honest and was the
+        // whole defect: the operator's answer changed a grade and never did the work it authorized.
+        // The replay is attempted HERE, at the moment the decision is recorded, because that is the
+        // moment the runtime learns the answer — asking the operator to then go and restart
+        // something would be handing them a second step for a decision they have already made.
+        if (updated is not null && Str(updated, "action_type") == ApprovalActionType.ToolUse.Value())
+        {
+            // The target is `<mission>:<tool>`; the tool is everything after the LAST colon,
+            // because a mission id may legitimately contain one and a tool name may not. Spelled
+            // the same way `SqliteMemory.PendingOperatorDecisions` spells it — two readings of one
+            // format is how the two come to disagree about which action was approved.
+            var target = Str(updated, "target_id");
+            var cut = target.LastIndexOf(':');
+            var action = cut >= 0 && cut + 1 < target.Length ? target[(cut + 1)..] : target;
+
+            var resumption = ResumeMission(Str(updated, "mission_id"), action);
+
+            return $"Approval recorded.\nID: {approvalId}\nStatus: approved\n\n"
+                 + $"Action: {target}\n"
+                 + (resumption.Resumed
+                     ? $"Replayed: {resumption.TasksReplayed} task(s). "
+                     + $"Mission outcome after re-evaluation: {resumption.Outcome ?? "not graded"}."
+                     : $"Nothing was replayed — {resumption.Reason}\n"
+                     + "The mission's outcome stops reporting that it is waiting on this.");
+        }
+
         if (updated is not null && Str(updated, "action_type") != ApprovalActionType.PatchProposal.Value())
             return $"Approval recorded.\nID: {approvalId}\nStatus: approved\n\n"
                  + $"Action: {Str(updated, "target_id")}\n"
-                 + "The mission's outcome stops reporting that it is waiting on this. Approving "
-                 + "settles the question; it does not replay the step that was refused.";
+                 + "The mission's outcome stops reporting that it is waiting on this.";
 
         return $"Approval recorded.\nID: {approvalId}\nStatus: approved\n\nNext step: inspect the patch with /patch {Str(updated!, "target_id")}.\n" +
                $"To apply later: /apply {approvalId}\n\nPatch application requires both write gates enabled.";
