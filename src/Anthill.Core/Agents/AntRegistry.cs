@@ -66,11 +66,57 @@ public static class AntRegistry
     private static readonly AntPermissionContract Checks = ReadMemory with { RunAllowlistedChecks = true };
     private static readonly AntPermissionContract WriteMemory = ReadMemory with { WriteMemory = true };
 
-    public static readonly IReadOnlyList<AntRoleDefinition> Roles = BuildRoles();
-    public static readonly IReadOnlyDictionary<string, AntRoleDefinition> ByRole =
-        Roles.ToDictionary(r => r.RoleId, StringComparer.OrdinalIgnoreCase);
-    public static readonly IReadOnlyDictionary<string, AntWorkerDefinition> ByWorker =
-        Roles.SelectMany(r => r.Workers).ToDictionary(w => w.WorkerId, StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// The roles compiled into this build. v0.3.8.108 named it separately from <see cref="Roles"/>,
+    /// which is now the composed view — built-in plus whatever <see cref="AntExtensions"/> holds.
+    /// `AntExtensions` reads THIS one to decide what may not be shadowed, and reading the composed
+    /// view for that would let the first contribution decide whether the second is allowed.
+    /// </summary>
+    public static readonly IReadOnlyList<AntRoleDefinition> BuiltInRoles = BuildRoles();
+
+    /// <summary>
+    /// Every role this colony has: the built-in twenty-five, plus contributions.
+    ///
+    /// A PROPERTY rather than the static field it was until v0.3.8.108, because a role can now be
+    /// declared after this type is first touched. The composed view is cached and rebuilt only when
+    /// <see cref="AntExtensions.Version"/> moves, so the ordinary read — which is most reads, on a
+    /// colony that contributes nothing — is a field access behind a version compare.
+    /// </summary>
+    public static IReadOnlyList<AntRoleDefinition> Roles => Composed().Roles;
+
+    public static IReadOnlyDictionary<string, AntRoleDefinition> ByRole => Composed().ByRole;
+
+    public static IReadOnlyDictionary<string, AntWorkerDefinition> ByWorker => Composed().ByWorker;
+
+    private sealed record RosterView(
+        IReadOnlyList<AntRoleDefinition> Roles,
+        IReadOnlyDictionary<string, AntRoleDefinition> ByRole,
+        IReadOnlyDictionary<string, AntWorkerDefinition> ByWorker);
+
+    private static readonly object ComposeLock = new();
+    private static RosterView? _composed;
+    private static int _composedVersion = -1;
+
+    private static RosterView Composed()
+    {
+        var version = AntExtensions.Version;
+        var cached = _composed;
+        if (cached is not null && _composedVersion == version) return cached;
+
+        lock (ComposeLock)
+        {
+            if (_composed is not null && _composedVersion == version) return _composed;
+
+            var roles = BuiltInRoles.Concat(AntExtensions.All.Select(c => c.Role)).ToList();
+            _composed = new RosterView(
+                roles,
+                roles.ToDictionary(r => r.RoleId, StringComparer.OrdinalIgnoreCase),
+                roles.SelectMany(r => r.Workers)
+                     .ToDictionary(w => w.WorkerId, StringComparer.OrdinalIgnoreCase));
+            _composedVersion = version;
+            return _composed;
+        }
+    }
 
     /// <summary>
     /// MODEL ROUTES THAT ARE NOT ROLES. v0.3.8.104.
@@ -86,7 +132,14 @@ public static class AntRegistry
     /// </summary>
     public static readonly IReadOnlyList<string> NonRoleModelRoutes = new[] { "planner", "strategist" };
 
-    private static readonly IReadOnlySet<string> BaseExecutableRoleIds =
+    /// <summary>
+    /// v0.3.8.108 — a PROPERTY, for the reason <see cref="Roles"/> became one. This was computed
+    /// once at type initialisation, so a role declared afterwards would have been registered,
+    /// contracted, dispatchable and never executable: present in every table that describes it and
+    /// absent from the one that decides whether it runs. That is the defect shape this release
+    /// exists to close, and it would have arrived inside the fix.
+    /// </summary>
+    private static IReadOnlySet<string> BaseExecutableRoleIds =>
         Roles.Where(r => r.Executable && r.Enabled).Select(r => r.RoleId).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Execution framework Stage D: executability is COMPUTED — the registry's static
