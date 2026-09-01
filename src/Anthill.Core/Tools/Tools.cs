@@ -337,8 +337,60 @@ public sealed class ToolRegistry
             _memory.UpdatePheromoneTrail($"tool:{name}", "tool", result.Success, result.Success ? 0.02 : -0.04,
                 new() { ["mission_id"] = missionId, ["task_id"] = taskId, ["ant_name"] = antName });
             RecordEvidence(name, result, missionId, taskId, args);
+            RecordCrossMissionRead(name, result, missionId, taskId, antName, args);
         }
         return result;
+    }
+
+    /// <summary>
+    /// NOTE THAT THIS MISSION READ ANOTHER MISSION'S ARTIFACT. v0.3.8.106.
+    ///
+    /// HERE RATHER THAN IN THE TOOL, and the reason is identity. `ReadArtifactTool` would have to
+    /// take the consuming mission from an argument, which means taking it from the MODEL — and a
+    /// model that can name the mission it read on behalf of can attribute its reads to a mission
+    /// that never made them, which is the one thing a lineage ledger must not permit. This frame
+    /// has the mission, the task and the role as facts, the same reason evidence and pheromone
+    /// reinforcement are recorded here.
+    ///
+    /// Only on SUCCESS: a refused read consumed nothing, and a ledger row for it would say the
+    /// second mission built on a record it was never shown.
+    ///
+    /// Never throws — a ledger entry is a diagnostic, and the read has already returned.
+    /// </summary>
+    private void RecordCrossMissionRead(string name, ToolResult result, string missionId,
+        string? taskId, string? antName, IReadOnlyDictionary<string, object?> args)
+    {
+        if (!string.Equals(name, ReadArtifactTool.ToolName, StringComparison.Ordinal)) return;
+        if (!result.Success) return;
+
+        try
+        {
+            var artifactId = (args.GetValueOrDefault("artifact_id")?.ToString() ?? "").Trim();
+            if (artifactId.Length == 0) return;
+
+            var store = (Anthill.SDK.Artifacts.IArtifactStore)_memory;
+            var artifact = store.Get(artifactId);
+            if (artifact is null) return;
+
+            store.RecordConsumption(new Anthill.SDK.Artifacts.ArtifactConsumption
+            {
+                ArtifactId = artifact.Id,
+                ContentHash = artifact.ContentHash,
+                Schema = artifact.Schema,
+                // The PRODUCING mission, which is what this column has always held.
+                MissionId = artifact.MissionId,
+                // And the one that read it — the distinction `.106` had to add, because until now
+                // the only consumer read within a single mission and the two were the same value.
+                ConsumerMissionId = missionId,
+                ConsumerRole = antName ?? "unknown",
+                ConsumerTaskId = taskId,
+            });
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine(
+                $"[tools] could not record {missionId} reading artifact via {name}: {error.Message}");
+        }
     }
 
     /// <summary>

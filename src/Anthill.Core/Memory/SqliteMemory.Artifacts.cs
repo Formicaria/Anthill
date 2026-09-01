@@ -197,6 +197,8 @@ public sealed partial class SqliteMemory : IArtifactStore, IEvidenceStore
         // key as distinct, which would defeat the whole idempotency. Read back as null, because "no
         // task" is what it means.
         ConsumerTaskId = row.GetValueOrDefault("consumer_task_id")?.ToString() is { Length: > 0 } t ? t : null,
+        // v0.3.8.106. NULL for every legacy row and every same-mission read; `ReadBy` resolves it.
+        ConsumerMissionId = row.GetValueOrDefault("consumer_mission_id")?.ToString() is { Length: > 0 } c ? c : null,
         ReadCount = (int)AsLong(row.GetValueOrDefault("read_count")),
         FirstReadAt = ParseUtc(row.GetValueOrDefault("first_read_at")),
         LastReadAt = ParseUtc(row.GetValueOrDefault("last_read_at")),
@@ -214,14 +216,19 @@ public sealed partial class SqliteMemory : IArtifactStore, IEvidenceStore
             NonQuery(conn, null,
                 @"INSERT INTO artifact_consumptions
                     (artifact_id, consumer_role, consumer_task_id, content_hash, schema, mission_id,
-                     read_count, first_read_at, last_read_at)
-                  VALUES (@aid, @role, @task, @hash, @schema, @mission, 1, @at, @at)
+                     consumer_mission_id, read_count, first_read_at, last_read_at)
+                  VALUES (@aid, @role, @task, @hash, @schema, @mission, @consumer, 1, @at, @at)
                   ON CONFLICT (artifact_id, consumer_role, consumer_task_id) DO UPDATE SET
                     read_count = read_count + 1,
-                    last_read_at = @at",
+                    last_read_at = @at,
+                    -- v0.3.8.106: a re-read must not blank the consumer a prior read established.
+                    -- COALESCE on the INCOMING value, so a task-less re-read of a cross-mission
+                    -- artifact keeps the mission that was recorded reading it.
+                    consumer_mission_id = COALESCE(@consumer, consumer_mission_id)",
                 ("@aid", consumption.ArtifactId), ("@role", consumption.ConsumerRole),
                 ("@task", consumption.ConsumerTaskId ?? ""), ("@hash", consumption.ContentHash),
                 ("@schema", consumption.Schema), ("@mission", consumption.MissionId),
+                ("@consumer", (object?)consumption.ConsumerMissionId),
                 ("@at", AnthillTime.NowUtc().ToIso()));
         }
     }
@@ -232,10 +239,34 @@ public sealed partial class SqliteMemory : IArtifactStore, IEvidenceStore
             : Query("SELECT * FROM artifact_consumptions WHERE artifact_id = @a ORDER BY last_read_at DESC",
                     ("@a", artifactId)).Select(ToConsumption).ToList();
 
+    /// <summary>
+    /// Consumptions keyed on the PRODUCING mission — unchanged at v0.3.8.106, deliberately.
+    ///
+    /// `.98`'s assessment objective asks "did the verifier read what it graded", which is a
+    /// question about one mission's own artifacts, and every row it has ever read is a same-mission
+    /// row where the two mission columns agree. Changing this query to the consumer would have
+    /// altered that grading for no reason the release could name. The new question gets a new
+    /// method rather than a new meaning for an old one.
+    /// </summary>
     IReadOnlyList<ArtifactConsumption> IArtifactStore.ConsumptionsForMission(string missionId, int limit) =>
         string.IsNullOrWhiteSpace(missionId)
             ? Array.Empty<ArtifactConsumption>()
             : Query("SELECT * FROM artifact_consumptions WHERE mission_id = @m ORDER BY last_read_at DESC LIMIT @l",
+                    ("@m", missionId), ("@l", limit)).Select(ToConsumption).ToList();
+
+    /// <summary>
+    /// What a mission READ, including artifacts other missions produced. v0.3.8.106.
+    ///
+    /// Matches on the consumer column, falling back to the producing mission for the legacy and
+    /// same-mission rows where the consumer was never written — so this answers "what did mission X
+    /// consume" across the whole ledger's history rather than only across rows written since.
+    /// </summary>
+    public IReadOnlyList<ArtifactConsumption> ConsumptionsByMission(string missionId, int limit = 500) =>
+        string.IsNullOrWhiteSpace(missionId)
+            ? Array.Empty<ArtifactConsumption>()
+            : Query(@"SELECT * FROM artifact_consumptions
+                      WHERE COALESCE(NULLIF(consumer_mission_id, ''), mission_id) = @m
+                      ORDER BY last_read_at DESC LIMIT @l",
                     ("@m", missionId), ("@l", limit)).Select(ToConsumption).ToList();
 
     // ---- IEvidenceStore ---------------------------------------------------

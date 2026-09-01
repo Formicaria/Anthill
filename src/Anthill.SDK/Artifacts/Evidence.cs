@@ -215,6 +215,18 @@ public static class ArtifactSchemas
     public const string SourcedAnswer = "sourced_answer";
 
     /// <summary>
+    /// The operator's request, section by section, with what answered each. v0.3.8.106.
+    ///
+    /// Named here under the vocabulary's own rule — a schema the colony produces and this file does
+    /// not name is a gap in this file — and only now that the colony produces it. It is the
+    /// deliverable ledger's sibling and not its duplicate: the ledger records which task OWNED each
+    /// request and whether it finished, and this records what the operator actually READS for each
+    /// one. A mission can have a complete ledger and an answer that omits a section, which is
+    /// exactly the failure `AnswerCoverage` exists to refuse.
+    /// </summary>
+    public const string AssembledAnswer = "assembled_answer";
+
+    /// <summary>
     /// The colony's OWN prior missions a task was shown, by id. v0.3.8.99.
     ///
     /// The internal analogue of <see cref="SourceSet"/>, and it exists for the same reason: a claim
@@ -329,7 +341,7 @@ public static class ArtifactSchemas
             SourcedAnswer, RecallSet, CreatedArtifact, SystemOperation, ExternalAction,
             SecurityReview, FailureDiagnosis, VerificationBundle, OperatorSummary,
             ReleaseNotes, MemoryCandidate, RepairRecommendation, SourceSet, WorkspaceSnapshot,
-            FailureContext, DocsPatchSet, ResearchBrief,
+            FailureContext, DocsPatchSet, ResearchBrief, AssembledAnswer,
         };
 
     /// <summary>

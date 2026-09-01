@@ -1,3 +1,73 @@
+## v0.3.8.106 - the answer is built from what was asked
+
+**THE REQUEST IS THE OUTLINE, NOT JUST THE INPUT.** `ResultAssembler` picked a task by ROLE — last
+completed builder, else coder, else anything with a result — and handed over its raw text. `.98`
+recorded that in its own words: "`ResultAssembler` never read it at all and returned the last builder
+task's output as the answer." Three layers interpreted the operator's request and the one producing
+what the operator READS interpreted nothing, so a mission asked three questions and answering one
+produced an answer shaped exactly like a mission that answered all three.
+
+Each requested deliverable is now a SECTION. Its content is the recorded output of the tasks that
+served it, cut from the record and never synthesised. A request nothing served says so in the answer
+itself rather than only in a ledger the operator has to go and find, and the shortfall is stated at
+the end rather than left to be counted.
+
+**ONE ASSEMBLY PATH, AND THE CODING LANE IS UNTOUCHED.** A mission whose specification declares
+deliverables renders section by section and skips synthesis, for the reason `.99` and `.100` already
+skip it directly above: a rewrite can drop a section, and an answer whose unanswered questions did
+not survive the paraphrase reads as complete. A mission that declares none — every coding mission,
+by design — has exactly one section whose content is the raw output BYTE FOR BYTE, and synthesis
+proceeds as before. That is what makes a single path safe rather than a path and an escape hatch.
+
+**COVERAGE IS CLAIM-AND-SERVED, NEVER A WORD SEARCH.** This is `.98`'s judgement honoured rather
+than revisited. It considered the obvious implementation and rejected it in writing: "does the
+answer contain this question's words — grades on vocabulary: an answer reading 'Strengths: …
+Weaknesses: …' addresses 'what is good and bad about it' completely and contains neither word, and a
+gate that demoted it would make every real gate less trustworthy. Coverage becomes checkable when a
+deliverable can be CLAIMED by the task that served it."
+
+So `MissionDeliverable.Subject` — populated at intake since `.98`, consumed by nothing, and offered
+in its own doc comment as "the topic keywords a coverage check can look for in an answer" — stays
+unread. It is the most natural-looking mistake available in this area, and a source-shape guard
+keeps it declined rather than leaving it to be rediscovered.
+
+`AnswerCoverage` is the SEVENTH gate and the first not keyed to a mission class: its six siblings
+each guard one class's promise, and this guards what any specified mission owes whatever its class.
+It judges structure and never quality — a section with one dismissive sentence is covered.
+
+**WORK CAN BUILD ON VERIFIED WORK.** `IArtifactStore.Get(id)` has had cross-mission reach since the
+store existed and nothing a mission could DISPATCH reached it, so every mission started from
+nothing: a question about last week's audit was answered by running the audit again and hoping the
+two agreed. `read_artifact` is that caller, gated on the producing mission's PERSISTED grade —
+`MissionOutcome.IsPositiveSuccess`, the same predicate auto-apply and promotion already ask, because
+it is the one place the colony says a result may be built upon. A mission that failed, stopped, is
+waiting on an operator, or has no evaluation at all is refused: absence of a grade is not a pass.
+
+**AND THE LEDGER COULD NOT HAVE RECORDED IT.** `ArtifactConsumption.MissionId` has always been
+written as the artifact's PRODUCING mission, and the only caller read within a single mission — so
+"who produced it" and "who read it" were the same value, and the column meant both by coincidence
+rather than by design. Cross-mission consumption is precisely where that coincidence ends: without
+`ConsumerMissionId` the second mission's ledger would show nothing and this release's own claim
+would be unprovable from the record it is supposed to be provable from. Legacy rows read as null and
+resolve to the producing mission, which is what every one of them means.
+
+The consumer identity is recorded at the DISPATCH CHOKEPOINT and not by the tool. A tool taking its
+consumer mission from an argument takes it from the model, and a model that can name the mission it
+read on behalf of can attribute its reads to a mission that never made them.
+
+**`ToolInventoryTests` COULD ONLY READ A NAME THAT WAS A STRING LITERAL.** That is why the `.102` and
+`.103` tools needed hand-written exemptions, and why `read_artifact` — named once as a const so the
+inventory, the authorization table, the role contract and the chokepoint share one spelling — was
+invisible to it. Widened to resolve a const the project declares: where the guard LOOKS, never what
+it accepts. An unresolvable name still fails.
+
+**WHAT IS NOT CLAIMED.** Continuity is READ-side. A paused mission still does not resume its refused
+step — `.105` deferred that here and it does not land here either, because replaying a refused step
+needs a mission to re-enter execution at a task and no lane does that today. Evidence is not yet
+attached per section: the join exists (a section knows its serving tasks) and rendering it is not
+the same as making it a checkable property. The citation gate's second trigger still needs the
+research class. `QUALIFICATION.md` §3 remains PARTIAL.
+
 ## v0.3.8.105 - a mission that stops says what it is waiting for
 
 **THREE WAYS A MISSION STOPS SHORT, TOLD APART.** A wrong worker, an unanswered question and a

@@ -71,6 +71,11 @@ public static class ToolInventory
         // "declared and absent", and only the second is the defect these tables exist to catch.
         Anthill.SDK.Contracts.ExternalActionToolNames.Propose,
         Anthill.SDK.Contracts.ExternalActionToolNames.Execute,
+        // v0.3.8.106: cross-mission continuity. Registered in the CORE beside `colony_state`, for
+        // the same reason — the artifact store is core state, and a colony that cannot read its own
+        // verified records has no way for work to build on work. Gated on the producing mission's
+        // persisted grade, so it can register unconditionally and refuse honestly.
+        ReadArtifactTool.ToolName,
     };
 
     /// <summary>

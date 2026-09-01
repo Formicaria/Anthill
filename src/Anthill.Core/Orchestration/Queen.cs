@@ -372,6 +372,13 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // "what is enabled right now", and unlike file reads that is not an optional capability.
         // The tool list is read through a lambda because module tools arrive after this call.
         registry.Register(new ColonyStateTool(Memory, () => registry.Names.ToList()));
+        // v0.3.8.106 — cross-mission continuity, registered in the CORE for `colony_state`'s reason:
+        // the artifact store is core state, and work building on verified work is not an optional
+        // capability. It gates on the producing mission's PERSISTED grade, so registering it
+        // unconditionally cannot widen anything — a colony with no verified missions has a tool
+        // that refuses every id it is given, which is "registered and refusing" rather than
+        // "declared and absent".
+        registry.Register(new ReadArtifactTool(Memory));
 
         // v3.8.16 — list_directory, read_text_file, write_text_file, web_search, shell_command and
         // apply_patch are NOT constructed here any more. They live in Anthill.Modules.Tools, and the

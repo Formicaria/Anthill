@@ -4,71 +4,52 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: main carries **v0.3.8.104** (`3484e33`, tagged and released). **`release/v0.3.8.105` is
-complete and green**: a mission that stops says what it is waiting for.
+State: main carries **v0.3.8.105** (`08ed777`, tagged and released). **`release/v0.3.8.106` is
+complete and green**: the answer is built from what was asked.
 
-WHAT `.105` DELIVERS — three ways a mission stops short, told apart, because the words decide what
-the operator does next. All three used to arrive at `failed_permanent` and invite the same useless
-response, a retry.
+WHAT `.106` DELIVERS.
 
-1. THE DISPATCH-TIME REROUTE, and the gap it closes is one `.104` created. `MissionPreflight` has
-exactly ONE call site — `Queen.RunMission`, over the COMPILED plan, before execution — and the plan
-does not stop changing there. Handoff tasks, delta-plan tasks, the medic's repair tasks, inserted
-policy reviews and added verification steps all reached dispatch unexamined, and those are the tasks
-created BECAUSE something already went wrong. `TaskReroute.Evaluate` runs FIRST in
-`ExecutionService.RunSingleTask`, before the durable claim and before `AntRuntime.Resolve`, and asks
-the one question answerable per task: does the worker about to run this declare the capability it
-requires? Rerouted within the role (never across it — a wrong ROLE is a planning error the admission
-gate answers for); ambiguity is not a block; nothing-serves-it refuses as `capability_unserved` with
-a deterministic block.
+1. THE REQUEST IS THE OUTLINE OF THE ANSWER. `ResultAssembler` picked a task by ROLE — last builder,
+else coder, else anything — and handed over its raw text; `.98` named that defect in its own words
+("never read it at all"). Each requested deliverable is now a SECTION whose content is cut from the
+serving task's recorded output, and a request nothing served says so IN THE ANSWER.
 
-2. AN UNANSWERED QUESTION PAUSES. Under `Ask` a side-effecting action with no recorded answer is
-refused — untouched, absence is not consent — but the refusal used to be the WHOLE response. The
-seam already existed and nothing read it: `EscalationDecision.DecidedBy` is "nobody" when `Ask` got
-no answer and names a person on every other path, so a REJECTION (an answer) and an ABSENT decision
-(a question) were indistinguishable. Now only the second files a pending `ApprovalRequest` and the
-mission grades `waiting_for_approval`. Two constants got their first producer, both the house
-defect: that outcome code has been in the vocabulary since v2.19.0 unused, and
-`ApprovalActionType.ToolUse` has never had a producer — every approval this colony ever raised is a
-`PatchProposal`. NARROWED TO `ToolUse` DELIBERATELY: a pending PATCH approval is the healthy end
-state of every coding mission, and reading those as "waiting" would stop every one of them reaching
-`completed_verified`, which auto-apply consumes. That is `.74`'s defect, nearly recommitted here.
+ONE PATH, and this is the part to protect. A specified mission renders section by section and SKIPS
+synthesis (a rewrite can drop a section — `.99`'s rule). An unspecified mission — every coding
+mission, by design — has exactly ONE section whose content is the raw output BYTE FOR BYTE, and
+synthesis proceeds as before. If a future release makes intake give general missions deliverables,
+that equivalence breaks and the coding lane's answer changes shape. `AnUnspecifiedMission_RendersItsRawAnswerUnchanged`
+is the guard.
 
-3. A RECURRENCE NAMES THE STOP IT NEVER CAUSES. An exhausted repair loop stopped with
-`adaptive_stop` ("the bound is spent, not the problem") while saying nothing about the failure being
-reproducible; it now stops as `repeated_failure` when the store holds a recurrence. THE TRAJECTORY IS
-UNCHANGED, and a draft of this release changed it: reading the recurrence above the repair budget
-deleted the loop's second generation and the medic's only route in, which `CodePatchLifecycleTests`
-refused. A repair generation changes the artifact, so one signature across two generations is the
-loop working. `FailureRecurrence` is the one shared reading. The detector returns NULL when the
-store cannot be read, because the two consumers need OPPOSITE defaults from the same rows: the
-controller treats unknown as no-recurrence (inventing one refuses a repair the mission is owed), the
-medic falls back to its narrative scan (losing the bound is how a bounded loop becomes unbounded).
+2. COVERAGE IS CLAIM-AND-SERVED, NEVER A WORD SEARCH. `.98` rejected the word search in writing and
+`.106` honours it: `MissionDeliverable.Subject` is populated at intake, offers itself for exactly
+that check in its own doc comment, and STAYS UNREAD. `SubjectIsStillUnread_ByEveryCoverageLayer`
+keeps it declined. `AnswerCoverage` is the seventh gate and the first not keyed to a class.
 
-AND RECOVERY FINALLY CONSULTS `FailureClass`. `RecoveryOrchestrator` decided from four booleans and
-knew nothing of the taxonomy's twenty-three members and three predicates; a policy denial and a rate
-limit reached the same `Retryable` bool. EXTENDED, NEVER REPLACED: `FailureClass.None` means "this
-caller has no typed class" and every existing caller (ShadowOperator, the homelab bridge) is
-untouched. A supplied class narrows BY CONJUNCTION and never widens — a caller that said no is never
-overruled into a retry.
+3. WORK BUILDS ON VERIFIED WORK. `read_artifact` is the first dispatchable caller of the artifact
+store's cross-mission reach, gated on the producing mission's PERSISTED grade
+(`MissionOutcome.IsPositiveSuccess`). Ungraded is refused — absence of a grade is not a pass.
 
-CARRIED DEBT CLOSED: `blocked_missing_capability` was charged `-0.08` against every ant, worker and
-task-type path in a plan that never ran, while its own `.104` documentation says nothing reinforces
-or retires on the strength of it. It fell through the pheromone switch's default.
-`waiting_for_approval` would have been the identical bug on day one. Both score zero now.
+AND THE LEDGER DEFECT UNDERNEATH IT. `ArtifactConsumption.MissionId` has always been the PRODUCING
+mission, and the only caller read within one mission, so "who produced" and "who read" were the same
+value since `.57` — the column meant both by coincidence. `ConsumerMissionId` splits them; legacy
+rows read null and resolve to the producer. `ConsumptionsForMission` is DELIBERATELY unchanged
+(`.98`'s assessment objective reads it); the new question got `ConsumptionsByMission`.
 
-NOT CLOSED, AND NAMED: a paused mission does NOT resume itself — approving settles the question and
-the outcome stops saying "waiting", but re-running the refused step is `.106`'s continuity work and
-is recorded in `PLAN.md` §2c rather than approximated. The citation gate's second trigger still has
-nothing to read: no `research` class, no evidence kind for a retrieved source, no capability to
-require, and adding one as an addendum is how a request gets silently rerouted. The `.97` Windows
-`dotnet_test` residual is still undiagnosed — the sandbox's silent 5000-file truncation fit every
-symptom and is NOT the cause (792 eligible files); the truncation is loud now and verification
-refuses inside an incomplete sandbox anyway.
+The consumer identity is recorded at the DISPATCH CHOKEPOINT, not by the tool — a tool taking it
+from an argument takes it from the model, and a model that can name the mission it read for can
+attribute reads to missions that never made them.
 
-THE ONE FROM `.104` STILL WORTH REPEATING: objective verification is no longer optional for a
-recognized class and FAILS CLOSED. Expect missions that used to pass to stop passing. That is the
-release working.
+ALSO: `ToolInventoryTests` could only read a tool whose `Name` was a string literal, which is why the
+`.102`/`.103` tools needed hand-written exemptions. Widened to resolve a const the project declares —
+where the guard LOOKS, never what it accepts.
+
+NOT CLOSED, AND NAMED: continuity is READ-side, so a paused mission STILL does not resume its
+refused step (`.105` deferred it to `.106`; `.106` does not land it either — replaying needs a
+mission to re-enter execution at a task and no lane does that). Evidence is not attached per
+section: a section knows its serving tasks, so the join exists, but rendering it is not the same as
+making it checkable. The citation gate's second trigger still needs a `research` class. The `.97`
+Windows `dotnet_test` residual is still undiagnosed.
 
 THE LIVE PACK IS ONE COMMAND AWAY AND STILL THE OPERATOR'S STEP. Run a real mission per class with a
 provider attached, then `anthill --live-qualification <mission-id> --json <path>` for each.

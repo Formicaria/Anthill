@@ -52,6 +52,10 @@ public class FullRosterQualificationTests
             // v0.3.8.103 — the tester's send lane, adopted at composition for the same reason.
             Anthill.SDK.Contracts.ExternalActionToolNames.Propose,
             Anthill.SDK.Contracts.ExternalActionToolNames.Execute,
+            // v0.3.8.106 — the researcher's continuity lane, registered in the CORE beside
+            // `colony_state`. Same reason it is here: the contract declares it, so a fixture that
+            // omitted it would fail qualification for a tool the colony genuinely registers.
+            Anthill.Core.Tools.ReadArtifactTool.ToolName,
         };
 
     /// <summary>
