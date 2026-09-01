@@ -1312,34 +1312,29 @@ public sealed class MedicAnt : BaseAnt
             return mission.Tasks.Any(t => t.Id != task.Id && t.AssignedAnt == "medic"
                 && (t.Result?.Contains(signature, StringComparison.Ordinal) ?? false));
 
-        try
-        {
-            // Distinct TASKS, not distinct artifacts: one failing task can record more than one
-            // context across attempts, and counting those would escalate a single failure on its
-            // own retry — turning a bounded repair into no repair at all.
-            var tasksWithThisSignature = _artifacts
-                .ForMission(mission.Id, Anthill.SDK.Artifacts.ArtifactSchemas.FailureContext)
-                .Select(a => (a.TaskId, Context: Anthill.SDK.Artifacts.FailureContext.FromJson(a.Payload)))
-                .Where(x => x.Context is not null
-                         && string.Equals(x.Context!.FailureSignature, signature, StringComparison.Ordinal))
-                .Select(x => x.TaskId ?? "")
-                .Distinct(StringComparer.Ordinal)
-                .ToList();
+        // v0.3.8.105 — THROUGH THE SHARED DETECTOR. The query that used to live here (distinct
+        // TASKS, never distinct artifacts — one failing task records a context per attempt, and
+        // counting those escalates a single failure on its own retry) moved verbatim into
+        // `Outcomes.FailureRecurrence`, because the ADAPTIVE CONTROLLER now has to ask the same
+        // question one step earlier: it decides whether to SPEND a repair cycle, and it was
+        // spending them to reach a medic that then refused on grounds already in the store.
+        //
+        // Two readings of one record eventually disagree. There is one reading.
+        // NULL MEANS THE STORE COULD NOT BE READ, and that is why `Recurred` is nullable rather
+        // than a bool the detector decided for us. An unreadable store must not silently REMOVE
+        // the bound — losing it is how a bounded repair loop becomes an unbounded one — so this
+        // caller falls back to the narrative scan, which is weaker and is still a bound. The
+        // adaptive controller reads the same rows through `InMission` and takes the opposite
+        // default, because it is deciding whether to SPEND a cycle rather than whether to run one,
+        // and there inventing a recurrence would refuse a repair the mission is entitled to.
+        var recurred = Outcomes.FailureRecurrence.Recurred(_artifacts, mission.Id, signature);
+        if (recurred is not null) return recurred.Value;
 
-            // More than one distinct task has failed this way. The current failure is one of them,
-            // so "seen before" means at least two.
-            return tasksWithThisSignature.Count > 1;
-        }
-        catch (Exception error)
-        {
-            // An unreadable store must not silently REMOVE the bound. Fall back to the prose scan,
-            // which is weaker but is a bound, and say that the strong one was unavailable.
-            Console.Error.WriteLine(
-                $"[medic] could not read failure_context signatures for {mission.Id}: {error.Message} "
-              + "— falling back to the narrative scan for loop control");
-            return mission.Tasks.Any(t => t.Id != task.Id && t.AssignedAnt == "medic"
-                && (t.Result?.Contains(signature, StringComparison.Ordinal) ?? false));
-        }
+        Console.Error.WriteLine(
+            $"[medic] the failure_context store did not answer for {mission.Id}: "
+          + "falling back to the narrative scan for loop control");
+        return mission.Tasks.Any(t => t.Id != task.Id && t.AssignedAnt == "medic"
+            && (t.Result?.Contains(signature, StringComparison.Ordinal) ?? false));
     }
 
     /// <summary>The typed failure record for THIS failed task, if the boundary produced one.</summary>

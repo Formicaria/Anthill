@@ -50,7 +50,8 @@ public interface IMissionEvaluator
     MissionEvaluation Evaluate(Mission mission, MissionContext context, string? stopReason, int patchProposalCount,
         IReadOnlyList<Anthill.SDK.Artifacts.Evidence>? evidence = null,
         IReadOnlyList<Anthill.SDK.Artifacts.ArtifactConsumption>? consumptions = null,
-        IReadOnlyList<Anthill.SDK.Artifacts.Artifact>? artifacts = null);
+        IReadOnlyList<Anthill.SDK.Artifacts.Artifact>? artifacts = null,
+        IReadOnlyList<string>? pendingOperatorDecisions = null);
 }
 
 /// <summary>
@@ -62,10 +63,11 @@ public sealed class CanonicalMissionEvaluator : IMissionEvaluator
     public MissionEvaluation Evaluate(Mission mission, MissionContext context, string? stopReason,
         int patchProposalCount, IReadOnlyList<Anthill.SDK.Artifacts.Evidence>? evidence = null,
         IReadOnlyList<Anthill.SDK.Artifacts.ArtifactConsumption>? consumptions = null,
-        IReadOnlyList<Anthill.SDK.Artifacts.Artifact>? artifacts = null) =>
+        IReadOnlyList<Anthill.SDK.Artifacts.Artifact>? artifacts = null,
+        IReadOnlyList<string>? pendingOperatorDecisions = null) =>
         MissionEvaluator.Evaluate(mission, stopReason, patchProposalCount,
             context.Constraints, context.Profile.Verification.ObjectiveVerification, evidence,
             // From the CONTEXT, resolved once at intake — the same object the planner and the
             // worker resolver read. A second parse here would be a ninth reading of the goal.
-            context.Specification, consumptions, artifacts);
+            context.Specification, consumptions, artifacts, pendingOperatorDecisions);
 }

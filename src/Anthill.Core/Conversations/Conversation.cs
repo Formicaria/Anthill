@@ -93,6 +93,28 @@ public sealed record EscalationDecision(
     /// reading a long run needs to tell them apart.
     /// </summary>
     public bool WasAskedDirectly => Policy == EscalationPolicy.Ask;
+
+    /// <summary>The author of a refusal nobody made. Spelled once so the predicate below and the
+    /// gate that writes it cannot drift apart into a comparison that silently matches nothing.</summary>
+    public const string Undecided = "nobody";
+
+    /// <summary>
+    /// NOBODY WAS ASKED — as distinct from somebody having said no. v0.3.8.105.
+    ///
+    /// Both produce <c>Allowed: false</c>, and until now both produced the same consequence: a
+    /// refused tool, a failed task, a mission graded as failed. They are not the same fact. A
+    /// rejection is an ANSWER and the mission is finished with it; an absent decision is a
+    /// QUESTION, and grading a mission that is waiting on a person as one that failed tells the
+    /// operator something untrue about their own colony — and invites a retry that will stop in
+    /// exactly the same place for exactly the same reason.
+    ///
+    /// The seam already existed in this record: `Ask` with no answer records <c>DecidedBy</c> as
+    /// <see cref="Undecided"/>, and every other path names a policy author or an operator. Nothing
+    /// read it. This is the predicate that does.
+    /// </summary>
+    public bool AwaitingDecision =>
+        !Allowed && Policy == EscalationPolicy.Ask
+        && string.Equals(DecidedBy, Undecided, StringComparison.Ordinal);
 }
 
 /// <summary>One turn. The transcript is the artifact; the route is how it was produced.</summary>
@@ -285,7 +307,9 @@ public static class EscalationGate
             _ => new EscalationDecision(
                 Guid.NewGuid().ToString("N")[..12], conversation.Id, action,
                 Allowed: string.Equals(operatorAnswer, "approve", StringComparison.OrdinalIgnoreCase),
-                policy, DecidedBy: string.IsNullOrWhiteSpace(operatorAnswer) ? "nobody" : "operator", now,
+                policy,
+                DecidedBy: string.IsNullOrWhiteSpace(operatorAnswer)
+                    ? EscalationDecision.Undecided : "operator", now,
                 string.IsNullOrWhiteSpace(operatorAnswer)
                     ? "no operator decision was recorded for this action"
                     : $"operator answered '{operatorAnswer}'"),

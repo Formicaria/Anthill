@@ -99,13 +99,35 @@ public static class MissionEvaluator
     /// <param name="consumptions">v0.3.8.98: the artifact consumption ledger, so "the verifier
     /// consumed nothing" is answerable from a record instead of assumed. Null fails the assessment
     /// objective closed, for the same reason a null evidence list does.</param>
+    /// <param name="pendingOperatorDecisions">v0.3.8.105: the side-effecting actions this mission
+    /// asked about and has no answer for, read from `approval_requests` by the caller. Passed in
+    /// rather than queried here for the reason the whole type is built on — this evaluator is a
+    /// PURE function of its arguments, which is what makes "graded once, and reproducibly from the
+    /// record" a checkable claim. Null or empty is the state every mission before this release was
+    /// in, so nothing changes for them.</param>
     public static MissionEvaluation Evaluate(Mission mission, string? stopReason, int patchProposalCount,
         MissionConstraints constraints, bool objectiveVerificationEnabled,
         IReadOnlyList<Anthill.SDK.Artifacts.Evidence>? evidence = null,
         Missions.MissionSpecification? specification = null,
         IReadOnlyList<Anthill.SDK.Artifacts.ArtifactConsumption>? consumptions = null,
-        IReadOnlyList<Anthill.SDK.Artifacts.Artifact>? artifacts = null)
+        IReadOnlyList<Anthill.SDK.Artifacts.Artifact>? artifacts = null,
+        IReadOnlyList<string>? pendingOperatorDecisions = null)
     {
+        // v0.3.8.105 — A MISSION WAITING ON A PERSON HAS NOT FINISHED, WHATEVER ITS TASKS SAY.
+        //
+        // Resolved as a STOP REASON rather than as a fourth grading layer, because that is what it
+        // is: the mission stopped, and this is why. It travels through the same field a timeout and
+        // a cancellation do, is persisted with the evaluation, and is visible to every consumer
+        // that already reads `StopReason` — no new channel, and nothing downstream has to learn a
+        // new place to look.
+        //
+        // It does NOT overwrite a stop reason the runtime already produced. A mission that was
+        // cancelled or timed out while a question was outstanding was stopped by the operator or by
+        // the clock; the question is then moot and saying "waiting" would be false.
+        var awaiting = pendingOperatorDecisions is { Count: > 0 };
+        if (awaiting && string.IsNullOrWhiteSpace(stopReason))
+            stopReason = MissionStopReasons.AwaitingDecision;
+
         var structural = mission.Status.Value();
 
         // Verification layer — verdict-gated (v2.19); "not run" is distinct from "failed" for the
@@ -302,6 +324,15 @@ public static class MissionEvaluator
                 + (reproducedSymptom
                     ? " Symptom reproduced: the failed check task is the reproduction the "
                       + "diagnosis rests on, not a defect of the mission."
+                    : "")
+                // v0.3.8.105 — WHAT IT IS WAITING FOR, by name. An outcome that says a mission is
+                // waiting and cannot say what for leaves the operator exactly where the bare
+                // refusal did: told that something did not happen, with no way to make it happen.
+                + (awaiting
+                    ? $" Awaiting an operator decision on: {string.Join(", ", pendingOperatorDecisions!)}. "
+                      + "Under the Ask policy an unanswered side-effecting action is refused — "
+                      + "absence of an answer is not consent — so nothing was done and nothing "
+                      + "broke. Approve or reject the pending request to settle it."
                     : ""));
     }
 
@@ -311,6 +342,19 @@ public static class MissionEvaluator
         // An interrupted mission is never completed, whatever the tasks say.
         if (stopReason == MissionStopReasons.Cancelled) return MissionOutcome.Cancelled;
         if (stopReason == MissionStopReasons.Timeout) return MissionOutcome.TimedOut;
+
+        // v0.3.8.105 — WAITING, AND THE FIRST TIME ANYTHING HAS SAID SO.
+        //
+        // `MissionOutcome.WaitingForApproval` has been in the vocabulary since v2.19.0 and no
+        // mission has ever carried it: every writer of a mission outcome in this tree produces one
+        // of six other codes. Declared, and reaching nobody — the seventh instance of this
+        // repository's house defect, and the reason a mission that stopped for an unanswered
+        // question has always been graded as one that failed.
+        //
+        // AFTER cancel and timeout (a stopped mission is not waiting) and BEFORE the escalation
+        // check and the structural grade, because both of those would answer a question that is
+        // not the one being asked: the tasks did not fail, they did not run.
+        if (MissionStopReasons.IsPause(stopReason)) return MissionOutcome.WaitingForApproval;
 
         // v0.3.8.74 — ONLY AN ESCALATING STOP ESCALATES. This line used to read
         // `if (stopReason == "adaptive_stop")`, and `adaptive_stop` was returned for two opposite

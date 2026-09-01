@@ -42,6 +42,18 @@ public sealed partial class Queen
                 Str(updated, "task_id"), "queen",
                 new() { ["approval_request_id"] = approvalId, ["action_type"] = Str(updated, "action_type"), ["target_id"] = Str(updated, "target_id"), ["patch_application_enabled"] = AnthillRuntime.EnablePatchApplication, ["file_writing_enabled"] = AnthillRuntime.EnableFileWriting });
         }
+        // v0.3.8.105 — THE NEXT STEP DEPENDS ON WHAT WAS APPROVED, and until now this said "inspect
+        // the patch" whatever the request was. That was harmless while `PatchProposal` was the only
+        // action type anything produced; `.105` gives `ToolUse` its first producer, and an operator
+        // who approves a paused mission's side-effecting action would have been told to go and look
+        // at a patch that does not exist. A release about saying true things must not ship a
+        // sentence that is false for half its inputs.
+        if (updated is not null && Str(updated, "action_type") != ApprovalActionType.PatchProposal.Value())
+            return $"Approval recorded.\nID: {approvalId}\nStatus: approved\n\n"
+                 + $"Action: {Str(updated, "target_id")}\n"
+                 + "The mission's outcome stops reporting that it is waiting on this. Approving "
+                 + "settles the question; it does not replay the step that was refused.";
+
         return $"Approval recorded.\nID: {approvalId}\nStatus: approved\n\nNext step: inspect the patch with /patch {Str(updated!, "target_id")}.\n" +
                $"To apply later: /apply {approvalId}\n\nPatch application requires both write gates enabled.";
     }
