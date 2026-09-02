@@ -59,6 +59,9 @@
     <!-- v3.3.0: the responsive dashboard grid that replaces the floating-panel workspace. -->
     <EmbeddedResource Include="..\Anthill.UI\dashboard-grid.js" LogicalName="Anthill.Api.Ui.dashboard-grid.js" Condition="'$(AnthillNoUi)' != 'true'" />
     <EmbeddedResource Include="..\Anthill.UI\dashboard-grid.css" LogicalName="Anthill.Api.Ui.dashboard-grid.css" Condition="'$(AnthillNoUi)' != 'true'" />
+    <!-- Colony Live (design doc §17, stage 3) — the opt-in 3D formicarium view (topology projection + renderer). -->
+    <EmbeddedResource Include="..\Anthill.UI\colony-topology.js" LogicalName="Anthill.Api.Ui.colony-topology.js" Condition="'$(AnthillNoUi)' != 'true'" />
+    <EmbeddedResource Include="..\Anthill.UI\colony-live.js" LogicalName="Anthill.Api.Ui.colony-live.js" Condition="'$(AnthillNoUi)' != 'true'" />
   </ItemGroup>
 
   <!--
