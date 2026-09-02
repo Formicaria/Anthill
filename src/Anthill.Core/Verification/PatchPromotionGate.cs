@@ -252,13 +252,15 @@ public static class PatchPromotionGate
         {
             case PromotionActor.Human:
             {
-                var approval = memory.GetApprovalForTarget(patchId);
-                var approvalStatus = approval?.GetValueOrDefault("status")?.ToString() ?? "";
-                if (approvalStatus != ApprovalStatus.Approved.Value())
+                // v0.3.8.113 — the status is an ENUM now, so this compares states rather than the
+                // spelling of states. A string comparison against `.Value()` is one typo away from
+                // refusing every approved patch, silently, in the gate that decides promotion.
+                var approval = memory.ApprovalForTarget(patchId);
+                if (approval?.Status != ApprovalStatus.Approved)
                     return PromotionVerdict.Refuse(PromotionRefusal.HumanApprovalMissing, "approval",
                         approval is null
                             ? $"no approval request exists for patch {patchId}"
-                            : $"the approval for patch {patchId} is '{approvalStatus}', not approved");
+                            : $"the approval for patch {patchId} is '{approval.Status.Value()}', not approved");
                 break;
             }
 

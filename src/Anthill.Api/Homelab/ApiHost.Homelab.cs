@@ -473,8 +473,33 @@ public static partial class ApiHost
         app.MapGet("/homelab/approvals/unified", (HttpContext ctx) =>
         {
             var auth = RequireAuth(ctx, "read_approvals"); if (auth is not null) return auth;
-            var views = Queen.Memory.ListApprovalRequests(null, 100)
-                .Select(row => ApprovableProjections.FromPatchApproval(row))
+            // v0.3.8.113 — the store hands back a TYPED approval and the module still takes a row,
+            // deliberately. `ApprovableProjections` lives in `Anthill.Modules.Homelab`, which may
+            // reference the SDK and nothing else of ours — `ModuleBoundaryTests` enforces that — so
+            // `Anthill.Core.Domain.ApprovalRequest` cannot cross into it. The projection happens
+            // HERE, at the composition edge, which is where a boundary translation belongs. Every
+            // key below is one `FromPatchApproval` reads; the guard in `TypedRowMigrationTests`
+            // pins that correspondence so a renamed field cannot silently empty the queue.
+            var views = Queen.Memory.Approvals(null, 100)
+                .Select(a => ApprovableProjections.FromPatchApproval(new Dictionary<string, object?>
+                {
+                    ["id"] = a.Id,
+                    ["title"] = a.Title,
+                    ["description"] = a.Description,
+                    // The wire spellings, through `EnumExtensions` called as a STATIC rather than as
+                    // an extension: this file does not import `Anthill.Core.Domain`, and adding the
+                    // using to reach one method risks CS8933 against a global one — a warning that
+                    // is a build failure since `.112`.
+                    ["status"] = Anthill.Core.Domain.EnumExtensions.Value(a.Status),
+                    ["action_type"] = Anthill.Core.Domain.EnumExtensions.Value(a.ActionType),
+                    ["target_id"] = a.TargetId,
+                    ["requested_by"] = a.RequestedBy,
+                    // `ToString("o")` rather than the `ToIso()` extension: this file does not import the
+                    // namespace that carries it, and a display projection has no reason to acquire a
+                    // using for one call.
+                    ["created_at"] = a.CreatedAt.ToString("o"),
+                    ["metadata_json"] = Anthill.SDK.Common.Json.SafeDumps(a.Metadata),
+                }))
                 .Concat(Homelab.ListActionProposals(100).Select(ApprovableProjections.FromActionProposal));
             return ApiJson.Ok(new Dictionary<string, object?>
             {
