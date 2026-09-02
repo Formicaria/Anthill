@@ -188,21 +188,31 @@ public class ContractDeclarationTests
     // Direction two: a call must have a declaration
     // -----------------------------------------------------------------------------------------------
 
-    /// <summary>Every literal route name handed to the router, read from the call sites.</summary>
-    private static IReadOnlyList<string> RouteLiteralsInSource()
+    /// <summary>
+    /// Every route name handed to the router, read from the call sites.
+    ///
+    /// v0.3.8.112 — RENAMED FROM `RouteLiteralsInSource` AND NO LONGER LITERAL-ONLY. The old regex
+    /// required a quoted first argument, and BOTH assertions built on it failed in opposite
+    /// directions the moment a call site named a constant: the first stopped seeing an undeclared
+    /// route (a silent false negative), and the second reported a declared route as unreached (a
+    /// noisy false positive whose obvious fix is deleting a route that is fine). The name changed
+    /// too, because "literals" was the thing that was wrong.
+    /// </summary>
+    private static IReadOnlyList<string> RoutesInSource()
     {
-        var call = new Regex(@"\b(?:GenerateTyped|SendTyped|Generate)\(\s*""(?<route>[a-z_]+)""",
-            RegexOptions.Compiled);
-
+        var constants = SourceText.ConstantsAcrossSource(SourceText.RepoRoot());
         var found = new SortedSet<string>(StringComparer.Ordinal);
+
         foreach (var file in Directory.EnumerateFiles(
                      Path.Combine(SourceText.RepoRoot(), "src"), "*.cs", SearchOption.AllDirectories))
         {
             if (file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
              || file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")) continue;
 
-            foreach (Match m in call.Matches(SourceText.CodeOnly(File.ReadAllText(file))))
-                found.Add(m.Groups["route"].Value);
+            var code = SourceText.CodeOnly(File.ReadAllText(file));
+            foreach (var method in new[] { "GenerateTyped", "SendTyped", "Generate" })
+                foreach (var route in SourceText.CallArgument(code, method, 0, constants))
+                    if (Regex.IsMatch(route, "^[a-z_]+$")) found.Add(route);
         }
         return found.ToList();
     }
@@ -215,7 +225,7 @@ public class ContractDeclarationTests
     [Fact]
     public void EveryRouteReachingTheRouter_IsDeclared()
     {
-        var undeclared = RouteLiteralsInSource()
+        var undeclared = RoutesInSource()
             .Where(r => ModelRouteRequirements.For(r) is null).ToList();
 
         Assert.True(undeclared.Count == 0,
@@ -234,7 +244,7 @@ public class ContractDeclarationTests
     [Fact]
     public void EveryDeclaredRoute_IsReachedBySomething()
     {
-        var literals = RouteLiteralsInSource().ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var literals = RoutesInSource().ToHashSet(StringComparer.OrdinalIgnoreCase);
         var unreached = ModelRouteRequirements.Routes.Keys
             .Where(r => !literals.Contains(r)).OrderBy(r => r, StringComparer.Ordinal).ToList();
 

@@ -84,15 +84,41 @@ public class PatchPromotionGateTests
     {
         var code = SourceText.CodeOnly(GateSource());
 
-        var refusals = Regex.Matches(code,
-            @"PromotionVerdict\.Refuse\(\s*PromotionRefusal\.(?<r>\w+)\s*,\s*""(?<layer>[^""]*)""");
+        // v0.3.8.112 — the LAYER is read through the shared resolver. The first argument was
+        // already required to be a named enum member and the second was literal-only, which is an
+        // inconsistency inside one regex: `Refuse(PromotionRefusal.X, Layers.Gate)` matched nothing
+        // and was therefore EXEMPT from the rule that no refusal is anonymous — the one shape this
+        // test exists to forbid.
+        var constants = SourceText.ConstantsAcrossSource(SourceText.RepoRoot());
+        var refusals = SourceText.CallSites(code, "Refuse")
+            .Where(call => call.Arguments.Count >= 2
+                        && call.Arguments[0].Contains("PromotionRefusal.", StringComparison.Ordinal))
+            .ToList();
 
         Assert.True(refusals.Count >= 8,
             $"this guard found only {refusals.Count} refusal(s); the shape it reads has moved.");
 
-        foreach (Match m in refusals)
-            Assert.True(m.Groups["layer"].Value.Trim().Length > 0,
-                $"the {m.Groups["r"].Value} refusal names no layer.");
+        foreach (var call in refusals)
+        {
+            var reason = call.Arguments[0].Trim();
+
+            // ANONYMOUS MEANS EMPTY, NOT UNREADABLE — and getting that distinction wrong is how the
+            // widening nearly turned a real find into a false failure. `ReviewIncomplete` names its
+            // layer as `$"{role}-review"`: computed, unresolvable at read time, and a perfectly good
+            // name. The OLD regex demanded a plain literal and therefore skipped that call entirely,
+            // which is the silent exemption this sweep exists to remove — but the fix is to see the
+            // call, not to demand that its layer be a constant.
+            var written = call.Arguments[1].Trim();
+            var resolved = call.Resolve(1, constants);
+
+            var anonymous = written.Length == 0
+                         || written is "\"\"" or "null" or "string.Empty"
+                         || (resolved is not null && resolved.Trim().Length == 0);
+
+            Assert.False(anonymous,
+                $"the {reason} refusal names no layer. A refusal an operator cannot locate is one "
+              + "they cannot answer.");
+        }
     }
 
     /// <summary>

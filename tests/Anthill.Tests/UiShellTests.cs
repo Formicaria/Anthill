@@ -1699,9 +1699,16 @@ public class UiShellTests
         // Eighth field round: the chat header itself says which project the work belongs to —
         // the DETAIL carries the name, the second line under the title wears it and clicks
         // through to the project page. With the files pane open, the tree is never anonymous.
-        var detailAt = providers.IndexOf("MapGet(\"/conversations/{id}\"", StringComparison.Ordinal);
-        Assert.True(detailAt >= 0);
-        Assert.Contains("project_name", providers[detailAt..(detailAt + 2500)]);
+        // v0.3.8.112 — bounded by the registration's OWN parentheses rather than by 2,500
+        // characters. The budget was a guess about how long that handler is, invisible when wrong,
+        // and it shrinks whenever anyone adds a comment inside the handler. See docs/GUARDS.md.
+        // CodeOnly first: `Src` returns raw text, and a `MapGet(` quoted inside a comment would be
+        // parsed as a call — the trap SourceText was extracted to end.
+        var detail = SourceText.CallSites(SourceText.CodeOnly(providers), "MapGet")
+            .FirstOrDefault(call => call.Resolve(0, null) == "/conversations/{id}");
+        Assert.True(detail is not null,
+            "the /conversations/{id} registration is no longer recognisable in ApiHost.Providers.cs.");
+        Assert.Contains("project_name", detail!.Text);
         Assert.Contains("id=\"chat-title-proj\"", Ui("index.html"));
         Assert.Contains("chat-title-proj", js);
         Assert.Contains("go('/projects/'+encodeURIComponent(d.project_id||''))", js);
