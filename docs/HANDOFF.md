@@ -4,57 +4,47 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: main carries **v0.3.8.109** (`e65a6aa`, tagged and released). **`release/v0.3.8.110` is
-complete and green**: an approved decision replays the refused step.
+State: main carries **v0.3.8.110** (`a1e2a4d`, tagged and released) plus Colony Live
+(`2bf7daa`, PR #77, rebase-merged). **`release/v0.3.8.111` is the release commit for Colony Live**:
+version markers, CHANGELOG heading, PLAN §2b/§2c, this file.
 
 NOTE ON HISTORY: every commit SHA changed on 2026-09-01 when authorship was folded to three
 contributors. Anything quoting a SHA from before that date is quoting a commit that no longer
-exists. See the "anthill" project doc `history-rewrite-2026-09-01.md`.
+exists. See the "anthill" project doc `history-rewrite-2026-09-01.md`. A stale local `main` from
+before the rewrite shows as "unrelated histories" against origin — reset it, do not merge it.
 
-WHAT `.110` DELIVERS. Mission resumption — the item deferred from `.105` to `.106` to `.109` to here.
+WHAT `.111` DELIVERS. Colony Live — the Colony page's opt-in 3D formicarium view behind a `Live 3D`
+switch; the classic canvas stays the default and the permanent fallback. Two split assets in
+`src/Anthill.UI/`: `colony-topology.js` (projection — consumes the data app.js already holds, never
+fetches) and `colony-live.js` (renderer — canvas-2D with a 3D projection, no framework, no CDN, CSP
+stays `script-src 'self'`). Records grow only on real record-creating events; shell records are
+event-derived facts, read-only; a record click opens the existing Agent Inspector; sectors with no
+real records say `demo data` on hover. Mounted into the same `#colony-canvas-area` that re-parents
+across Colony/Dashboard/Chat. 38 lines of wiring in app.js; it stays under the 10,000-line guard.
 
-WHY IT KEPT SLIPPING, and it was not want of will: there is NO TYPED MISSION LOADER in this tree.
-`GetMission` returns a `Dictionary<string, object?>`, `GetTasksForMission` returns a list of them, and
-`new Mission` appears in exactly four places — every one CREATING a mission. The object graph died
-with `RunMission`, so there was nothing to re-enter execution with. `MissionRehydration` is that
-loader, and `ParseTaskStatus` (declared since the enum was written, called by nothing) has its first
-caller.
+WHAT `.111` IS NOT: the §19 context-record index (does not exist; `verifyRecord()` is wired and never
+fires), any WebGL path, Micromound telemetry beyond the existing status. The manual QA gate —
+toggle on the Colony page, carry through Dashboard and Chat, Motion/Labels/Pheromones passthrough
+— is the operator's and was left unticked on PR #77 deliberately.
 
-THE ONE THAT WOULD HAVE BEEN MISSED: approving wrote to `approval_requests`; the mission-lane gate
-`OperatorDecisions.ForMission` read `escalation_decisions`. TWO DISJOINT TABLES. An operator's
-approval was recorded, shown in the UI, counted in the badge — and invisible to the runtime. A replay
-built on the loader alone would have refused identically and re-filed the same question, and the
-feature would have LOOKED implemented while changing nothing. `ForMission` now reads both under
-last-answer-wins. `OperatorDecisions.Decided` is the new read.
-
-A COMMENT THAT WAS WRONG IS FIXED: `RunMission` claimed since v3.1.0 that a resumed run keeps the
-original deadline. Written about a resumption that did not exist, and wrong — a mission waiting on a
-person is not running, and charging human latency to its budget would make every slow approval resume
-straight into a timeout. `ResumeMission` anchors its own window.
-
-SCOPE OF THE REPLAY IS NARROW: only tasks the mission's own `escalation_refused` events name for the
-approved action, never a COMPLETED task (its effects landed), never "every failed task". A rejection
-replays nothing.
-
-ALSO IN `.110`: `dotnet` subcommands allowlisted to reporting verbs only (it was the one entry on a
-nine-command READ allowlist that could execute workspace-supplied code); a Windows JUNCTION test (the
-one reparse point an unprivileged writer can create — every existing link test needs Developer Mode
-and silently `return`s without it, so seven facts pass green asserting nothing on a bare Windows
-agent); `ObjectiveVerification` reads the contract's `OriginalRequest` instead of the composed goal
-with its transcript; and a guard making the unread `model_route` trail permanent.
-
-THE PROGRAM GREW A RELEASE — stated, not absorbed:
-- `.111` — R0 enforcement tooling (warnings-as-errors, analyzers, dependency and secret scanning,
+THE PROGRAM SHIFTED BY ONE — stated, not absorbed. `.110` reserved `.111` for R0 enforcement;
+Colony Live arrived as a finished UI-only package and shipped alone. Now:
+- `.112` — R0 enforcement tooling (warnings-as-errors, analyzers, dependency and secret scanning,
   complexity budget, module auto-discovery, guard hierarchy written down); the S1 filesystem TOCTOU
   window (needs a HANDLE-returning path guard and P/Invoke — .NET exposes no portable `openat`); the
   system-prompt channel confirmed for the four agent CLIs that declare none; Ollama capability
-  discovery; the literal-only guard sweep (TEN more instances found — the right fix is one shared
-  `SourceText` helper returning literal-or-resolved-constant, not ten widened regexes); the `.97`
-  Windows residual; the capability-table reconciliation.
-- `.112` — typed database rows: 509 sites, 47 public methods, 89 consumer files, one slice at a time.
+  discovery; the literal-only guard sweep (TEN more instances — the right fix is one shared
+  `SourceText` helper, not ten widened regexes); the `.97` Windows residual; the capability-table
+  reconciliation.
+- `.113` — typed database rows: 509 sites, 47 public methods, 89 consumer files, one slice at a time.
 
-A GUARD THAT NOW BITES AT `.112`: `TheUniversalWorkflowProgram_IsExactlyTheRangeItDeclares` asserts
+A GUARD THAT NOW BITES AT `.113`: `TheUniversalWorkflowProgram_IsExactlyTheRangeItDeclares` asserts
 `to > from`, which cannot hold when one release remains.
+
+MAIN IS PR-ONLY AND LINEAR. Branch protection refuses direct pushes AND merge commits: push a
+branch, open the PR, wait for all seven checks (the Windows .NET job is the slow one, ~10 min), and
+use **Rebase and merge**. A `git merge --no-ff` to main is rejected at push; this session learned it
+the hard way and burned PR #76 doing so.
 
 THE LIVE PACK is still the operator's step — `anthill/live-pack-runbook.md` in the project.
 `QUALIFICATION.md` §3 stays PARTIALLY RUN. There are now FIVE recognized classes: `system_audit`,

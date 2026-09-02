@@ -1,4 +1,4 @@
-## Unreleased
+## v0.3.8.111 - the colony becomes visible: Colony Live
 
 **COLONY LIVE: THE COLONY PAGE GROWS AN OPT-IN 3D VIEW, AND THE CLASSIC CANVAS STAYS.** A `Live 3D`
 button in the Colony viewbar swaps the 2D map for an underground formicarium: one sphere per sector
@@ -26,6 +26,13 @@ without a second instance. The classic canvas remains the default and the perman
 (design doc §17, stage 3); the choice persists per browser. Both assets are pinned as embedded
 resources, served like every other split asset, and asserted by `UiAbsenceTests` and
 `ConsoleAssetSplitTests` so a broken pin fails the build instead of serving a blank view.
+
+**THE PROGRAM SHIFTS BY ONE, and that is stated rather than absorbed.** `.110` reserved this number
+for R0's enforcement tooling. Colony Live arrived as a finished design package and is a UI-only
+change with no backend surface, so it ships on its own rather than riding inside a release whose
+whole point is tooling that fails builds. R0 enforcement and the security residuals move to `.112`;
+typed database rows to `.113`. Nothing in either list is dropped or narrowed — §2b of PLAN carries
+each item forward under its new number.
 
 ## v0.3.8.110 - an approved decision replays the refused step
 
