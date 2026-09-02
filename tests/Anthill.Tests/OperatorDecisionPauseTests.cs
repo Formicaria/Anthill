@@ -215,8 +215,8 @@ public class OperatorDecisionPauseTests : IDisposable
         // An ANSWERED question is no longer outstanding — the pause must lift when it is settled,
         // or approving would leave the mission permanently described as waiting for the thing it
         // was just given.
-        var raised = memory.ListApprovalRequestsForMission(mission.Id).Single();
-        memory.UpdateApprovalStatus(raised["id"]!.ToString()!, ApprovalStatus.Approved);
+        var raised = memory.ApprovalsForMission(mission.Id).Single();
+        memory.UpdateApprovalStatus(raised.Id, ApprovalStatus.Approved);
         Assert.Empty(memory.PendingOperatorDecisions(mission.Id));
     }
 
@@ -249,7 +249,7 @@ public class OperatorDecisionPauseTests : IDisposable
         // ASKED ONCE. A retried task reaches this again, and three identical pending rows would
         // make an operator answer the same question once per attempt to unblock one mission.
         OperatorDecisions.ForMission(memory, mission.Id, "execute_external_action");
-        Assert.Single(memory.ListApprovalRequestsForMission(mission.Id));
+        Assert.Single(memory.ApprovalsForMission(mission.Id));
     }
 
     /// <summary>
@@ -266,12 +266,12 @@ public class OperatorDecisionPauseTests : IDisposable
         memory.SaveMission(mission);
 
         OperatorDecisions.Request(memory, mission.Id, "execute_external_action", "queen");
-        var raised = memory.ListApprovalRequestsForMission(mission.Id).Single();
-        memory.UpdateApprovalStatus(raised["id"]!.ToString()!, ApprovalStatus.Rejected, "no");
+        var raised = memory.ApprovalsForMission(mission.Id).Single();
+        memory.UpdateApprovalStatus(raised.Id, ApprovalStatus.Rejected, "no");
 
         OperatorDecisions.Request(memory, mission.Id, "execute_external_action", "queen");
 
-        Assert.Single(memory.ListApprovalRequestsForMission(mission.Id));
+        Assert.Single(memory.ApprovalsForMission(mission.Id));
         Assert.Empty(memory.PendingOperatorDecisions(mission.Id));
     }
 

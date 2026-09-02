@@ -186,10 +186,15 @@ public static partial class ApiHost
         // Patches/approvals/objectives are admin-only surfaces — skip the queries entirely for
         // non-admin callers so nothing sensitive is even assembled.
         var patches = includeSensitive ? Queen.Memory.ListPatchProposalsForMission(id) : new List<Dictionary<string, object?>>();
-        var approvals = includeSensitive ? Queen.Memory.ListApprovalRequestsForMission(id) : new List<Dictionary<string, object?>>();
+        var approvals = includeSensitive
+            ? Queen.Memory.ApprovalsForMission(id)
+            : (IReadOnlyList<ApprovalRequest>)Array.Empty<ApprovalRequest>();
+        // v0.3.8.113 — grouped and ordered on TYPED fields. `created_at` was compared as a STRING,
+        // which happens to sort correctly for ISO-8601 and would stop the day anything wrote a
+        // different format — a latent ordering bug that a `DateTime` cannot have.
         var approvalByTarget = approvals
-            .GroupBy(a => a.GetValueOrDefault("target_id")?.ToString() ?? "")
-            .ToDictionary(g => g.Key, g => g.OrderByDescending(a => a.GetValueOrDefault("created_at")?.ToString()).First());
+            .GroupBy(a => a.TargetId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(a => a.CreatedAt).First());
 
         // Problem events for this mission, translated for humans. patch_proposal_parse_failed is
         // the big silent one: the coder did work, but its proposal never reached the approval
@@ -267,8 +272,8 @@ public static partial class ApiHost
                 ["status"] = p.GetValueOrDefault("status"),
                 ["applied_at"] = p.GetValueOrDefault("applied_at"),
                 ["last_error"] = p.GetValueOrDefault("last_error"),
-                ["approval_id"] = approval?.GetValueOrDefault("id"),
-                ["approval_status"] = approval?.GetValueOrDefault("status"),
+                ["approval_id"] = approval?.Id,
+                ["approval_status"] = approval?.Status.Value(),
             };
         }).ToList();
 
@@ -323,7 +328,7 @@ public static partial class ApiHost
             ["patches"] = patchReports,
             // v1.8.16: rollup of patch activity for this mission (proposed/approved/applied/rejected/failed).
             ["patch_counts"] = includeSensitive ? Queen.Memory.PatchCountsForMission(id) : null,
-            ["pending_approvals"] = approvals.Count(a => a.GetValueOrDefault("status")?.ToString() == "pending"),
+            ["pending_approvals"] = approvals.Count(a => a.Status == ApprovalStatus.Pending),
             ["sources_saved"] = Queen.Memory.CountSourcesForMission(id),
             ["auto_apply"] = autoApply,
             ["problems"] = problems,
@@ -417,7 +422,7 @@ public static partial class ApiHost
         var p = Queen.Memory.GetPatchProposal(patchId);
         if (p is null) return ApiJson.Error($"No patch found with id: {patchId}", "not_found");
         var missionId = p.GetValueOrDefault("mission_id")?.ToString() ?? "";
-        var approval = Queen.Memory.GetApprovalForTarget(patchId);
+        var approval = Queen.Memory.ApprovalForTarget(patchId);
         var run = string.IsNullOrEmpty(missionId) ? null : Queen.Memory.GetAutonomyRunForMission(missionId);
         var objectiveId = run?.GetValueOrDefault("objective_id")?.ToString();
         var objective = string.IsNullOrEmpty(objectiveId) ? null : Queen.Memory.GetObjective(objectiveId!);
@@ -446,8 +451,8 @@ public static partial class ApiHost
             ["applied_at"] = p.GetValueOrDefault("applied_at"),
             ["last_error"] = p.GetValueOrDefault("last_error"),
             ["has_backup"] = !string.IsNullOrEmpty(p.GetValueOrDefault("backup_path")?.ToString()),
-            ["approval_id"] = approval?.GetValueOrDefault("id"),
-            ["approval_status"] = approval?.GetValueOrDefault("status"),
+            ["approval_id"] = approval?.Id,
+            ["approval_status"] = approval?.Status.Value(),
         });
     }
 

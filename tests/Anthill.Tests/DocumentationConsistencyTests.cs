@@ -182,7 +182,18 @@ public class DocumentationConsistencyTests
           + $".{shipped}. When a release ships, its row leaves the table and anything it did not "
           + "finish is carried into §2c — the row is not deleted on its own.");
 
-        Assert.True(to > from,
+        // v0.3.8.113 — A PROGRAM MAY END, and this is the terminal case the check never reached.
+        //
+        // `to > from` was right for every release from `.98` onward and could not hold for the last
+        // one: when a single release remains, the table has one row and the range is `.n → .n`.
+        // `open-items.md` has carried that as a known future failure since `.107`, which is the
+        // honest way to hold an unreachable case — and this is the release that reaches it.
+        //
+        // The relaxation is exactly one release wide. `to < from` is still refused, and the equal
+        // case is admitted only when the table really does hold a single row: a program that
+        // declared `.113 → .113` while listing three would be describing a range it does not have,
+        // which is the drift this whole check exists to catch.
+        Assert.True(to >= from,
             $"§2b declares the range .{from} → .{to}, which ends before it begins.");
 
         var ids = Regex.Matches(Plan(), @"^\|\s*\*\*\.(?<n>\d{2,3})\*\*\s*\|", RegexOptions.Multiline)
@@ -190,6 +201,12 @@ public class DocumentationConsistencyTests
             .ToList();
 
         Assert.Equal(Enumerable.Range(from, to - from + 1).ToList(), ids);
+
+        if (to == from)
+            Assert.True(ids.Count == 1,
+                $"§2b declares the single-release range .{from} → .{to} and lists {ids.Count} rows. "
+              + "A range equal at both ends is how a program says it is on its last entry; a table "
+              + "with more than one row is not on its last entry.");
     }
 
     /// <summary>

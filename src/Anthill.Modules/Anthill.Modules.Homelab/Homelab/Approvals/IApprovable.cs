@@ -111,7 +111,9 @@ public sealed class ActionProposal : IApprovable
 
 /// <summary>
 /// Projections of existing records into the unified queue. Today: the patch approval_requests
-/// rows (SqliteMemory.ListApprovalRequests dictionaries). V2.1 adds action proposals; V2.4 adds
+/// rows (projected from the store's typed `ApprovalRequest` at the API edge — see
+/// `ApiHost.Homelab`; this module may reference the SDK and nothing else of ours, so the core's
+/// record cannot cross into it). V2.1 adds action proposals; V2.4 adds
 /// network changes — each is one more From* method, never one more queue.
 /// </summary>
 public static class ApprovableProjections

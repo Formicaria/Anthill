@@ -542,9 +542,9 @@ public static class AutoApplyRunner
     {
         foreach (var a in applied)
         {
-            var approval = queen.Memory.GetApprovalForTarget(a.PatchId);
+            var approval = queen.Memory.ApprovalForTarget(a.PatchId);
             if (approval is not null)
-                queen.Memory.UpdateApprovalStatus(approval.GetValueOrDefault("id")?.ToString() ?? "",
+                queen.Memory.UpdateApprovalStatus(approval.Id,
                     ApprovalStatus.Consumed, "Auto-applied by the Director and kept.");
         }
         var committed = false;

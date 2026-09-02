@@ -195,8 +195,7 @@ public static class MissionReport
                     string approvalState;
                     try
                     {
-                        approvalState = memory.GetApprovalForTarget(patchId)
-                            ?.GetValueOrDefault("status")?.ToString() ?? "none";
+                        approvalState = memory.ApprovalForTarget(patchId)?.Status.Value() ?? "none";
                     }
                     catch { approvalState = "unreadable"; }
 

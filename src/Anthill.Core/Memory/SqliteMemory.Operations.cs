@@ -530,22 +530,59 @@ public sealed partial class SqliteMemory
         }
     }
 
-    public Dictionary<string, object?>? GetApprovalRequest(string approvalId)
+    /// <summary>
+    /// ONE PLACE A STORED APPROVAL BECOMES AN OBJECT. v0.3.8.113, PLAN.md §2b `.113` — the first
+    /// typed-row slice.
+    ///
+    /// THE DEFECT THIS CLOSES, and it is not the untyped signature — it is what the untyped
+    /// signature allowed. `GetApprovalRequest` unprotected `decision_note` and `GetApprovalForTarget`
+    /// did NOT, so the same column came back as plaintext through one reader and as ciphertext
+    /// through the other. Four readers of one table, and the cipher applied in exactly one of them.
+    /// That is defect class 5 — two implementations of one rule — and it is the specific reason a
+    /// row-shaped API is worse than a typed one: with a `Dictionary&lt;string, object?&gt;` there is
+    /// no place for "how a row becomes an approval" to live, so each reader answers it again.
+    ///
+    /// The store already ACCEPTED a typed <see cref="ApprovalRequest"/> on the way in
+    /// (<see cref="SaveApprovalRequest"/>) and handed back a dictionary on the way out. The asymmetry
+    /// was the whole of it.
+    /// </summary>
+    private ApprovalRequest ApprovalFrom(Dictionary<string, object?> row) => new()
     {
-        var row = Query("SELECT * FROM approval_requests WHERE id = @id", ("@id", approvalId)).FirstOrDefault();
-        if (row is not null && row.TryGetValue("decision_note", out var note)) row["decision_note"] = _cipher.Unprotect(note as string);
-        return row;
-    }
+        Id = RowValues.Text(row, "id"),
+        MissionId = RowValues.Text(row, "mission_id"),
+        TaskId = RowValues.TextOrNull(row, "task_id"),
+        ActionType = EnumExtensions.ParseApprovalActionType(RowValues.Text(row, "action_type")),
+        TargetId = RowValues.Text(row, "target_id"),
+        Title = RowValues.Text(row, "title"),
+        Description = RowValues.Text(row, "description"),
+        Status = EnumExtensions.ParseApprovalStatus(RowValues.Text(row, "status")),
+        RequestedBy = RowValues.Text(row, "requested_by", "queen"),
+        // The cipher, applied HERE and therefore applied to every reader. This is the line that was
+        // in one of the four before.
+        DecisionNote = _cipher.Unprotect(RowValues.TextOrNull(row, "decision_note")),
+        Metadata = Json.TryParseObject(RowValues.TextOrNull(row, "metadata_json")),
+        CreatedAt = RowValues.TimestampOrNow(row, "created_at"),
+        DecidedAt = RowValues.Timestamp(row, "decided_at"),
+    };
 
-    public Dictionary<string, object?>? GetApprovalForTarget(string targetId, ApprovalActionType actionType = ApprovalActionType.PatchProposal) =>
+    /// <summary>One approval by id, or null.</summary>
+    public ApprovalRequest? ApprovalById(string approvalId) =>
+        Query("SELECT * FROM approval_requests WHERE id = @id", ("@id", approvalId))
+            .Select(ApprovalFrom).FirstOrDefault();
+
+    /// <summary>The latest approval raised for one target and action type, or null.</summary>
+    public ApprovalRequest? ApprovalForTarget(string targetId, ApprovalActionType actionType = ApprovalActionType.PatchProposal) =>
         Query("SELECT * FROM approval_requests WHERE target_id = @t AND action_type = @at ORDER BY created_at DESC LIMIT 1",
-            ("@t", targetId), ("@at", actionType.Value())).FirstOrDefault();
+            ("@t", targetId), ("@at", actionType.Value()))
+            .Select(ApprovalFrom).FirstOrDefault();
 
-    public List<Dictionary<string, object?>> ListApprovalRequests(ApprovalStatus? status = ApprovalStatus.Pending, int limit = 20) =>
-        status is null
+    /// <summary>Approvals by status, newest first. Null status means every status.</summary>
+    public IReadOnlyList<ApprovalRequest> Approvals(ApprovalStatus? status = ApprovalStatus.Pending, int limit = 20) =>
+        (status is null
             ? Query("SELECT * FROM approval_requests ORDER BY created_at DESC LIMIT @lim", ("@lim", limit))
             : Query("SELECT * FROM approval_requests WHERE status = @s ORDER BY created_at DESC LIMIT @lim",
-                ("@s", status.Value.Value()), ("@lim", limit));
+                ("@s", status.Value.Value()), ("@lim", limit)))
+            .Select(ApprovalFrom).ToList();
 
     public int CountPendingApprovals() =>
         (int)AsLong(Scalar("SELECT COUNT(*) FROM approval_requests WHERE status = @s", ("@s", ApprovalStatus.Pending.Value())));
@@ -586,10 +623,11 @@ public sealed partial class SqliteMemory
                 WHERE pp.mission_id = @m ORDER BY pp.created_at ASC LIMIT @lim",
             ("@m", missionId), ("@lim", limit));
 
-    /// <summary>Approval requests raised by one mission, any status.</summary>
-    public List<Dictionary<string, object?>> ListApprovalRequestsForMission(string missionId, int limit = 100) =>
+    /// <summary>Approval requests raised by one mission, any status, oldest first.</summary>
+    public IReadOnlyList<ApprovalRequest> ApprovalsForMission(string missionId, int limit = 100) =>
         Query("SELECT * FROM approval_requests WHERE mission_id = @m ORDER BY created_at ASC LIMIT @lim",
-            ("@m", missionId), ("@lim", limit));
+            ("@m", missionId), ("@lim", limit))
+            .Select(ApprovalFrom).ToList();
 
     /// <summary>
     /// THE QUESTIONS THIS MISSION IS STILL WAITING ON. v0.3.8.105.
@@ -623,9 +661,16 @@ public sealed partial class SqliteMemory
             .Distinct(StringComparer.Ordinal)
             .ToList();
 
-    public Dictionary<string, object?>? UpdateApprovalStatus(string approvalId, ApprovalStatus newStatus, string? decisionNote = null)
+    /// <summary>
+    /// Record a decision, and hand back the approval as it now stands. v0.3.8.113 — typed both ways.
+    ///
+    /// Returns null when there was no such approval to decide, which is the same contract the
+    /// dictionary version had: a caller that gets null asked about something the store does not
+    /// hold, and must not read that as "the decision was recorded".
+    /// </summary>
+    public ApprovalRequest? UpdateApprovalStatus(string approvalId, ApprovalStatus newStatus, string? decisionNote = null)
     {
-        if (GetApprovalRequest(approvalId) is null) return null;
+        if (ApprovalById(approvalId) is null) return null;
         lock (_writeLock)
         {
             using var conn = Connect();
@@ -634,7 +679,7 @@ public sealed partial class SqliteMemory
                 ("@s", newStatus.Value()), ("@note", _cipher.Protect(decisionNote)),
                 ("@decided", AnthillTime.NowUtc().ToIso()), ("@id", approvalId));
         }
-        return GetApprovalRequest(approvalId);
+        return ApprovalById(approvalId);
     }
 
     // ---- events -----------------------------------------------------------

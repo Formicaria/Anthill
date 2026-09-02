@@ -136,23 +136,21 @@ public static class OperatorDecisions
         if (string.IsNullOrWhiteSpace(missionId) || string.IsNullOrWhiteSpace(action)) return null;
         try
         {
-            var row = memory.GetApprovalForTarget($"{missionId}:{action}", ApprovalActionType.ToolUse);
-            if (row is null) return null;
+            // v0.3.8.113 — TYPED. The status comparison was two string equalities against
+            // `.Value()`, and the timestamp was parsed here with its own culture and style flags —
+            // a third copy of a rule the store now applies once. What is left is the decision this
+            // method actually makes.
+            var approval = memory.ApprovalForTarget($"{missionId}:{action}", ApprovalActionType.ToolUse);
+            if (approval is null) return null;
 
-            var status = row.GetValueOrDefault("status")?.ToString() ?? "";
-            var approved = string.Equals(status, ApprovalStatus.Approved.Value(), StringComparison.Ordinal);
-            var rejected = string.Equals(status, ApprovalStatus.Rejected.Value(), StringComparison.Ordinal);
+            var approved = approval.Status == ApprovalStatus.Approved;
+            var rejected = approval.Status == ApprovalStatus.Rejected;
             if (!approved && !rejected) return null;
 
-            var decidedAt = row.GetValueOrDefault("decided_at")?.ToString();
-            var when = DateTime.TryParse(decidedAt, System.Globalization.CultureInfo.InvariantCulture,
-                System.Globalization.DateTimeStyles.AdjustToUniversal
-              | System.Globalization.DateTimeStyles.AssumeUniversal, out var parsed)
-                ? parsed
-                : AnthillTime.NowUtc();
+            var when = approval.DecidedAt ?? AnthillTime.NowUtc();
 
             return new EscalationDecision(
-                Id: row.GetValueOrDefault("id")?.ToString() ?? Guid.NewGuid().ToString("N")[..12],
+                Id: approval.Id.Length > 0 ? approval.Id : Guid.NewGuid().ToString("N")[..12],
                 ConversationId: "",
                 Action: action,
                 Allowed: approved,
@@ -176,7 +174,7 @@ public static class OperatorDecisions
         try
         {
             var target = $"{missionId}:{action}";
-            if (memory.GetApprovalForTarget(target, ApprovalActionType.ToolUse) is not null) return;
+            if (memory.ApprovalForTarget(target, ApprovalActionType.ToolUse) is not null) return;
 
             memory.SaveApprovalRequest(new ApprovalRequest
             {

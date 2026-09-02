@@ -1,3 +1,46 @@
+## v0.3.8.113 - typed database rows, and the end of the program
+
+**THE UNIVERSAL-WORKFLOW PROGRAM ENDS HERE.** §2b began at `.98` with one claim: that a mission class
+could work end to end on a shared spine, with a deterministic gate for its own promise. Five classes
+now do — `system_audit`, `troubleshooting`, `system_action`, `external_action`, `research` — each
+with an integrity gate that runs whatever the operator switch says. That is what it was for.
+
+**THE FIRST TYPED-ROW SLICE, AND A RATCHET FOR THE REST.** `Dictionary<string, object?>` is on fifty
+public methods of the store and read by a hundred consumer files. PLAN has said "one slice at a time,
+each slice green before the next" since the item was written — an admission that it spans releases,
+and a plan that says that and enforces nothing describes an intention rather than the tree. The count
+is pinned at **45**, measured after this slice took it from 50, and it can only fall.
+
+**THE SIGNATURE IS THE SYMPTOM; THIS IS THE DISEASE.** The approvals slice found it immediately:
+`GetApprovalRequest` unprotected `decision_note` and `GetApprovalForTarget` did not, so the same
+column came back as plaintext through one reader and as ciphertext through the other. Four readers of
+one table, the field cipher applied in exactly one. With a row-shaped API there is nowhere for "how a
+row becomes an approval" to live, so each reader answers it again.
+
+**THE STORE ALREADY TOOK A TYPED RECORD ON THE WAY IN.** `SaveApprovalRequest(ApprovalRequest)` has
+existed as long as approvals have; only the read side handed back a dictionary. Closing the asymmetry
+turned nine `Str(row, "status") != ApprovalStatus.X.Value()` comparisons into enum comparisons —
+string equality against a spelling, one typo from refusing every approved patch, in the lane that
+decides whether work may happen.
+
+**THE SECOND COPY HAD ALREADY APPEARED.** `.110` gave `MissionRehydration` private row helpers, and
+the approvals slice needed the same six three releases later. `Memory.RowValues` is the one reader
+now — the defect class this release is about, arriving in the middle of the release about it.
+
+**THE MODULE BOUNDARY HELD, AND COST A TRANSLATION.** `ApprovableProjections` lives in
+`Anthill.Modules.Homelab`, which may reference the SDK and nothing else of ours, so the core's typed
+record cannot cross into it. The API host projects a row at the composition edge, and a guard pins
+every key — the module reads a missing one as `""` and would render blank cards rather than fail.
+
+**AND THE PROGRAM GUARD LEARNED HOW A PROGRAM ENDS.**
+`TheUniversalWorkflowProgram_IsExactlyTheRangeItDeclares` asserted `to > from`, which is right for
+every release from `.98` onward and cannot hold for the last one. `open-items.md` has carried it as a
+known future failure since `.107`. The relaxation is exactly one release wide.
+
+**What happens to the remaining 45.** They leave §2b with the program and continue as standing R0
+hygiene, one slice per release, each lowering the ratchet. The count is enforced, so the work cannot
+quietly stop — and cannot quietly reverse.
+
 ## v0.3.8.112 - the tree enforces its own rules
 
 **R0's LAST ITEM.** Warnings are errors, the repository scans itself for committed credentials, a
