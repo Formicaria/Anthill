@@ -1,3 +1,61 @@
+## v0.3.8.112 - the tree enforces its own rules
+
+**R0's LAST ITEM.** Warnings are errors, the repository scans itself for committed credentials, a
+size ratchet stops it getting worse, dependency versions cannot drift apart, the module boundary
+discovers what it checks, and the guard hierarchy is written down AND enforced.
+
+**MEASURED, NOT DECLARED.** `TreatWarningsAsErrors` was `false` EXPLICITLY rather than by omission —
+a decision somebody took. A census across the whole solution returned zero warnings, so this flips a
+clean tree rather than declaring bankruptcy on a dirty one. Turning it on over a backlog forces
+either a suppression file or a wave of unrelated edits in the same commit, and both teach that the
+setting is negotiable.
+
+**THE LITERAL-ONLY GUARD SWEEP — DEFECT CLASS 11, found four times and swept here.** A guard whose
+pattern is `Method\(\s*"(?<x>[a-z_]+)"` cannot see a call site that passes a shared constant. So it
+stops covering the code exactly as the code gets tidier — silently, with no failure — and a guard
+written to stop shared names being hand-spelled ends up REWARDING hand-spelling. Worse in both
+directions: the paired "every declared X is used" twin then reports a false positive whose obvious
+fix is deleting a constant that is fine.
+
+`SourceText.CallSites` / `CallArgument` / `ConstantsAcrossSource` is one shared reader — depth-aware,
+bounding a call by its own parentheses, resolving argument *n* as a literal or a named constant
+against a repo-wide table of 423 declarations. Seven guards moved onto it. Ten near-copies of one
+widened regex would have been the same defect at a smaller scale.
+
+**FOUR ESCAPES WERE ALREADY OPEN IN ONE GUARD.** `EventVocabularyTests` requires a quoted second
+argument, so four live call sites — `MemoryCandidateIngest.EventType` and three variables — were
+invisible to it. An undeclared event routed through any of them could never have failed that test.
+
+**THE ONE THAT WOULD HAVE BEEN MISSED.** `RoleContractChannelTests` — the guard behind the S9
+prompt-injection fix — had two bugs pointing the same way. Literal-only, so `GenerateTyped(Roles.X,
+…)` matched nothing and a role could reach a model with its rules as prose in the user turn; and
+bounded by `[^;]*;`, so a call containing a lambda or a sentence with a semicolon was truncated
+before its `system:` argument, reporting a violation that was not there.
+
+**THE HIERARCHY DOCUMENT FOUND THREE VIOLATIONS OF ITSELF.** `docs/GUARDS.md` states the order —
+runtime black-box, then typed registry, then compiled inspection, then a source scan last — and the
+two rules binding a source scan. "A source scan may never depend on a character count" has been in
+`PLAN.md` since `.92`; writing the detector for it found three guards still doing it. The worst
+sliced 2,500 characters across `EditableConfigKeys` — the very set that guard exists to watch GROW —
+so every key added pushed the later ones closer to falling out of the window and being reported
+absent while sitting two lines below the cut. All three read delimiters now.
+
+**MODULE AUTO-DISCOVERY, and the production side deliberately left alone.** `ModuleBoundaryTests`
+kept a hand-maintained list whose own comment named the cost: "a module absent from it is not
+exempt, it is simply never looked at, and that reads exactly like passing." Modules are discovered
+from the directory now, and one this project cannot load is a FAILURE naming the missing reference
+rather than a skip. The composition roots keep their explicit `LoadAll` calls — a colony that
+reflected over whatever assemblies were on disk would be a strictly worse security posture than one
+that names what it composes. What was defective was never the explicitness; it was a guard that could
+silently stop covering a module.
+
+**Deferred with the reason, not silently:** `AnalysisMode` beyond the SDK default (raising it admits
+the whole CA ruleset at once, and with this flag on every one becomes a build failure — a blast
+radius that has to be measured exactly as this one was); central package management (its failure mode
+is "nothing builds", which does not belong beside seven guard rewrites — the drift GUARD ships here);
+and four of eleven literal-only guards, each lower risk than the seven done and each named in §2c
+with why.
+
 ## v0.3.8.111 - the colony becomes visible: Colony Live
 
 **COLONY LIVE: THE COLONY PAGE GROWS AN OPT-IN 3D VIEW, AND THE CLASSIC CANVAS STAYS.** A `Live 3D`

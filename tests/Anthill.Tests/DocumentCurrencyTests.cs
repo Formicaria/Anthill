@@ -47,6 +47,9 @@ public class DocumentCurrencyTests
         "CONTRACTS.md", "APPROVALS.md", "DEPLOYMENT.md", "HOMELAB.md",
         "AUTONOMY.md", "TRAINING_MISSIONS.md", "QA-CHECKLIST.md",
         "ADR-ADAPTIVE-MISSION-RUNTIME.md",
+        // v0.3.8.112 — the guard hierarchy. CURRENT: it describes how guards are written, which is
+        // a standing rule rather than a report on one moment, and it names no version.
+        "GUARDS.md",
     };
 
     /// <summary>

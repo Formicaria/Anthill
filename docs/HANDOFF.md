@@ -4,61 +4,63 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: main carries **v0.3.8.110** (`a1e2a4d`, tagged and released) plus Colony Live
-(`2bf7daa`, PR #77, rebase-merged). **`release/v0.3.8.111` is the release commit for Colony Live**:
-version markers, CHANGELOG heading, PLAN §2b/§2c, this file.
+State: main carries **v0.3.8.111** (`c78ea7e`, Colony Live — xchronusx). **`release/v0.3.8.112` is
+complete and green**: the tree enforces its own rules.
 
 NOTE ON HISTORY: every commit SHA changed on 2026-09-01 when authorship was folded to three
-contributors. Anything quoting a SHA from before that date is quoting a commit that no longer
-exists. See the "anthill" project doc `history-rewrite-2026-09-01.md`. A stale local `main` from
-before the rewrite shows as "unrelated histories" against origin — reset it, do not merge it.
+contributors. Anything quoting a SHA from before that date is dead. See the "anthill" project doc
+`history-rewrite-2026-09-01.md`.
 
-WHAT `.111` DELIVERS. Colony Live — the Colony page's opt-in 3D formicarium view behind a `Live 3D`
-switch; the classic canvas stays the default and the permanent fallback. Two split assets in
-`src/Anthill.UI/`: `colony-topology.js` (projection — consumes the data app.js already holds, never
-fetches) and `colony-live.js` (renderer — canvas-2D with a 3D projection, no framework, no CDN, CSP
-stays `script-src 'self'`). Records grow only on real record-creating events; shell records are
-event-derived facts, read-only; a record click opens the existing Agent Inspector; sectors with no
-real records say `demo data` on hover. Mounted into the same `#colony-canvas-area` that re-parents
-across Colony/Dashboard/Chat. 38 lines of wiring in app.js; it stays under the 10,000-line guard.
+WHAT `.112` DELIVERS. R0's last item — enforcement.
 
-WHAT `.111` IS NOT: the §19 context-record index (does not exist; `verifyRecord()` is wired and never
-fires), any WebGL path, Micromound telemetry beyond the existing status. The manual QA gate —
-toggle on the Colony page, carry through Dashboard and Chat, Motion/Labels/Pheromones passthrough
-— is the operator's and was left unticked on PR #77 deliberately.
+WARNINGS ARE ERRORS, and the ORDER matters: a census across the solution returned ZERO warnings
+first, so this flips a clean tree rather than declaring bankruptcy on a dirty one.
+`TreatWarningsAsErrors` was `false` EXPLICITLY, which is a decision somebody took, not an omission.
 
-THE PROGRAM SHIFTED BY ONE — stated, not absorbed. `.110` reserved `.111` for R0 enforcement;
-Colony Live arrived as a finished UI-only package and shipped alone. Now:
-- `.112` — R0 enforcement tooling (warnings-as-errors, analyzers, dependency and secret scanning,
-  complexity budget, module auto-discovery, guard hierarchy written down); the S1 filesystem TOCTOU
-  window (needs a HANDLE-returning path guard and P/Invoke — .NET exposes no portable `openat`); the
-  system-prompt channel confirmed for the four agent CLIs that declare none; Ollama capability
-  discovery; the literal-only guard sweep (TEN more instances — the right fix is one shared
-  `SourceText` helper, not ten widened regexes); the `.97` Windows residual; the capability-table
-  reconciliation.
-- `.113` — typed database rows: 509 sites, 47 public methods, 89 consumer files, one slice at a time.
+THE LITERAL-ONLY GUARD SWEEP — defect class 11 in the working-rules doc. A guard matching only a
+quoted argument cannot see a call site passing a shared constant, so it stops covering the code
+exactly as the code gets tidier, SILENTLY. `SourceText.CallSites` / `CallArgument` /
+`ConstantsAcrossSource` is one shared reader (depth-aware, bounds a call by its own parens, resolves
+against 423 declarations). SEVEN of eleven guards moved onto it.
 
-A GUARD THAT NOW BITES AT `.113`: `TheUniversalWorkflowProgram_IsExactlyTheRangeItDeclares` asserts
+- `EventVocabularyTests` had FOUR live escapes already open.
+- `RoleContractChannelTests` — the S9 prompt-injection guard — had TWO bugs pointing the same way:
+  literal-only, AND `[^;]*;`-bounded so any call with a lambda was truncated before its `system:`
+  argument.
+- `ContractDeclarationTests` was failing in BOTH directions at once.
+
+THE HIERARCHY DOCUMENT FOUND THREE VIOLATIONS OF ITSELF. `docs/GUARDS.md` now states the order
+(runtime black-box → typed registry → compiled inspection → source scan last) and the two rules
+binding a source scan. "May never depend on a character count" has been in PLAN since `.92`; the
+detector found three guards still doing it. The worst sliced 2,500 chars across `EditableConfigKeys`
+— the very set it exists to watch GROW.
+
+MODULE AUTO-DISCOVERY replaces a hand-maintained `[InlineData]` list. The composition roots KEEP
+their explicit `LoadAll` calls, deliberately: reflecting over whatever assemblies are on disk is a
+worse security posture. What was defective was the guard, not the explicitness.
+
+DEFERRED WITH REASONS to `.113`: `AnalysisMode` beyond the SDK default (needs its own census — with
+warnings-as-errors on, every CA diagnostic becomes a build failure); central package management (its
+failure mode is "nothing builds"); four of eleven literal-only guards, each lower risk than the seven
+done; the S1 TOCTOU window; the four unverified agent-CLI system-prompt channels; Ollama capability
+discovery; the `.97` Windows residual; the capability-table reconciliation. `.113` also carries typed
+database rows.
+
+A GUARD THAT BITES AT `.113`: `TheUniversalWorkflowProgram_IsExactlyTheRangeItDeclares` asserts
 `to > from`, which cannot hold when one release remains.
 
-MAIN IS PR-ONLY AND LINEAR. Branch protection refuses direct pushes AND merge commits: push a
-branch, open the PR, wait for all seven checks (the Windows .NET job is the slow one, ~10 min), and
-use **Rebase and merge**. A `git merge --no-ff` to main is rejected at push; this session learned it
-the hard way and burned PR #76 doing so.
+TWO PROCESS FACTS WORTH KEEPING:
+- `Anthill.Core` AND `Anthill.Tests` both declare a global `using Task = …`. Adding that alias in a
+  new file is CS1537. Paid twice, at `.109` and `.110`.
+- A new event type must be declared in `EventTypes` or `EventVocabularyTests` refuses it.
 
-THE LIVE PACK is still the operator's step — `anthill/live-pack-runbook.md` in the project.
-`QUALIFICATION.md` §3 stays PARTIALLY RUN. There are now FIVE recognized classes: `system_audit`,
-`troubleshooting`, `system_action`, `external_action`, `research`.
-
-RELEASE_MSG.txt is untracked in the repo root and feeds `git commit -F` / `gh release create
---notes-file`; `ReleaseNotesTests` requires its first line to equal the changelog's top heading.
-Regenerate it every release — a stale one shipped `.67` under `.60`'s name.
+THE LIVE PACK is still the operator's step — `anthill/live-pack-runbook.md`. `QUALIFICATION.md` §3
+stays PARTIALLY RUN. FIVE recognized classes: `system_audit`, `troubleshooting`, `system_action`,
+`external_action`, `research`.
 
 ROSTER, quoted correctly: **25 registered roles, 34 workers, 12 executable role types** under
-`activation_tier: full` + `roster_profile: full` (both shipped defaults). Only SIX are executable by
-flag — researcher, file, web, coder, builder, verifier; the other six (tester, soldier, medic,
-archivist, ui_cartographer, scribe) are specialists opened by canary gates; thirteen never execute
-(queen, director, planner, constraint, quartermaster, and the eight homelab ants).
+`activation_tier: full` + `roster_profile: full`. Only SIX executable by flag — researcher, file,
+web, coder, builder, verifier; six specialists opened by canary gates; thirteen never execute.
 
 Previous state below, kept because the next session runs the live pack against it.
 

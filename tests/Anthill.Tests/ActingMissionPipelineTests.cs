@@ -478,7 +478,11 @@ public class ActingMissionPipelineTests : IDisposable
             "src", "Anthill.Core", "Configuration", "AnthillRuntime.cs")));
         var method = runtime.IndexOf("public static void SetModelRoute", StringComparison.Ordinal);
         Assert.True(method >= 0, "SetModelRoute is no longer recognisable in AnthillRuntime.cs");
-        var body = runtime[method..(method + 900)];
+        // v0.3.8.112 — the MEMBER, not 900 characters of it. A budget is a proxy for "inside this
+        // method" and a bad one: it means something different on a CRLF checkout, and it shrinks
+        // every time somebody explains a line inside the method being guarded — which is how
+        // v0.3.8.97 got a guard reporting a strictness that was still there. See docs/GUARDS.md.
+        var body = SourceText.MemberBody(runtime, method);
         var live = body.IndexOf("ModelRouting[role]", StringComparison.Ordinal);
         var persisted = body.IndexOf("Config.ModelRoutes[role]", StringComparison.Ordinal);
         var save = body.IndexOf("SaveConfig()", StringComparison.Ordinal);
@@ -503,14 +507,21 @@ public class ActingMissionPipelineTests : IDisposable
         var runtime = SourceText.CodeOnly(File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
             "src", "Anthill.Core", "Configuration", "AnthillRuntime.cs")));
 
-        // acting_coder_enabled is an editable key…
+        // v0.3.8.112 — the MEMBER, not 2,500 characters of it, three times over. The budget was a
+        // guess about how long the editable-key set is, and that set is exactly the thing this
+        // guard exists to watch GROW — so every key added moved the later ones closer to falling
+        // out of the window, and the guard would have started reporting keys as absent while they
+        // sat two lines below the cut. See docs/GUARDS.md.
         var editable = runtime.IndexOf("EditableConfigKeys", StringComparison.Ordinal);
-        Assert.True(editable >= 0);
-        Assert.Contains("\"acting_coder_enabled\"", runtime[editable..(editable + 2500)], StringComparison.Ordinal);
+        Assert.True(editable >= 0, "EditableConfigKeys is no longer recognisable in AnthillRuntime.cs");
+        var editableKeys = SourceText.MemberBody(runtime, editable);
+
+        // acting_coder_enabled is an editable key…
+        Assert.Contains("\"acting_coder_enabled\"", editableKeys, StringComparison.Ordinal);
         // …and v0.3.8.97 adds the two the qualification day demanded three restarts for: the
         // operator's check declarations, and the deliverable evaluation layer's switch.
-        Assert.Contains("\"workspace_checks\"", runtime[editable..(editable + 2500)], StringComparison.Ordinal);
-        Assert.Contains("\"objective_verification_enabled\"", runtime[editable..(editable + 2500)], StringComparison.Ordinal);
+        Assert.Contains("\"workspace_checks\"", editableKeys, StringComparison.Ordinal);
+        Assert.Contains("\"objective_verification_enabled\"", editableKeys, StringComparison.Ordinal);
 
         // …the loader warns about the relic location…
         Assert.Contains("WarnAboutLegacyConfigs(path)", runtime, StringComparison.Ordinal);

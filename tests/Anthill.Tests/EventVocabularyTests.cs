@@ -54,19 +54,44 @@ public class EventVocabularyTests
     /// Read from the TYPE rather than by parsing the file. The constants are compile-time literals,
     /// so reflection sees exactly what a consumer would — and a guard that re-parsed the declaration
     /// site would be checking its own regex against the same text it was derived from.
+    ///
+    /// v0.3.8.112 — AND THE CALL SITES ARE READ THROUGH <see cref="SourceText.CallArgument"/>, which
+    /// resolves a NAMED CONSTANT as well as a literal.
+    ///
+    /// THE ESCAPE THIS CLOSES WAS ALREADY OPEN, in four places. `LoggedLiteral` requires the second
+    /// argument to be a quoted string, so every one of these was invisible to it:
+    /// `ExecutionService.cs:2316` passes `MemoryCandidateIngest.EventType`;
+    /// `MissionFinalizationLedger.cs:77` and `ColonyDirector.cs:388` pass a variable; and
+    /// `ExecutionService.cs:1001` passes `eventName`. An undeclared event routed through any of
+    /// them could never fail this test.
+    ///
+    /// The rule is UNCHANGED — an emitted name must be in the vocabulary. Only where the guard looks
+    /// has widened, which is the whole discipline: a resolved constant is checked against exactly
+    /// the same set a literal is, so nothing that used to be refused becomes acceptable by being
+    /// spelled differently. The literal regex is kept alongside because it reads the SECOND argument
+    /// specifically; the resolver is positional and confirms it.
     /// </summary>
     [Fact]
     public void EveryEventTheRuntimeLogs_IsDeclaredInTheVocabulary()
     {
-        var values = Declared().Values.ToHashSet(StringComparer.Ordinal);
+        var declared = Declared();
+        var values = declared.Values.ToHashSet(StringComparer.Ordinal);
         var undeclared = new SortedDictionary<string, string>(StringComparer.Ordinal);
 
         foreach (var file in SourceFiles())
-            foreach (Match m in LoggedLiteral.Matches(SourceText.CodeOnly(File.ReadAllText(file))))
+        {
+            var code = SourceText.CodeOnly(File.ReadAllText(file));
+
+            foreach (Match m in LoggedLiteral.Matches(code))
             {
                 var name = m.Groups["name"].Value;
                 if (!values.Contains(name)) undeclared.TryAdd(name, Path.GetFileName(file));
             }
+
+            // Argument 1 (zero-based) of `LogEvent(missionId, eventType, …)`, literal or constant.
+            foreach (var name in SourceText.CallArgument(code, "LogEvent", 1, declared))
+                if (!values.Contains(name)) undeclared.TryAdd(name, Path.GetFileName(file));
+        }
 
         Assert.True(undeclared.Count == 0,
             $"{undeclared.Count} event name(s) are emitted and not declared in EventTypes:\n  "

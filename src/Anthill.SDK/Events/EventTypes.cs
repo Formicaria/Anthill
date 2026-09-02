@@ -115,6 +115,24 @@ public static class EventTypes
 
     public const string ApprovalRequestCreated = "approval_request_created";
     public const string ApprovalRequestDeduped = "approval_request_deduped";
+
+    /// <summary>
+    /// The operator answered. v0.3.8.112 — DECLARED LATE, and found by the sweep rather than by
+    /// anyone noticing.
+    ///
+    /// Both have been emitted by `Queen.ApproveRequest` and `Queen.RejectRequest` since approvals
+    /// existed, and neither was in this vocabulary. `EventVocabularyTests` could not see them: its
+    /// literal reader requires `LogEvent(&lt;no parens&gt;, "name")`, and both call sites pass
+    /// `Str(updated, "mission_id")` as the first argument — a call, so the pattern rejected the
+    /// whole line. Widening that reader to resolve arguments positionally surfaced them
+    /// immediately, which is the clearest evidence available that the sweep was worth doing: two
+    /// events an operator's UI could never have filtered on, in the approval lane, for the whole
+    /// life of the feature.
+    /// </summary>
+    public const string ApprovalRequestApproved = "approval_request_approved";
+
+    /// <summary>The rejection half of <see cref="ApprovalRequestApproved"/>. Same history.</summary>
+    public const string ApprovalRequestRejected = "approval_request_rejected";
     public const string AdaptiveEscalated = "adaptive_escalated";
     public const string EscalationRefused = "escalation_refused";
 

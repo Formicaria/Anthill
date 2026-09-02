@@ -34,9 +34,33 @@ public class HandoffTaskTypeTests
 {
     private static string SrcDir() => Path.Combine(SourceText.RepoRoot(), "src");
 
-    /// <summary>`new AntHandoff("soldier", "builder", "reason", "build_answer", …)`.</summary>
+    /// <summary>
+    /// `new AntHandoff("soldier", "builder", "reason", "build_answer", …)`.
+    ///
+    /// v0.3.8.112 — KEPT, AND NO LONGER THE ONLY READER. This pattern is the most positionally
+    /// fragile in the sweep: all four arguments must be literals, in order, so
+    /// `new AntHandoff("soldier", "builder", reason, TaskTypes.BuildAnswer)` matches NOTHING and
+    /// the route it declares is never checked against its destination's contract. It is kept
+    /// alongside <see cref="HandoffRoutes"/> because it also pins the ARGUMENT ORDER, which a
+    /// positional resolver reading one index at a time cannot see.
+    /// </summary>
     private static readonly Regex HandoffLiteral = new(
         @"new AntHandoff\(\s*""(?<from>[a-z_]+)""\s*,\s*""(?<to>[a-z_]+)""\s*,\s*""[^""]*""\s*,\s*""(?<type>[a-z_]+)""");
+
+    /// <summary>
+    /// The same routes, read through the shared resolver so a constant-named argument is seen.
+    /// Destination is argument 1 and task type is argument 3, matching the record's own order.
+    /// </summary>
+    private static IEnumerable<(string Destination, string TaskType)> HandoffRoutes(string code)
+    {
+        var constants = SourceText.ConstantsAcrossSource(SourceText.RepoRoot());
+        foreach (var call in SourceText.CallSites(code, "AntHandoff"))
+        {
+            var destination = call.Resolve(1, constants);
+            var taskType = call.Resolve(3, constants);
+            if (destination is not null && taskType is not null) yield return (destination, taskType);
+        }
+    }
 
     /// <summary>`return ("builder", "build_answer", "…");` — the specialist routing table.</summary>
     private static readonly Regex RoutedSpecialist = new(
@@ -58,6 +82,15 @@ public class HandoffTaskTypeTests
 
             foreach (Match m in HandoffLiteral.Matches(code))
                 routes.Add(new(name, m.Groups["to"].Value, m.Groups["type"].Value, "AntHandoff"));
+
+            // v0.3.8.112 — the same construction read positionally, so a constant-named destination
+            // or task type is checked too. Deduplicated against the literal pass below rather than
+            // replacing it: the literal regex additionally pins the ARGUMENT ORDER, which a
+            // positional reader cannot see, and losing that would be a different guard.
+            foreach (var (destination, taskType) in HandoffRoutes(code))
+                if (!routes.Any(r => r.File == name && r.Destination == destination
+                                  && r.TaskType == taskType && r.Shape == "AntHandoff"))
+                    routes.Add(new(name, destination, taskType, "AntHandoff"));
 
             foreach (Match m in RoutedSpecialist.Matches(code))
                 routes.Add(new(name, m.Groups["to"].Value, m.Groups["type"].Value, "SelectSpecialist"));

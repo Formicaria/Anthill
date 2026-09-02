@@ -159,6 +159,231 @@ public static class SourceText
         return code[signatureAt..];
     }
 
+    /// <summary>
+    /// ONE ARGUMENT OF ONE CALL, WHETHER IT WAS WRITTEN AS A LITERAL OR AS A NAMED CONSTANT.
+    /// v0.3.8.112.
+    ///
+    /// THE DEFECT CLASS THIS ENDS, found four times between `.106` and `.109` and swept for here. A
+    /// guard whose pattern is <c>Method\(\s*"(?&lt;x&gt;[a-z_]+)"</c> can only see a call site that
+    /// spells its argument as a literal. The moment the code does the tidier thing and passes
+    /// <c>EventTypes.MissionStarted</c>, the guard stops seeing that call — silently, with no
+    /// failure, forever. So a guard written to stop shared names being hand-spelled ends up
+    /// REWARDING hand-spelling, and punishing the refactor it was meant to encourage.
+    ///
+    /// It is worse in both directions. The paired "every declared X is used by something" twin then
+    /// reports the constant as unreached, which is a FALSE POSITIVE on correct code — and the
+    /// obvious way to make that go away is to delete the constant.
+    ///
+    /// WIDEN WHERE THE GUARD LOOKS, NEVER WHAT IT ACCEPTS. That rule is why this returns the
+    /// argument's VALUE rather than merely reporting that some argument was present: a resolved
+    /// constant is checked against exactly the same vocabulary a literal is, so nothing a guard used
+    /// to refuse becomes acceptable by being spelled differently.
+    ///
+    /// RESOLUTION IS BY DECLARED VALUE, NOT BY REFLECTION over a loaded type. The suite's guards run
+    /// against SOURCE — `SourceText` has no xunit and no runtime dependency by design — and several
+    /// of them read the API and UI projects, whose constants this assembly does not reference.
+    /// <paramref name="constants"/> is therefore supplied by the caller, normally from
+    /// <see cref="DeclaredConstants"/> over the vocabulary file that owns the names.
+    ///
+    /// UNRESOLVED IS NULL, AND THAT IS DELIBERATE. A caller must decide what an argument it cannot
+    /// read means for its own rule — a local variable, an interpolated string, a method call. Every
+    /// guard in this suite treats it as "not a name I can check", which is honest, and the vacuity
+    /// floors those guards already carry are what stop that becoming a way to hide.
+    /// </summary>
+    /// <param name="code">Source, already passed through <see cref="CodeOnly"/> by the caller.</param>
+    /// <param name="method">The method name, matched with a word boundary before the open paren.</param>
+    /// <param name="argumentIndex">Zero-based position of the argument to read.</param>
+    /// <param name="constants">Declared name → value, for resolving a symbol. May be empty.</param>
+    public static IReadOnlyList<string> CallArgument(
+        string code, string method, int argumentIndex, IReadOnlyDictionary<string, string>? constants = null) =>
+        CallSites(code, method)
+            .Select(site => site.Resolve(argumentIndex, constants))
+            .Where(value => value is not null)
+            .Select(value => value!)
+            .ToList();
+
+    /// <summary>
+    /// One call, bounded by its own parentheses. v0.3.8.112.
+    /// </summary>
+    /// <param name="Index">Where the method name starts, for reporting.</param>
+    /// <param name="Text">Everything between the parentheses, exactly as written. This is what a
+    /// guard should search when it needs to know whether a call passes something — bounding by a
+    /// character budget or by the next semicolon truncates any call containing a lambda or a
+    /// sentence, which reports a violation that is not there.</param>
+    /// <param name="Arguments">The same text split at depth-zero commas.</param>
+    public sealed record CallSite(int Index, string Text, IReadOnlyList<string> Arguments)
+    {
+        /// <summary>The nth argument's value — literal or resolved constant — or null.</summary>
+        public string? Resolve(int argumentIndex, IReadOnlyDictionary<string, string>? constants) =>
+            argumentIndex >= 0 && argumentIndex < Arguments.Count
+                ? ResolveArgument(Arguments[argumentIndex], constants)
+                : null;
+    }
+
+    /// <summary>
+    /// Every call to <paramref name="method"/>, each bounded by its own matching parenthesis.
+    ///
+    /// A call whose parentheses do not close before the end of the file is SKIPPED rather than
+    /// truncated — an unbalanced read is not a call, and handing back a fragment would let a guard
+    /// draw a conclusion from half a statement.
+    /// </summary>
+    public static IReadOnlyList<CallSite> CallSites(string code, string method)
+    {
+        var sites = new List<CallSite>();
+        if (string.IsNullOrEmpty(code) || string.IsNullOrWhiteSpace(method)) return sites;
+
+        var call = new System.Text.RegularExpressions.Regex(
+            @"\b" + System.Text.RegularExpressions.Regex.Escape(method) + @"\s*\(",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        foreach (System.Text.RegularExpressions.Match match in call.Matches(code))
+        {
+            var open = match.Index + match.Length;
+            var arguments = SplitArguments(code, open);
+            if (arguments is null) continue;
+
+            var length = arguments.Sum(a => a.Length) + Math.Max(0, arguments.Count - 1);
+            sites.Add(new CallSite(match.Index, code.Substring(open, Math.Min(length, code.Length - open)), arguments));
+        }
+
+        return sites;
+    }
+
+    /// <summary>
+    /// The `public const string` declarations on one type, as name → value.
+    ///
+    /// Source-read rather than reflected for the reason <see cref="CallArgument"/> gives: these
+    /// guards read projects this test assembly does not reference, and a helper that worked only for
+    /// referenced types would push half the sweep back to literal-only matching.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> DeclaredConstants(string code)
+    {
+        var declared = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(
+                     code, @"const\s+string\s+(?<name>[A-Za-z_]\w*)\s*=\s*""(?<value>[^""]*)""") )
+            declared[match.Groups["name"].Value] = match.Groups["value"].Value;
+        return declared;
+    }
+
+    /// <summary>
+    /// The argument list of a call, split at depth-zero commas. Null when the parentheses do not
+    /// balance before the end of the file — which reads as "this is not a call I can parse", not as
+    /// "this call has no arguments".
+    ///
+    /// Depth-aware because the alternative fails on the shapes this codebase is full of: a nested
+    /// call, a collection initializer, a lambda with a tuple. Splitting on every comma would cut
+    /// `new() { ["a"] = 1, ["b"] = 2 }` into pieces and report the fragments as arguments.
+    /// </summary>
+    private static List<string>? SplitArguments(string code, int afterOpenParen)
+    {
+        var arguments = new List<string>();
+        var depth = 0;
+        var start = afterOpenParen;
+        var inString = false;
+        var inChar = false;
+        var verbatim = false;
+
+        for (var i = afterOpenParen; i < code.Length; i++)
+        {
+            var c = code[i];
+
+            if (inString)
+            {
+                if (verbatim) { if (c == '"' && (i + 1 >= code.Length || code[i + 1] != '"')) inString = false; else if (c == '"') i++; }
+                else if (c == '\\') i++;
+                else if (c == '"') inString = false;
+                continue;
+            }
+            if (inChar) { if (c == '\\') i++; else if (c == '\'') inChar = false; continue; }
+
+            switch (c)
+            {
+                case '"':
+                    inString = true;
+                    verbatim = i > 0 && (code[i - 1] == '@' || (i > 1 && code[i - 1] == '$' && code[i - 2] == '@'));
+                    break;
+                case '\'': inChar = true; break;
+                case '(' or '[' or '{': depth++; break;
+                case ')' when depth == 0:
+                    arguments.Add(code[start..i]);
+                    return arguments;
+                case ')' or ']' or '}': depth--; break;
+                case ',' when depth == 0:
+                    arguments.Add(code[start..i]);
+                    start = i + 1;
+                    break;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// One argument's value: the literal it is, the constant it names, or null.
+    ///
+    /// A NAMED ARGUMENT (<c>eventType: EventTypes.X</c>) is read past rather than refused — the
+    /// name is presentation and the value is the thing being checked. Anything else — a local, an
+    /// interpolated string, a call, a ternary — is null, and the caller decides what that means.
+    /// </summary>
+    private static string? ResolveArgument(string argument, IReadOnlyDictionary<string, string>? constants)
+    {
+        var text = argument.Trim();
+        if (text.Length == 0) return null;
+
+        // Strip a named-argument prefix, but only when it is a bare identifier followed by a colon —
+        // never a `?:` ternary, whose colon this must not mistake for one.
+        var named = System.Text.RegularExpressions.Regex.Match(text, @"^[A-Za-z_]\w*\s*:(?!:)\s*");
+        if (named.Success && !text.Contains('?')) text = text[named.Length..].Trim();
+
+        if (text.Length > 1 && text[0] == '"' && text[^1] == '"' && !text.Contains("\" +"))
+        {
+            var inner = text[1..^1];
+            return inner.Contains('"') ? null : inner;   // a concatenation is not one literal
+        }
+
+        if (constants is null || constants.Count == 0) return null;
+
+        // `EventTypes.MissionStarted` or a bare `MissionStarted` — the last segment is the name.
+        var symbol = System.Text.RegularExpressions.Regex.Match(text, @"^[A-Za-z_][\w.]*$");
+        if (!symbol.Success) return null;
+
+        var last = text[(text.LastIndexOf('.') + 1)..];
+        return constants.TryGetValue(last, out var value) ? value : null;
+    }
+
+    /// <summary>
+    /// Every `public const string` declared anywhere under `src/`, as name → value. v0.3.8.112.
+    ///
+    /// A REPO-WIDE SYMBOL TABLE, because the guards that need it read call sites whose argument
+    /// could name a constant declared in any project — and several of them sweep `src/` entirely.
+    /// Built once and cached: the sweep runs in ten tests and re-reading eight hundred files per
+    /// test would turn a guard suite into a build step.
+    ///
+    /// COLLISIONS RESOLVE TO THE LAST DECLARATION READ, and the direction that failure points in is
+    /// why this is acceptable. <see cref="CallArgument"/> matches on the final segment of a symbol,
+    /// so `Roles.Coder` and `Fixtures.Coder` are one key. A collision therefore yields the WRONG
+    /// value, which a guard checks against its vocabulary and — being wrong — most likely refuses.
+    /// That is a false positive: noisy, visible, and fixed by whoever hits it. The alternative,
+    /// declining to resolve, is a false negative: silent, and indistinguishable from a clean tree.
+    /// This suite has been bitten by the second kind four times and by the first kind never.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> ConstantsAcrossSource(string repoRoot)
+    {
+        lock (ConstantLock)
+        {
+            if (_constants is not null) return _constants;
+
+            var all = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var file in ProductionFiles(repoRoot))
+                foreach (var declared in DeclaredConstants(CodeOnly(File.ReadAllText(file))))
+                    all[declared.Key] = declared.Value;
+
+            return _constants = all;
+        }
+    }
+
+    private static readonly object ConstantLock = new();
+    private static IReadOnlyDictionary<string, string>? _constants;
+
     /// <summary>Every production .cs file, excluding build output.</summary>
     public static IEnumerable<string> ProductionFiles(string repoRoot) =>
         Directory.GetFiles(Path.Combine(repoRoot, "src"), "*.cs", SearchOption.AllDirectories)

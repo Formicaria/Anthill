@@ -117,6 +117,8 @@ public class RoleContractChannelTests
     {
         var missing = new List<string>();
 
+        var constants = SourceText.ConstantsAcrossSource(SourceText.RepoRoot());
+
         foreach (var path in Directory.EnumerateFiles(
                      Path.Combine(SourceText.RepoRoot(), "src", "Anthill.Core"), "*.cs", SearchOption.AllDirectories))
         {
@@ -127,13 +129,21 @@ public class RoleContractChannelTests
 
             var code = SourceText.CodeOnly(File.ReadAllText(path));
 
-            foreach (System.Text.RegularExpressions.Match call in
-                     System.Text.RegularExpressions.Regex.Matches(
-                         code, @"GenerateTyped\(\s*""(?<role>[a-z_]+)""[^;]*;",
-                         System.Text.RegularExpressions.RegexOptions.Singleline))
+            // v0.3.8.112 — THE ROLE IS RESOLVED, AND THE CALL IS BOUNDED BY ITS OWN PARENTHESES.
+            //
+            // This guard was literal-only AND `[^;]*;`-bounded, and both halves were wrong in the
+            // same direction — quietly exempting a call. A `GenerateTyped(Roles.Coder, …)` matched
+            // nothing at all, so a role could reach a model with its rules as prose inside the user
+            // turn, which is the exact shape the S9 prompt-injection fix exists to prevent. And a
+            // call containing a `;` inside a lambda or a string was truncated before its `system:`
+            // argument, reporting a violation that was not there.
+            //
+            // `MemberBody`'s ruling applies here: read the delimiters, not a budget.
+            foreach (var call in SourceText.CallSites(code, "GenerateTyped"))
             {
-                if (!call.Value.Contains("system:", StringComparison.Ordinal))
-                    missing.Add($"{Path.GetFileName(path)}:{call.Groups["role"].Value}");
+                var role = call.Resolve(0, constants) ?? "(unresolved)";
+                if (!call.Text.Contains("system:", StringComparison.Ordinal))
+                    missing.Add($"{Path.GetFileName(path)}:{role}");
             }
         }
 
