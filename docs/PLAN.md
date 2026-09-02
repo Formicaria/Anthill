@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.110**.
+Shipping release: **v0.3.8.111**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -237,7 +237,7 @@ see `DocumentationConsistencyTests`.
 
 ---
 
-## 2b. The universal-workflow program — v0.3.8.110 → v0.3.8.112
+## 2b. The universal-workflow program — v0.3.8.111 → v0.3.8.113
 
 **This is the current forward sequence.** It supersedes the earlier framing in which R4–R10 were
 the next thing to run; those items are not deleted, and each release below names the R-items it
@@ -267,9 +267,9 @@ past.
 
 | Release | Operator-visible capability | Exit gate |
 |---|---|---|
-| **.110** | Mission resumption — an approved decision replays the refused step | §2c below |
-| **.111** | Enforcement and the remaining security residuals | R0's enforcement tooling (warnings-as-errors, analyzers, dependency and secret scanning, complexity budget, module auto-discovery, the guard hierarchy written down); the S1 filesystem TOCTOU window; the system-prompt channel confirmed for the four unverified agent CLIs; Ollama capability discovery; the literal-only guard sweep; the `.97` Windows residual diagnosed or its hypothesis retired; the capability table reconciled against the live records |
-| **.112** | Typed database rows | `Dictionary<string, object?>` leaves the memory layer's public surface and its 89 consumers, one slice at a time, each slice green before the next |
+| **.111** | Colony Live — the Colony page grows an opt-in 3D formicarium view; the classic canvas stays the fallback | §2c below |
+| **.112** | Enforcement and the remaining security residuals | R0's enforcement tooling (warnings-as-errors, analyzers, dependency and secret scanning, complexity budget, module auto-discovery, the guard hierarchy written down); the S1 filesystem TOCTOU window; the system-prompt channel confirmed for the four unverified agent CLIs; Ollama capability discovery; the literal-only guard sweep; the `.97` Windows residual diagnosed or its hypothesis retired; the capability table reconciled against the live records |
+| **.113** | Typed database rows | `Dictionary<string, object?>` leaves the memory layer's public surface and its 89 consumers, one slice at a time, each slice green before the next |
 
 Rules binding every release in this program:
 
@@ -284,123 +284,72 @@ Rules binding every release in this program:
   became API-editable with no control rendering it, so an operator following the changelog looked
   for a switch that did not exist.
 
-### 2c. v0.3.8.110 — mission resumption
+### 2c. v0.3.8.111 — Colony Live
 
-**Delivers:** an approved decision replays the step that was refused. A mission that stopped for a
-side-effecting action it had no answer for can be finished by answering, instead of by running the
-whole thing again from the goal.
+**Delivers:** the Colony page grows an opt-in 3D formicarium view behind a `Live 3D` view switch.
+The classic canvas stays the default and the permanent reduced/no-WebGL fallback. This is the UI
+mission statement's first shipped slice — a central core, sectors as chambers, pheromone-stream
+roots, one lit mission circuit, an approval boundary — rendered from facts the console already
+holds, and nothing else.
 
-**THE ITEM, AND WHY IT WAS DEFERRED THREE TIMES.** `.105` shipped the pause and said what it was not,
-in the request's own description: *"Approving does not replay the refused step; it settles the
-question."* `.106` and `.109` each carried the same sentence forward. §2c gave the reason every time
-and it was exact — replaying needs a mission to re-enter execution at a task, and no lane did that.
+**IT RENDERS; IT NEVER DECIDES.** `colony-topology.js` is the projection layer: it takes the data
+`app.js` already has (the `/graph` poll, `/colony/registry`, the approvals poll, the event stream)
+and emits a declarative scene. There is no fetch in the feature. `colony-live.js` draws the scene.
+A sector grows a record point only on a real record-creating event (`*_recorded`,
+`memory_candidate`, `pheromone_scored`, `verification_bound_to_evidence`, `mission_evaluated`,
+`mission_outcome`); the shell records an operator can read are event-derived facts — type, ant,
+mission, time — shown read-only; a record click opens the existing Agent Inspector for the ant
+that wrote it; a sector with no real records says `demo data` on hover. The deep context-record
+index (design doc §19) does not exist and the view does not pretend it does.
 
-**THE PIECE THAT DID NOT EXIST.** There is no typed loader anywhere in this tree.
-`SqliteMemory.GetMission` returns a `Dictionary<string, object?>`, `GetTasksForMission` returns a
-list of them, and `new Mission` appears in exactly four places — every one of them CREATING a
-mission. So the object graph has always died with `RunMission`, and every consumer wanting a past
-mission read rows and rendered them. `MissionRehydration` is that loader, and `ParseTaskStatus`,
-declared since the enum was written and called by nothing, is now called by something.
+**ONE WORLD, ONE RENDERER, PRESERVED.** The view mounts into the same `#colony-canvas-area` that is
+re-parented between the Colony page, the Dashboard widget and Chat's colony layer. Both assets are
+pinned as embedded resources and served like every other split asset; the choice persists per
+browser; `prefers-reduced-motion` and the Motion/Labels/Pheromones preferences are honoured.
 
-**THE ONE THAT WOULD HAVE BEEN MISSED, and a rehydrator alone would not have caught it.** Approving
-writes to `approval_requests`. The mission-lane gate, `OperatorDecisions.ForMission`, reads
-`escalation_decisions`. **Two disjoint tables.** An operator's approval was recorded, visible in the
-UI, counted in the pending-approvals badge — and completely invisible to the runtime. A replay built
-on top would have refused identically and filed the same question again, and the feature would have
-looked implemented while changing nothing at all. `ForMission` now reads both, under the same
-last-answer-wins rule the conversation lane already used.
+**Why it took `.110`'s reserved number.** R0's enforcement tooling was to be `.111`. Colony Live
+arrived as a finished design package and is UI-only with no backend surface; shipping it inside a
+release whose whole point is tooling that fails builds would have muddied both. The program shifts
+by one — enforcement to `.112`, typed rows to `.113` — and nothing on either list is narrowed.
 
-**A COMMENT THAT WAS WRONG AND IS CORRECTED RATHER THAN LEFT.** `RunMission` has said since v3.1.0
-that the deadline is anchored so "a resumed run compares against the same wall-clock boundary the
-original did instead of restarting its clock." That was written about a resumption that did not
-exist, and it is wrong now that one does: the mission was not running while it waited, it was
-waiting on a person. Charging human latency to the mission's budget would make every approval slower
-than `MaxMissionSeconds` resume straight into a timeout — admitted, dispatching nothing, graded as
-having timed out on work it was never given a chance to do.
+**Carried from `.110`, unchanged and still named:**
 
-**Scope of the replay.** Only the tasks this mission's own `escalation_refused` events name for this
-action, and never a task that COMPLETED — its effects already landed and re-running it would
-duplicate them. Not "every failed task", which would replay a coder whose patch was rejected on its
-merits; not the mission, which is the re-run this exists to avoid.
-
-**Reuses:** the same context builder, executor, finalization and persistence ordering `RunMission`
-uses — a resumption running its own version of any of those would be a second answer to "how does a
-mission finish", and the two would eventually disagree about a graded run. `MissionFinalizationLedger`
-already keys its claim on the evaluation fingerprint rather than the mission id, so a second,
-different evaluation was always intended to be learnable.
-
-**Connects:** `ApproveRequest → ResumeMission → MissionRehydration.Load → task reset →
-ExecutionService.Execute → FinalizeMission → SaveMission → SaveMissionEvaluation`, with
-`OperatorDecisions.Decided` closing the gate the replay dispatches through.
-
-**Also in this release, each closing a named residual:**
-
-- **`dotnet` is no longer arbitrary code execution on the shell allowlist.** Every other entry on
-  that nine-command list can only READ; `dotnet` is an interpreter and the allowlist matched the
-  program alone, so `dotnet run`, `dotnet exec x.dll` and a `dotnet build` of a project carrying an
-  MSBuild `Exec` task all passed every check. The subcommand is now allowlisted — reporting verbs
-  only. `build` is refused too, which looks over-strict and is not: a project file chooses what a
-  build executes, and a mission's workspace is a tree the colony's own agents write into. The
-  verification lane still builds and tests through `run_allowlisted_check`, whose catalog is declared
-  outside the workspace and cannot be edited by anything running in it.
-- **Windows junctions are exercised.** Every link test in `PathContainmentTests` builds its link with
-  `CreateSymbolicLink` and opens with `if (!SymlinksAvailable) return;` — so on a Windows agent
-  without Developer Mode, seven facts pass green having asserted nothing. A junction needs neither
-  elevation nor Developer Mode: it is the one reparse point an unprivileged writer inside a workspace
-  can actually create, and it was the one this suite could not have caught.
-- **`ObjectiveVerification` stops re-reading the composed goal.** It substring-matched "refactor" and
-  "update the readme" against `mission.Goal`, which carries the standing context and the whole
-  conversation transcript below a `--- ` marker — so a mission whose TRANSCRIPT contained the word
-  acquired a file-change requirement nobody asked for and was demoted for producing no patch. It now
-  reads the contract's `OriginalRequest`, and so does the operator-facing explanation, which
-  otherwise would have named a different reason than the one that demoted the mission.
-- **The per-call `model_route` trail has no reader, permanently.** `.107` left it unread deliberately
-  and §2c carrying it as an open item made that look like an oversight awaiting a tidy-up. A
-  `model_route` trail says a PROVIDER ANSWERED — a route that produced garbage a hundred times
-  carries a strong one — and giving it a consumer to close a loose end is how the overclaim `.107`
-  avoided arrives by another door. A guard now fails if anything starts reading it.
-
-**Exit gate** — named tests in `MissionResumptionTests`:
-
-- the gap: `AnApprovedRequest_IsADecisionTheMissionLaneCanRead`,
-  `ARejectedRequest_IsADecisionThatRefuses`,
-  `ForMission_ReadsTheApprovalLedger_AndStopsReAskingOnceAnswered`;
-- the loader: `AFinishedMission_ReadsBackAsItsOwnGraph`, `AMissionTheStoreDoesNotHold_IsNull`,
-  `TheStatusVocabularies_RoundTrip`;
-- and in their own files: `DotnetVerbsThatExecute_AreRefusedBeforeAProcessStarts`,
-  `DotnetReportingVerbs_PassTheSubcommandGate`, `AJunctionPointingOutOfTheRoot_IsRefused`,
-  `ThePerCallRouteTrail_HasNoConsumer_ByDecision`.
-
-**Recorded rather than closed, with the reason:**
-
-- **R0's enforcement tooling is `.111`, and the program grew a release to hold it.** Warnings-as-errors,
-  analyzers, dependency and secret scanning, a complexity budget, module auto-discovery and the guard
-  hierarchy written down are a release each would not need, but they are one release TOGETHER and not
-  a corner of another one. Bundling them here would have meant either doing them badly or shipping a
-  resumption nobody had room to get right. Typed database rows move to `.112`.
+- **R0's enforcement tooling is `.112`.** Warnings-as-errors, analyzers, dependency and secret
+  scanning, a complexity budget, module auto-discovery and the guard hierarchy written down — one
+  release TOGETHER, not a corner of another one.
 - **The S1 filesystem TOCTOU window** stays open and stays named. `IWorkspacePathGuard` returns a
   `string` and roughly twenty call sites open by path afterwards; closing the race means returning a
   HANDLE and rewriting every consumer's I/O, plus P/Invoke, because .NET exposes no portable
-  `openat`. `.111`.
+  `openat`. `.112`.
 - **Four of five agent CLIs still declare no system-prompt channel.** `AgentCliCatalog` is built so
-  that adding one is a data change, and the cost is not code — each vendor's flag has to be confirmed
-  against an installed binary. Guessing one would put a role contract on a channel that silently
-  discards it, which is worse than the declared absence.
-- **The literal-only guard sweep** found ten more instances and is `.111`. The right fix is one
-  shared `SourceText` helper returning literal-or-resolved-constant rather than ten near-copies of
-  the same widened regex, and that is a refactor with its own blast radius.
+  that adding one is a data change; each vendor's flag has to be confirmed against an installed
+  binary. Guessing one would put a role contract on a channel that silently discards it. `.112`.
+- **The literal-only guard sweep** — ten more instances; the right fix is one shared `SourceText`
+  helper returning literal-or-resolved-constant rather than ten near-copies of the same widened
+  regex. `.112`.
 - **The capability-table reconciliation** still needs the live records the qualification pack
   produces, and no code change moves it.
 - **The `.97` Windows `dotnet_test` residual** needs the machine that reproduces it.
 - **The §2b terminal-case guard.** `TheUniversalWorkflowProgram_IsExactlyTheRangeItDeclares` asserts
-  `to > from`, which cannot hold when one release remains. It now bites at `.112`.
+  `to > from`, which cannot hold when one release remains. It now bites at `.113`.
 
-**Explicitly still unsupported after .108:** the `research` mission class (`.109`); mission
-resumption and R0 enforcement (`.110`); typed database rows (`.111`); claim↔source SUPPORT; module-
-contributed ants; general local-system operations outside the homelab catalog.
+**Not in this release, and not claimed:** the deep context-record index (§19) and record editing
+(`verifyRecord()` is wired but never fires — it must follow a real backend write); three.js or any
+WebGL path (the renderer is canvas-2D with a 3D projection, by design, so the CSP stays
+`script-src 'self'`); Micromound telemetry in the mound sector beyond what the existing status
+already carries.
 
+**Exit gate** — `UiAbsenceTests.EveryShippedAsset_IsEmbeddedAndFound` for both assets;
+`ConsoleAssetSplitTests` (pinned, served, loaded after `app.js`, classic scripts, no duplicate
+top-level functions, `app.js` under 10,000 lines);
+`RegressionGuardTests.UiIntegrity_ColonyCanvasControlsHaveHandlers` (`live3d` is dispatched) and
+`UiIntegrity_ColonyAndChamberSymbolsAreDeclared`; `node --test tests/ui` green; CI's UI-integrity
+job parsing all three files. The manual gate — toggle on the Colony page, carry through Dashboard
+and Chat, prefs passthrough — is the operator's and is recorded in the PR.
 
----
+**Explicitly still unsupported after .111:** R0 enforcement and the security residuals (`.112`);
+typed database rows (`.113`); claim↔source SUPPORT; module-contributed ants; general local-system
+operations outside the homelab catalog.
 
 ## 2. The release plan
 
