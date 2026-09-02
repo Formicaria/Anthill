@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.111**.
+Shipping release: **v0.3.8.112**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -237,7 +237,7 @@ see `DocumentationConsistencyTests`.
 
 ---
 
-## 2b. The universal-workflow program — v0.3.8.111 → v0.3.8.113
+## 2b. The universal-workflow program — v0.3.8.112 → v0.3.8.113
 
 **This is the current forward sequence.** It supersedes the earlier framing in which R4–R10 were
 the next thing to run; those items are not deleted, and each release below names the R-items it
@@ -267,8 +267,7 @@ past.
 
 | Release | Operator-visible capability | Exit gate |
 |---|---|---|
-| **.111** | Colony Live — the Colony page grows an opt-in 3D formicarium view; the classic canvas stays the fallback | §2c below |
-| **.112** | Enforcement and the remaining security residuals | R0's enforcement tooling (warnings-as-errors, analyzers, dependency and secret scanning, complexity budget, module auto-discovery, the guard hierarchy written down); the S1 filesystem TOCTOU window; the system-prompt channel confirmed for the four unverified agent CLIs; Ollama capability discovery; the literal-only guard sweep; the `.97` Windows residual diagnosed or its hypothesis retired; the capability table reconciled against the live records |
+| **.112** | Enforcement — the tree enforces its own rules rather than describing them | §2c below |
 | **.113** | Typed database rows | `Dictionary<string, object?>` leaves the memory layer's public surface and its 89 consumers, one slice at a time, each slice green before the next |
 
 Rules binding every release in this program:
@@ -284,83 +283,100 @@ Rules binding every release in this program:
   became API-editable with no control rendering it, so an operator following the changelog looked
   for a switch that did not exist.
 
-### 2c. v0.3.8.111 — Colony Live
+### 2c. v0.3.8.112 — enforcement
 
-**Delivers:** the Colony page grows an opt-in 3D formicarium view behind a `Live 3D` view switch.
-The classic canvas stays the default and the permanent reduced/no-WebGL fallback. This is the UI
-mission statement's first shipped slice — a central core, sectors as chambers, pheromone-stream
-roots, one lit mission circuit, an approval boundary — rendered from facts the console already
-holds, and nothing else.
+**Delivers:** R0's last item. Warnings are errors, the repository scans itself for committed
+credentials, a size ratchet stops the tree getting worse, dependency versions cannot drift apart, the
+module boundary discovers what it checks, and the guard hierarchy is written down AND enforced.
 
-**IT RENDERS; IT NEVER DECIDES.** `colony-topology.js` is the projection layer: it takes the data
-`app.js` already has (the `/graph` poll, `/colony/registry`, the approvals poll, the event stream)
-and emits a declarative scene. There is no fetch in the feature. `colony-live.js` draws the scene.
-A sector grows a record point only on a real record-creating event (`*_recorded`,
-`memory_candidate`, `pheromone_scored`, `verification_bound_to_evidence`, `mission_evaluated`,
-`mission_outcome`); the shell records an operator can read are event-derived facts — type, ant,
-mission, time — shown read-only; a record click opens the existing Agent Inspector for the ant
-that wrote it; a sector with no real records says `demo data` on hover. The deep context-record
-index (design doc §19) does not exist and the view does not pretend it does.
+**MEASURED, NOT DECLARED.** `TreatWarningsAsErrors` was `false` explicitly rather than by omission —
+a decision somebody took. A census across the whole solution returned **zero warnings**, so this
+flips a clean tree rather than declaring bankruptcy on a dirty one. Turning it on over a backlog
+forces either a suppression file or a wave of unrelated edits in the same commit, and both teach that
+the setting is negotiable.
 
-**ONE WORLD, ONE RENDERER, PRESERVED.** The view mounts into the same `#colony-canvas-area` that is
-re-parented between the Colony page, the Dashboard widget and Chat's colony layer. Both assets are
-pinned as embedded resources and served like every other split asset; the choice persists per
-browser; `prefers-reduced-motion` and the Motion/Labels/Pheromones preferences are honoured.
+**THE GUARD SWEEP — SEVEN OF ELEVEN, AND THE FOUNDATION FOR THE REST.** Defect class 11: a guard
+whose pattern is `Method\(\s*"(?<x>[a-z_]+)"` cannot see a call site that passes a shared constant, so
+it stops covering the code exactly as the code gets tidier — silently, with no failure. A guard
+written to stop shared names being hand-spelled ends up REWARDING hand-spelling, and its "every
+declared X is used" twin then reports a false positive whose obvious fix is deleting the constant.
 
-**Why it took `.110`'s reserved number.** R0's enforcement tooling was to be `.111`. Colony Live
-arrived as a finished design package and is UI-only with no backend surface; shipping it inside a
-release whose whole point is tooling that fails builds would have muddied both. The program shifts
-by one — enforcement to `.112`, typed rows to `.113` — and nothing on either list is narrowed.
+`SourceText.CallSites` / `CallArgument` / `ConstantsAcrossSource` are one shared reader — a
+depth-aware primitive that bounds a call by its own parentheses and resolves argument *n* as a
+literal or a named constant against a repo-wide symbol table of 423 declarations. Ten near-copies of
+one widened regex would have been the same defect at a smaller scale.
 
-**Carried from `.110`, unchanged and still named:**
+**FOUR ESCAPES WERE ALREADY OPEN, in one guard.** `EventVocabularyTests` requires a quoted second
+argument to `LogEvent`, so `ExecutionService.cs:2316` (`MemoryCandidateIngest.EventType`),
+`MissionFinalizationLedger.cs:77`, `ColonyDirector.cs:388` and `ExecutionService.cs:1001` were all
+invisible to it. An undeclared event routed through any of them could never have failed that test.
 
-- **R0's enforcement tooling is `.112`.** Warnings-as-errors, analyzers, dependency and secret
-  scanning, a complexity budget, module auto-discovery and the guard hierarchy written down — one
-  release TOGETHER, not a corner of another one.
-- **The S1 filesystem TOCTOU window** stays open and stays named. `IWorkspacePathGuard` returns a
-  `string` and roughly twenty call sites open by path afterwards; closing the race means returning a
-  HANDLE and rewriting every consumer's I/O, plus P/Invoke, because .NET exposes no portable
-  `openat`. `.112`.
-- **Four of five agent CLIs still declare no system-prompt channel.** `AgentCliCatalog` is built so
-  that adding one is a data change; each vendor's flag has to be confirmed against an installed
-  binary. Guessing one would put a role contract on a channel that silently discards it. `.112`.
-- **The literal-only guard sweep** — ten more instances; the right fix is one shared `SourceText`
-  helper returning literal-or-resolved-constant rather than ten near-copies of the same widened
-  regex. `.112`.
-- **The capability-table reconciliation** still needs the live records the qualification pack
-  produces, and no code change moves it.
-- **The `.97` Windows `dotnet_test` residual** needs the machine that reproduces it.
-- **The §2b terminal-case guard.** `TheUniversalWorkflowProgram_IsExactlyTheRangeItDeclares` asserts
-  `to > from`, which cannot hold when one release remains. It now bites at `.113`.
+**THE ONE THAT WOULD HAVE BEEN MISSED.** `RoleContractChannelTests` — the guard behind the S9
+prompt-injection fix — had TWO bugs pointing the same way. Literal-only, so
+`GenerateTyped(Roles.Coder, …)` matched nothing and a role could reach a model with its rules as
+prose inside the user turn; and bounded by `[^;]*;`, so a call containing a lambda or a sentence with
+a semicolon was truncated before its `system:` argument, reporting a violation that was not there.
 
-**Not in this release, and not claimed:** the deep context-record index (§19) and record editing
-(`verifyRecord()` is wired but never fires — it must follow a real backend write); three.js or any
-WebGL path (the renderer is canvas-2D with a 3D projection, by design, so the CSP stays
-`script-src 'self'`); Micromound telemetry in the mound sector beyond what the existing status
-already carries.
+**THE HIERARCHY IS WRITTEN DOWN — AND THE DOCUMENT FOUND THREE VIOLATIONS OF ITSELF.**
+`docs/GUARDS.md` states the order (runtime black-box → typed registry → compiled inspection → source
+scan last) and the two rules binding a source scan. The rule that a source scan may never depend on a
+character count has been in `PLAN.md` since `.92`, and writing the detector for it found **three
+guards still doing it**: a 900-character member window, and two 2,500-character ones. The worst was
+`EditableConfigKeys` — a budget sliced across the very set the guard exists to watch GROW, so every
+key added pushed the later ones closer to falling out of the window and being reported absent while
+sitting two lines below the cut. All three now read delimiters.
 
-**Exit gate** — `UiAbsenceTests.EveryShippedAsset_IsEmbeddedAndFound` for both assets;
-`ConsoleAssetSplitTests` (pinned, served, loaded after `app.js`, classic scripts, no duplicate
-top-level functions, `app.js` under 10,000 lines);
-`RegressionGuardTests.UiIntegrity_ColonyCanvasControlsHaveHandlers` (`live3d` is dispatched) and
-`UiIntegrity_ColonyAndChamberSymbolsAreDeclared`; `node --test tests/ui` green; CI's UI-integrity
-job parsing all three files. The manual gate — toggle on the Colony page, carry through Dashboard
-and Chat, prefs passthrough — is the operator's and is recorded in the PR.
+**MODULE AUTO-DISCOVERY, and the production side deliberately left alone.** `ModuleBoundaryTests`
+kept a hand-maintained `[InlineData]` list, and its own comment named the cost: *"a module absent
+from it is not exempt, it is simply never looked at, and that reads exactly like passing."* The
+modules are discovered from the directory now, and a module this project cannot load is a FAILURE
+naming the missing reference rather than a skip. The composition roots keep their explicit `LoadAll`
+calls: a colony that reflected over whatever assemblies were on disk would be a strictly worse
+security posture than one that names what it composes. What was defective was never the
+explicitness — it was a guard that could silently stop covering a module.
 
-**Explicitly still unsupported after .111:** R0 enforcement and the security residuals (`.112`);
-typed database rows (`.113`); claim↔source SUPPORT; module-contributed ants; general local-system
-operations outside the homelab catalog.
+**Reuses:** `PolicyScan`'s existing secret-rule table (a scanner that grows a private copy of its
+patterns is one whose maintained rules are not the ones that run), `SourceText`'s comment-blanking
+reader, and `MemberBody`'s delimiter discipline. No second pattern set, no second stripper.
 
-## 2. The release plan
+**Exit gate** — named tests:
 
-Ordered by dependency, not by size. Each entry names its **exit gate** — the thing that must be true
-before the next begins — because version numbers have proved a poor unit of prediction here: the last
-twelve releases closed roughly two plan items, and every one of them overran because reaching an
-outcome nothing had needed before uncovered a defect that had been sitting there for releases.
+- `RepositoryEnforcementTests`: `WarningsAreErrors_ForTheWholeSolution` (including no per-project
+  exemption), `NoSecretShapedLiteral_IsCommittedToSource` + `TheSecretScanner_StillFindsOne`,
+  `NoProductionFile_ExceedsTheSizeBudget` + `TheSizeBudget_IsWithinSightOfTheTree`,
+  `EveryPackage_HasOneVersionAcrossTheSolution`;
+- `GuardHierarchyTests`: `TheGuardHierarchy_IsWrittenDown`,
+  `NoGuard_SlicesSourceByACharacterBudget`, `TheHierarchySweep_SeesTheTestSuite`;
+- `SourceTextCallArgumentTests`: eight cases, each a shape that broke a naive resolver — nested
+  calls, initializer commas, named arguments, punctuation inside literals, unbalanced calls, and the
+  two vacuity floors on the symbol table;
+- `ModuleBoundaryTests.ModuleDiscovery_FindsEveryModuleOnDisk` — because a `[MemberData]` source
+  returning nothing turns a theory into zero cases, which xunit reports as a pass.
 
-**Estimable horizon: R1–R4, about 8–15 releases.** Beyond that, treat the gates as the plan and the
-numbers as placeholders. A realistic total for everything below is **40–70 releases** if the current
-one-patch-version-per-discovered-defect rhythm holds.
+**Recorded rather than closed, with the reason:**
+
+- **`AnalysisMode` stays at the SDK default.** Raising it to `Recommended` admits the whole CA
+  ruleset at once, and with warnings-as-errors on, every one becomes a build failure — a blast
+  radius that has to be measured exactly as this one was, and measuring it is a round trip through
+  the operator. `.113`.
+- **Central package management** (`Directory.Packages.props`) is the real fix for version drift and
+  changes how all thirteen projects resolve references at restore time. Its failure mode is "nothing
+  builds", which does not belong in the same release as seven guard rewrites. The GUARD against
+  drift ships here; the move is `.113`.
+- **Four of eleven literal-only guards remain**, and each is lower risk than the seven done:
+  `StructuredOutputTests` pins exact counts so a conversion fails LOUDLY rather than silently;
+  `RoleGraduationTests` miscounts into a false positive rather than a false negative;
+  `ModelRoutingGlobalsTests` fails open on a convention xunit enforces anyway; the three console-route
+  guards are additionally bounded to one physical line, which needs a different fix from this one.
+- **The S1 filesystem TOCTOU window** stays open and stays named — `IWorkspacePathGuard` returns a
+  `string` and ~20 call sites open by path afterwards; closing the race means returning a HANDLE,
+  rewriting every consumer's I/O, and P/Invoke, because .NET exposes no portable `openat`.
+- **Four of five agent CLIs still declare no system-prompt channel.** Adding one is a data change;
+  the cost is confirming each vendor's flag against an installed binary. Guessing would put a role
+  contract on a channel that silently discards it.
+- **Ollama capability discovery**, the **`.97` Windows residual** and the **capability-table
+  reconciliation** are unchanged and still need, respectively, a design decision, the machine that
+  reproduces it, and the live records.
 
 ---
 
@@ -698,9 +714,12 @@ under it.
   conditions the runner never checked); what stays runner-side is exactly the set-level part a
   per-proposal gate cannot own: the evidence content hash, mixed deterministic rows, patch-set
   identity, whole-set preflight, the durable transaction.
-- ◻ **Enforcement.** Warnings as errors, analyzers, dependency and secret scanning, a complexity
-  budget, module auto-discovery, typed database rows instead of `Dictionary<string, object?>`, and
-  the agent rules written down rather than remembered.
+- ✅ **Enforcement** — v0.3.8.112. Warnings are errors across the solution (flipped on a measured
+  zero-warning tree, not declared over a backlog); the repository scans itself for committed
+  credentials through `PolicyScan`'s own rule table; a size ratchet set above the tree as it stood;
+  one version per package across every project; module discovery replacing a hand-maintained list;
+  and the guard hierarchy written down in `docs/GUARDS.md` and enforced by `GuardHierarchyTests`.
+  Analyzers beyond the SDK default and typed database rows are `.113` — each named in §2c with why.
   **Including the guard hierarchy**, which v0.3.8.92 paid for: a runtime black-box test first, then
   a typed registry, then compiled/Roslyn inspection, and a source scan last. When a source scan IS
   the right tool it may never depend on a character count — v0.3.8.91 shipped a guard reading a

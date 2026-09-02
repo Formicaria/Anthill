@@ -113,9 +113,14 @@ public class TypedChannelReachTests
             // The router's own declaration is the parameter, not a call.
             if (path.EndsWith("ModelRouter.cs", StringComparison.Ordinal)) continue;
 
-            foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
-                         SourceText.CodeOnly(File.ReadAllText(path)), @"GenerateTyped\(\s*""(?<role>[a-z_]+)"""))
-                roles.Add(m.Groups["role"].Value);
+            // v0.3.8.112 — read through the shared resolver, which sees a NAMED CONSTANT as well as
+            // a literal. The old regex required a quoted first argument, so `GenerateTyped(Roles.X,
+            // …)` would have been a role reaching a model with nobody deciding what it may read —
+            // precisely the condition this test exists to make impossible.
+            foreach (var role in SourceText.CallArgument(
+                         SourceText.CodeOnly(File.ReadAllText(path)), "GenerateTyped", 0,
+                         SourceText.ConstantsAcrossSource(SourceText.RepoRoot())))
+                roles.Add(role);
         }
 
         Assert.NotEmpty(roles);
