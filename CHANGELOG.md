@@ -1,3 +1,32 @@
+## Unreleased
+
+**COLONY LIVE: THE COLONY PAGE GROWS AN OPT-IN 3D VIEW, AND THE CLASSIC CANVAS STAYS.** A `Live 3D`
+button in the Colony viewbar swaps the 2D map for an underground formicarium: one sphere per sector
+(Queen's Core, Intelligence, Forge, Validation, Memory, Output, Micromound) whose point clouds are the
+colony's recorded facts, pheromone-stream roots between them, one lit mission circuit following the
+running tasks, an approval boundary that parks the proposing ant, evidence flowing Validation → Memory,
+and draggable, renameable sectors whose layout persists. Canvas-2D with a real 3D projection — no
+framework, no CDN, no bundler, so the CSP stays `script-src 'self'` and the page carries no inline
+script. It honours `prefers-reduced-motion` and the existing Motion/Labels/Pheromones preferences.
+
+**IT RENDERS; IT NEVER DECIDES.** `colony-topology.js` is the projection layer: it takes the data
+app.js ALREADY holds — the `/graph` poll, `/colony/registry`, the approvals poll, the event stream —
+and emits a declarative scene. There is no second fetch anywhere in the feature. `colony-live.js`
+draws the scene and nothing else. A sector grows a new record point only on a real record-creating
+event (`*_recorded`, `memory_candidate`, `pheromone_scored`, `verification_bound_to_evidence`,
+`mission_evaluated`, `mission_outcome`); the shell records an operator can read are event-derived
+facts — type, ant, mission, time — shown read-only, because the deep context-record index is a
+contract that does not exist yet (design doc §19) and the view does not pretend otherwise. Clicking a
+record opens the existing Agent Inspector for the ant that wrote it. A sector with no real records
+says `demo data` on hover rather than passing seeded points off as facts.
+
+**ONE WORLD, ONE RENDERER, PRESERVED.** The view mounts into the same `#colony-canvas-area` that is
+re-parented between the Colony page, the Dashboard widget and Chat's colony layer, so it rides along
+without a second instance. The classic canvas remains the default and the permanent fallback
+(design doc §17, stage 3); the choice persists per browser. Both assets are pinned as embedded
+resources, served like every other split asset, and asserted by `UiAbsenceTests` and
+`ConsoleAssetSplitTests` so a broken pin fails the build instead of serving a blank view.
+
 ## v0.3.8.110 - an approved decision replays the refused step
 
 **A MISSION THAT STOPPED FOR AN ANSWER CAN NOW BE FINISHED BY ANSWERING IT.** `.105` shipped the

@@ -51,7 +51,7 @@ src/Anthill.Api, src/Anthill.Cli, src/Anthill.SDK, src/Anthill.Modules, tests/An
 native/anthill_kernel), the runtime flow from CLI/API entry to Queen to Planner to ants to memory,
 where the HTTP API endpoints are registered, where the embedded web UI lives (src/Anthill.UI —
 index.html plus the split console scripts app.js, themes.js, inspector-routing.js, homelab.js,
-mission-thread.js, dashboard-grid.js), where tests live, where configuration is read (config.json,
+mission-thread.js, dashboard-grid.js, colony-topology.js, colony-live.js), where tests live, where configuration is read (config.json,
 AnthillRuntime, AnthillConfig), the deploy options (Windows desktop, Docker, LXC), and where
 version markers live (AnthillRuntime.Version, Directory.Build.props, README, CHANGELOG, PLAN).
 Summarize as a structured reference document in the final result.

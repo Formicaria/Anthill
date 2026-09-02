@@ -2209,6 +2209,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <button class="cv-btn" data-colonyact="zoom-in" title="Zoom in" aria-label="Zoom in">＋</button>
             <button class="cv-btn" data-colonyact="reset-view" title="Reset pan and zoom">⤾ View</button>
             <button class="cv-btn" data-colonyact="reset-layout" title="Return dragged ants to the computed layout">⌂ Layout</button>
+            <span class="cv-sep"></span>
+            <!-- Colony Live (design doc §17, stage 3) behind a view switch. The classic canvas stays the default
+                 and the permanent reduced/no-WebGL fallback (design doc §17, stage 3). -->
+            <button class="cv-btn" data-colonyact="live3d" title="Colony Live — 3D formicarium view (classic canvas stays the fallback)">Live 3D</button>
           </div>
           <div id="zoom-hint">Use ＋/− to zoom (or Ctrl/⌘ + scroll) · Drag canvas to pan · Drag ant to move · Double-click to rename</div>
           <!-- v2.14.14 Stage 7: six anchor slots. Overlays are re-parented into these, so two
@@ -4019,6 +4023,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 <script src="/ui/inspector-routing.js" defer></script>
 <script src="/ui/themes.js" defer></script>
 <script src="/ui/console-extras.js" defer></script>
+<!-- Colony Live (design doc §17, stage 3) — topology before live (live consumes the topology's scene). Both
+     after app.js like every split asset; app.js reaches them only at click time. -->
+<script src="/ui/colony-topology.js" defer></script>
+<script src="/ui/colony-live.js" defer></script>
 <!-- v0.3.8.52: the homelab domain, split out of app.js. AFTER app.js on purpose — its
      PAGE_ENTER['homelab'] registration runs at load and needs PAGE_ENTER to exist. `defer`
      guarantees the order (deferred scripts execute in document order), and

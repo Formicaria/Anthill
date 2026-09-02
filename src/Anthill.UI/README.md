@@ -8,7 +8,13 @@ app.js              the console                       (~503 KB)
 mission-thread.js   the mission conversation view
 dashboard-grid.js   the responsive grid               (v3.3.0)
 dashboard-grid.css
+colony-topology.js  Colony Live: projection layer      (design doc §14 — owns state, never fetches)
+colony-live.js      Colony Live: 3D formicarium renderer (design doc §17 — renders, never decides)
 ```
+
+Colony Live is opt-in (`Live 3D` in the Colony viewbar); the classic canvas is the default and the
+permanent fallback. The topology is fed from the handlers app.js already runs — `pollGraph`,
+`loadColonyRegistry`, `pollApprovals`, the event stream — so the feature adds no request of its own.
 
 ## Why this is a folder and not a project
 

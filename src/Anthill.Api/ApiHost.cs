@@ -68,6 +68,9 @@ public static partial class ApiHost
     private static string UiInspectorRoutingJs = "";
     private static string UiThemesJs = "";
     private static string UiConsoleExtrasJs = "";
+    // Colony Live (design doc §17, stage 3) — projection layer + 3D renderer, split assets like the rest.
+    private static string UiColonyTopologyJs = "";
+    private static string UiColonyLiveJs = "";
     private static string UiGridCss = "";
     // One shared client for the host's own internal probes (Ollama reachability, model list).
     // A per-request `new HttpClient` leaks sockets under the header's periodic polling; this
@@ -263,6 +266,8 @@ public static partial class ApiHost
         UiInspectorRoutingJs = LoadUiAsset("inspector-routing.js");
         UiThemesJs = LoadUiAsset("themes.js");
         UiConsoleExtrasJs = LoadUiAsset("console-extras.js");
+        UiColonyTopologyJs = LoadUiAsset("colony-topology.js");
+        UiColonyLiveJs = LoadUiAsset("colony-live.js");
         UiGridCss = LoadUiAsset("dashboard-grid.css");
         InitHomelab(); // v1.9.0 homelab foundation (read-only; see Homelab/ApiHost.Homelab.cs)
 

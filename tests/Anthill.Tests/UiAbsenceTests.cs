@@ -57,6 +57,8 @@ public class UiAbsenceTests
     [InlineData("mission-thread.js")]
     [InlineData("dashboard-grid.js")]
     [InlineData("dashboard-grid.css")]
+    [InlineData("colony-topology.js")]
+    [InlineData("colony-live.js")]
     public void EveryShippedAsset_IsEmbeddedAndFound(string asset)
     {
         var content = ApiHost.LoadUiAsset(asset);
