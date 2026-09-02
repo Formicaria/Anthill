@@ -86,9 +86,9 @@ public class MissionResumptionTests : IDisposable
         OperatorDecisions.Request(memory, mission.Id, Action, "queen");
         Assert.Null(OperatorDecisions.Decided(memory, mission.Id, Action));   // pending is not an answer
 
-        var pending = memory.ListApprovalRequestsForMission(mission.Id)
-            .First(r => r.GetValueOrDefault("action_type")?.ToString() == ApprovalActionType.ToolUse.Value());
-        memory.UpdateApprovalStatus(pending["id"]!.ToString()!, ApprovalStatus.Approved, "yes");
+        var pending = memory.ApprovalsForMission(mission.Id)
+            .First(a => a.ActionType == ApprovalActionType.ToolUse);
+        memory.UpdateApprovalStatus(pending.Id, ApprovalStatus.Approved, "yes");
 
         var decided = OperatorDecisions.Decided(memory, mission.Id, Action);
 
@@ -107,9 +107,9 @@ public class MissionResumptionTests : IDisposable
         var mission = Paused(memory);
 
         OperatorDecisions.Request(memory, mission.Id, Action, "queen");
-        var pending = memory.ListApprovalRequestsForMission(mission.Id)
-            .First(r => r.GetValueOrDefault("action_type")?.ToString() == ApprovalActionType.ToolUse.Value());
-        memory.UpdateApprovalStatus(pending["id"]!.ToString()!, ApprovalStatus.Rejected, "no");
+        var pending = memory.ApprovalsForMission(mission.Id)
+            .First(a => a.ActionType == ApprovalActionType.ToolUse);
+        memory.UpdateApprovalStatus(pending.Id, ApprovalStatus.Rejected, "no");
 
         var decided = OperatorDecisions.Decided(memory, mission.Id, Action);
 
@@ -129,10 +129,10 @@ public class MissionResumptionTests : IDisposable
 
         // No decision anywhere: null, and the question is filed.
         Assert.Null(OperatorDecisions.ForMission(memory, mission.Id, Action));
-        var pending = memory.ListApprovalRequestsForMission(mission.Id)
-            .First(r => r.GetValueOrDefault("action_type")?.ToString() == ApprovalActionType.ToolUse.Value());
+        var pending = memory.ApprovalsForMission(mission.Id)
+            .First(a => a.ActionType == ApprovalActionType.ToolUse);
 
-        memory.UpdateApprovalStatus(pending["id"]!.ToString()!, ApprovalStatus.Approved, "yes");
+        memory.UpdateApprovalStatus(pending.Id, ApprovalStatus.Approved, "yes");
 
         var decision = OperatorDecisions.ForMission(memory, mission.Id, Action);
         Assert.NotNull(decision);

@@ -50,16 +50,16 @@ public static class MissionRehydration
 
         var mission = new Mission
         {
-            Id = Str(row, "id", missionId!),
-            Goal = Str(row, "goal"),
-            ProjectId = Nullable(row, "project_id"),
-            Status = ParseMissionStatus(Str(row, "status", "created")),
-            UserResult = Nullable(row, "user_result"),
-            DebugResult = Nullable(row, "debug_result"),
-            FinalResult = Nullable(row, "final_result"),
-            BestOutputTaskId = Nullable(row, "best_output_task_id"),
-            SuccessScore = Double(row, "success_score"),
-            CreatedAt = Utc(row, "created_at"),
+            Id = RowValues.Text(row, "id", missionId!),
+            Goal = RowValues.Text(row, "goal"),
+            ProjectId = RowValues.TextOrNull(row, "project_id"),
+            Status = ParseMissionStatus(RowValues.Text(row, "status", "created")),
+            UserResult = RowValues.TextOrNull(row, "user_result"),
+            DebugResult = RowValues.TextOrNull(row, "debug_result"),
+            FinalResult = RowValues.TextOrNull(row, "final_result"),
+            BestOutputTaskId = RowValues.TextOrNull(row, "best_output_task_id"),
+            SuccessScore = RowValues.Double(row, "success_score"),
+            CreatedAt = RowValues.TimestampOrNow(row, "created_at"),
             Tasks = memory.GetTasksForMission(missionId!).Select(TaskFrom).ToList(),
         };
 
@@ -83,80 +83,44 @@ public static class MissionRehydration
 
     private static Task TaskFrom(Dictionary<string, object?> row) => new()
     {
-        Id = Str(row, "id"),
-        Title = Str(row, "title"),
-        Description = Str(row, "description"),
-        AssignedAnt = Str(row, "assigned_ant"),
-        AssignedWorker = Nullable(row, "assigned_worker"),
-        TaskType = Str(row, "task_type", "general"),
-        ParentTaskId = Nullable(row, "parent_task_id"),
-        ParentTaskIds = Json.TryParseStringList(Nullable(row, "parent_task_ids_json")),
-        DependsOn = Json.TryParseStringList(Nullable(row, "depends_on_json")),
-        InputArtifactIds = Json.TryParseStringList(Nullable(row, "input_artifact_ids_json")),
-        Status = EnumExtensions.ParseTaskStatus(Str(row, "status", "pending")),
-        Result = Nullable(row, "result"),
-        ResultSummary = Nullable(row, "result_summary"),
-        ResultChars = Int(row, "result_chars"),
-        EstimatedTokens = Int(row, "estimated_tokens"),
-        CreatedAt = Utc(row, "created_at"),
-        StartedAt = NullableUtc(row, "started_at"),
-        FinishedAt = NullableUtc(row, "finished_at"),
-        CompletedAt = NullableUtc(row, "completed_at"),
-        FailedAt = NullableUtc(row, "failed_at"),
-        SkippedAt = NullableUtc(row, "skipped_at"),
-        ElapsedSeconds = Double(row, "elapsed_seconds"),
-        AttemptCount = Int(row, "attempt_count"),
-        MaxAttempts = Math.Max(1, Int(row, "max_attempts")),
-        FailureReason = Nullable(row, "failure_reason"),
-        FailureType = Nullable(row, "failure_type"),
-        SkippedReason = Nullable(row, "skipped_reason"),
-        BlockedReason = Nullable(row, "blocked_reason"),
-        SkillId = Nullable(row, "skill_id"),
-        Critical = Int(row, "critical") != 0,
-        CancellationReason = Nullable(row, "cancellation_reason"),
-        DeterministicBlock = Nullable(row, "deterministic_block"),
+        Id = RowValues.Text(row, "id"),
+        Title = RowValues.Text(row, "title"),
+        Description = RowValues.Text(row, "description"),
+        AssignedAnt = RowValues.Text(row, "assigned_ant"),
+        AssignedWorker = RowValues.TextOrNull(row, "assigned_worker"),
+        TaskType = RowValues.Text(row, "task_type", "general"),
+        ParentTaskId = RowValues.TextOrNull(row, "parent_task_id"),
+        ParentTaskIds = Json.TryParseStringList(RowValues.TextOrNull(row, "parent_task_ids_json")),
+        DependsOn = Json.TryParseStringList(RowValues.TextOrNull(row, "depends_on_json")),
+        InputArtifactIds = Json.TryParseStringList(RowValues.TextOrNull(row, "input_artifact_ids_json")),
+        Status = EnumExtensions.ParseTaskStatus(RowValues.Text(row, "status", "pending")),
+        Result = RowValues.TextOrNull(row, "result"),
+        ResultSummary = RowValues.TextOrNull(row, "result_summary"),
+        ResultChars = RowValues.Int(row, "result_chars"),
+        EstimatedTokens = RowValues.Int(row, "estimated_tokens"),
+        CreatedAt = RowValues.TimestampOrNow(row, "created_at"),
+        StartedAt = RowValues.Timestamp(row, "started_at"),
+        FinishedAt = RowValues.Timestamp(row, "finished_at"),
+        CompletedAt = RowValues.Timestamp(row, "completed_at"),
+        FailedAt = RowValues.Timestamp(row, "failed_at"),
+        SkippedAt = RowValues.Timestamp(row, "skipped_at"),
+        ElapsedSeconds = RowValues.Double(row, "elapsed_seconds"),
+        AttemptCount = RowValues.Int(row, "attempt_count"),
+        MaxAttempts = Math.Max(1, RowValues.Int(row, "max_attempts")),
+        FailureReason = RowValues.TextOrNull(row, "failure_reason"),
+        FailureType = RowValues.TextOrNull(row, "failure_type"),
+        SkippedReason = RowValues.TextOrNull(row, "skipped_reason"),
+        BlockedReason = RowValues.TextOrNull(row, "blocked_reason"),
+        SkillId = RowValues.TextOrNull(row, "skill_id"),
+        Critical = RowValues.Int(row, "critical") != 0,
+        CancellationReason = RowValues.TextOrNull(row, "cancellation_reason"),
+        DeterministicBlock = RowValues.TextOrNull(row, "deterministic_block"),
     };
 
-    // ---- readers -------------------------------------------------------------------------------
+    // v0.3.8.113 — THE PRIVATE ROW READERS ARE GONE, replaced by `Memory.RowValues`.
     //
-    // SQLite hands back object? — strings, longs, doubles and DBNull — so every one of these is
-    // written to survive any of them rather than to assume the column's declared type.
-
-    private static string Str(Dictionary<string, object?> row, string key, string fallback = "") =>
-        row.TryGetValue(key, out var v) && v is not null and not DBNull
-            ? v.ToString() ?? fallback : fallback;
-
-    private static string? Nullable(Dictionary<string, object?> row, string key) =>
-        Str(row, key) is { Length: > 0 } s ? s : null;
-
-    private static int Int(Dictionary<string, object?> row, string key) => row.GetValueOrDefault(key) switch
-    {
-        long l => (int)l,
-        int i => i,
-        double d => (int)d,
-        string s when int.TryParse(s, out var parsed) => parsed,
-        _ => 0,
-    };
-
-    private static double? Double(Dictionary<string, object?> row, string key) => row.GetValueOrDefault(key) switch
-    {
-        double d => d,
-        long l => l,
-        int i => i,
-        string s when double.TryParse(s, System.Globalization.NumberStyles.Any,
-            System.Globalization.CultureInfo.InvariantCulture, out var parsed) => parsed,
-        _ => null,
-    };
-
-    private static DateTime Utc(Dictionary<string, object?> row, string key) =>
-        NullableUtc(row, key) ?? AnthillTime.NowUtc();
-
-    private static DateTime? NullableUtc(Dictionary<string, object?> row, string key)
-    {
-        var raw = Str(row, key);
-        if (raw.Length == 0) return null;
-        return DateTime.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
-            System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal,
-            out var parsed) ? parsed : null;
-    }
+    // This file introduced them at `.110` and the approvals slice needed the same six the moment it
+    // started, which is the second implementation of one rule appearing within three releases — this
+    // repository's most-named defect class, arriving in the middle of the release built to remove it.
+    // One reader now, in the layer that owns rows.
 }

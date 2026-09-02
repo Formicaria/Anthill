@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.112**.
+Shipping release: **v0.3.8.113**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -237,7 +237,7 @@ see `DocumentationConsistencyTests`.
 
 ---
 
-## 2b. The universal-workflow program — v0.3.8.112 → v0.3.8.113
+## 2b. The universal-workflow program — v0.3.8.113 → v0.3.8.113
 
 **This is the current forward sequence.** It supersedes the earlier framing in which R4–R10 were
 the next thing to run; those items are not deleted, and each release below names the R-items it
@@ -267,8 +267,7 @@ past.
 
 | Release | Operator-visible capability | Exit gate |
 |---|---|---|
-| **.112** | Enforcement — the tree enforces its own rules rather than describing them | §2c below |
-| **.113** | Typed database rows | `Dictionary<string, object?>` leaves the memory layer's public surface and its 89 consumers, one slice at a time, each slice green before the next |
+| **.113** | Typed database rows — the first slice, and a ratchet for the rest | §2c below |
 
 Rules binding every release in this program:
 
@@ -283,100 +282,86 @@ Rules binding every release in this program:
   became API-editable with no control rendering it, so an operator following the changelog looked
   for a switch that did not exist.
 
-### 2c. v0.3.8.112 — enforcement
+### 2c. v0.3.8.113 — typed database rows, and the end of the program
 
-**Delivers:** R0's last item. Warnings are errors, the repository scans itself for committed
-credentials, a size ratchet stops the tree getting worse, dependency versions cannot drift apart, the
-module boundary discovers what it checks, and the guard hierarchy is written down AND enforced.
+**THIS IS THE PROGRAM'S LAST RELEASE.** §2b began at `.98` with one claim: that a mission class could
+work end to end on a shared spine, with a deterministic gate for its own promise. Five classes now
+do — `system_audit`, `troubleshooting`, `system_action`, `external_action`, `research` — each with an
+integrity gate that runs whatever the operator switch says. That is what the program was for, and it
+is done.
 
-**MEASURED, NOT DECLARED.** `TreatWarningsAsErrors` was `false` explicitly rather than by omission —
-a decision somebody took. A census across the whole solution returned **zero warnings**, so this
-flips a clean tree rather than declaring bankruptcy on a dirty one. Turning it on over a backlog
-forces either a suppression file or a wave of unrelated edits in the same commit, and both teach that
-the setting is negotiable.
+**Delivers:** the first typed-row slice, and a ratchet that makes the rest mechanical.
 
-**THE GUARD SWEEP — SEVEN OF ELEVEN, AND THE FOUNDATION FOR THE REST.** Defect class 11: a guard
-whose pattern is `Method\(\s*"(?<x>[a-z_]+)"` cannot see a call site that passes a shared constant, so
-it stops covering the code exactly as the code gets tidier — silently, with no failure. A guard
-written to stop shared names being hand-spelled ends up REWARDING hand-spelling, and its "every
-declared X is used" twin then reports a false positive whose obvious fix is deleting the constant.
+**WHY A SLICE AND NOT THE MIGRATION.** `Dictionary<string, object?>` is on fifty public methods of
+the store and read by a hundred consumer files. PLAN has said "one slice at a time, each slice green
+before the next" since the item was written, which is an admission that it spans releases — and a
+plan that says that and enforces nothing describes an intention rather than the tree.
+`TypedRowMigrationTests.TheUntypedStoreSurface_OnlyShrinks` pins the count at **45**, measured after
+this slice took it from 50. A release that types a slice lowers the number in the same commit; one
+that adds an untyped reader fails and has to say why.
 
-`SourceText.CallSites` / `CallArgument` / `ConstantsAcrossSource` are one shared reader — a
-depth-aware primitive that bounds a call by its own parentheses and resolves argument *n* as a
-literal or a named constant against a repo-wide symbol table of 423 declarations. Ten near-copies of
-one widened regex would have been the same defect at a smaller scale.
+**THE SIGNATURE IS THE SYMPTOM. THIS IS THE DISEASE.** The approvals slice found it immediately:
+`GetApprovalRequest` unprotected `decision_note` and `GetApprovalForTarget` did not, so the same
+column came back as plaintext through one reader and as ciphertext through the other. Four readers of
+one table, the field cipher applied in exactly one of them. With a row-shaped API there is nowhere
+for "how a row becomes an approval" to live, so each reader answers it again — defect class 5, in the
+layer everything else reads. `TheDecisionNote_IsDecryptedByEveryReader` is that bug as a test.
 
-**FOUR ESCAPES WERE ALREADY OPEN, in one guard.** `EventVocabularyTests` requires a quoted second
-argument to `LogEvent`, so `ExecutionService.cs:2316` (`MemoryCandidateIngest.EventType`),
-`MissionFinalizationLedger.cs:77`, `ColonyDirector.cs:388` and `ExecutionService.cs:1001` were all
-invisible to it. An undeclared event routed through any of them could never have failed that test.
+**THE STORE ALREADY TOOK A TYPED RECORD ON THE WAY IN.** `SaveApprovalRequest(ApprovalRequest)` has
+existed as long as approvals have; only the read side handed back a dictionary. The asymmetry was the
+whole of it, and closing it turned nine `Str(row, "status") != ApprovalStatus.X.Value()` comparisons
+into enum comparisons — string equality against a spelling, one typo from refusing every approved
+patch, in the lane that decides whether work may happen.
 
-**THE ONE THAT WOULD HAVE BEEN MISSED.** `RoleContractChannelTests` — the guard behind the S9
-prompt-injection fix — had TWO bugs pointing the same way. Literal-only, so
-`GenerateTyped(Roles.Coder, …)` matched nothing and a role could reach a model with its rules as
-prose inside the user turn; and bounded by `[^;]*;`, so a call containing a lambda or a sentence with
-a semicolon was truncated before its `system:` argument, reporting a violation that was not there.
+**THE SECOND COPY HAD ALREADY APPEARED.** `.110` gave `MissionRehydration` private `Str`/`Int`/`Utc`
+helpers to turn rows into objects, and the approvals slice needed the same six three releases later.
+`Memory.RowValues` is the one reader now, and `MissionRehydration` uses it — the defect class this
+release is about, arriving in the middle of the release about it.
 
-**THE HIERARCHY IS WRITTEN DOWN — AND THE DOCUMENT FOUND THREE VIOLATIONS OF ITSELF.**
-`docs/GUARDS.md` states the order (runtime black-box → typed registry → compiled inspection → source
-scan last) and the two rules binding a source scan. The rule that a source scan may never depend on a
-character count has been in `PLAN.md` since `.92`, and writing the detector for it found **three
-guards still doing it**: a 900-character member window, and two 2,500-character ones. The worst was
-`EditableConfigKeys` — a budget sliced across the very set the guard exists to watch GROW, so every
-key added pushed the later ones closer to falling out of the window and being reported absent while
-sitting two lines below the cut. All three now read delimiters.
+**THE MODULE BOUNDARY HELD, and cost a translation.** `ApprovableProjections.FromPatchApproval` lives
+in `Anthill.Modules.Homelab`, which may reference the SDK and nothing else of ours, so the core's
+typed record cannot cross into it. The API host projects a row at the composition edge — which is
+where a boundary translation belongs — and `TheHomelabApprovalProjection_CarriesEveryKeyTheModuleReads`
+pins the correspondence, because the module reads a missing key as `""` and would render blank cards
+rather than fail.
 
-**MODULE AUTO-DISCOVERY, and the production side deliberately left alone.** `ModuleBoundaryTests`
-kept a hand-maintained `[InlineData]` list, and its own comment named the cost: *"a module absent
-from it is not exempt, it is simply never looked at, and that reads exactly like passing."* The
-modules are discovered from the directory now, and a module this project cannot load is a FAILURE
-naming the missing reference rather than a skip. The composition roots keep their explicit `LoadAll`
-calls: a colony that reflected over whatever assemblies were on disk would be a strictly worse
-security posture than one that names what it composes. What was defective was never the
-explicitness — it was a guard that could silently stop covering a module.
+**AND THE PROGRAM GUARD LEARNED HOW A PROGRAM ENDS.**
+`TheUniversalWorkflowProgram_IsExactlyTheRangeItDeclares` asserted `to > from`, which is right for
+every release from `.98` onward and cannot hold for the last one: a single remaining release makes
+the range `.n → .n`. `open-items.md` carried it as a known future failure from `.107`. The
+relaxation is exactly one release wide — `to < from` is still refused, and the equal case is admitted
+only when the table really holds one row.
 
-**Reuses:** `PolicyScan`'s existing secret-rule table (a scanner that grows a private copy of its
-patterns is one whose maintained rules are not the ones that run), `SourceText`'s comment-blanking
-reader, and `MemberBody`'s delimiter discipline. No second pattern set, no second stripper.
+**Exit gate** — named tests in `TypedRowMigrationTests`:
 
-**Exit gate** — named tests:
+- `TheUntypedStoreSurface_OnlyShrinks` (the ratchet, with its own vacuity floor);
+- `AnApproval_RoundTripsAsARecord` (through the store, so it proves the round trip and not the
+  declaration);
+- `TheDecisionNote_IsDecryptedByEveryReader` (the bug the slice actually fixed, asserted through the
+  reader that used to get it wrong);
+- `TheHomelabApprovalProjection_CarriesEveryKeyTheModuleReads`.
 
-- `RepositoryEnforcementTests`: `WarningsAreErrors_ForTheWholeSolution` (including no per-project
-  exemption), `NoSecretShapedLiteral_IsCommittedToSource` + `TheSecretScanner_StillFindsOne`,
-  `NoProductionFile_ExceedsTheSizeBudget` + `TheSizeBudget_IsWithinSightOfTheTree`,
-  `EveryPackage_HasOneVersionAcrossTheSolution`;
-- `GuardHierarchyTests`: `TheGuardHierarchy_IsWrittenDown`,
-  `NoGuard_SlicesSourceByACharacterBudget`, `TheHierarchySweep_SeesTheTestSuite`;
-- `SourceTextCallArgumentTests`: eight cases, each a shape that broke a naive resolver — nested
-  calls, initializer commas, named arguments, punctuation inside literals, unbalanced calls, and the
-  two vacuity floors on the symbol table;
-- `ModuleBoundaryTests.ModuleDiscovery_FindsEveryModuleOnDisk` — because a `[MemberData]` source
-  returning nothing turns a theory into zero cases, which xunit reports as a pass.
+**What happens to the remaining 45.** They leave §2b with the program and continue as standing R0
+hygiene, one slice per release, each lowering the ratchet. That is not a deferral dressed up: the
+count is enforced, so the work cannot quietly stop, and it cannot quietly reverse either.
 
-**Recorded rather than closed, with the reason:**
+**Carried out of the program, unchanged and still named:**
 
-- **`AnalysisMode` stays at the SDK default.** Raising it to `Recommended` admits the whole CA
-  ruleset at once, and with warnings-as-errors on, every one becomes a build failure — a blast
-  radius that has to be measured exactly as this one was, and measuring it is a round trip through
-  the operator. `.113`.
-- **Central package management** (`Directory.Packages.props`) is the real fix for version drift and
-  changes how all thirteen projects resolve references at restore time. Its failure mode is "nothing
-  builds", which does not belong in the same release as seven guard rewrites. The GUARD against
-  drift ships here; the move is `.113`.
-- **Four of eleven literal-only guards remain**, and each is lower risk than the seven done:
-  `StructuredOutputTests` pins exact counts so a conversion fails LOUDLY rather than silently;
-  `RoleGraduationTests` miscounts into a false positive rather than a false negative;
-  `ModelRoutingGlobalsTests` fails open on a convention xunit enforces anyway; the three console-route
-  guards are additionally bounded to one physical line, which needs a different fix from this one.
-- **The S1 filesystem TOCTOU window** stays open and stays named — `IWorkspacePathGuard` returns a
-  `string` and ~20 call sites open by path afterwards; closing the race means returning a HANDLE,
-  rewriting every consumer's I/O, and P/Invoke, because .NET exposes no portable `openat`.
-- **Four of five agent CLIs still declare no system-prompt channel.** Adding one is a data change;
-  the cost is confirming each vendor's flag against an installed binary. Guessing would put a role
-  contract on a channel that silently discards it.
-- **Ollama capability discovery**, the **`.97` Windows residual** and the **capability-table
-  reconciliation** are unchanged and still need, respectively, a design decision, the machine that
-  reproduces it, and the live records.
+- **`AnalysisMode` beyond the SDK default** — needs its own census, because with warnings-as-errors on
+  every CA diagnostic becomes a build failure.
+- **Central package management** — the real fix for version drift; its failure mode is "nothing
+  builds". The guard against drift shipped at `.112`.
+- **Four of eleven literal-only guards**, each lower risk than the seven done and each named at
+  `.112` §2c with why.
+- **The S1 filesystem TOCTOU window** — needs a handle-returning path guard and P/Invoke; .NET
+  exposes no portable `openat`.
+- **Four of five agent CLIs declare no system-prompt channel** — a data change each, gated on
+  confirming the vendor's flag against an installed binary.
+- **Ollama capability discovery** — R1's last item, a contested design decision rather than an
+  oversight.
+- **The `.97` Windows `dotnet_test` residual** — needs the machine that reproduces it.
+- **The capability-table reconciliation and `QUALIFICATION.md` §3** — need the live pack's exported
+  records, and no code change moves them.
 
 ---
 
