@@ -87,6 +87,28 @@ public static class EnumExtensions
         "suggested" => ObjectiveStatus.Suggested, _ => ObjectiveStatus.Pending,
     };
 
+    /// <summary>
+    /// v0.3.8.113 — the read-back twins of the writers above, added with the first typed-row slice.
+    ///
+    /// Each mirrors its <c>Value()</c> exactly, and each falls back to the same member that writer
+    /// falls back to. That symmetry is the point: a parser whose default disagreed with its writer's
+    /// default would turn an unrecognised value into a DIFFERENT state on every round trip, which is
+    /// worse than either choice made consistently.
+    /// </summary>
+    public static ApprovalStatus ParseApprovalStatus(string? value) => value switch
+    {
+        "pending" => ApprovalStatus.Pending, "approved" => ApprovalStatus.Approved,
+        "rejected" => ApprovalStatus.Rejected, "expired" => ApprovalStatus.Expired,
+        "consumed" => ApprovalStatus.Consumed, _ => ApprovalStatus.Pending,
+    };
+
+    public static ApprovalActionType ParseApprovalActionType(string? value) => value switch
+    {
+        "patch_proposal" => ApprovalActionType.PatchProposal, "file_write" => ApprovalActionType.FileWrite,
+        "shell_command" => ApprovalActionType.ShellCommand, "tool_use" => ApprovalActionType.ToolUse,
+        _ => ApprovalActionType.ToolUse,
+    };
+
     public static TaskStatus ParseTaskStatus(string value) => value switch
     {
         "pending" => TaskStatus.Pending, "ready" => TaskStatus.Ready, "blocked" => TaskStatus.Blocked,

@@ -4,59 +4,66 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: main carries **v0.3.8.111** (`c78ea7e`, Colony Live — xchronusx). **`release/v0.3.8.112` is
-complete and green**: the tree enforces its own rules.
+State: main carries **v0.3.8.112** (`cc1e780`). **`release/v0.3.8.113` is complete and green**:
+typed database rows, and the end of the universal-workflow program.
 
 NOTE ON HISTORY: every commit SHA changed on 2026-09-01 when authorship was folded to three
 contributors. Anything quoting a SHA from before that date is dead. See the "anthill" project doc
 `history-rewrite-2026-09-01.md`.
 
-WHAT `.112` DELIVERS. R0's last item — enforcement.
+TWO PEOPLE LAND ON `main` NOW. `.111` (Colony Live) arrived from xchronusx while `.112` was being
+built. Every release block must `git fetch` and verify HEAD before applying a patch.
 
-WARNINGS ARE ERRORS, and the ORDER matters: a census across the solution returned ZERO warnings
-first, so this flips a clean tree rather than declaring bankruptcy on a dirty one.
-`TreatWarningsAsErrors` was `false` EXPLICITLY, which is a decision somebody took, not an omission.
+**THE PROGRAM IS OVER.** §2b ran `.98` → `.113`. It existed to make a mission class work end to end
+on a shared spine with a deterministic gate for its own promise, and five classes now do:
+`system_audit`, `troubleshooting`, `system_action`, `external_action`, `research`. There is no §2b
+successor; what remains is R-numbered work and standing hygiene.
 
-THE LITERAL-ONLY GUARD SWEEP — defect class 11 in the working-rules doc. A guard matching only a
-quoted argument cannot see a call site passing a shared constant, so it stops covering the code
-exactly as the code gets tidier, SILENTLY. `SourceText.CallSites` / `CallArgument` /
-`ConstantsAcrossSource` is one shared reader (depth-aware, bounds a call by its own parens, resolves
-against 423 declarations). SEVEN of eleven guards moved onto it.
+WHAT `.113` DELIVERS. The first typed-row slice (approvals) and a RATCHET at **45**, down from 50.
 
-- `EventVocabularyTests` had FOUR live escapes already open.
-- `RoleContractChannelTests` — the S9 prompt-injection guard — had TWO bugs pointing the same way:
-  literal-only, AND `[^;]*;`-bounded so any call with a lambda was truncated before its `system:`
-  argument.
-- `ContractDeclarationTests` was failing in BOTH directions at once.
+WHY A RATCHET: `Dictionary<string, object?>` is on fifty public store methods and read by a hundred
+consumer files. PLAN has said "one slice at a time" since the item was written, which admits it spans
+releases — so the count is enforced by `TypedRowMigrationTests.TheUntypedStoreSurface_OnlyShrinks`.
+Lower it when a slice lands; never raise it.
 
-THE HIERARCHY DOCUMENT FOUND THREE VIOLATIONS OF ITSELF. `docs/GUARDS.md` now states the order
-(runtime black-box → typed registry → compiled inspection → source scan last) and the two rules
-binding a source scan. "May never depend on a character count" has been in PLAN since `.92`; the
-detector found three guards still doing it. The worst sliced 2,500 chars across `EditableConfigKeys`
-— the very set it exists to watch GROW.
+THE BUG THE SLICE FOUND, and the reason to do the migration at all:
+`GetApprovalRequest` unprotected `decision_note` and `GetApprovalForTarget` did NOT. Same column,
+plaintext through one reader and ciphertext through the other. Four readers of one table, the field
+cipher in exactly one of them. A row-shaped API has nowhere for "how a row becomes an approval" to
+live, so each reader answers it again.
 
-MODULE AUTO-DISCOVERY replaces a hand-maintained `[InlineData]` list. The composition roots KEEP
-their explicit `LoadAll` calls, deliberately: reflecting over whatever assemblies are on disk is a
-worse security posture. What was defective was the guard, not the explicitness.
+ALSO: nine `Str(row, "status") != ApprovalStatus.X.Value()` string comparisons became enum
+comparisons; `Memory.RowValues` replaces the private row helpers `.110` gave `MissionRehydration`
+(the second copy had already appeared, three releases in); and the Homelab module still takes a ROW
+because it may reference only the SDK — the API host projects at the composition edge, with a guard
+pinning every key.
 
-DEFERRED WITH REASONS to `.113`: `AnalysisMode` beyond the SDK default (needs its own census — with
-warnings-as-errors on, every CA diagnostic becomes a build failure); central package management (its
-failure mode is "nothing builds"); four of eleven literal-only guards, each lower risk than the seven
-done; the S1 TOCTOU window; the four unverified agent-CLI system-prompt channels; Ollama capability
-discovery; the `.97` Windows residual; the capability-table reconciliation. `.113` also carries typed
-database rows.
+THE §2b TERMINAL GUARD IS FIXED. It asserted `to > from`, which cannot hold for a program's last
+release. The relaxation is one release wide: `to < from` still fails, and the equal case is admitted
+only when the table really holds one row.
 
-A GUARD THAT BITES AT `.113`: `TheUniversalWorkflowProgram_IsExactlyTheRangeItDeclares` asserts
-`to > from`, which cannot hold when one release remains.
+**WHAT IS LEFT, all outside the program now:**
+- The remaining 45 untyped store methods — one slice per release, each lowering the ratchet.
+- `AnalysisMode` beyond the SDK default — needs its own census (with warnings-as-errors on, every CA
+  diagnostic becomes a build failure).
+- Central package management — failure mode is "nothing builds".
+- Four of eleven literal-only guards — named at `.112` §2c with why each is lower risk.
+- The S1 filesystem TOCTOU window — needs a handle-returning path guard and P/Invoke.
+- Four of five agent CLIs declare no system-prompt channel — a data change each, gated on confirming
+  the vendor's flag against a real binary.
+- Ollama capability discovery (R1's last item); the `.97` Windows residual; the capability-table
+  reconciliation and `QUALIFICATION.md` §3, which need the live pack's records.
+- R4–R10 have not started. R6 (execution sandbox) gates R9.
 
-TWO PROCESS FACTS WORTH KEEPING:
-- `Anthill.Core` AND `Anthill.Tests` both declare a global `using Task = …`. Adding that alias in a
-  new file is CS1537. Paid twice, at `.109` and `.110`.
-- A new event type must be declared in `EventTypes` or `EventVocabularyTests` refuses it.
+PROCESS FACTS WORTH KEEPING:
+- `Anthill.Core` AND `Anthill.Tests` both declare a global `using Task = …`. Adding that alias is
+  CS1537. Paid twice, at `.109` and `.110`.
+- A new event type must be declared in `EventTypes` or `EventVocabularyTests` refuses it — and since
+  `.112` that guard resolves named constants too, so it sees far more call sites than it used to.
+- `docs/GUARDS.md` is the guard hierarchy, and `GuardHierarchyTests` enforces two of its rules.
+- `RELEASE_MSG.txt` is untracked, read by `ReleaseNotesTests`, and cannot travel in a `git diff`.
 
-THE LIVE PACK is still the operator's step — `anthill/live-pack-runbook.md`. `QUALIFICATION.md` §3
-stays PARTIALLY RUN. FIVE recognized classes: `system_audit`, `troubleshooting`, `system_action`,
-`external_action`, `research`.
+THE LIVE PACK is still the operator's step — `anthill/live-pack-runbook.md`. FIVE recognized classes.
 
 ROSTER, quoted correctly: **25 registered roles, 34 workers, 12 executable role types** under
 `activation_tier: full` + `roster_profile: full`. Only SIX executable by flag — researcher, file,

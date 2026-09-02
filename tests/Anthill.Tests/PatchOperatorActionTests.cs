@@ -61,13 +61,13 @@ public class PatchOperatorActionTests : IDisposable
     public void EnsurePatchApproval_CreatesMissingApprovalRecord()
     {
         var p = SaveOrphanPatch();
-        Assert.Null(_memory.GetApprovalForTarget(p.Id));
+        Assert.Null(_memory.ApprovalForTarget(p.Id));
         var (ok, approvalId, _) = _queen.EnsurePatchApproval(p.Id);
         Assert.True(ok);
         Assert.False(string.IsNullOrWhiteSpace(approvalId));
-        var approval = _memory.GetApprovalForTarget(p.Id);
+        var approval = _memory.ApprovalForTarget(p.Id);
         Assert.NotNull(approval);
-        Assert.Equal("pending", approval!.GetValueOrDefault("status")?.ToString());
+        Assert.Equal(ApprovalStatus.Pending, approval!.Status);
     }
 
     [Fact]
@@ -86,8 +86,8 @@ public class PatchOperatorActionTests : IDisposable
         var p = SaveOrphanPatch();
         var msg = _queen.ApprovePatchDirect(p.Id);
         Assert.Contains("approved", msg, StringComparison.OrdinalIgnoreCase);
-        var approval = _memory.GetApprovalForTarget(p.Id);
-        Assert.Equal("approved", approval!.GetValueOrDefault("status")?.ToString());
+        var approval = _memory.ApprovalForTarget(p.Id);
+        Assert.Equal(ApprovalStatus.Approved, approval!.Status);
     }
 
     [Fact]
@@ -95,8 +95,8 @@ public class PatchOperatorActionTests : IDisposable
     {
         var p = SaveOrphanPatch();
         _queen.RejectPatchDirect(p.Id, "not wanted");
-        var approval = _memory.GetApprovalForTarget(p.Id);
-        Assert.Equal("rejected", approval!.GetValueOrDefault("status")?.ToString());
+        var approval = _memory.ApprovalForTarget(p.Id);
+        Assert.Equal(ApprovalStatus.Rejected, approval!.Status);
         Assert.Equal("rejected", Status(p.Id));
     }
 
@@ -116,9 +116,9 @@ public class PatchOperatorActionTests : IDisposable
         Assert.Contains(p.Id, alt.GetValueOrDefault("reason")?.ToString() ?? "");
 
         // Alternative goes through the standard approval gate.
-        var altApproval = _memory.GetApprovalForTarget(newId);
+        var altApproval = _memory.ApprovalForTarget(newId);
         Assert.NotNull(altApproval);
-        Assert.Equal("pending", altApproval!.GetValueOrDefault("status")?.ToString());
+        Assert.Equal(ApprovalStatus.Pending, altApproval!.Status);
 
         // Original superseded.
         Assert.Equal("superseded", Status(p.Id));
@@ -130,8 +130,8 @@ public class PatchOperatorActionTests : IDisposable
         var p = SaveOrphanPatch("src/AltApproval.cs");
         var (_, approvalId, _) = _queen.EnsurePatchApproval(p.Id);
         _queen.ProposeAlternativePatch(p.Id, "edited content", "");
-        var origApproval = _memory.GetApprovalRequest(approvalId);
-        Assert.Equal("rejected", origApproval!.GetValueOrDefault("status")?.ToString());
+        var origApproval = _memory.ApprovalById(approvalId);
+        Assert.Equal(ApprovalStatus.Rejected, origApproval!.Status);
     }
 
     [Fact]

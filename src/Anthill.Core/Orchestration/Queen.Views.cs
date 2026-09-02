@@ -3,6 +3,7 @@ using Anthill.Core.Common;
 using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
 using Anthill.Core.Security;
+using Anthill.SDK.Events;
 
 namespace Anthill.Core.Orchestration;
 
@@ -24,10 +25,13 @@ public sealed partial class Queen
     {
         try { approvalId = Validation.ValidateApprovalId(approvalId); }
         catch (Exception e) { return $"Invalid approval id: {e.Message}"; }
-        var approval = Memory.GetApprovalRequest(approvalId);
+        // v0.3.8.113 — TYPED. Every `Str(row, "status") != ApprovalStatus.X.Value()` below became an
+        // enum comparison: the old form compared the SPELLING of a state, and a typo in either half
+        // refuses silently and forever in the lane that decides whether work is allowed to happen.
+        var approval = Memory.ApprovalById(approvalId);
         if (approval is null) return $"No approval request found with id: {approvalId}";
-        if (Str(approval, "status") != ApprovalStatus.Pending.Value())
-            return $"Approval request is not pending.\nID: {approvalId}\nCurrent Status: {Str(approval, "status")}";
+        if (approval.Status != ApprovalStatus.Pending)
+            return $"Approval request is not pending.\nID: {approvalId}\nCurrent Status: {approval.Status.Value()}";
         var updated = Memory.UpdateApprovalStatus(approvalId, ApprovalStatus.Approved,
             "Approved by user. Patch can only be applied through /apply if write gates are enabled.");
         if (updated is not null)
@@ -36,11 +40,11 @@ public sealed partial class Queen
             // path. Without this the patch stays "proposed" after approval and the Patch Center's
             // Apply action (gated on patch status "approved") never appears — approved patches were
             // un-appliable through the UI.
-            if (Str(updated, "action_type") == ApprovalActionType.PatchProposal.Value())
-                Memory.UpdatePatchStatus(Str(updated, "target_id"), PatchStatus.Approved);
-            Memory.LogEvent(Str(updated, "mission_id"), "approval_request_approved", $"Approval request approved: {approvalId}",
-                Str(updated, "task_id"), "queen",
-                new() { ["approval_request_id"] = approvalId, ["action_type"] = Str(updated, "action_type"), ["target_id"] = Str(updated, "target_id"), ["patch_application_enabled"] = AnthillRuntime.EnablePatchApplication, ["file_writing_enabled"] = AnthillRuntime.EnableFileWriting });
+            if (updated.ActionType == ApprovalActionType.PatchProposal)
+                Memory.UpdatePatchStatus(updated.TargetId, PatchStatus.Approved);
+            Memory.LogEvent(updated.MissionId, EventTypes.ApprovalRequestApproved, $"Approval request approved: {approvalId}",
+                updated.TaskId, "queen",
+                new() { ["approval_request_id"] = approvalId, ["action_type"] = updated.ActionType.Value(), ["target_id"] = updated.TargetId, ["patch_application_enabled"] = AnthillRuntime.EnablePatchApplication, ["file_writing_enabled"] = AnthillRuntime.EnableFileWriting });
         }
         // v0.3.8.105 — THE NEXT STEP DEPENDS ON WHAT WAS APPROVED, and until now this said "inspect
         // the patch" whatever the request was. That was harmless while `PatchProposal` was the only
@@ -54,17 +58,17 @@ public sealed partial class Queen
         // The replay is attempted HERE, at the moment the decision is recorded, because that is the
         // moment the runtime learns the answer — asking the operator to then go and restart
         // something would be handing them a second step for a decision they have already made.
-        if (updated is not null && Str(updated, "action_type") == ApprovalActionType.ToolUse.Value())
+        if (updated is not null && updated.ActionType == ApprovalActionType.ToolUse)
         {
             // The target is `<mission>:<tool>`; the tool is everything after the LAST colon,
             // because a mission id may legitimately contain one and a tool name may not. Spelled
             // the same way `SqliteMemory.PendingOperatorDecisions` spells it — two readings of one
             // format is how the two come to disagree about which action was approved.
-            var target = Str(updated, "target_id");
+            var target = updated.TargetId;
             var cut = target.LastIndexOf(':');
             var action = cut >= 0 && cut + 1 < target.Length ? target[(cut + 1)..] : target;
 
-            var resumption = ResumeMission(Str(updated, "mission_id"), action);
+            var resumption = ResumeMission(updated.MissionId, action);
 
             return $"Approval recorded.\nID: {approvalId}\nStatus: approved\n\n"
                  + $"Action: {target}\n"
@@ -75,12 +79,12 @@ public sealed partial class Queen
                      + "The mission's outcome stops reporting that it is waiting on this.");
         }
 
-        if (updated is not null && Str(updated, "action_type") != ApprovalActionType.PatchProposal.Value())
+        if (updated is not null && updated.ActionType != ApprovalActionType.PatchProposal)
             return $"Approval recorded.\nID: {approvalId}\nStatus: approved\n\n"
-                 + $"Action: {Str(updated, "target_id")}\n"
+                 + $"Action: {updated.TargetId}\n"
                  + "The mission's outcome stops reporting that it is waiting on this.";
 
-        return $"Approval recorded.\nID: {approvalId}\nStatus: approved\n\nNext step: inspect the patch with /patch {Str(updated!, "target_id")}.\n" +
+        return $"Approval recorded.\nID: {approvalId}\nStatus: approved\n\nNext step: inspect the patch with /patch {updated!.TargetId}.\n" +
                $"To apply later: /apply {approvalId}\n\nPatch application requires both write gates enabled.";
     }
 
@@ -88,19 +92,19 @@ public sealed partial class Queen
     {
         try { approvalId = Validation.ValidateApprovalId(approvalId); }
         catch (Exception e) { return $"Invalid approval id: {e.Message}"; }
-        var approval = Memory.GetApprovalRequest(approvalId);
+        var approval = Memory.ApprovalById(approvalId);
         if (approval is null) return $"No approval request found with id: {approvalId}";
-        if (Str(approval, "status") != ApprovalStatus.Pending.Value())
-            return $"Approval request is not pending.\nID: {approvalId}\nCurrent Status: {Str(approval, "status")}";
+        if (approval.Status != ApprovalStatus.Pending)
+            return $"Approval request is not pending.\nID: {approvalId}\nCurrent Status: {approval.Status.Value()}";
         var note = reason ?? "Rejected by user.";
         var updated = Memory.UpdateApprovalStatus(approvalId, ApprovalStatus.Rejected, note);
         if (updated is not null)
         {
-            if (Str(updated, "action_type") == ApprovalActionType.PatchProposal.Value())
-                Memory.UpdatePatchStatus(Str(updated, "target_id"), PatchStatus.Rejected, lastError: note);
-            Memory.LogEvent(Str(updated, "mission_id"), "approval_request_rejected", $"Approval request rejected: {approvalId}",
-                Str(updated, "task_id"), "queen",
-                new() { ["approval_request_id"] = approvalId, ["action_type"] = Str(updated, "action_type"), ["target_id"] = Str(updated, "target_id"), ["reason"] = note });
+            if (updated.ActionType == ApprovalActionType.PatchProposal)
+                Memory.UpdatePatchStatus(updated.TargetId, PatchStatus.Rejected, lastError: note);
+            Memory.LogEvent(updated.MissionId, EventTypes.ApprovalRequestRejected, $"Approval request rejected: {approvalId}",
+                updated.TaskId, "queen",
+                new() { ["approval_request_id"] = approvalId, ["action_type"] = updated.ActionType.Value(), ["target_id"] = updated.TargetId, ["reason"] = note });
         }
         return $"Approval request rejected.\nID: {approvalId}\nStatus: rejected\nReason: {note}";
     }
@@ -123,15 +127,15 @@ public sealed partial class Queen
     {
         try { approvalId = Validation.ValidateApprovalId(approvalId); }
         catch (Exception e) { return new(PatchApplyOutcome.RefusedUnknown, $"Invalid approval id: {e.Message}"); }
-        var approval = Memory.GetApprovalRequest(approvalId);
+        var approval = Memory.ApprovalById(approvalId);
         if (approval is null) return new(PatchApplyOutcome.RefusedUnknown, $"No approval request found with id: {approvalId}");
-        if (Str(approval, "status") != ApprovalStatus.Approved.Value())
+        if (approval.Status != ApprovalStatus.Approved)
             return new(PatchApplyOutcome.RefusedNotApproved,
-                $"Cannot apply patch. Approval request is not approved.\nID: {approvalId}\nCurrent Status: {Str(approval, "status")}");
-        if (Str(approval, "action_type") != ApprovalActionType.PatchProposal.Value())
+                $"Cannot apply patch. Approval request is not approved.\nID: {approvalId}\nCurrent Status: {approval.Status.Value()}");
+        if (approval.ActionType != ApprovalActionType.PatchProposal)
             return new(PatchApplyOutcome.RefusedUnknown,
-                $"Cannot apply approval type: {Str(approval, "action_type")}\nOnly patch_proposal approvals can be applied.");
-        var patchId = Str(approval, "target_id");
+                $"Cannot apply approval type: {approval.ActionType.Value()}\nOnly patch_proposal approvals can be applied.");
+        var patchId = approval.TargetId;
         var patch = Memory.GetPatchProposal(patchId);
         if (patch is null) return new(PatchApplyOutcome.RefusedUnknown, $"No patch proposal found for approval target id: {patchId}");
         if (Str(patch, "status") == PatchStatus.Applied.Value())
@@ -157,9 +161,9 @@ public sealed partial class Queen
 
         if (!verdict.Promotable)
         {
-            Memory.LogEvent(Str(approval, "mission_id"), "patch_promotion_refused",
+            Memory.LogEvent(approval.MissionId, "patch_promotion_refused",
                 $"Promotion refused at {verdict.Layer}: {verdict.Reason}",
-                Str(approval, "task_id"), "queen",
+                approval.TaskId, "queen",
                 new()
                 {
                     ["patch_id"] = patchId, ["approval_request_id"] = approvalId,
@@ -193,7 +197,7 @@ public sealed partial class Queen
         using var pinnedTarget = Anthill.Core.Workspaces.MissionWorkspaceScope.Enter(
             new Anthill.Core.Workspaces.MissionWorkspace
             {
-                Id = $"apply-target-{patchSetId}", MissionId = Str(approval, "mission_id"),
+                Id = $"apply-target-{patchSetId}", MissionId = approval.MissionId,
                 Root = target.Root, SourceRoot = target.Root, Mode = "apply-target",
                 State = Anthill.Core.Workspaces.WorkspaceState.Active,
             });
@@ -209,21 +213,21 @@ public sealed partial class Queen
         // The intent carries the target's bytes as they are right now, so startup reconciliation can
         // decide from hashes rather than from belief. See `PatchApplyReconciler`.
         var intent = Memory.BeginApplyIntent(
-            patchId, approvalId, patchSetId, Str(approval, "mission_id"),
+            patchId, approvalId, patchSetId, approval.MissionId,
             Str(patch, "file_path"),
             Verification.PatchApplyIntentHash.Of(Str(patch, "file_path"), target.Root));
 
         Memory.AdvanceApplyIntent(intent.Id, Verification.PatchApplyPhase.Mutating);
 
-        var result = Tools.RunTool("apply_patch", Str(approval, "mission_id"), Str(approval, "task_id"), "queen",
+        var result = Tools.RunTool("apply_patch", approval.MissionId, approval.TaskId, "queen",
             new() { ["patch"] = patch });
         if (!result.Success)
         {
             // Nothing landed, so there is nothing for reconciliation to finish.
             Memory.CloseApplyIntent(intent.Id);
             Memory.UpdatePatchStatus(patchId, PatchStatus.Failed, lastError: result.Error);
-            Memory.LogEvent(Str(approval, "mission_id"), "patch_apply_failed", $"Patch application failed: {patchId}",
-                Str(approval, "task_id"), "queen", new() { ["approval_request_id"] = approvalId, ["patch_id"] = patchId, ["error"] = result.Error });
+            Memory.LogEvent(approval.MissionId, "patch_apply_failed", $"Patch application failed: {patchId}",
+                approval.TaskId, "queen", new() { ["approval_request_id"] = approvalId, ["patch_id"] = patchId, ["error"] = result.Error });
             return new(PatchApplyOutcome.Failed,
                 $"Patch application failed.\nApproval ID: {approvalId}\nPatch ID: {patchId}\nError: {result.Error}");
         }
@@ -237,8 +241,8 @@ public sealed partial class Queen
 
         Memory.UpdatePatchStatus(patchId, PatchStatus.Applied, AnthillTime.NowUtc().ToIso(), backupPath, null);
         Memory.UpdateApprovalStatus(approvalId, ApprovalStatus.Consumed, "Approval consumed by successful patch application.");
-        Memory.LogEvent(Str(approval, "mission_id"), "patch_applied", $"Patch applied successfully: {patchId}",
-            Str(approval, "task_id"), "queen",
+        Memory.LogEvent(approval.MissionId, "patch_applied", $"Patch applied successfully: {patchId}",
+            approval.TaskId, "queen",
             new() { ["approval_request_id"] = approvalId, ["patch_id"] = patchId, ["file_path"] = Str(patch, "file_path"), ["change_type"] = Str(patch, "change_type"), ["backup_path"] = backupPath });
         Memory.UpdatePheromoneTrail("capability:controlled_file_writing", "capability", true, 0.03,
             new() { ["approval_request_id"] = approvalId, ["patch_id"] = patchId, ["file_path"] = Str(patch, "file_path") });
@@ -258,7 +262,7 @@ public sealed partial class Queen
     /// partial apply, it is a refusal that says which approval is missing.
     /// </summary>
     private PatchApplyResult ApplyApprovedSetAsAUnit(string approvalId,
-        Dictionary<string, object?> approval, string patchSetId,
+        ApprovalRequest approval, string patchSetId,
         List<(string PatchId, PatchProposal Proposal)> members)
     {
         var refusals = new List<string>();
@@ -273,10 +277,10 @@ public sealed partial class Queen
 
         if (refusals.Count > 0)
         {
-            Memory.LogEvent(Str(approval, "mission_id"), "patch_promotion_refused",
+            Memory.LogEvent(approval.MissionId, "patch_promotion_refused",
                 $"Set apply refused: {refusals.Count} of {members.Count} member(s) of patch set "
               + $"{patchSetId} are not promotable, so none were applied. " + string.Join(" | ", refusals.Take(5)),
-                Str(approval, "task_id"), "queen",
+                approval.TaskId, "queen",
                 new()
                 {
                     ["patch_set_id"] = patchSetId, ["approval_request_id"] = approvalId,
@@ -298,10 +302,9 @@ public sealed partial class Queen
         // Every member's approval is consumed by the one application — including the clicked one.
         foreach (var (memberId, _) in members)
         {
-            var memberApproval = Memory.GetApprovalForTarget(memberId);
-            var memberApprovalId = memberApproval?.GetValueOrDefault("id")?.ToString();
-            if (memberApprovalId is { Length: > 0 })
-                Memory.UpdateApprovalStatus(memberApprovalId, ApprovalStatus.Consumed,
+            var memberApproval = Memory.ApprovalForTarget(memberId);
+            if (memberApproval is { Id.Length: > 0 })
+                Memory.UpdateApprovalStatus(memberApproval.Id, ApprovalStatus.Consumed,
                     "Approval consumed by the transactional application of its whole patch set.");
         }
 
@@ -611,8 +614,8 @@ public sealed partial class Queen
     {
         var patch = Memory.GetPatchProposal(patchId);
         if (patch is null) return (false, "", $"No patch proposal found with id: {patchId}");
-        var existing = Memory.GetApprovalForTarget(patchId);
-        if (existing is not null) return (true, Str(existing, "id"), "Existing approval record found.");
+        var existing = Memory.ApprovalForTarget(patchId);
+        if (existing is not null) return (true, existing.Id, "Existing approval record found.");
         if (Str(patch, "status") != PatchStatus.Proposed.Value())
             return (false, "", $"Patch is not pending (status: {Str(patch, "status")}) and has no approval record to act on.");
         var approval = new ApprovalRequest
@@ -666,8 +669,8 @@ public sealed partial class Queen
         // fix needs; the row is authoritative either way, which the sentence never was. The apply
         // step returns `PatchApplyResult`, whose outcome is the decision.
         var approveMessage = ApproveRequest(approvalId);
-        var approvalNow = Memory.GetApprovalRequest(approvalId);
-        if (approvalNow is null || Str(approvalNow, "status") != ApprovalStatus.Approved.Value())
+        var approvalNow = Memory.ApprovalById(approvalId);
+        if (approvalNow is null || approvalNow.Status != ApprovalStatus.Approved)
             return (false, approveMessage);
 
         var apply = ApplyApprovedPatchTyped(approvalId);
@@ -797,9 +800,9 @@ public sealed partial class Queen
         {
             Memory.UpdatePatchStatus(originalPatchId, PatchStatus.Superseded,
                 lastError: $"Superseded by operator alternative {proposal.Id}.");
-            var origApproval = Memory.GetApprovalForTarget(originalPatchId);
-            if (origApproval is not null && Str(origApproval, "status") == ApprovalStatus.Pending.Value())
-                Memory.UpdateApprovalStatus(Str(origApproval, "id"), ApprovalStatus.Rejected,
+            var origApproval = Memory.ApprovalForTarget(originalPatchId);
+            if (origApproval is { Status: ApprovalStatus.Pending })
+                Memory.UpdateApprovalStatus(origApproval.Id, ApprovalStatus.Rejected,
                     $"Superseded by operator alternative patch {proposal.Id}.");
         }
         return (true, proposal.Id, $"Alternative patch created: {proposal.Id}");
@@ -809,14 +812,14 @@ public sealed partial class Queen
 
     public string FormatApprovals(int limit = 20, ApprovalStatus? status = ApprovalStatus.Pending)
     {
-        var rows = Memory.ListApprovalRequests(status, limit);
+        var rows = Memory.Approvals(status, limit);
         var label = status?.Value() ?? "all";
         if (rows.Count == 0) return $"No approval requests found for status: {label}.";
         var blocks = rows.Select(a =>
-            $"Approval ID: {Str(a, "id")}\nStatus: {Str(a, "status")}\nAction: {Str(a, "action_type")}\nTarget ID: {Str(a, "target_id")}\n" +
-            $"Mission ID: {Str(a, "mission_id")}\nTask ID: {Str(a, "task_id", "n/a")}\nTitle: {Str(a, "title")}\nRequested By: {Str(a, "requested_by")}\n" +
-            $"Created At: {Str(a, "created_at", "n/a")}\nDecided At: {Str(a, "decided_at", "n/a")}\nDecision Note: {Str(a, "decision_note", "n/a")}\n" +
-            $"Description:\n{TextUtil.Truncate(Str(a, "description"), 260, "...[description truncated]")}");
+            $"Approval ID: {a.Id}\nStatus: {a.Status.Value()}\nAction: {a.ActionType.Value()}\nTarget ID: {a.TargetId}\n" +
+            $"Mission ID: {a.MissionId}\nTask ID: {a.TaskId ?? "n/a"}\nTitle: {a.Title}\nRequested By: {a.RequestedBy}\n" +
+            $"Created At: {a.CreatedAt:o}\nDecided At: {(a.DecidedAt is null ? "n/a" : $"{a.DecidedAt:o}")}\nDecision Note: {a.DecisionNote ?? "n/a"}\n" +
+            $"Description:\n{TextUtil.Truncate(a.Description, 260, "...[description truncated]")}");
         return $"Approval Requests | status={label} | count={rows.Count}\n\n" + string.Join(Divider, blocks);
     }
 
@@ -824,22 +827,23 @@ public sealed partial class Queen
     {
         try { approvalId = Validation.ValidateApprovalId(approvalId); }
         catch (Exception e) { return $"Invalid approval id: {e.Message}"; }
-        var approval = Memory.GetApprovalRequest(approvalId);
+        var approval = Memory.ApprovalById(approvalId);
         if (approval is null) return $"No approval request found with id: {approvalId}";
-        var metadata = ParseMetadata(approval);
-        var targetId = Str(approval, "target_id");
+        // The metadata is already parsed by the store's one row decoder, so the private
+        // `ParseMetadata` helper is no longer reached from here.
+        var targetId = approval.TargetId;
         var relatedPatch = "";
         var applyLine = "";
-        if (Str(approval, "action_type") == ApprovalActionType.PatchProposal.Value())
+        if (approval.ActionType == ApprovalActionType.PatchProposal)
         {
             relatedPatch = $"\nInspect Related Patch: /patch {targetId}";
             applyLine = $"\nApply If Approved: /apply {approvalId}";
         }
-        return $"Approval ID: {Str(approval, "id")}\nStatus: {Str(approval, "status")}\nAction Type: {Str(approval, "action_type")}\nTarget ID: {targetId}\n" +
-               $"Mission ID: {Str(approval, "mission_id")}\nTask ID: {Str(approval, "task_id")}\nRequested By: {Str(approval, "requested_by")}\nTitle: {Str(approval, "title")}\n\n" +
-               $"Description:\n{Str(approval, "description")}\n\nDecision Note:\n{Str(approval, "decision_note", "n/a")}\n\n" +
-               $"Created At: {Str(approval, "created_at")}\nDecided At: {Str(approval, "decided_at", "n/a")}\n\n" +
-               $"Metadata:\n{Json.Dumps(metadata, indented: true)}{relatedPatch}{applyLine}\n\n" +
+        return $"Approval ID: {approval.Id}\nStatus: {approval.Status.Value()}\nAction Type: {approval.ActionType.Value()}\nTarget ID: {targetId}\n" +
+               $"Mission ID: {approval.MissionId}\nTask ID: {approval.TaskId ?? "n/a"}\nRequested By: {approval.RequestedBy}\nTitle: {approval.Title}\n\n" +
+               $"Description:\n{approval.Description}\n\nDecision Note:\n{approval.DecisionNote ?? "n/a"}\n\n" +
+               $"Created At: {approval.CreatedAt:o}\nDecided At: {(approval.DecidedAt is null ? "n/a" : $"{approval.DecidedAt:o}")}\n\n" +
+               $"Metadata:\n{Json.Dumps(approval.Metadata, indented: true)}{relatedPatch}{applyLine}\n\n" +
                "Safety Note: /apply only works when approval is approved and both write gates are enabled.";
     }
 
@@ -1144,15 +1148,9 @@ public sealed partial class Queen
         return recent.Count > 0 ? Str(recent[0], "id") : null;
     }
 
-    private static Dictionary<string, object?> ParseMetadata(Dictionary<string, object?> row)
-    {
-        try
-        {
-            var json = row.GetValueOrDefault("metadata_json")?.ToString() ?? "{}";
-            return JsonSerializer.Deserialize<Dictionary<string, object?>>(json) ?? new();
-        }
-        catch { return new(); }
-    }
+    // v0.3.8.113 — `ParseMetadata` is GONE. It parsed `metadata_json` out of an approval row, and
+    // the store's one row decoder now does that for every reader. A private helper nothing calls is
+    // defect class 2 in miniature: it reads as machinery and reaches nobody.
 
     private static List<string> ParseJsonStringList(string json)
     {
