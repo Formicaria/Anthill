@@ -429,8 +429,8 @@ duplicating the rule.
 nothing in this model carries a per-record score to bind one to. The canvas fallback plays no
 transition flights; the WebGL renderer does, and the fallback has no truthful source for an ant in
 transit. Growth playback cannot reach events that were never persisted, which is every Micromound
-event and 31 other publish sites — a backend gap, named in §2e. And the standing R0 hygiene is
-untouched for the second release running.
+event and four others — a backend gap, named in §2e. And the standing R0 hygiene is untouched for
+the second release running.
 
 **Carried forward, unchanged and still named:** the list under §2c stands as written, with one
 correction — the typed-row ratchet is still at **45** and has now been skipped twice. The ratchet is
@@ -449,14 +449,26 @@ items.
 
 **The named findings from `.114`–`.115`, in the order they cost the most.**
 
-1. **Bus-only events cannot be replayed or reconstructed.** Every Micromound event and 31 other
-   publish sites reach `/events/stream` without ever being written to the events table. Three
-   consequences, all live: a reconnecting console silently loses them, Colony Growth Playback cannot
-   show them at all, and no audit after the fact can prove they happened. `.115` states the limit
-   honestly in the timeline's coverage line, which is the right thing to do about a gap and is not a
-   fix. **The fix is a decision, not a patch:** persist-then-publish for the classes that are
-   evidence, transient on purpose for the rest, with the split written down rather than inherited
-   from whichever call site was written first.
+1. **A MODULE CANNOT PERSIST AN EVENT, so its events cannot be replayed or reconstructed.**
+   Measured after `.115` shipped, correcting a figure that release stated wrongly: there are **12**
+   bus-only `Events.Publish` call sites across 11 files, **8 of them Micromound** — not the "31" the
+   `.115` entry claims. The other **198** event sites go through `SqliteMemory.LogEvent`, which
+   already writes the row and THEN publishes it, so the ordinary path was never the problem.
+
+   The 12 are not carelessness, and that is the finding. `Anthill.Core` is off-limits to a module by
+   the boundary rule; a module receives an `IModuleContext` and an event bus and has no persistence
+   path at all. Micromound publishes to the bus because publishing is the only thing it can do.
+
+   Three consequences, all live: a reconnecting console silently loses those events, Colony Growth
+   Playback cannot show them, and no audit after the fact can prove a charter was issued. `.115`
+   states the limit honestly in the timeline's coverage line, which is the right thing to do about a
+   gap and is not a fix.
+
+   **The fix is a SEAM, not a sweep.** `EventTypes` already requires every event type to be declared
+   and `EventVocabularyTests` enforces it, so the declaration is where durability belongs: each type
+   says durable or transient, and the composition root — which may name a module — persists the
+   durable ones. The guard is available at the TOP tier for once, which is rare for this kind of
+   work: publish a declared-durable event, then assert the row is in the table. No source scan.
 
 2. **The typed-row ratchet, still at 45, skipped twice.** `.114` and `.115` both spent themselves
    elsewhere. `TheUntypedStoreSurface_OnlyShrinks` enforces ≤ 45 so it cannot reverse, and nothing
