@@ -2241,6 +2241,9 @@ function loop(ts){
   // draw when the tab is backgrounded or the canvas has no area; the rAF keeps ticking so the
   // map resumes instantly with no re-init.
   if(!topologyAwake) return;
+  // Colony Live on: this canvas is display:none under it. Drawing it every frame was a second full
+  // render nobody could see; the rAF keeps ticking so Classic 2D resumes instantly when chosen.
+  if(document.body.classList.contains('colony-live-on')) return;
   if(REDUCED_MOTION && !colonyRunning){
     if(ts-_lastReducedDraw<250) return;
     _lastReducedDraw=ts;
