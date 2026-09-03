@@ -81,7 +81,11 @@
         mount: area, live: live, topo: topo,
         motion: options.motion, labels: options.labels, trails: options.trails,
         onResident: openAgentInspector,
-        onMoundStop: moundStop
+        onMoundStop: moundStop,
+        /* v0.3.8.117: the HUD renders its control bar into the console's own viewbar rather
+           than floating a second one bottom-right. Passed rather than looked up inside the HUD,
+           because the HUD is not allowed to know the console's DOM — wiring is this file's job. */
+        barMount: document.getElementById('colony-viewbar')
       });
     }
 
@@ -274,9 +278,16 @@
     onColonyEvent(function (ev) { if (topo) topo.ingestEvent(ev); });
   }
 
+  /* v0.3.8.117: COLONY LIVE 3D IS THE DEFAULT VIEW. It was opt-in, remembered per browser, so
+     the colony page opened on the canvas projection and an operator had to know the Live 3D button
+     existed to see the thing the last two releases were about.
+
+     Default ON, and only an explicit '0' — an operator who has actually turned it off — keeps the
+     canvas. A machine with no WebGL still lands on the canvas, because `createHost()` falls back on
+     its own and `enable()` guards the mount; the default decides intent, not capability. */
   document.addEventListener('DOMContentLoaded', function () {
-    var want = false;
-    try { want = localStorage.getItem(VIEW_KEY) === '1'; } catch (e) { }
+    var want = true;
+    try { want = localStorage.getItem(VIEW_KEY) !== '0'; } catch (e) { }
     if (want) toggle(true);
   });
 
@@ -287,6 +298,14 @@
     ingestApprovals: function (a) { if (topo) topo.ingestApprovals(a); },
     ingestMound: function (m) { if (topo) topo.ingestMound(m); },
     setOptions: function (o) { if (live) live.setOptions(o); },
+    /* One reset for both renderers — see the `reset-all` handler in app.js. Camera first, then
+       layout, so the chambers are back home before the camera frames them. */
+    resetAll: function () {
+      if (!live) return;
+      if (typeof live.resetView === 'function') live.resetView();
+      if (typeof live.resetLayout === 'function') live.resetLayout();
+    },
+    zoom: function (f) { if (live && typeof live.zoom === 'function') live.zoom(f); },
     active: function () { return !!live; },
     renderer: function () { return live ? live.renderer : null; }
   };

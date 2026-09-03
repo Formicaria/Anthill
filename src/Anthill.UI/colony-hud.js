@@ -123,6 +123,21 @@
     });
     mount.appendChild(root);
 
+    /* v0.3.8.117: THE CONTROL BAR BELONGS IN THE CONSOLE'S OWN BAR. It floated bottom-right, so the
+       colony page carried two rows of controls in two corners — the viewbar's (motion, labels,
+       pheromones, zoom, reset) and this one's (survey, mission, memory, mounds, history, view) —
+       with nothing to say from looking which row owned what.
+
+       Given a `barMount` by the host, it re-parents into it and drops its own chrome so the buttons
+       join that row rather than starting a second one. It stays the HUD's in every other respect:
+       `destroy()` removes it explicitly, because it is no longer inside `root` and would otherwise
+       outlive the view that owns it. */
+    if (o.barMount) {
+      bar.classList.add('clh-bar-inline');
+      bar.removeAttribute('data-chrome-avoid');   // chrome the viewbar already declares for itself
+      o.barMount.appendChild(bar);
+    }
+
     function can(name) { return live && typeof live[name] === 'function'; }
     function depth() { return can('depth') ? live.depth() : 'survey'; }
     function focused() { return can('focused') ? live.focused() : null; }
@@ -755,7 +770,12 @@
       showApprovals: function () { selection = { kind: 'approval' }; render(); },
       onDepth: function () { render(); },
       mode: function () { return mode; },
-      destroy: function () { if (root.parentNode) root.parentNode.removeChild(root); }
+      destroy: function () {
+        // The bar may live in #colony-viewbar rather than under `root`, so it needs removing
+        // by hand — otherwise toggling 3D off leaves a dead row of buttons in the viewbar.
+        if (bar && bar.parentNode) bar.parentNode.removeChild(bar);
+        if (root.parentNode) root.parentNode.removeChild(root);
+      }
     };
   }
 

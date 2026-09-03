@@ -970,7 +970,10 @@ const ROLE_COLORS={
   ui_cartographer:'#2dd4bf',builder:'#c084fc',verifier:'#f87171',tester:'#60a5fa',
   soldier:'#ef4444',medic:'#34d399',archivist:'#facc15',quartermaster:'#94a3b8',scribe:'#e879f9'
 };
-let colonyRegistry=null,colonyView='command',showHandoffs=true;
+// v0.3.8.117: 'expanded' is the only 2D mode offered now - Colony Live 3D is the default view
+// and this canvas is its fallback, so when it IS shown it shows everything rather than a
+// filtered subset. command/active/group still work; their buttons are hidden, not deleted.
+let colonyRegistry=null,colonyView='expanded',showHandoffs=true;
 let antRuntimeStatus={};   // v2.14.13: roleId -> /colony/registry runtime_status entry
 const ANT_MAP={
   researcher:{ color:ROLE_COLORS.researcher, label:'ResearcherAnt', role:'CONTEXT' },
@@ -1375,10 +1378,23 @@ document.querySelectorAll('#colony-viewbar .cv-btn').forEach(btn=>{
     const act=btn.dataset.colonyact;   // v2.14.12: reset buttons share this one dispatch path
     if(act==='reset-view'){ colonyResetView(); return; }
     if(act==='reset-layout'){ colonyResetLayout(); return; }
+    // v0.3.8.117: ONE reset for both renderers. Four reset buttons across two bars asked the
+    // operator to know which renderer they were looking at before they could recover the view -
+    // and the reason to press reset is usually that you have lost track of exactly that.
+    if(act==='reset-all'){
+      colonyResetView(); colonyResetLayout();
+      if(window.ColonyHost && ColonyHost.active()) ColonyHost.resetAll();
+      return;
+    }
     // v0.3.8.49: on-screen zoom — the Ctrl/Cmd+wheel bargain is undiscoverable, so the buttons
     // zoom about the canvas centre with no modifier required. Eases via the camera targets.
-    if(act==='zoom-in'){ colonyZoom(1.2); return; }
-    if(act==='zoom-out'){ colonyZoom(1/1.2); return; }
+    // v0.3.8.117: the zoom buttons drive whichever renderer is showing. They were 2D-only, so in
+    // the 3D view they were two controls that visibly did nothing.
+    if(act==='zoom-in'||act==='zoom-out'){
+      const f=act==='zoom-in'?1.2:1/1.2;
+      if(window.ColonyHost && ColonyHost.active()) ColonyHost.zoom(f); else colonyZoom(f);
+      return;
+    }
     if(act==='live3d'){ if(window.ColonyHost) ColonyHost.toggle(); return; }
     if(view){
       colonyView=view;

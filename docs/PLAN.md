@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.116**.
+Shipping release: **v0.3.8.117**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -436,6 +436,31 @@ the second release running.
 correction — the typed-row ratchet is still at **45** and has now been skipped twice. The ratchet is
 enforced at ≤ 45, so the work cannot reverse; only this note stops it quietly stopping, and it is
 worth more the second time it has to be written.
+
+---
+
+### 2g. v0.3.8.117 — the colony view stops being opt-in
+
+**Delivers:** the shell around the renderer `.116` built, and the first deliberate divergence from
+the design it was ported from.
+
+**THE VIEW WAS OPT-IN.** Two releases of work sat behind a button an operator had to know existed.
+Colony Live 3D is the default now; the canvas projection is the fallback and the single 2D option
+(Command, Active and Chambers hidden, Expanded renamed **2D View**), and the 3D HUD's control bar
+renders into `#colony-viewbar` instead of floating a second row bottom-right. Four reset buttons
+across two bars became one that resets whichever renderer is showing.
+
+**THE FIRST NAMED DIVERGENCE.** Conduit grain counts drop from the reference's 60/24/40 to 36/15/24 —
+eighteen roots against its sixteen, and far sparser chambers, made the streams the loudest thing in
+the frame. The interesting part is the mechanism: rather than deleting that row from
+`ThePortedConstants_StillAgreeWithTheVendoredReference`, it moved to a divergence table pinned on
+BOTH sides. Dropping a row would have left the strongest guard in the file blind to exactly the
+value most likely to move again; pinning both means lowering it further AND the reference changing
+underneath it each fail with a reason attached. **That is the pattern for every future deviation
+from a ported design** — record it in the comparison, never remove it from the comparison.
+
+**AND A NEW MARK**, rendered at five sizes and looked at before shipping. The first draft smeared
+below 24px. Same lesson as `.116`.
 
 ---
 

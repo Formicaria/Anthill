@@ -4,10 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ANTHILL</title>
-<!-- v0.3.8.49 (§19): the Formicaria mark as a data-URI SVG favicon — terminal + node legs, dark tile
-     so it reads on both light and dark browser chrome. No extra asset request, scales crisply. -->
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1220'/%3E%3Cg fill='none' stroke='%23eef2f7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='6.25' y='5.25' width='19.5' height='15' rx='3.6'/%3E%3Cpolyline points='10.6,10 14.2,13 10.6,16'/%3E%3Cline x1='15.7' y1='16' x2='19.6' y2='16'/%3E%3Cpath d='M16 20.25 V23.6 M14.3 20.25 C12.2 21.6 11 22 11 23.6 M17.7 20.25 C19.8 21.6 21 22 21 23.6'/%3E%3C/g%3E%3Cg fill='%2393bdf2'%3E%3Ccircle cx='11' cy='25.7' r='2.05'/%3E%3Ccircle cx='16' cy='26.1' r='2.5'/%3E%3Ccircle cx='21' cy='25.7' r='2.05'/%3E%3C/g%3E%3C/svg%3E">
-<meta name="theme-color" content="#0b1220">
+<!-- v0.3.8.117: the Formicaria mark - a rounded terminal tile holding a forager and a
+     `>_` prompt, in the brand crimson. Same artwork as the app icon and the desktop
+     shell's .ico, drawn once here as a data URI so there is no extra asset request and
+     no second copy to fall out of step. Rendered and checked at 16/24/32/64 before it
+     shipped: below 24px the legs and the prompt collide, which is why the ant sits high
+     and the prompt has the bottom-left band to itself. -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20viewBox%3D%220%200%2032%2032%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%20%3Crect%20x%3D%223.1%22%20y%3D%223.1%22%20width%3D%2225.8%22%20height%3D%2225.8%22%20rx%3D%226.4%22%20fill%3D%22none%22%20stroke%3D%22%23ec1163%22%20stroke-width%3D%222%22%2F%3E%20%3Cg%20fill%3D%22%23ec1163%22%3E%20%3Cellipse%20cx%3D%2213.5%22%20cy%3D%2210.3%22%20rx%3D%222.5%22%20ry%3D%222.1%22%2F%3E%20%3Cellipse%20cx%3D%2217.6%22%20cy%3D%2211.4%22%20rx%3D%222.1%22%20ry%3D%222.0%22%2F%3E%20%3Cellipse%20cx%3D%2222.2%22%20cy%3D%2213.6%22%20rx%3D%223.1%22%20ry%3D%222.7%22%2F%3E%20%3C%2Fg%3E%20%3Cg%20stroke%3D%22%23ec1163%22%20stroke-width%3D%221.25%22%20stroke-linecap%3D%22round%22%20fill%3D%22none%22%3E%20%3Cpath%20d%3D%22M11.6%208.7%20C%209.2%207.9%208.4%209.5%208.9%2012.0%22%2F%3E%20%3Cpath%20d%3D%22M16.0%2012.9%20L%2014.4%2015.4%22%2F%3E%20%3Cpath%20d%3D%22M17.8%2013.4%20L%2017.6%2016.2%22%2F%3E%20%3Cpath%20d%3D%22M19.5%2013.1%20L%2021.2%2015.8%22%2F%3E%20%3C%2Fg%3E%20%3Cpolyline%20points%3D%227.3%2C18.6%209.7%2C20.7%207.3%2C22.8%22%20fill%3D%22none%22%20stroke%3D%22%23ec1163%22%20stroke-width%3D%221.85%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%20%3Cline%20x1%3D%2212.0%22%20y1%3D%2223.0%22%20x2%3D%2216.6%22%20y2%3D%2223.0%22%20stroke%3D%22%23ec1163%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%2F%3E%20%3C%2Fsvg%3E">
+<meta name="theme-color" content="#050a14">
 <!-- v0.3.8.55: the saved theme is applied by themes.js at PARSE time (deferred scripts all run
      before DOMContentLoaded, so before first meaningful paint in practice). NOT an inline script
      here: the console's CSP is script-src 'self' with no unsafe-inline, and an inline snippet
@@ -679,6 +683,12 @@ body.colony-live-3d .topo-ov-slot > *:not(#colony-viewbar):not(:has(#colony-view
 .cv-btn{border:0;background:transparent;color:var(--dim);font-size:10px;border-radius:4px;padding:5px 7px;cursor:pointer;}
 .cv-btn:hover{color:var(--text);background:rgba(255,255,255,.06);}
 .cv-btn.on{color:var(--queen);background:rgba(var(--queen-rgb),.12);}
+/* v0.3.8.117: retired view modes stay in the DOM so app.js keeps working, and out of sight. */
+.cv-hidden{display:none !important;}
+/* v0.3.8.117: the 3D HUD renders its control bar INTO #colony-viewbar rather than floating a
+   second bar bottom-right. One row of controls, one place to look. */
+.clh-bar.clh-bar-inline{position:static;bottom:auto;right:auto;background:none;border:0;
+  padding:0;backdrop-filter:none;-webkit-backdrop-filter:none;gap:3px;}
 #colony-right{
   width:225px;flex-shrink:0;overflow-y:auto;overflow-x:hidden;
   border-left:1px solid var(--border);display:flex;flex-direction:column;padding:8px;gap:8px;
@@ -1797,22 +1807,32 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <a class="nav-logo-link" href="https://formicaria.us" target="_blank" rel="noopener noreferrer"
          title="formicaria.us" aria-label="Formicaria — formicaria.us">
       <span class="nav-logo-mark" aria-hidden="true">
-        <!-- v0.3.8.49 (§19): the Formicaria mark — a terminal window (a `>_` prompt) spawning three
-             node legs, the colony branching out of the command line. Terminal in the foreground
-             colour, nodes in the brand's light blue; both are CSS vars so the mark rides the theme
-             and stays crisp at favicon size. -->
+        <!-- v0.3.8.117: the Formicaria mark - a rounded terminal tile holding a forager and a
+             `>_` prompt. One artwork, three places: this nav mark, the data-URI favicon in <head>,
+             and src/Anthill.Desktop/anthill.ico. `--logo-fg` still overrides the colour so a theme
+             can retint it, but the brand crimson is the default rather than a neutral, because the
+             mark IS the brand now and a mono-grey version of it read as a different product.
+
+             Checked at 16/24/32/64 before shipping: below 24px the legs and the prompt collide, so
+             the ant sits high and the prompt owns the bottom-left band by itself. -->
         <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect x="6.25" y="5.25" width="19.5" height="15" rx="3.6"
-                stroke="var(--logo-fg,#eef2f7)" stroke-width="2"/>
-          <polyline points="10.6,10 14.2,13 10.6,16"
-                stroke="var(--logo-fg,#eef2f7)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          <line x1="15.7" y1="16" x2="19.6" y2="16"
-                stroke="var(--logo-fg,#eef2f7)" stroke-width="2" stroke-linecap="round"/>
-          <path d="M16 20.25 V23.6 M14.3 20.25 C12.2 21.6 11 22 11 23.6 M17.7 20.25 C19.8 21.6 21 22 21 23.6"
-                stroke="var(--logo-fg,#eef2f7)" stroke-width="1.8" stroke-linecap="round"/>
-          <circle cx="11" cy="25.7" r="2.05" fill="var(--logo-node,#93bdf2)"/>
-          <circle cx="16" cy="26.1" r="2.5"  fill="var(--logo-node,#93bdf2)"/>
-          <circle cx="21" cy="25.7" r="2.05" fill="var(--logo-node,#93bdf2)"/>
+          <rect x="3.1" y="3.1" width="25.8" height="25.8" rx="6.4"
+                stroke="var(--logo-fg,#ec1163)" stroke-width="2"/>
+          <g fill="var(--logo-fg,#ec1163)">
+            <ellipse cx="13.5" cy="10.3" rx="2.5" ry="2.1"/>
+            <ellipse cx="17.6" cy="11.4" rx="2.1" ry="2.0"/>
+            <ellipse cx="22.2" cy="13.6" rx="3.1" ry="2.7"/>
+          </g>
+          <g stroke="var(--logo-fg,#ec1163)" stroke-width="1.25" stroke-linecap="round">
+            <path d="M11.6 8.7 C 9.2 7.9 8.4 9.5 8.9 12.0"/>
+            <path d="M16.0 12.9 L 14.4 15.4"/>
+            <path d="M17.8 13.4 L 17.6 16.2"/>
+            <path d="M19.5 13.1 L 21.2 15.8"/>
+          </g>
+          <polyline points="7.3,18.6 9.7,20.7 7.3,22.8"
+                stroke="var(--logo-fg,#ec1163)" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"/>
+          <line x1="12.0" y1="23.0" x2="16.6" y2="23.0"
+                stroke="var(--logo-fg,#ec1163)" stroke-width="2" stroke-linecap="round"/>
         </svg>
       </span>
       </a>
@@ -2287,10 +2307,16 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <!-- data-chrome-avoid: the Live 3D renderer reads these rectangles and places
                chamber labels clear of them. The viewbar sits top-right over the canvas. -->
           <div class="colony-viewbar" id="colony-viewbar" data-chrome-avoid>
-            <button class="cv-btn on" data-view="command" title="Queen, Director, and main ant hubs">Command</button>
-            <button class="cv-btn" data-view="expanded" title="Show specialized sub-ants">Expanded</button>
-            <button class="cv-btn" data-view="active" title="Only current mission path">Active</button>
-            <button class="cv-btn" data-view="group" title="Organize the ants into their chambers, in place on this canvas">Chambers</button>
+            <!-- v0.3.8.117: THE 2D VIEW IS ONE VIEW NOW. Colony Live 3D is the default and the
+                 primary; the canvas projection is the fallback and the deliberate 2D option, and it
+                 shows every ant including workers - which is what "Expanded" always was. Command,
+                 Active and Chambers are HIDDEN rather than deleted: `colonyView` still drives
+                 buildNodes() and the chamber layout, and ripping the modes out is a separate change
+                 with its own blast radius. Chambers is on its way out entirely. -->
+            <button class="cv-btn cv-hidden" data-view="command" title="Queen, Director, and main ant hubs">Command</button>
+            <button class="cv-btn on" data-view="expanded" title="The 2D canvas projection - every role and worker">2D View</button>
+            <button class="cv-btn cv-hidden" data-view="active" title="Only current mission path">Active</button>
+            <button class="cv-btn cv-hidden" data-view="group" title="Organize the ants into their chambers, in place on this canvas">Chambers</button>
             <button class="cv-btn on" data-toggle="handoffs" title="Show active handoff edges">Handoffs</button>
             <span class="cv-sep"></span>
             <!-- v2.14.5: map preferences live on the live colony canvas. The separate chamber SVG
@@ -2312,8 +2338,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             </select>
             <button class="cv-btn" data-colonyact="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
             <button class="cv-btn" data-colonyact="zoom-in" title="Zoom in" aria-label="Zoom in">＋</button>
-            <button class="cv-btn" data-colonyact="reset-view" title="Reset pan and zoom">⤾ View</button>
-            <button class="cv-btn" data-colonyact="reset-layout" title="Return dragged ants to the computed layout">⌂ Layout</button>
+            <!-- v0.3.8.117: ONE RESET. There were two here and two more in the 3D HUD, and an
+                 operator who has lost the view does not want to work out which of four to press.
+                 This resets whichever renderer is showing: pan/zoom and dragged ants in 2D, camera
+                 and chamber layout in 3D. -->
+            <button class="cv-btn" data-colonyact="reset-all" title="Reset the view and the layout - camera, pan, zoom, and any chamber or ant you have dragged">⤾ Reset</button>
             <span class="cv-sep"></span>
             <!-- Colony Live (design doc §17, stage 3) behind a view switch. The classic canvas stays the default
                  and the permanent reduced/no-WebGL fallback (design doc §17, stage 3). -->
