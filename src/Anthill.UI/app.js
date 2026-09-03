@@ -549,6 +549,10 @@ const IA = [
     // one job beats two. /tools/providers aliases to Integrations.
     // The colony's memory and learning signals belong beside the capabilities that use them.
     { label:'Memory & Signals', route:'/tools/memory', page:'pheromones', vis:'admin' },
+    // v0.3.8.115: the Micromound console. An integration with physical devices, so it lives where
+    // the integrations do. Admin-only because every mutation behind it — mint, charter, manifest,
+    // dispatch, stop, unlink — is gated on a Micromound permission a reader does not hold.
+    { label:'Micromound', route:'/tools/micromound', page:'micromound', vis:'admin' },
   ]},
   { type:'domain', id:'settings', label:'Settings', vis:'admin', sections:[
     { label:'General', route:'/settings/general', page:'settings', vis:'admin' },

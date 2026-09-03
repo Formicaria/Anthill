@@ -128,6 +128,11 @@ public static partial class ApiHost
             ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
             return Results.Content(UiColonyHudJs, "text/javascript; charset=utf-8");
         });
+        app.MapGet("/ui/micromound.js", (HttpContext ctx) =>
+        {
+            ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
+            return Results.Content(UiMicromoundJs, "text/javascript; charset=utf-8");
+        });
         // v0.3.8.115 — the vendored three.js, from THIS origin and nowhere else.
         //
         // Cached, unlike every asset above it. The others are `no-store` because a stale console

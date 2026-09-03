@@ -44,10 +44,21 @@
     { id: 'valid', label: 'VALIDATION', color: '#c25f6e', core: '#d98a96', pos: [310, -20, 50], R: 58, n: 230, rot: .000045 },
     { id: 'memory', label: 'MEMORY', color: '#d9b054', core: '#ecd39a', pos: [210, 180, -40], R: 60, n: 250, rot: -.00003 },
     { id: 'output', label: 'OUTPUT', color: '#8f78c9', core: '#b3a0e0', pos: [-180, 200, -70], R: 56, n: 220, rot: .00004 },
-    { id: 'mound', label: 'MICROMOUND', color: '#a55a7e', core: '#c9cfdc', pos: [-95, 265, 70], R: 34, n: 110, rot: .00006 }
+    { id: 'mound', label: 'MICROMOUND', color: '#a55a7e', core: '#c9cfdc', pos: [-95, 265, 70], R: 34, n: 110, rot: .00006 },
+    // v0.3.8.115 — the two chambers this projection did not have.
+    //
+    // `ColonySectors` has nine sectors and this file had seven, so a record filed to `homelab` or
+    // `unassigned` had nowhere to land and was silently not drawn. `unassigned` matters most: it is
+    // where an unrecognised role goes, and the WHOLE POINT of routing it there rather than to the
+    // Queen is that an operator can SEE it. A fallback that drops it restores the defect it replaced.
+    { id: 'homelab', label: 'HOMELAB', color: '#6b9e78', core: '#a7cbb0', pos: [330, 210, 90], R: 50, n: 190, rot: -.000035 },
+    { id: 'unassigned', label: 'UNASSIGNED', color: '#7b8494', core: '#b9c2cf', pos: [-360, 120, -110], R: 44, n: 150, rot: .000042 }
   ];
-  var ROOT_PAIRS = [['queen', 'intel', 3, 26], ['queen', 'forge', 3, 30], ['queen', 'valid', 2, 40], ['queen', 'memory', 2, 34], ['queen', 'output', 3, 26], ['intel', 'forge', 2, -20], ['forge', 'valid', 2, 22], ['valid', 'memory', 2, 26], ['memory', 'output', 2, 38]];
-  var CLN = { queen: ['plans', 'decisions', 'directives', 'durable authority'], intel: ['conversations', 'context windows', 'web lookups', 'durable memories'], forge: ['patches', 'artifacts', 'build logs', 'durable memories'], valid: ['test runs', 'evidence', 'checks', 'durable memories'], memory: ['outcomes', 'patterns', 'pheromones', 'durable core'], output: ['results', 'reports', 'deliveries', 'durable memories'], mound: ['beats', 'syncs', 'telemetry', 'chain'] };
+  var ROOT_PAIRS = [['queen', 'intel', 3, 26], ['queen', 'forge', 3, 30], ['queen', 'valid', 2, 40], ['queen', 'memory', 2, 34], ['queen', 'output', 3, 26], ['intel', 'forge', 2, -20], ['forge', 'valid', 2, 22], ['valid', 'memory', 2, 26], ['memory', 'output', 2, 38],
+    // Both hang off the Queen like every other sector. `unassigned` is deliberately connected
+    // rather than floating: it holds real roles the registry knows and this view does not.
+    ['queen', 'homelab', 2, 34], ['queen', 'unassigned', 2, -28]];
+  var CLN = { queen: ['plans', 'decisions', 'directives', 'durable authority'], intel: ['conversations', 'context windows', 'web lookups', 'durable memories'], forge: ['patches', 'artifacts', 'build logs', 'durable memories'], valid: ['test runs', 'evidence', 'checks', 'durable memories'], memory: ['outcomes', 'patterns', 'pheromones', 'durable core'], output: ['results', 'reports', 'deliveries', 'durable memories'], mound: ['beats', 'syncs', 'telemetry', 'chain'], homelab: ['hosts', 'services', 'actions', 'durable memories'], unassigned: ['roles this view does not place'] };
   var CLSLOT = [[-.62, -.38, .05], [.62, -.28, -.05], [.4, .55, .08], [0, .1, 0]];
   var LKEY = 'anthill.colonyLive.layout';
 
@@ -334,7 +345,34 @@
     var api = {
       survey: function () { SEC.forEach(function (s) { s.frozen = null; }); focused = null; follow = false; selRec = null; goal.yaw = -.3; goal.pitch = .4; goal.dist = 900; goal.tgt = [0, 20, 0]; setCrumb('colony survey'); emit('deselect'); },
       focus: function (id) { var s = bySec[id]; if (!s) return; if (s.frozen == null) s.frozen = live() ? performance.now() * s.rot : 0; focused = id; follow = false; goal.tgt = s.pos.slice(); goal.dist = s.R * 4.6; setCrumb('colony survey → ' + s.label.toLowerCase()); emit('sector', s); },
-      followMission: function () { follow = true; focused = null; goal.dist = 460; setCrumb('following active mission'); },
+      /* §12 — FOLLOW MEANS FOLLOW SOMETHING REAL, or say there is nothing to follow.
+         This used to set `follow = true`, pull the camera to 460 and print "following
+         active mission" whether or not a mission existed. The route now comes from
+         persisted task edges, so "the active mission" is exactly the chambers those
+         edges touch: the camera centres their midpoint and the crumb names them. With
+         no edges there is no mission to follow, and it says so instead of framing an
+         empty colony and calling it a mission. */
+      followMission: function () {
+        var touched = [];
+        circuit.forEach(function (sg) {
+          var pts = sg.pts;
+          if (pts && pts.length) touched.push(pts[0], pts[pts.length - 1]);
+        });
+        if (!touched.length) {
+          follow = false;
+          setCrumb('no recorded mission route to follow');
+          emit('follow', { following: false, reason: 'no persisted task edges between chambers' });
+          return;
+        }
+        var c = [0, 0, 0];
+        touched.forEach(function (p) { c[0] += p[0]; c[1] += p[1]; c[2] += p[2]; });
+        c[0] /= touched.length; c[1] /= touched.length; c[2] /= touched.length;
+        follow = true; focused = null; selRec = null;
+        goal.tgt = c; goal.dist = 460;
+        setCrumb('following the recorded mission route (' + circuit.length + ' segment'
+               + (circuit.length === 1 ? '' : 's') + ')');
+        emit('follow', { following: true, segments: circuit.length });
+      },
       resetView: function () { api.survey(); },
       resetLayout: function () { SEC.forEach(function (s) { s.pos = s.defPos.slice(); s.label = s.defLabel; }); rebuildAll(); try { localStorage.removeItem(LKEY); } catch (e) { } },
       renameSector: function (id, name) { var s = bySec[id]; if (s && name && name.trim()) { s.label = name.trim().toUpperCase(); saveLayout(); } },

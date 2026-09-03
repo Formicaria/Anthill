@@ -14,11 +14,14 @@ contributors. Anything quoting a SHA from before that date is dead. See the "ant
 TWO PEOPLE LAND ON `main` NOW. `.111` (Colony Live) arrived from xchronusx while `.112` was being
 built. Every release block must `git fetch` and verify HEAD before applying a patch.
 
-WHAT `.115` DELIVERS: a Colony Live that draws only recorded facts. Two read-model endpoints
+WHAT `.115` DELIVERS, in two halves. **Colony Live**: two read-model endpoints
 (`/colony/live/snapshot`, `/colony/live/records`), a vendored three.js WebGL renderer, a HUD asset
 carrying breadcrumbs/controls/inspectors/timeline/descent, growth playback reconstructed from
-persisted records only, a Micromound descent showing recorded fields and computing no verdict, and
-approvals decided through app.js's existing `doApproval`. 3,571 tests green.
+persisted records only, a Micromound descent, and approvals decided through app.js's existing
+`doApproval`. **The Micromound console**: `micromound.js`, closing all seven UI GAPs `.114` recorded
+— fleet, mint, unlink, stop/resume, charters, manifests, mission dispatch, mission evidence, the
+resolver and the evidence feed. `MicromoundWidgets.StatusOf` is public and the fleet listing carries
+its verdict, so no client computes a status.
 
 **THE THING TO CARRY FORWARD FROM `.115`.** The brief said "preserve the existing WebGL renderer".
 There was none — `.111` shipped canvas-2D with a hand-rolled projection. Checking the premise before
@@ -37,11 +40,14 @@ controls). `ColonyLiveGuardTests` enforces that split and thirteen other rules.
 - The remaining **45** untyped store methods — one slice per release, each lowering the ratchet.
   SKIPPED TWICE NOW (`.114` and `.115`). The ratchet is enforced at ≤ 45 so it cannot reverse; this
   line is the only thing stopping it quietly stopping.
-- The Micromound console card — charters, manifests, dispatch, token mint, unlink, evidence feed.
-  Tracked in `docs/UI-ALIGNMENT-BRIEF.md` §11, because the coverage ledger is route-granular and
-  `/micromound/mounds` had to leave it when Colony Live began reading the fleet.
-- Exposing `MicromoundWidgets.StatusOf` on the fleet listing — the smallest change that lets the
-  console show an at-a-glance mound status without a second implementation of the rule.
+- **Bus-only events.** Every Micromound event and 31 other publish sites reach `/events/stream`
+  without ever being written. They cannot be replayed on reconnect, cannot appear in growth playback,
+  and cannot be audited after the fact. The fix is a DECISION — persist-then-publish for the classes
+  that are evidence, transient on purpose for the rest, with the split written down. `docs/PLAN.md`
+  §2e carries it as the top item.
+- **Three widget payloads read by nobody.** `mound_fleet`, `mission_status`, `evidence_feed` are
+  built on every Micromound mutation for a widget runtime that never rendered them, and `.115`'s
+  console reads the routes directly. Retire them or finish them; they should not stay both.
 - `AnalysisMode` beyond the SDK default — needs its own census (with warnings-as-errors on, every CA
   diagnostic becomes a build failure).
 - Central package management — failure mode is "nothing builds".
@@ -65,7 +71,14 @@ PROCESS FACTS WORTH KEEPING:
 - A new event type must be declared in `EventTypes` or `EventVocabularyTests` refuses it — and since
   `.112` that guard resolves named constants too, so it sees far more call sites than it used to.
 - `Anthill.Tests.Micromound` is NOT in `Anthill.sln`; it builds separately under the MICROMOUND
-  define. A solution-wide run reporting ~3,571 is complete for the solution and does not include it.
+  define, against the sibling `micromound` checkout. A solution-wide run is complete for the solution
+  and silently excludes it — including, since `.115`, the console vocabulary guards. ALWAYS run both.
+- The static `.nav-item` divs in `index.html` are LEGACY DEAD DOM. `buildNav` renders `#nav-scroll`
+  from the `IA` table in app.js, so a new page must be added there or it has a route, a container, a
+  PAGE_ENTER handler and no way for an operator to reach it. Paid at `.115`, caught before shipping.
+- The console's CSP-safe click dispatcher resolves `data-onclick="fn(args)"` through `window[...]`,
+  so every handler in a console asset must be a top-level global — and no two assets may declare the
+  same one (`ConsoleAssetSplitTests`).
 - `docs/GUARDS.md` is the guard hierarchy, and `GuardHierarchyTests` enforces two of its rules.
 - `RELEASE_MSG.txt` is untracked, read by `ReleaseNotesTests`, and cannot travel in a `git diff`.
 - `gh pr merge --delete-branch` fast-forwards main without setting an upstream; a bare

@@ -75,36 +75,26 @@ public class ConsoleRouteCoverageTests
         ["/homelab/backup/impact/*"] = "homelab backup impact; no console area yet",
         ["/homelab/graph/dependents/*"] = "homelab dependency graph; the deck renders the graph itself",
 
-        // --- MICROMOUND M1: two of these are not console routes at all, and the rest await the
-        // Integrations card that renders the three widget payloads (mound_fleet, mission_status,
-        // evidence_feed) through the widget runtime. ------------------------------------------------
+        // --- MICROMOUND: the console shipped at v0.3.8.115, and this block emptied. --------------
+        //
+        // `.60` shipped the uplink with no command path. `.114` shipped the command path and said
+        // plainly that its console had not been built, recording seven routes here as UI GAPs so the
+        // deferral could be CHECKED rather than only asserted in prose. `.115` renders all of them:
+        // `src/Anthill.UI/micromound.js` lists the fleet with the colony's own status verdict, mints
+        // and retires devices, engages and clears the per-mound stop, issues charters and manifests,
+        // composes and dispatches physical missions, reads one mission's evidence, asks the resolver,
+        // and shows the feed. `/micromound/mounds` left one release earlier, when Colony Live began
+        // reading the fleet to decide whether to offer a device descent.
+        //
+        // Every form field was read off the DECLARING TYPE — `Micromound.Protocol` for the wire
+        // shapes, `ApiHost.Micromound.cs` for the request bodies — because `.114` named the defect
+        // class for the opposite (a contract invented from the spec) and paid for it at the front
+        // door of the integration, where enrolment was impossible while every test passed.
+        //
+        // The two below stay: they are DEVICE endpoints. A mound is not an operator, it dials in,
+        // and its auth is a one-time token or an Ed25519 signature rather than a session.
         ["/micromound/v0/enroll"] = "device endpoint: the one-time token is the auth; a mound is not an operator",
         ["/micromound/v0/sync"] = "device endpoint: the Ed25519 signature is the auth; mounds dial in, consoles do not",
-        // "/micromound/mounds" LEFT this ledger at v0.3.8.115. Colony Live reads the fleet listing
-        // once on enable to decide whether a Micromound descent is offered at all, so the route is
-        // reached and the entry would now be excusing nothing (`TheLedger_ContainsNothingTheConsole
-        // ActuallyReaches`). What that read does NOT surface is the POST on the same path — minting
-        // an enrollment token — which normalises to the same key and so cannot be recorded here
-        // separately. It is tracked in docs/UI-ALIGNMENT-BRIEF.md with the rest of the M1 UI.
-        ["/micromound/evidence"] = "UI GAP — the evidence_feed widget payload is the intended reader (M1 UI)",
-        ["/micromound/stop"] = "UI GAP — per-mound stop control belongs on the fleet card; the global stop is a file by design",
-        ["/micromound/stop/resume"] = "UI GAP — as /micromound/stop; resume is an explicit operator act",
-
-        // --- MICROMOUND v0.3.8.114: the command path shipped and its console did NOT. -------------
-        //
-        // This is the deferral recorded where it can be checked rather than only asserted in prose.
-        // The integration brief's acceptance experience — an operator adding a mound, authoring its
-        // configuration, issuing a charter and watching evidence arrive, all from the console — is
-        // NOT delivered by `.114`, by an explicit scope decision. Every route below is reachable
-        // over the API and nothing renders it.
-        //
-        // These entries are meant to LEAVE this ledger, the way the v0.3.8.46 block above did.
-        ["/micromound/charters"] = "UI GAP — charter issuance has no console surface; the command path shipped ahead of its UI at .114",
-        ["/micromound/config"] = "UI GAP — manifest authoring (hardware bindings, device limits, workers) awaits its console form",
-        ["/micromound/missions"] = "UI GAP — physical mission dispatch; approvals DO surface, through the existing approvals queue",
-        ["/micromound/missions/*"] = "UI GAP — per-mission evidence summary; the mission_status widget payload is the intended reader",
-        ["/micromound/resolve"] = "UI GAP — the capability resolver answers a question and issues nothing; no console asks it yet",
-        ["/micromound/unlink"] = "UI GAP — retiring a device belongs on the fleet card, beside the token mint",
 
         // The v0.3.8.48 schedule entries left this ledger the same release they joined it: the
         // project workspace's Schedules tab reaches all of them.

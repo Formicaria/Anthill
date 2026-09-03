@@ -80,10 +80,57 @@ the button was pressed; until then the control shows pending, which is the truth
 projection cannot place is reported as unresolved attention at the Queen and says so in the panel,
 rather than being attached to whatever route was last drawn.
 
-**`/micromound/mounds` LEFT THE `NoConsoleSurface` LEDGER.** The host reads the fleet once on enable
-to decide whether a descent is offered at all. The POST on that path — minting an enrollment token —
-still has no surface and normalises to the same ledger key, so it could not stay recorded there; it
-is carried in `docs/UI-ALIGNMENT-BRIEF.md` with the rest of the M1 console work instead.
+**`/micromound/mounds` LEFT THE `NoConsoleSurface` LEDGER** — and then the rest of the Micromound
+block left with it, below.
+
+---
+
+**AND THE MICROMOUND CONSOLE, WHICH `.114` DEFERRED.** That release shipped the command path and said
+plainly that its UI had not been built, recording seven routes in the coverage ledger as UI GAPs —
+the deferral written where it could be CHECKED rather than only asserted in prose. That block is now
+empty. `src/Anthill.UI/micromound.js` lists the fleet with the colony's own status verdict, mints and
+retires devices, engages and clears the per-mound stop, issues charters and manifests, composes and
+dispatches physical missions, reads one mission's two verdicts, asks the capability resolver, and
+shows the evidence feed. The only Micromound routes still in the ledger are the two DEVICE endpoints:
+a mound is not an operator, it dials in, and its auth is a one-time token or an Ed25519 signature
+rather than a session.
+
+**EVERY FORM FIELD WAS READ OFF THE DECLARING TYPE.** `.114` named a defect class for the opposite —
+a wire contract invented from PROTOCOL.md instead of read from the client — which made enrolment
+impossible through the front door for a whole release while every test passed, because both ends of
+every test were ours. So `MissionStep`, `StepCondition`, `CapabilityLimits`, `WorkerDefinition` and
+`HardwareBinding` came from `Micromound.Protocol`, and the request bodies from the file that
+deserializes them. `ConsoleVocabularyTests` sits in `Anthill.Tests.Micromound`, where the protocol
+assembly exists, and compares the console's five closed vocabularies against the protocol's own sets
+at the TYPED tier rather than by scanning text: adding an operation to the protocol now fails a test
+instead of quietly leaving the console a version behind.
+
+**THE ONE NARROWING IS ASSERTED AS A NARROWING.** The charter form offers three action ceilings where
+the protocol has four. `hazardous` is real and `MicromoundCharters.Issue` refuses it, so offering it
+would be a control whose only possible outcome is a refusal — and the guard checks BOTH halves, so if
+the issuer ever stops refusing it, the console is no longer allowed to keep hiding it.
+
+**`MicromoundWidgets.StatusOf` IS PUBLIC, AND THE FLEET LISTING CARRIES ITS VERDICT.** This closes the
+one thing Colony Live had deferred for a good reason. The status rule reads the beat interval and the
+configured missed-beat grace; a browser has neither, so a console that wanted to show "online" could
+only recompute the rule and then disagree the first time that configuration changed. Carrying the
+answer is smaller than duplicating the rule. It rides as a map keyed by mound id beside `items`
+rather than spliced into each record, so nothing here becomes a second hand-maintained list of
+`MoundRecord`'s fields.
+
+**A CONSOLE THAT NEVER SAYS "DELIVERED".** The colony does not dial a mound; a device behind NAT in a
+shed dials in. Everything issued lands in a downlink queue, so the word shown is "awaiting
+collection" — the field the API actually returns — and a manifest the API accepted is reported as NOT
+in force, because the mound validates it against its own drivers and may still refuse. A guard
+forbids the three claims that would paper over that. The global stop is displayed and is deliberately
+not a button: it is a file on disk precisely so that no API flow can clear it.
+
+**AND TWO COLONY LIVE GAPS FOUND WHILE CLOSING THE FIRST.** The canvas fallback had seven chambers
+where `ColonySectors` has nine, so a record filed to `homelab` or `unassigned` had nowhere to land
+and was silently not drawn — and `unassigned` is precisely where an unrecognised role goes, so
+dropping it restored the defect this release exists to remove. And `followMission` set a flag, pulled
+the camera back and printed "following active mission" whether or not one existed; it now centres the
+chambers the persisted task edges actually touch, or says there is no recorded route to follow.
 
 **FOURTEEN GUARDS, EACH WITH A VACUITY FLOOR.** `ColonyLiveGuardTests` states every rule this release
 depends on: deterministic placement, no repeating timer, one file performs I/O, membership from the
@@ -93,13 +140,17 @@ the reference package's scaffolding. Each asserts that its scan can see what it 
 because `docs/GUARDS.md`'s standing lesson — a guard that cannot express success is not a guard, it
 is a deadline — has now arrived five times.
 
-**WHAT `.115` DID NOT DO, said plainly.** The Micromound console still has no card: charter issuance,
-manifest authoring, mission dispatch, the token mint, unlink and the evidence feed are all reachable
-over the API and rendered by nothing, and they remain in the coverage ledger with that reason. The
-standing R0 hygiene items are untouched again and the typed-row ratchet did not move — second release
-running, and recorded here for the same reason `.114` recorded it. Colony Live's semantic zoom has
-survey, approach, inside and cluster with a Back control, and does not yet have mission-follow or a
-pheromone overlay tied to real scores.
+**WHAT `.115` DID NOT DO, said plainly.** Colony Live has no pheromone overlay bound to real scores,
+because nothing in this model carries a per-record score to bind one to. The canvas fallback plays no
+transition flights; the WebGL renderer does, and the fallback has no truthful source for an ant in
+transit. Growth playback cannot reach events that were never persisted — every Micromound event and
+31 other publish sites reach the stream without ever being written, so they can be neither replayed
+on reconnect nor reconstructed here; the timeline states that rather than letting a sparse history
+read as a quiet colony, and the fix is a backend decision recorded in `docs/PLAN.md` §2e. Three
+Micromound widget payloads (`mound_fleet`, `mission_status`, `evidence_feed`) are still built on
+every mutation and read by nobody, now that the console reads the routes directly. And the standing
+R0 hygiene is untouched again — the typed-row ratchet did not move for the second release running,
+recorded here for the same reason `.114` recorded it.
 
 ## v0.3.8.114 - the colony can direct a mound, and the beat answers
 

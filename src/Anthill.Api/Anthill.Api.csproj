@@ -65,6 +65,7 @@
     <EmbeddedResource Include="..\Anthill.UI\colony-renderer.js" LogicalName="Anthill.Api.Ui.colony-renderer.js" Condition="'$(AnthillNoUi)' != 'true'" />
     <EmbeddedResource Include="..\Anthill.UI\colony-host.js" LogicalName="Anthill.Api.Ui.colony-host.js" Condition="'$(AnthillNoUi)' != 'true'" />
     <EmbeddedResource Include="..\Anthill.UI\colony-hud.js" LogicalName="Anthill.Api.Ui.colony-hud.js" Condition="'$(AnthillNoUi)' != 'true'" />
+    <EmbeddedResource Include="..\Anthill.UI\micromound.js" LogicalName="Anthill.Api.Ui.micromound.js" Condition="'$(AnthillNoUi)' != 'true'" />
     <!--
       v0.3.8.115 — THE ONE VENDORED RUNTIME DEPENDENCY THE CONSOLE HAS, and the rules it lives by.
 

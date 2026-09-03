@@ -74,6 +74,7 @@ public static partial class ApiHost
     private static string UiColonyRendererJs = "";
     private static string UiColonyHostJs = "";
     private static string UiColonyHudJs = "";
+    private static string UiMicromoundJs = "";
 
     /// <summary>
     /// three.js 0.128.0, vendored. Served from this origin so the CSP stays `script-src 'self'`;
@@ -281,6 +282,7 @@ public static partial class ApiHost
         UiColonyRendererJs = LoadUiAsset("colony-renderer.js");
         UiColonyHostJs = LoadUiAsset("colony-host.js");
         UiColonyHudJs = LoadUiAsset("colony-hud.js");
+        UiMicromoundJs = LoadUiAsset("micromound.js");
         UiVendorThreeJs = LoadUiAsset("vendor.three.min.js");
         UiGridCss = LoadUiAsset("dashboard-grid.css");
         InitHomelab(); // v1.9.0 homelab foundation (read-only; see Homelab/ApiHost.Homelab.cs)
