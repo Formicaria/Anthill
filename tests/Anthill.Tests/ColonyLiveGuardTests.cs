@@ -1058,9 +1058,15 @@ public class ColonyLiveGuardTests
                 $"colony-renderer.js still builds the authority seal ('{badge}'). A lock drawn over "
               + "the one chamber an operator can act on reads as 'you may not touch this'.");
 
-        // Vacuity floor: the authority conduit it used to sit on is still there, and still its own kind.
+        /* Vacuity floor: the authority conduit it used to sit on is still there and still its own
+           kind. This anchored on the GRAIN COUNT until `.117` lowered it deliberately, and this
+           guard — which has nothing to do with grain counts — went red. A vacuity floor has to be a
+           value that only changes when the thing under test is actually gone; anchoring one on a
+           number another change may legitimately move buys a guard that fails for the wrong reason
+           and teaches whoever hits it to edit the assertion rather than read it. `sharp` is the
+           conduit spec's most inert constant and is compared properly next door. */
         Assert.Contains("kind: 'authority'", r);
-        Assert.Contains("auth ? 40 : lateral ? 24 : 60", r);
+        Assert.Contains("sharp: auth ? 150 : 120", r);
     }
 
     /// <summary>
@@ -1106,7 +1112,6 @@ public class ColonyLiveGuardTests
         ("conduit alpha", @"vA = aB \* \(uRest \+ ([\d.]+) \* wave\);"),
         ("conduit size clamp", @"clamp\(aS \* \(1\.0 \+ ([\d.]+) \* wave\) \* uScale \* \(([\d.]+) / max\(([\d.]+), -mv\.z\)\), ([\d.]+), ([\d.]+)\)"),
         ("conduit colour mix", @"mix\(uFrom, uTo, smoothstep\(([\d.]+), ([\d.]+), aT\)\)"),
-        ("conduit grains", @"n: auth \? (\d+) : lateral \? (\d+) : (\d+)"),
         ("conduit streams", @"streams: auth \? (\d+) : lateral \? (\d+) : (\d+)"),
         ("conduit radius", @"rad: auth \? ([\d.]+) : lateral \? ([\d.]+) : ([\d.]+)"),
         ("conduit rest floor", @"rest: auth \? ([\d.]+) : lateral \? ([\d.]+) : ([\d.]+)"),
@@ -1160,8 +1165,34 @@ public class ColonyLiveGuardTests
         ("link opacity", @"\? (0\.36) : \(state\.focus && !focused\w*\) \? (0\.03) : (0\.06) \+ \w+ \* (0\.16)")
         ];
 
+        /* THE DELIBERATE DIVERGENCES, PINNED ON BOTH SIDES. A ported constant this console
+           changes on purpose does not get quietly dropped from the table — that would leave the
+           strongest guard in the file blind to exactly the values most likely to move again. It
+           is listed here with the reference's value AND ours, so lowering it further, or the
+           reference changing underneath it, both fail and both say why. */
+        (string Name, string Pattern, string Reference, string Port, string Why)[] divergences =
+        [
+            ("conduit grain count",
+             @"n: auth \? (\d+) : lateral \? (\d+) : (\d+)",
+             "[40, 24, 60]", "[24, 15, 36]",
+             "this colony has 18 roots to the reference's 16 and far fewer record grains per "
+           + "chamber, so the reference's density made the streams the loudest thing in the frame")
+        ];
+
         var blind = new List<string>();
         var drifted = new List<string>();
+
+        foreach (var (name, pattern, expectRef, expectPort, why) in divergences)
+        {
+            var a = Regex.Match(reference, pattern);
+            var b = Regex.Match(port, pattern);
+            if (!a.Success || !b.Success) { blind.Add($"{name}: the divergence pattern no longer matches both files"); continue; }
+            if (Show(a) != expectRef)
+                blind.Add($"{name}: the REFERENCE now reads {Show(a)}, not the {expectRef} this "
+                        + $"divergence was recorded against - re-decide it rather than re-pinning it");
+            if (Show(b) != expectPort)
+                drifted.Add($"{name}: port reads {Show(b)}, not the agreed {expectPort} ({why})");
+        }
 
         foreach (var (name, pattern) in constants)
         {
@@ -1184,8 +1215,8 @@ public class ColonyLiveGuardTests
           + "changing each one breaks:\n  " + string.Join("\n  ", drifted));
 
         // Vacuity floor: a real comparison happened over a substantial table.
-        Assert.True(constants.Length >= 50,
-            $"only {constants.Length} constants are compared; the table has been gutted.");
+        Assert.True(constants.Length + divergences.Length >= 50,
+            $"only {constants.Length + divergences.Length} constants are compared; the table has been gutted.");
         Assert.True(reference.Length > 40_000, "the vendored reference is too small to be the real file.");
     }
 

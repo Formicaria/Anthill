@@ -602,6 +602,7 @@
       enter: function (id) { r.enter(id); },
       followMission: function () { r.survey(); },
       resetView: function () { r.resetView(); },
+      zoom: function (f) { r.zoom(f); },
       resetLayout: function () { r.resetLayout(); },
       getLayout: function () { return r.getLayout(); },
       setLayout: function (l) { return r.setLayout(l); },
