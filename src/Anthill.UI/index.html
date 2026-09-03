@@ -544,62 +544,104 @@ a.nav-logo-link:focus-visible{outline:2px solid var(--logo-node,#93bdf2);outline
 .topo-ov{position:static !important;top:auto !important;left:auto !important;right:auto !important;bottom:auto !important;}
 .ov-hidden{display:none !important;}
 
-/* -- Colony Live HUD (v0.3.8.115) -------------------------------------------
-   The chrome colony-hud.js builds over the WebGL canvas. Pointer events are off
-   on the container and back on for the controls, so dragging a chamber through
-   an empty region of the HUD still reaches the renderer. */
+/* -- Colony Live HUD (v0.3.8.116) -------------------------------------------
+   The chrome colony-hud.js builds over the WebGL canvas, ported from the design.
+   Pointer events are off on the container and back on for controls, so dragging a
+   chamber through an empty region still reaches the renderer. */
+body.colony-live-3d .topo-ov-slot > *:not(#colony-viewbar):not(:has(#colony-viewbar)){display:none !important;}
+
 .clh{position:absolute;inset:0;pointer-events:none;font-family:var(--mono,var(--font));z-index:4;}
 .clh>*{pointer-events:auto;}
 .clh-hidden{display:none !important;}
-.clh-crumbs{position:absolute;top:10px;left:12px;display:flex;align-items:center;gap:5px;
-  font-size:10px;color:var(--muted);letter-spacing:.04em;}
-.clh-sep{color:var(--dim);}
-.clh-crumb{color:var(--text);}
-.clh-depth{margin-left:8px;font-size:8px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;}
-.clh-controls{position:absolute;top:8px;right:12px;display:flex;flex-wrap:wrap;justify-content:flex-end;
-  align-items:center;gap:4px;max-width:70%;}
-.clh-btn{background:rgba(2,6,23,.72);border:1px solid var(--border);color:var(--muted);
-  font-size:9px;border-radius:4px;padding:3px 7px;letter-spacing:.04em;}
-.clh-btn:hover{color:var(--text);border-color:var(--hud-cyan,var(--blue));}
+
+/* breadcrumbs + level, top-left */
+.clh-crumbs{position:absolute;top:10px;left:12px;display:flex;align-items:center;gap:7px;
+  background:rgba(9,13,24,.9);border:1px solid rgba(38,46,68,.9);border-radius:8px;
+  padding:5px 9px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}
+.clh-crumb{font-size:9px;color:var(--dim);letter-spacing:.12em;}
+.clh-crumb-on{color:var(--text);}
+.clh-sep{color:var(--dim);font-size:9px;}
+.clh-level{font-size:8px;color:var(--queen);letter-spacing:.12em;margin-left:4px;}
+.clh-back{margin-left:6px;}
+
+/* control bar, bottom-right */
+.clh-bar{position:absolute;bottom:12px;right:12px;display:flex;align-items:center;gap:4px;
+  background:rgba(9,13,24,.9);border:1px solid rgba(38,46,68,.9);border-radius:8px;padding:5px 7px;
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}
+.clh-bar-sep{width:1px;height:13px;background:var(--border);margin:0 3px;}
+.clh-btn{background:transparent;border:1px solid transparent;color:var(--muted);
+  font-size:9px;border-radius:4px;padding:3px 7px;letter-spacing:.1em;}
+.clh-btn:hover{color:var(--queen);border-color:rgba(255,63,164,.45);}
 .clh-btn:disabled{opacity:.45;cursor:default;}
-.clh-btn:focus-visible{outline:2px solid var(--hud-cyan,var(--blue));outline-offset:1px;}
-.clh-sel-wrap{display:flex;align-items:center;gap:3px;}
-.clh-sel-lbl{font-size:8px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;}
-.clh-sel{background:rgba(2,6,23,.72);border:1px solid var(--border);color:var(--muted);
-  font-size:9px;border-radius:4px;padding:2px 4px;}
-.clh-notice{position:absolute;top:34px;left:12px;max-width:46ch;background:rgba(2,6,23,.78);
-  border:1px solid var(--border);border-left:2px solid var(--dim);border-radius:5px;
+.clh-btn:focus-visible{outline:2px solid var(--queen);outline-offset:1px;}
+
+/* view popover */
+.clh-pop{position:absolute;bottom:52px;right:12px;width:250px;background:rgba(13,19,32,.96);
+  border:1px solid rgba(38,46,68,.9);border-radius:8px;padding:8px 10px;
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}
+.clh-pop-h{font-size:8px;color:var(--dim);letter-spacing:.14em;margin-bottom:6px;}
+.clh-pop-row{display:block;width:100%;text-align:left;background:none;border:none;
+  color:var(--muted);font-size:10px;padding:4px 2px;}
+.clh-pop-row:hover{color:var(--queen);}
+
+/* notices */
+.clh-notice{position:absolute;top:46px;left:12px;max-width:46ch;background:rgba(9,13,24,.9);
+  border:1px solid rgba(38,46,68,.9);border-left:2px solid var(--dim);border-radius:8px;
   padding:6px 9px;font-size:9px;line-height:1.55;color:var(--muted);}
 .clh-notice.clh-history{border-left-color:var(--queen);color:var(--text);}
-.clh-panel{position:absolute;top:44px;right:12px;width:300px;max-height:calc(100% - 110px);
-  overflow-y:auto;background:rgba(2,6,23,.9);border:1px solid var(--border);border-radius:6px;
-  padding:10px 12px 12px;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);}
+
+/* inspectors, right */
+.clh-panel{position:absolute;top:56px;right:12px;width:322px;max-height:calc(100% - 130px);
+  overflow-y:auto;background:rgba(10,14,26,.92);border:1px solid rgba(38,46,68,.9);border-radius:8px;
+  padding:10px 12px 12px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);}
 .clh-x{float:right;background:none;border:none;color:var(--dim);font-size:11px;line-height:1;}
 .clh-x:hover{color:var(--text);}
-.clh-h{font-size:11px;color:var(--text);margin-bottom:7px;font-weight:600;}
-.clh-h5{font-size:8px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;
-  margin:9px 0 4px;border-top:1px solid var(--border);padding-top:6px;}
-.clh-row{display:flex;justify-content:space-between;gap:10px;font-size:9px;padding:1.5px 0;}
+.clh-kick{font-size:8px;color:var(--queen);letter-spacing:.16em;margin-bottom:3px;}
+.clh-h{font-size:12px;color:var(--cream,#f4e9d6);margin-bottom:8px;font-weight:600;}
+.clh-h5{font-size:8px;color:var(--dim);text-transform:uppercase;letter-spacing:.12em;
+  margin:10px 0 5px;border-top:1px solid var(--border);padding-top:7px;}
+.clh-row{display:flex;justify-content:space-between;gap:10px;font-size:9.5px;padding:2px 0;}
 .clh-k{color:var(--dim);flex:0 0 auto;}
 .clh-v{color:var(--muted);text-align:right;word-break:break-word;}
+.clh-ok .clh-v{color:#10b981;}
+.clh-bad .clh-v{color:#ef4444;}
 .clh-unresolved .clh-v{color:var(--queen);}
+.clh-meter{height:3px;background:rgba(38,46,68,.9);border-radius:2px;margin:4px 0 2px;overflow:hidden;}
+.clh-meter-f{height:100%;background:var(--amber,#f59e0b);}
 .clh-list{display:flex;flex-direction:column;gap:2px;}
 .clh-item{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;
-  background:rgba(148,163,184,.05);border:1px solid transparent;border-radius:3px;padding:3px 5px;font-size:9px;}
+  background:rgba(148,163,184,.05);border:1px solid transparent;border-radius:3px;padding:3px 6px;font-size:9.5px;}
 .clh-item:hover{border-color:var(--border);}
 .clh-item-n{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .clh-item-s{color:var(--dim);flex:0 0 auto;font-size:8px;}
-.clh-res-working .clh-item-n{color:var(--text);}
+.clh-res-working .clh-item-n{color:var(--cream,#f4e9d6);}
 .clh-res-disabled{opacity:.5;}
-.clh-note{font-size:9px;color:var(--dim);line-height:1.6;margin-top:6px;}
+.clh-note{font-size:9px;color:var(--dim);line-height:1.65;margin-top:7px;}
+
+/* approvals */
 .clh-appr{border:1px solid var(--border);border-radius:5px;padding:7px 8px;margin-bottom:7px;}
 .clh-appr-t{font-size:10px;color:var(--text);margin-bottom:5px;}
 .clh-appr-btns{display:flex;gap:5px;margin-top:6px;}
-.clh-appr-btns .clh-btn{flex:1;text-align:center;}
-.clh-approve{border-color:rgba(52,211,153,.4);}
+.clh-appr-btns .clh-btn{flex:1;text-align:center;border-color:var(--border);}
+.clh-approve{border-color:rgba(255,63,164,.5);color:var(--queen);}
 .clh-reject{border-color:rgba(248,113,113,.4);}
-.clh-timeline{position:absolute;left:12px;right:12px;bottom:12px;display:flex;align-items:center;
-  gap:10px;background:rgba(2,6,23,.85);border:1px solid var(--border);border-radius:6px;padding:7px 11px;}
+
+/* active-work strip, bottom-left */
+.clh-strip{position:absolute;bottom:12px;left:12px;width:404px;background:rgba(9,13,24,.9);
+  border:1px solid rgba(38,46,68,.9);border-radius:8px;padding:8px 11px;
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}
+.clh-strip-id{font-size:9px;color:var(--dim);font-family:var(--mono);margin-bottom:6px;}
+.clh-segs{display:flex;gap:3px;margin-bottom:6px;}
+.clh-seg{flex:1;height:3px;background:var(--queen);border:none;border-radius:2px;padding:0;}
+.clh-seg:hover{background:var(--cream,#f4e9d6);}
+.clh-strip-t{font-size:9.5px;color:var(--muted);}
+.clh-strip-appr{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  margin-top:7px;padding-top:7px;border-top:1px solid var(--border);
+  font-size:9px;color:var(--queen);}
+
+/* growth playback */
+.clh-timeline{position:absolute;left:12px;right:436px;bottom:64px;display:flex;align-items:center;
+  gap:10px;background:rgba(9,13,24,.9);border:1px solid rgba(38,46,68,.9);border-radius:8px;padding:7px 11px;}
 .clh-scrub{flex:1;accent-color:var(--queen);}
 .clh-stamp{font-size:9px;color:var(--muted);flex:0 0 auto;}
 .clh-coverage{font-size:8px;color:var(--dim);flex:0 0 auto;}
@@ -2242,7 +2284,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <div id="chud-phero-body" class="chud-body"><div class="chud-empty">Loading trails…</div></div>
             </div>
           </div>
-          <div class="colony-viewbar" id="colony-viewbar">
+          <!-- data-chrome-avoid: the Live 3D renderer reads these rectangles and places
+               chamber labels clear of them. The viewbar sits top-right over the canvas. -->
+          <div class="colony-viewbar" id="colony-viewbar" data-chrome-avoid>
             <button class="cv-btn on" data-view="command" title="Queen, Director, and main ant hubs">Command</button>
             <button class="cv-btn" data-view="expanded" title="Show specialized sub-ants">Expanded</button>
             <button class="cv-btn" data-view="active" title="Only current mission path">Active</button>

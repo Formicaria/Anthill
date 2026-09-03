@@ -1,3 +1,236 @@
+## v0.3.8.116 - what looking at it found
+
+**A CORRECTION TO `.115` FIRST.** That entry says "31 other publish sites" reach the stream without
+being persisted. Measured after it shipped: there are **12** bus-only `Events.Publish` call sites
+across 11 files, **8 of them Micromound**. The other **198** event sites go through
+`SqliteMemory.LogEvent`, which writes the row and THEN publishes it — the ordinary path was never
+the problem. The tagged entry stands as written, because a tagged entry records what a release said
+and shipped; the correction lives here, as `.114`'s correction of `.112` did.
+
+The smaller number came with a better explanation, which is the part worth keeping. Those 12 are not
+carelessness: `Anthill.Core` is off-limits to a module by the boundary rule, so a module receives an
+`IModuleContext` and an event bus and **has no persistence path at all**. Micromound publishes to the
+bus because publishing is the only thing it can do. That turns the `.116` item from a sweep into a
+seam, and `docs/PLAN.md` §2e now says so.
+
+---
+
+**COLONY LIVE HAD AN `unassigned` CHAMBER WITH THINGS IN IT, FOR TWO SEPARATE REASONS.**
+
+`.115`'s whole premise was that sector membership comes from the registry rather than a
+hand-maintained table. It then shipped a hand-maintained table that had fallen behind the registry:
+seventeen distinct `Colony` values exist and `ColonySectors.ByColony` covered fifteen, so
+`constraint` (`Command / Safety`) and `scribe` (`Communication / Docs`) resolved to `unassigned`.
+Both now sit where the console's 2D chamber map has always put them — Queen's Core and The Forge.
+
+The second reason accounted for far more of it. **An event's `ant_name` is whichever unit actually
+ran, and most executable units are WORKERS rather than roles** — `backend_coder`, `docs_coder`,
+`result_compiler`. Only role ids were indexed, so every record a worker authored landed in
+`unassigned` while the real chambers sat near-empty. Workers now resolve to their parent role's
+sector, on the server and in the client, from the `Workers` list the projection already carried.
+
+**AND THE GUARDS DID NOT CATCH EITHER, WHICH IS THE REAL FINDING.** Fourteen rules shipped at `.115`
+and every one checked the SHAPE of the mapping — one implementation, unknown falls to `unassigned`
+rather than to the Queen — while not one checked its COVERAGE.
+`EveryBuiltInRoleAndWorker_BelongsToARealChamber` reads the real roster at the typed-registry tier,
+so a role added with a new colony value now fails a test instead of quietly joining the unknown
+bucket. `unassigned` remains, for a plugin-contributed role this colony has genuinely never heard of,
+which is what it was always for.
+
+---
+
+**THE RENDERER WAS SHIPPED WITHOUT ANYONE EVER LOOKING AT IT.** `.115` was verified by source scans
+and C# unit tests. A browser had never loaded it. What four minutes of headless Chromium found:
+
+- **THE CAMERA COULD NOT BE ORBITED.** It was pinned at `target + (0, 0, d)` — a fixed axis — so the
+  wheel dollied along one line and nothing ever rotated. A 3D view you cannot turn is a 2D picture
+  with a zoom. Replaced with a spherical rig: theta yaws, phi pitches, dist dollies, all eased,
+  with phi clamped short of the poles. Drag orbits, shift-drag pans, alt-drag moves a chamber — and
+  moving a chamber costs a modifier now, because plain drag being "rearrange the colony" is exactly
+  why the camera never turned.
+- **RECORDS WERE NEVER DRAWN.** `sec.records` was carried from the projection into `buildChamber`
+  and ignored, so a chamber looked identical holding sixty-six records or zero — the one thing the
+  view exists to show had no visual presence. Now one bright point per record, placed inward of the
+  chamber body by the topology's hash of the record id, and pickable.
+- **THE CORE LIGHT WAS THE WRONG COLOUR AND A THIRD OF THE SIZE.** A halo at `1.15×` radius and 0.5
+  opacity in the LIGHT highlight hue lit only a chamber's exact centre and washed the rest to near
+  black. The reference carries three colours per chamber, not two, and its halo takes the DEEP one —
+  under additive blending a deep hue reads as saturated light and a pale one reads as fog. Now
+  `4.2×` at 0.8 in a derived deep hue, with a `2.8×`/0.17 shell, and fog thinned from 0.00055 to
+  0.00016.
+- **THE "SPHERE" WAS SPIRAL ARCS.** `(i * 40503 + 12345) % 65536` is an LCG *step*, not a hash: the
+  azimuth advanced linearly and the cloud came out as a handful of visible spokes. Multiply-shift
+  mixing now.
+- **THE 2D CHROME WAS NEVER HIDDEN.** `toggle` hid the canvas and nothing else, so the caste legend,
+  the learning-signals panel and a hint line describing gestures this view does not have all stayed
+  painted over the WebGL scene. And the HUD shipped its own MOTION/LABELS/TRAILS selects beside the
+  viewbar's, so the console showed each control twice, in two bars that could disagree.
+- **THE FALLBACK DID NOT COVER MOUNTING.** `ColonyLive.create()` guarded construction; `mount()` —
+  where three.js resolves, the `WebGLRenderer` is constructed and the canvas attaches — was outside
+  it. A throw there escaped `toggle()` before it could restore the classic canvas, leaving an opaque
+  full-bleed div over a hidden view: a black rectangle, and the fallback built for exactly that case
+  never ran.
+
+**THE METHOD, WHICH IS WORTH MORE THAN ANY OF THE FIXES.** A headless harness that loads the vendored
+three.js, mounts the renderer against a synthetic scene in the projection's own shape and screenshots
+it took minutes to build and found more in one image than three rounds of reading the source. It also
+rendered the reference package's own renderer side by side, which is how the halo hue and the cluster
+tightness were measured rather than guessed. The console still has no runtime test in CI; that
+harness is the shape of one, and it is the first item this release adds to the forward plan.
+
+---
+
+**THEN THE DESIGN HANDOFF ARRIVED, AND THE RENDERER WAS PORTED RATHER THAN RE-DERIVED.** Everything
+above was still a rebuild from a description. The handoff's first line is "do not rebuild this from a
+description — port the working code", and its failure table names, by symptom, four of the exact
+things `.115` and the first `.116` pass had produced. The renderer is now a port of
+`reference/colony-renderer.js`: **every numeric constant, both GLSL shader pairs, the four canvas
+texture stop tables, the Catmull-Rom conduit sampling on a rotation-minimising frame, the
+pixel-sized crew orbs, the screen-space hit test and the per-frame easing factors are the
+reference's, unchanged.** It is wrapped in this console's IIFE instead of an ES module, because the
+page loads plain `<script src>` under `script-src 'self'` and its assets talk to each other through
+globals rather than imports; that wrapper is the only edit to the renderer's own code.
+
+Five things the port replaced, each one a number this build had invented:
+
+- **THE WORLD WAS FOURTEEN TIMES TOO BIG.** `.115` read the reference's seats as proportions and
+  scaled them ×14, then had to invent a 52° field, a 900-unit home distance, a `[90, 2400]` dolly
+  range, a fog term and a chamber radius formula to match. The seats are literals: `±16.5` on the
+  equator, `±17.0` on the poles, radii 3.1–7.7, a 42° field at `near 0.5 / far 400`, home distance
+  `62 × max(1, 1.75/aspect)`, dolly `[2.2, 130]`, and no fog at all. At that scale chambers sit two
+  to three radii apart, which is the ratio that reads as a crystal with galleries.
+- **A CHAMBER DREW 260×mass GRAINS IT DID NOT HAVE.** Added at `.115` as "spatial grammar" so a young
+  colony would not look empty — and defended in that entry. It is the same defect the entry above
+  reports as *"records were never drawn"*, wearing the opposite mask: a cloud that says the same
+  thing whether the chamber holds sixty records or none. There is now **one particle per persisted
+  record and nothing else**. What carries an empty chamber is the core light, which is light and not
+  data.
+- **`PointsMaterial` CANNOT DRAW A CRISP GRAIN.** The design's points are a `ShaderMaterial` whose
+  fragment stage does `if (texture2D(uMap, gl_PointCoord).a < 0.5) discard;` against a texture that is
+  opaque to 0.9 and transparent only at 1.0. That hard cut is why twelve records read as twelve
+  things; a blended sprite edge merges neighbours into bloom, which is what "it just looks like a
+  bunch of dots" was describing.
+- **THERE WERE TWO HALOS PER CHAMBER.** The reference builds a second, wider `glow` sprite and never
+  adds it to the group — it survives only as a colour handle for its restyle path. Read quickly that
+  looks like an oversight, so this port added it, and produced the failure the handoff names by
+  symptom: *"nebula-like coloured wash filling a quadrant"*. Nine chambers, two additive halos each,
+  and the centre of the frame becomes fog with the grains lost inside it. Caught by rendering it, not
+  by reading it, and now held by `AChamberHasOneHaloSprite_NotTwo`.
+- **PICKING USED A RAYCASTER.** `THREE.Points` raycasts against a WORLD-space threshold, so one
+  constant is a huge target up close and a sub-pixel one at survey distance — `.115` set it to 7 and
+  chambers still felt dead. Hit-testing now projects candidates to the screen and measures in pixels,
+  in the design's specificity order: crew orbs at 32 px, records at 14, cluster centres at 26, then
+  chambers at `max(12, |Δx|)`. Records and clusters project through `livePos`, so a hit during the
+  strata cross-fade lands where the particle IS rather than where it was.
+
+**THREE THINGS IN THE DESIGN WERE DELIBERATELY NOT PORTED, AND THEY ARE ALL ONE THING.** Each is true
+of the reference's invented sample data and false of this colony:
+
+1. **Generated records.** `colony-topology.js` in the handoff generates nine named clusters per
+   chamber and 6–17 invented records in each — which is why the reference's chambers look dense. The
+   handoff says so itself: *"replace `SECTORS[].clusters/leads/workers` and `buildContext()` with live
+   sources"*. This console's clusters are the event types its records actually have, its residents
+   are the registry's roles and their workers, and a chamber holding nothing draws nothing. That is
+   the whole reason `colony-topology.js` is the one file NOT ported as-is — porting it would install a
+   fabricated colony in the console.
+2. **The 120 ms mission clock.** In the design the shell advances `progress` on a `setInterval` and
+   the renderer sweeps a bright head along the conduit. There is no per-task progress in this model,
+   so a travelling head would animate a number that does not exist. An active route brightens along
+   its whole length; the only thing that TRAVELS is a recorded transition, once per event id.
+   `NoColonyAsset_RunsARepeatingTimer` has forbidden the timer since `.115` and still does.
+3. **The ant work timer.** `a.work -= dt`, then a cluster picked at random and a "pheromone run" laid
+   out to it. An operator looking at a quiet colony would see every ant working. An ant is `working`
+   here only when a real task is running against it, and the pheromone number it shows is the trail
+   the colony recorded.
+
+**A FOURTH REFUSAL WAS TRIED AND WITHDRAWN, AND THE CORRECTION IS WORTH MORE THAN THE RULE WAS.** An
+earlier pass in this release also froze the conduit grains, reasoning that flow along a permanent
+structural link claims work is passing through it. That was the rule applied one step too far, and
+what it bought was a console that looked dead.
+
+**The line is not motion versus stillness, it is AMBIENT versus ASSERTED.** Drifting grains say the
+passage exists and the view is live, the way a cursor blinks; they carry no claim about any task.
+What would be a lie is a bright wave with no event behind it, or an ant that looks busy while idle —
+and those two are still refused. The guard was rewritten to forbid exactly them rather than to forbid
+movement, which is what a guard should have been doing in the first place.
+
+So the grains drift at the reference's speed, and `conduitState()` admits exactly two things that may
+brighten a conduit beyond that, both with rows behind them: a RECORDED TRANSITION travelling it (one
+wave per unique event id, the colony visibly lighting up as work moves through it), and a RUNNING
+TASK at one end of a persisted mission edge, which raises the whole line and never sweeps a head —
+because a task status is not a position, and drawing a position from a status is the invented-progress
+defect `.115` shipped.
+
+**AND THE PHEROMONE LAYER IS DRAWN, FROM BOTH OF ITS REAL ROWS.** `pheromone_trails` keys strength to
+`worker:{id}`, so an EDGE has no row of its own and a conduit displaying a "trail strength" would be
+quoting a number for a thing the table does not describe. Instead: per conduit, how many recorded
+transitions have crossed that route this session, normalised against the busiest, raising resting
+brightness by the reference's `trail * 0.22` — reinforcement-by-use is what a trail *is*, and a route
+the colony keeps using glows without anything needing to be running on it now. Per ant, the role's own
+summed `TrailView.Strength`, as size and brightness on its orb. Both gated by the operator's `trails`
+preference, because a control that turns off a display while the thing it names keeps driving the
+picture is a lie about the control.
+
+**INTRA-CHAMBER LINKAGE IS FIVE FAMILIES NOW, AND EVERY SEGMENT IS A ROW.** The reference draws two —
+cluster→record spokes and the cluster ring. Added: **worker→its role**, from the registry's
+`ParentRoleId`; **ant→its records**, from `record.ant`, which is the answer to "who wrote what in
+here" drawn rather than read out of a table; and **record→record** along a shared `mission_id` in
+recorded order. A chamber whose records name no ant and no mission draws the cluster families and the
+roster chain and nothing else. A mission with one record here contributes no segment, because a
+thread of one is not a thread.
+
+**A WORKER HAS TWO NAMES AND THE VIEW WAS SHOWING THE WRONG ONE.** `AntWorkerDefinition` carries
+`WorkerId` (`constraint.scope_guard` — what an event's `ant_name` holds, so the only thing a record
+can be matched on) and `DisplayName` (`ScopeGuard` — what the registry calls the ant and what the 2D
+colony view has always shown). The projection carried the id ALONE, so Colony Live labelled an ant
+`constraint.scope_guard` while every other page in this console called the same ant `ScopeGuard`: one
+ant, two names, in one product. `ColonyResident.Workers` is now `ColonyWorker(WorkerId, DisplayName,
+ParentRoleId, Enabled)`. Orbs and labels use the name, record matching uses the id, the ant inspector
+prints both, and `ParentRoleId` travels because the registry owns the fact that scope_guard reports to
+constraint — a view that recovered it by splitting the id on a dot would be re-deriving a fact it was
+handed, and would be wrong the first time a worker id contained one.
+
+**AND A WORKER SITS UNDER ITS OWN ROLE.** The reference spreads workers evenly around the outer ring
+by roster index, which is fine for a flat list of names and wrong here: roster order put
+`scope_guard` on the far side of the chamber from `constraint`. Each worker is now seated in the arc
+directly outside its parent, spanning 80% of that parent's share of the ring, so the shape of the
+chamber is the shape of the roster before a single link is drawn.
+
+**THE AUTHORITY SEAL IS GONE AND THE MICROMOUND CHAMBER OPENS THE MICROMOUND.** The reference parks a
+lock sprite mid-frame on the Queen→Micromound conduit. It is a badge on a line, not a control, and it
+read as "you may not touch this" over the one chamber an operator most needs to act on; the authority
+relationship is already said by the conduit, which is the only edge in the colony drawn as its own
+kind. Clicking that chamber used to open a generic chamber card reading "registry roles: 0, workers:
+0", which answers none of the questions a physical device raises. It now opens the mound panel: the
+server's own status verdict, the downlink queue depth as "awaiting collection", and per-mound STOP and
+RESUME — the one control that has to be reachable from wherever the operator is looking, because the
+reason to reach for it is that something is going wrong right now. Everything else hands over to the
+Micromound console rather than growing a second copy of forms whose vocabulary is a closed PROTOCOL
+set. The GLOBAL stop is absent here as it is there: it is a file on disk precisely so no API flow can
+clear it. The post goes through `colony-host.js` — the only file in the feature that reaches the
+network — and re-reads the fleet listing on both the success and the failure path, so the panel shows
+the colony's answer rather than assuming its own request succeeded.
+
+And one was narrowed rather than dropped: an operator may **recolour** a chamber, which is
+presentation like the layout that already persists to `/ui/state`, but may not **rename** one. A
+chamber's name is the registry's `Colony` value, and a console where one page can disagree with the
+registry about what a colony is called is wrong on every other page at the same time.
+
+**THE SAVED LAYOUT FROM `.115` IS REFUSED, NOT MIGRATED.** Those seats were recorded in the ×14
+world; replayed at this scale every chamber lands far outside a 130-unit dolly limit and the view
+opens on empty space. The layout schema is now 2 and a schema-1 payload resets to home — back-solving
+a factor that was never written down is a fiction dressed as a migration.
+
+---
+
+**WHAT `.116` DID NOT DO.** The event-durability seam is designed and not built — it remains §2e's
+top item. The typed-row ratchet is unmoved at **45** for a third release, which by the standing rule
+means the rule is not being kept and should be rewritten or dropped rather than missed again. Three
+Micromound widget payloads are still built for no reader. And `chamberFor` in `app.js` still carries
+the comment "never invents a chamber for an unmapped role" directly above a line that falls back to
+`Infrastructure Works` — a third store of role→chamber membership, and a declaration disagreeing
+with its own runtime.
+
 ## v0.3.8.115 - colony live stops inventing a colony
 
 **THE VIEW NOW ONLY DRAWS WHAT THE COLONY RECORDED.** Colony Live shipped at `.111` with a header

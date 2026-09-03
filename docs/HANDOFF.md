@@ -4,8 +4,11 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: main carries **v0.3.8.114** (`b9d4b1d0`, tagged). **v0.3.8.115 is complete and green in the
-working tree and is NOT committed**: Colony Live, the console half of the last two releases.
+State: main carries **v0.3.8.115** (`74ab131`, tagged, CI green). **v0.3.8.116 is complete and green
+in the working tree**: the defects `.115` could not catch because nothing it shipped ever ran.
+
+MAIN IS PR-PROTECTED. A bare `git push` to main is rejected by a repository rule — every change goes
+through a branch and a PR, including a one-commit docs fix. Paid at `.115`.
 
 NOTE ON HISTORY: every commit SHA changed on 2026-09-01 when authorship was folded to three
 contributors. Anything quoting a SHA from before that date is dead. See the "anthill" project doc
@@ -23,6 +26,62 @@ persisted records only, a Micromound descent, and approvals decided through app.
 resolver and the evidence feed. `MicromoundWidgets.StatusOf` is public and the fleet listing carries
 its verdict, so no client computes a status.
 
+**THE THING TO CARRY FORWARD FROM `.116`.** The console had no runtime test, so `.115` shipped a 3D
+view whose camera could not be orbited and whose chambers drew none of their records — and every
+guard passed. A headless Chromium harness (vendored three.js + the renderer + a synthetic scene +
+one screenshot) found six defects in minutes and let the reference package's own renderer be
+measured side by side rather than guessed at. It is not in CI yet; putting it there is §2e item 4.
+
+Second: fourteen Colony Live guards checked the SHAPE of the role→sector mapping and none checked
+its COVERAGE, so two of the registry's seventeen colony values and every worker id fell into
+`unassigned`. When a guard family is about "one implementation of a rule", ask separately whether
+that one implementation is COMPLETE.
+
+Third, and it cost the most: **`colony-renderer.js` IS A PORT, NOT A REBUILD — DO NOT RE-DERIVE ITS
+MATH.** The design handoff (`UI mockups.zip` → `design_handoff_colony_live_3d/`) opens with "do not
+rebuild this from a description", and by the time it arrived this release had independently produced
+four of the five failures its table names by symptom. Every numeric constant, both GLSL shader pairs,
+the four texture stop tables, the Catmull-Rom conduit sampling, the pixel-sized crew orbs, the
+screen-space hit test and the easing factors are the reference's. Ten `§18` guards hold them,
+including `AChamberHasOneHaloSprite_NotTwo` — the reference builds a `glow` sprite and deliberately
+never adds it to the group, which reads as an oversight, and adding it turns nine chambers into one
+coloured wash. That one shipped in the working tree for a build and was caught by rendering it.
+
+**AND FOUR THINGS IN THAT DESIGN ARE REFUSED ON PURPOSE.** They are one defect in four costumes —
+each is true of the reference's generated sample data and false of this colony, and a future session
+reading the reference will be tempted by all four:
+
+1. `colony-topology.js` is the ONE file not ported as-is. The reference's is the sample data:
+   `buildContext()` generates nine named clusters and 6–17 invented records per chamber. The handoff
+   itself says to replace it with live sources; this colony's clusters are the event types its
+   records actually have.
+2. No 120 ms mission clock. There is no per-task progress in this model, so a travelling head would
+   animate a number that does not exist. `NoColonyAsset_RunsARepeatingTimer` forbids the timer.
+3. No ant work timer. An ant is `working` only when a real task is running against it.
+
+And one narrowing: an operator may recolour a chamber, never rename one. The name is the registry's.
+
+**A FOURTH REFUSAL WAS TRIED AND WITHDRAWN, AND THE CORRECTION IS WORTH MORE THAN THE RULE WAS.** An
+earlier pass also froze the conduit grains, reasoning that flow along a permanent link claims work is
+passing through it. That was the rule applied one step too far and it bought a console that looked
+dead. **The line is AMBIENT versus ASSERTED**: drifting grains say the passage exists and the view is
+live, the way a cursor blinks; a bright wave with no event behind it is the lie. So the grains drift
+at the reference's speed, and `AConduitBrightens_OnlyForSomethingTheColonyRecorded` allows exactly
+two things to brighten a conduit beyond that — a recorded transition travelling it (one wave per
+event id) and a running task at one end of a persisted mission edge (which raises the whole line and
+never sweeps a head, because a status is not a position).
+
+The pheromone layer is drawn from both of its real rows: per conduit, how many transitions have
+crossed it this session; per ant, its own `TrailView.Strength`. Both gated by the `trails`
+preference. `ThePheromoneLayer_IsDrawnFromItsOwnRows` holds it.
+
+`docs/design/colony-live-3d/PORT-NOTES.md` has the full account, including the four intra-chamber
+link families and why each has a row behind it.
+
+**SAVED LAYOUTS FROM `.115` ARE REFUSED, NOT MIGRATED** — schema 2 only. Those seats were recorded in
+a world fourteen times this one; the ×14 factor was never written down, so back-solving it would be a
+fiction dressed as a migration. A schema-1 payload resets to home.
+
 **THE THING TO CARRY FORWARD FROM `.115`.** The brief said "preserve the existing WebGL renderer".
 There was none — `.111` shipped canvas-2D with a hand-rolled projection. Checking the premise before
 building on it was the highest-value thing this release did, and the second-highest was writing the
@@ -34,17 +93,21 @@ have rendered permanently blank while looking wired up. Neither was found by rea
 FIVE FILES, ONE JOB EACH, and the boundary is guarded: `colony-topology.js` (what is true, no fetch,
 no drawing), `colony-renderer.js` (WebGL, no state decisions), `colony-live.js` (renderer choice +
 the canvas fallback), `colony-host.js` (the ONLY file that fetches), `colony-hud.js` (chrome and
-controls). `ColonyLiveGuardTests` enforces that split and thirteen other rules.
+controls). `ColonyLiveGuardTests` enforces that split, thirteen other rules, and the ten `§18` rules
+that hold the design port.
 
 **WHAT IS LEFT, all outside the closed program:**
 - The remaining **45** untyped store methods — one slice per release, each lowering the ratchet.
   SKIPPED TWICE NOW (`.114` and `.115`). The ratchet is enforced at ≤ 45 so it cannot reverse; this
   line is the only thing stopping it quietly stopping.
-- **Bus-only events.** Every Micromound event and 31 other publish sites reach `/events/stream`
-  without ever being written. They cannot be replayed on reconnect, cannot appear in growth playback,
-  and cannot be audited after the fact. The fix is a DECISION — persist-then-publish for the classes
-  that are evidence, transient on purpose for the rest, with the split written down. `docs/PLAN.md`
-  §2e carries it as the top item.
+- **A module cannot persist an event.** 12 bus-only `Events.Publish` sites across 11 files, 8 of
+  them Micromound; the other 198 event sites go through `LogEvent`, which already persists then
+  publishes. The reason is the module boundary — `Anthill.Core` is off-limits to a module, so it has
+  a bus and no persistence path. Those events cannot be replayed on reconnect, cannot appear in
+  growth playback, and cannot be audited. The fix is a SEAM: durability declared on the event type,
+  the composition root persisting the durable ones. `docs/PLAN.md` §2e is the top item.
+  NOTE: the `.115` CHANGELOG says "31 other publish sites". That is wrong and the entry is tagged,
+  so the correction belongs in `.116`'s entry — not in `.115`'s.
 - **Three widget payloads read by nobody.** `mound_fleet`, `mission_status`, `evidence_feed` are
   built on every Micromound mutation for a widget runtime that never rendered them, and `.115`'s
   console reads the routes directly. Retire them or finish them; they should not stay both.
