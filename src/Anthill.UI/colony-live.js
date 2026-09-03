@@ -162,16 +162,16 @@
       });
       // residents: one orb per role on the mid ring, its workers as smaller orbs beside it; in the
       // ordered formation they line up on a row above the top stratum
-      var top = s.strata.length ? s.strata[s.strata.length - 1].y + s.R * .38 : 0;
+      var top = s.strata.length ? s.strata[0].y - s.R * .42 : -s.R * .4;   // −y is up: the row sits over the highest level
       (sec.residents || []).forEach(function (r, ri) {
         var n = Math.max(1, (sec.residents || []).length), th = ri / n * TAU + .7, yy = Math.sin(ri * 2.4) * .25;
         var base = [Math.cos(th) * s.R * .55, yy * s.R, Math.sin(th) * s.R * .55];
-        var rowX = ((ri + .5) / n - .5) * s.R * 1.5;
-        pts.push({ o: base, org: [rowX, top, 0], layer: 1, cl: 0, sz: 2.4, a: .95, ph: ri, born: 0, rec: null, resident: { roleId: r.roleId, name: r.name || r.roleId, status: r.status, trail: r.trail || null, workers: (r.workers || []).length } });
+        var rowX = ((ri + .5) / n - .5) * s.R * 2.2;
+        pts.push({ o: base, org: [rowX, top, 0], layer: 1, cl: 0, sz: 2.4, a: .95, ph: ri, born: 0, rec: null, below: !!(ri % 2), resident: { roleId: r.roleId, name: r.name || r.roleId, status: r.status, trail: r.trail || null, workers: (r.workers || []).length } });
         var roleIdx = pts.length - 1;
         (r.workers || []).forEach(function (w, wi) {
           var wn = (r.workers || []).length, wt = th + (wi - (wn - 1) / 2) * .28;
-          pts.push({ o: [Math.cos(wt) * s.R * .68, base[1] + (wi % 2 ? .08 : -.08) * s.R, Math.sin(wt) * s.R * .68], org: [rowX + (wi - (wn - 1) / 2) * s.R * .12, top + s.R * .16, 0], layer: 1, cl: 0, sz: 1.4, a: .8, ph: wi, born: 0, rec: null, resident: { roleId: w.id, name: w.name || w.id, parent: w.parent || r.roleId, status: w.enabled === false ? 'disabled' : r.status, worker: true } });
+          pts.push({ o: [Math.cos(wt) * s.R * .68, base[1] + (wi % 2 ? .08 : -.08) * s.R, Math.sin(wt) * s.R * .68], org: [rowX + (wi - (wn - 1) / 2) * s.R * .12, top - s.R * .16, 0], layer: 1, cl: 0, sz: 1.4, a: .8, ph: wi, born: 0, rec: null, resident: { roleId: w.id, name: w.name || w.id, parent: w.parent || r.roleId, status: w.enabled === false ? 'disabled' : r.status, worker: true } });
           links.push([pts.length - 1, roleIdx]);   // the roster chain: worker → its role
         });
       });
@@ -236,18 +236,21 @@
       for (var g = 0; g < 640; g++) {
         var a = rnd() * TAU, tight = rnd() < .68, off = (rnd() - .5) * (tight ? 110 : 420) + (rnd() - .5) * 40, R2 = 1500 + (rnd() - .5) * 260;
         var warm = Math.max(0, Math.cos(a - coreA)), b2 = Math.pow(rnd(), 2.4);
-        BANDG.push({ p: onBand(a, off, R2), sz: .5 + b2 * 1.1, a: (.12 + b2 * .4) * (tight ? 1 : .6), ph: rnd() * TAU,
+        BANDG.push({ p: onBand(a, off, R2), sz: .6 + b2 * 1.2, a: (.2 + b2 * .5) * (tight ? 1 : .6), ph: rnd() * TAU,
           c: warm > .6 ? '255,226,190' : warm > .25 ? '236,232,230' : '196,210,250' });
       }
-      for (var k = 0; k < 14; k++) { var ak = rnd() * TAU; KNOTS.push({ p: onBand(ak, (rnd() - .5) * 120, 1500), r: 50 + rnd() * 90, a: .04 + rnd() * .04, c: Math.cos(ak - coreA) > .3 ? '255,222,180' : '190,205,245' }); }
+      for (var k = 0; k < 18; k++) { var ak = rnd() * TAU; KNOTS.push({ p: onBand(ak, (rnd() - .5) * 120, 1500), r: 60 + rnd() * 110, a: .06 + rnd() * .05, c: Math.cos(ak - coreA) > .3 ? '255,222,180' : '190,205,245' }); }
       for (var l = 0; l < 11; l++) { var al = rnd() * TAU; LANES.push({ p: onBand(al, (rnd() - .5) * 90, 1490), r: 60 + rnd() * 120, a: .22 + rnd() * .2, sx: .5 + rnd() * .6 }); }
       // volumetric clouds: each is a family of sub-blobs (two tints + a dark wisp) that drift out
       // of phase, so the cloud has an inside instead of being one gradient
-      var seeds = [
-        { p: [-900, -420, -1500], r: 560, c: '107,74,158', h: '150,110,210', a: .11, ph: 0 },
-        { p: [1050, 260, -1650], r: 520, c: '47,127,138', h: '90,180,190', a: .10, ph: 2 },
-        { p: [150, 720, -1750], r: 600, c: '125,42,85', h: '190,80,130', a: .09, ph: 4 },
-        { p: [-300, -1200, 900], r: 480, c: '70,80,150', h: '110,120,200', a: .06, ph: 1 }];
+      var seeds = [ // spread around the full sphere, so every orbit angle has a sky
+        { p: [-900, -420, -1500], r: 560, c: '107,74,158', h: '150,110,210', a: .14, ph: 0 },
+        { p: [1050, 260, -1650], r: 520, c: '47,127,138', h: '90,180,190', a: .13, ph: 2 },
+        { p: [150, 720, -1750], r: 600, c: '125,42,85', h: '190,80,130', a: .11, ph: 4 },
+        { p: [-300, -1200, 900], r: 480, c: '70,80,150', h: '110,120,200', a: .08, ph: 1 },
+        { p: [1500, -600, 900], r: 540, c: '96,80,170', h: '140,120,220', a: .12, ph: 3 },
+        { p: [-1600, 300, 600], r: 500, c: '50,120,150', h: '90,170,190', a: .11, ph: 5 },
+        { p: [400, -1300, -700], r: 460, c: '150,60,110', h: '200,100,150', a: .09, ph: 6 }];
       seeds.forEach(function (sd) {
         var parts = [];
         for (var j = 0; j < 10; j++) { var dx = (rnd() - .5) * sd.r * 1.1, dy = (rnd() - .5) * sd.r * .8, dz = (rnd() - .5) * sd.r * .5; parts.push({ o: [dx, dy, dz], r: sd.r * (.22 + rnd() * .38), c: rnd() < .35 ? sd.h : sd.c, a: sd.a * (.35 + rnd() * .5), ph: rnd() * TAU, dark: false }); }
@@ -539,7 +542,7 @@
         var nr = s.R * .34 * pr.s;
         var nuc = s.id === 'queen' ? '232,178,90' : c1.join(',');
         var g = ctx.createRadialGradient(pr.x, pr.y, 0, pr.x, pr.y, Math.max(4, nr * 2.2));
-        g.addColorStop(0, 'rgba(' + nuc + ',' + (.3 * LT.expo * fog(pr.zc)) + ')'); g.addColorStop(1, 'rgba(' + nuc + ',0)');
+        g.addColorStop(0, 'rgba(' + nuc + ',' + (.3 * (1 - m * .65) * LT.expo * fog(pr.zc)) + ')'); g.addColorStop(1, 'rgba(' + nuc + ',0)');
         ctx.beginPath(); ctx.arc(pr.x, pr.y, Math.max(4, nr * 2.2), 0, TAU); ctx.fillStyle = g; ctx.fill();
         var lo = lightOffset(s, pr);
         if (lo.front) {
@@ -562,7 +565,6 @@
           var q = proj(w); if (!q) return;
           p._q = q; p._w = w;
           var a = p.a * fog(q.zc);
-          if (isFocused && p.layer === 0 && selHere == null) a *= .55;
           if (selHere != null) a *= (pi === selHere || (relSet && relSet.indexOf(pi) >= 0)) ? 1 : .16;
           if (p.born && ts - p.born < 2000) a *= (ts - p.born) / 2000;
           var res = p.resident;
@@ -574,11 +576,12 @@
           var tw = res ? (res.status === 'working' && live() ? .8 + Math.sin(ts * .004 + p.ph) * .2 : 1) : (live() && p.layer === 0 ? .85 + Math.sin(ts * .0012 + p.ph) * .15 : 1);
           var hp = isFocused && hovPt === pi;
           var sh = shadeAt(w, s.pos);                 // lit hemisphere + rim, per point, per frame
-          var rad = Math.max(.6, p.sz * q.s * (.95 + .5 * sh)) * (hp ? 1.5 : 1);
+          // grains grow as the strata form, so a level's records read as a row and not as dust
+          var rad = Math.max(.6, p.sz * q.s * (.95 + .5 * sh) * (res ? 1 : 1 + m * .9)) * (hp ? 1.5 : 1);
           ctx.beginPath(); ctx.arc(q.x, q.y, rad, 0, TAU);
           ctx.fillStyle = 'rgba(' + col + ',' + Math.min(1, a * tw * (.7 + .8 * sh) * LT.expo * (hp ? 1.4 : 1)) + ')'; ctx.fill();
           if (res && res.status === 'working') { ctx.beginPath(); ctx.arc(q.x, q.y, rad + 3, 0, TAU); ctx.strokeStyle = 'rgba(' + c1.join(',') + ',' + (.35 * tw) + ')'; ctx.lineWidth = 1; ctx.stroke(); }
-          if (res && !res.worker && isFocused && m > .25) label(res.name, q.x, q.y - rad - 6, "8px 'IBM Plex Mono',monospace", 'rgba(201,210,221,' + (.75 * m) + ')', 'center');
+          if (res && !res.worker && isFocused && m > .25) label(res.name, q.x, p.below ? q.y + rad + 11 : q.y - rad - 6, "8px 'IBM Plex Mono',monospace", 'rgba(201,210,221,' + (.75 * m) + ')', 'center');
           if (hp) { ctx.beginPath(); ctx.arc(q.x, q.y, Math.max(4, p.sz * q.s + 5), 0, TAU); ctx.strokeStyle = 'rgba(' + c0.join(',') + ',.7)'; ctx.lineWidth = 1; ctx.stroke(); }
         });
         if (selHere != null && s.pts[selHere]._q) {
@@ -680,7 +683,7 @@
       focus: function (id) { var s = bySec[id]; if (!s) return; if (s.frozen == null) s.frozen = live() ? performance.now() * s.rot : 0; focused = id; follow = false; goal.tgt = s.pos.slice(); goal.dist = s.R * 4.6; setCrumb('colony survey → ' + s.label.toLowerCase()); emit('sector', s); },
       followMission: function () { follow = true; focused = null; goal.dist = 460; setCrumb('following active mission'); },
       resetView: function () { api.survey(); },
-      resetLayout: function () { SEC.forEach(function (s) { s.pos = s.defPos.slice(); s.label = s.serverLabel || s.defLabel; s.renamed = false; }); rebuildAll(); saveLayout(); },
+      resetLayout: function () { SEC.forEach(function (s) { s.pos = s.defPos.slice(); s.label = s.serverLabel || s.defLabel; s.renamed = false; }); rebuildAll(); saveLayout(); if (!focused) api.survey(); },
       resetAll: function () { api.resetLayout(); api.survey(); },
       renameSector: function (id, name) { var s = bySec[id]; if (s && name && name.trim()) { s.label = name.trim().toUpperCase().slice(0, 28); s.renamed = s.label !== s.serverLabel; saveLayout(); } },
       setLayout: applyLayout,

@@ -140,6 +140,17 @@
     if (facts) facts.textContent = (c.records ? c.records + ' record' + (c.records === 1 ? '' : 's') : 'no records') + (c.verified ? ' (' + c.verified + ' verified)' : '') + ' · ' + (c.residents || 0) + ' resident' + (c.residents === 1 ? '' : 's') + (c.running ? ' · ' + c.running + ' running' : '');
   }
   var recordAnt = null;
+  function showResident(h) {
+    var box = $('clb-record'); if (!box) return;
+    var res = h && h.resident; if (!res) { box.style.display = 'none'; recordAnt = null; return; }
+    recordAnt = String(res.parent || res.roleId || '').toLowerCase();
+    $('clb-record-title').textContent = res.name || res.roleId;
+    var tr = res.trail && isFinite(res.trail.strength) ? res.trail : null;
+    $('clb-record-meta').textContent = [res.worker ? 'worker of ' + res.parent : 'role', res.roleId, res.status, tr ? ('trail ' + Number(tr.strength).toFixed(2) + ' · ' + (tr.successes || 0) + '✓ ' + (tr.failures || 0) + '✗') : 'no trail recorded', res.workers ? res.workers + ' worker' + (res.workers === 1 ? '' : 's') : ''].filter(Boolean).join(' · ');
+    var tag = $('clb-record-verif'); tag.textContent = res.status || 'idle'; tag.className = 'clb-record-tag' + (res.status === 'working' ? ' ok' : res.status === 'disabled' ? ' bad' : '');
+    var open = $('clb-record-open'); if (open) open.style.display = '';
+    box.style.display = '';
+  }
   function showRecord(r) {
     var box = $('clb-record'); if (!box) return;
     if (!r) { box.style.display = 'none'; recordAnt = null; return; }
@@ -235,6 +246,7 @@
     live.on('sector', function (s) { showSector(s); showRecord(null); markView(null); });
     live.on('deselect', function () { showSector(null); showRecord(null); });
     live.on('record', function (r) { showRecord(r); });
+    live.on('resident', function (h) { showResident(h); });
     applyEnv(initialEnv()); restoreView(); syncToggle();
   }
 
