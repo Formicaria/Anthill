@@ -609,9 +609,11 @@ public class ColonyLiveGuardTests
         var live = Code("colony-live.js");
 
         Assert.Contains("function rebuildSector(s, sec)", live);
-        Assert.Contains("(sec.records || []).forEach(", live);
+        // Records are walked per cluster — the chamber's REAL groupings — never from a seeded pool.
+        Assert.Contains("function clusterSeats(sec, R)", live);
+        Assert.Contains("cl.records.forEach(function (r, k)", live);
         Assert.Contains("(sec.residents || []).forEach(", live);
-        Assert.Contains("var verified = r.verification === 'verified';", live);
+        Assert.Contains("var verified = r.verification === 'verified', pher = trailOf(r.ant);", live);
         Assert.Contains("verif: r.verification", live);
 
         foreach (var filler in new[] { "for (var i = 0; i < s.n;", "applyCounts", "bindRecords", "p.hidden = seen", "(demo)", "demo data" })
