@@ -1,4 +1,4 @@
-## Unreleased
+## v0.3.8.120 - the colony page, tuned by hand
 
 **THE COLONY PAGE, TUNED BY HAND AND MADE CUSTOMIZABLE.** From an operator's pass over `.119`:
 
@@ -28,6 +28,15 @@
   smudge on paper, so on paper the chamber glow is a stronger tint that falls off late and closes
   on a faint rim, the labels are the chamber's colour darkened further, and the conduit strands
   carry roughly twice the alpha — the same weight to the eye.
+- **Fixed: the job registry took the process down on shutdown.** `ApiJobRegistry.Dispose()`
+  completed its queue and disposed it in consecutive statements while its worker threads were
+  blocked inside `GetConsumingEnumerable()` — and disposing a `BlockingCollection` under a blocked
+  consumer throws `ObjectDisposedException` on that thread, where nothing catches it. An unhandled
+  exception on a background thread is a process kill, so the API host's shutdown was one race away
+  from a crash instead of a stop. CI said it plainly: 1,652 tests passed and the run still failed,
+  because the test host crashed in teardown. Dispose now lets the workers leave before the queue
+  goes, the take is guarded so a worker blocked at that moment exits quietly, and the job body's own
+  error handling is untouched. Guarded by `JobRegistryShutdownTests`.
 - **Fixed: a colony of stars and no chambers after signing in.** Colony Live enables at
   `DOMContentLoaded`, which on a fresh session is the sign-in screen: both bounded reads were
   refused, nothing retried them, and the operator signed in to an empty sky. Hydration is now
