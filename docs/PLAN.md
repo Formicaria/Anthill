@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.118**.
+Shipping release: **v0.3.8.119**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -439,7 +439,7 @@ worth more the second time it has to be written.
 
 ---
 
-### 2i. Unreleased — the Colony Live UI re-ported onto the approved read model
+### 2i. v0.3.8.119 — the Colony Live UI re-ported onto the approved read model
 
 **Delivers:** the `.115`–`.117` WebGL renderer, its HUD and the vendored three.js are removed — the
 UI was rejected in review; the backend it was built against was approved and is untouched. The
@@ -447,10 +447,11 @@ UI was rejected in review; the backend it was built against was approved and is 
 the galaxy sky) now consumes the reducer and the endpoints unchanged. A chamber's grains are its
 persisted records and its orbs its residents; the chambers are the server's nine; the mound exists
 only when the fleet says so; labels are the projection's unless the operator renamed them, with the
-layout in `/ui/state` (schema 3). `ColonyLiveGuardTests` keeps every rule that protected the
+layout in `/ui/state` (schema 3; a schema-2 layout from the retired build migrates by offset, ×10, y
+flipped). `ColonyLiveGuardTests` keeps every rule that protected the
 contract and gains the canvas renderer's own; the `§18` constant comparison went with the renderer
 it compared. The design handoff stays under `docs/design/colony-live-3d/` as a record, and says so.
-The CHANGELOG's `## Unreleased` entry carries the full account.
+The CHANGELOG's `## v0.3.8.119` entry carries the full account, including what the V&V pass found.
 
 ### 2h. v0.3.8.118 — the mission honours what was asked, or says why it cannot
 
