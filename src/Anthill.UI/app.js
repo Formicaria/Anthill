@@ -1137,7 +1137,7 @@ function setColonyPref(kind,value){
   if(kind==='motion'){ colonyMotion=colonyReducedMotion?'off':value; if(colonyMotion==='off') particles=[]; }
   else if(kind==='labels'){ colonyLabels=value; }
   else if(kind==='pheromones'){ colonyPheromones=value; if(value==='off') pheroMotes.length=0; }
-  if(colonyLive) colonyLive.setOptions({motion:colonyMotion, labels:colonyLabels, trails:colonyPheromones!=='off'});
+  if(window.ColonyHost&&ColonyHost.active()) ColonyHost.setOptions({motion:colonyMotion, labels:colonyLabels, trails:colonyPheromones!=='off'});
 }
 
 /**
@@ -1254,7 +1254,9 @@ async function loadColonyRegistry(){
     const r=await api('/colony/registry');
     if(r&&r.success){
       colonyRegistry=r.data; colonyRegistryProblem=null; colonyRegistryAt=Date.now();
-      if(colonyTopo) colonyTopo.ingestRegistry(r.data);
+      // Sector membership now arrives from /colony/live/snapshot, projected from the registry
+      // server-side. The registry poll no longer feeds the topology: a client-side colony→sector
+      // map was the second store of that fact, and it filed unknown roles under the Queen.
       // v2.14.13: truthful per-role runtime state for the inspector, from the same fetch.
       antRuntimeStatus={};
       (r.data.runtime_status||[]).forEach(st=>{ antRuntimeStatus[String(st.role_id||'').toLowerCase()]=st; });
@@ -1373,7 +1375,7 @@ document.querySelectorAll('#colony-viewbar .cv-btn').forEach(btn=>{
     // zoom about the canvas centre with no modifier required. Eases via the camera targets.
     if(act==='zoom-in'){ colonyZoom(1.2); return; }
     if(act==='zoom-out'){ colonyZoom(1/1.2); return; }
-    if(act==='live3d'){ toggleColonyLive(!colonyLive); return; }
+    if(act==='live3d'){ if(window.ColonyHost) ColonyHost.toggle(); return; }
     if(view){
       colonyView=view;
       document.querySelectorAll('#colony-viewbar [data-view]').forEach(b=>b.classList.toggle('on',b.dataset.view===view));
@@ -1393,38 +1395,11 @@ document.querySelectorAll('#colony-viewbar [data-colonypref]').forEach(sel=>{
 });
 loadColonyPrefs();
 
-/* Colony Live (design doc §17, stage 3) — the opt-in 3D formicarium view (design doc §17, stage 3). Mounted into
- * the SAME #colony-canvas-area that re-parents between Colony, Dashboard and Chat, so it rides along;
- * the classic canvas stays the default and the permanent fallback. Fed from the handlers this file
- * already runs (pollGraph, loadColonyRegistry, pollApprovals, the event stream) — never a second
- * fetch. Renderer + projection live in colony-live.js / colony-topology.js; this file only toggles. */
-let colonyLive=null, colonyTopo=null;
-const COLONY_LIVE_KEY='anthill.colony.view3d';
-function toggleColonyLive(on){
-  const area=document.getElementById('colony-canvas-area'), classic=document.getElementById('c');
-  if(!area||!classic) return;
-  if(on&&!(window.ColonyLive&&window.ColonyTopology)){ console.warn('Colony Live assets not loaded; classic canvas kept'); on=false; }
-  if(on&&!colonyLive){
-    colonyTopo=ColonyTopology.create();
-    colonyLive=ColonyLive.create();
-    colonyTopo.onScene(s=>colonyLive&&colonyLive.setTopology(s));
-    colonyLive.mount(area);
-    colonyLive.setOptions({motion:colonyMotion, labels:colonyLabels, trails:colonyPheromones!=='off'});
-    // A record names the ant that wrote it; clicking one opens the existing Agent Inspector for
-    // that ant. Event-derived facts only, read-only — the record index is a future contract (§19).
-    colonyLive.on('record',r=>{ const who=String(r?.record?.ant||'').toLowerCase(); const n=nodes.find(x=>x.ant===who||x.worker===who||x.id===who); if(n) showInspector(n); });
-    if(lastGraphData) colonyTopo.ingestGraph(lastGraphData);
-    if(colonyRegistry) colonyTopo.ingestRegistry(colonyRegistry);
-  }else if(!on&&colonyLive){ colonyLive.destroy(); colonyLive=null; colonyTopo=null; }
-  classic.style.display=on?'none':'';
-  document.querySelectorAll('#colony-viewbar [data-colonyact="live3d"]').forEach(b=>b.classList.toggle('on',!!on));
-  try{ localStorage.setItem(COLONY_LIVE_KEY,on?'1':'0'); }catch(e){}
-}
-// One subscription for the page's life (toggling must not stack listeners). Record growth only on
-// real record-creating events — recordSectorOf() returns null for everything else.
-onColonyEvent(ev=>{ if(!colonyTopo) return; colonyTopo.ingestEvent(ev); const sec=ColonyTopology.recordSectorOf(ev); if(sec&&colonyLive) colonyLive.addRecordPoint(sec); });
-// Deferred scripts run in document order, so by DOMContentLoaded the split assets exist.
-document.addEventListener('DOMContentLoaded',()=>{ let want=false; try{ want=localStorage.getItem(COLONY_LIVE_KEY)==='1'; }catch(e){} if(want) toggleColonyLive(true); });
+/* Colony Live. The whole integration — toggle, read-model hydration, layout persistence — lives in
+ * colony-host.js, which loads after this file and uses the globals it defines (api, nodes,
+ * showInspector, onColonyEvent). It is its own asset for the reason the v0.3.8.52 split exists:
+ * app.js is the shared foundation and is held under 10,000 lines by a guard, and a growing feature
+ * belongs beside its renderer rather than in the foundation. */
 
 /**
  * v2.14.5: chamber rings + labels, drawn in WORLD space so they pan, zoom, and sit beneath the
@@ -2633,7 +2608,7 @@ async function pollGraph(){
   try{
     const r=await api('/graph'); if(!r.success) return;
     lastGraphData=r.data;
-    if(colonyTopo) colonyTopo.ingestGraph(r.data);   // Colony Live (design doc §17, stage 3) rides this poll
+    if(window.ColonyHost) ColonyHost.ingestGraph(r.data);   // Colony Live rides this poll — never its own
     // True live activity from current task states — not "share of all tasks in the mission".
     // running task(s) = fully active (1.0); only queued work (ready/pending) = warming (0.35);
     // everything terminal = idle (0). Always in [0,1], so the tooltip can never exceed 100%.
@@ -2954,7 +2929,7 @@ async function pollApprovals(){
   try{
     const text=await apiText('/approvals');
     const items=parseApprovalsText(text);
-    if(colonyTopo) colonyTopo.ingestApprovals(items);
+    if(window.ColonyHost) ColonyHost.ingestApprovals(items);
     const card=document.getElementById('approvals-card');
     const bellCount=document.getElementById('bell-count');
     setEl('approval-count',items.length);

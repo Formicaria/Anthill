@@ -82,7 +82,17 @@ it rather than where a formatting change does.
 
 **A guard that cannot express success is not a guard, it is a deadline.**
 `PartialCoverage_IsDeclaredRatherThanImplied` asserted `NotEmpty(partial)` — which would have failed
-for the single outcome the ledger exists to reach. That was needed twice (v0.3.8.74, v0.3.8.79).
+for the single outcome the ledger exists to reach. That was needed twice (v0.3.8.74, v0.3.8.79), then
+again at v0.3.8.113 and v0.3.8.114 for `TheUniversalWorkflowProgram_IsExactlyTheRangeItDeclares`,
+which could describe a program in progress and not a finished one.
+
+At v0.3.8.115 the rule was applied FORWARD for the first time rather than after a failure: every one
+of `ColonyLiveGuardTests`' fourteen rules carries its floor in the same fact — the Math.random rule
+also asserts the deterministic `hash32` replacement exists, the "only the host fetches" rule asserts
+the host really does, and a dedicated fact proves the JavaScript comment-stripper removes comments by
+checking that a sentence present in the raw file is absent from the stripped one. That last floor is
+not decorative: `colony-topology.js`'s header contains the sentence "Math.random() appears nowhere in
+this file", and a scan without stripping would fail on the comment documenting the guarantee.
 
 ## A privilege-gated skip is a silent pass
 

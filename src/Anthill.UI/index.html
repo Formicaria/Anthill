@@ -544,6 +544,67 @@ a.nav-logo-link:focus-visible{outline:2px solid var(--logo-node,#93bdf2);outline
 .topo-ov{position:static !important;top:auto !important;left:auto !important;right:auto !important;bottom:auto !important;}
 .ov-hidden{display:none !important;}
 
+/* -- Colony Live HUD (v0.3.8.115) -------------------------------------------
+   The chrome colony-hud.js builds over the WebGL canvas. Pointer events are off
+   on the container and back on for the controls, so dragging a chamber through
+   an empty region of the HUD still reaches the renderer. */
+.clh{position:absolute;inset:0;pointer-events:none;font-family:var(--mono,var(--font));z-index:4;}
+.clh>*{pointer-events:auto;}
+.clh-hidden{display:none !important;}
+.clh-crumbs{position:absolute;top:10px;left:12px;display:flex;align-items:center;gap:5px;
+  font-size:10px;color:var(--muted);letter-spacing:.04em;}
+.clh-sep{color:var(--dim);}
+.clh-crumb{color:var(--text);}
+.clh-depth{margin-left:8px;font-size:8px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;}
+.clh-controls{position:absolute;top:8px;right:12px;display:flex;flex-wrap:wrap;justify-content:flex-end;
+  align-items:center;gap:4px;max-width:70%;}
+.clh-btn{background:rgba(2,6,23,.72);border:1px solid var(--border);color:var(--muted);
+  font-size:9px;border-radius:4px;padding:3px 7px;letter-spacing:.04em;}
+.clh-btn:hover{color:var(--text);border-color:var(--hud-cyan,var(--blue));}
+.clh-btn:disabled{opacity:.45;cursor:default;}
+.clh-btn:focus-visible{outline:2px solid var(--hud-cyan,var(--blue));outline-offset:1px;}
+.clh-sel-wrap{display:flex;align-items:center;gap:3px;}
+.clh-sel-lbl{font-size:8px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;}
+.clh-sel{background:rgba(2,6,23,.72);border:1px solid var(--border);color:var(--muted);
+  font-size:9px;border-radius:4px;padding:2px 4px;}
+.clh-notice{position:absolute;top:34px;left:12px;max-width:46ch;background:rgba(2,6,23,.78);
+  border:1px solid var(--border);border-left:2px solid var(--dim);border-radius:5px;
+  padding:6px 9px;font-size:9px;line-height:1.55;color:var(--muted);}
+.clh-notice.clh-history{border-left-color:var(--queen);color:var(--text);}
+.clh-panel{position:absolute;top:44px;right:12px;width:300px;max-height:calc(100% - 110px);
+  overflow-y:auto;background:rgba(2,6,23,.9);border:1px solid var(--border);border-radius:6px;
+  padding:10px 12px 12px;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);}
+.clh-x{float:right;background:none;border:none;color:var(--dim);font-size:11px;line-height:1;}
+.clh-x:hover{color:var(--text);}
+.clh-h{font-size:11px;color:var(--text);margin-bottom:7px;font-weight:600;}
+.clh-h5{font-size:8px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;
+  margin:9px 0 4px;border-top:1px solid var(--border);padding-top:6px;}
+.clh-row{display:flex;justify-content:space-between;gap:10px;font-size:9px;padding:1.5px 0;}
+.clh-k{color:var(--dim);flex:0 0 auto;}
+.clh-v{color:var(--muted);text-align:right;word-break:break-word;}
+.clh-unresolved .clh-v{color:var(--queen);}
+.clh-list{display:flex;flex-direction:column;gap:2px;}
+.clh-item{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;
+  background:rgba(148,163,184,.05);border:1px solid transparent;border-radius:3px;padding:3px 5px;font-size:9px;}
+.clh-item:hover{border-color:var(--border);}
+.clh-item-n{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.clh-item-s{color:var(--dim);flex:0 0 auto;font-size:8px;}
+.clh-res-working .clh-item-n{color:var(--text);}
+.clh-res-disabled{opacity:.5;}
+.clh-note{font-size:9px;color:var(--dim);line-height:1.6;margin-top:6px;}
+.clh-appr{border:1px solid var(--border);border-radius:5px;padding:7px 8px;margin-bottom:7px;}
+.clh-appr-t{font-size:10px;color:var(--text);margin-bottom:5px;}
+.clh-appr-btns{display:flex;gap:5px;margin-top:6px;}
+.clh-appr-btns .clh-btn{flex:1;text-align:center;}
+.clh-approve{border-color:rgba(52,211,153,.4);}
+.clh-reject{border-color:rgba(248,113,113,.4);}
+.clh-timeline{position:absolute;left:12px;right:12px;bottom:12px;display:flex;align-items:center;
+  gap:10px;background:rgba(2,6,23,.85);border:1px solid var(--border);border-radius:6px;padding:7px 11px;}
+.clh-scrub{flex:1;accent-color:var(--queen);}
+.clh-stamp{font-size:9px;color:var(--muted);flex:0 0 auto;}
+.clh-coverage{font-size:8px;color:var(--dim);flex:0 0 auto;}
+@media (prefers-reduced-motion: reduce){.clh-btn,.clh-item{transition:none !important;}}
+
 .chud-legend{background:rgba(2,6,23,.55);border:1px solid rgba(34,211,238,.18);border-radius:6px;padding:7px 9px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
   /* v2.14.15: the legend now lists every registry ant instead of the first 15, so it scrolls
      rather than growing past the canvas. */
@@ -4025,8 +4086,15 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 <script src="/ui/console-extras.js" defer></script>
 <!-- Colony Live (design doc §17, stage 3) — topology before live (live consumes the topology's scene). Both
      after app.js like every split asset; app.js reaches them only at click time. -->
+<!-- Colony Live. Load order is load-bearing: three.js defines window.THREE, the renderer
+     reads it, and colony-live.js picks a renderer at create() time. All same-origin, so the
+     CSP stays script-src 'self' and the page still carries no inline script. -->
+<script src="/ui/vendor/three.min.js" defer></script>
 <script src="/ui/colony-topology.js" defer></script>
+<script src="/ui/colony-renderer.js" defer></script>
 <script src="/ui/colony-live.js" defer></script>
+<script src="/ui/colony-hud.js" defer></script>
+<script src="/ui/colony-host.js" defer></script>
 <!-- v0.3.8.52: the homelab domain, split out of app.js. AFTER app.js on purpose — its
      PAGE_ENTER['homelab'] registration runs at load and needs PAGE_ENTER to exist. `defer`
      guarantees the order (deferred scripts execute in document order), and

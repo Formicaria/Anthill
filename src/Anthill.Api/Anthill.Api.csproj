@@ -62,6 +62,30 @@
     <!-- Colony Live (design doc §17, stage 3) — the opt-in 3D formicarium view (topology projection + renderer). -->
     <EmbeddedResource Include="..\Anthill.UI\colony-topology.js" LogicalName="Anthill.Api.Ui.colony-topology.js" Condition="'$(AnthillNoUi)' != 'true'" />
     <EmbeddedResource Include="..\Anthill.UI\colony-live.js" LogicalName="Anthill.Api.Ui.colony-live.js" Condition="'$(AnthillNoUi)' != 'true'" />
+    <EmbeddedResource Include="..\Anthill.UI\colony-renderer.js" LogicalName="Anthill.Api.Ui.colony-renderer.js" Condition="'$(AnthillNoUi)' != 'true'" />
+    <EmbeddedResource Include="..\Anthill.UI\colony-host.js" LogicalName="Anthill.Api.Ui.colony-host.js" Condition="'$(AnthillNoUi)' != 'true'" />
+    <EmbeddedResource Include="..\Anthill.UI\colony-hud.js" LogicalName="Anthill.Api.Ui.colony-hud.js" Condition="'$(AnthillNoUi)' != 'true'" />
+    <!--
+      v0.3.8.115 — THE ONE VENDORED RUNTIME DEPENDENCY THE CONSOLE HAS, and the rules it lives by.
+
+      three.js 0.128.0, `build/three.min.js`, MIT, pinned by EXACT version and served from this
+      origin like every other asset. It is embedded here for the same reason `app.js` is: the
+      single-file self-contained binary has no wwwroot, so an unpinned asset 404s at runtime while
+      building and testing perfectly.
+
+      WHY THE UMD BUILD AND NOT A MODULE. The console is non-module vanilla JavaScript loaded with
+      plain `<script src>` tags. The UMD build defines `window.THREE` under exactly that, so the CSP
+      stays `script-src 'self'` with no `unsafe-eval`, no import map, and no bundler. Later three
+      releases dropped the UMD minified build; that is why the pin is 0.128.0 and why moving it is a
+      decision rather than a bump.
+
+      NO CDN, NO BLOB, NO RUNTIME DOWNLOAD. The reference prototype fetched this from unpkg and
+      evaluated it from a Blob URL when the vendored copy was missing. That path is not ported: it
+      needs `script-src blob:` and a network the colony may not have, and a console that silently
+      reaches the internet to render is not one an air-gapped operator can trust.
+    -->
+    <EmbeddedResource Include="..\Anthill.UI\vendor\three.min.js" LogicalName="Anthill.Api.Ui.vendor.three.min.js" Condition="'$(AnthillNoUi)' != 'true'" />
+    <EmbeddedResource Include="..\Anthill.UI\vendor\three.LICENSE" LogicalName="Anthill.Api.Ui.vendor.three.LICENSE" Condition="'$(AnthillNoUi)' != 'true'" />
   </ItemGroup>
 
   <!--

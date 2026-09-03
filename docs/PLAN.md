@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.114**.
+Shipping release: **v0.3.8.115**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -370,6 +370,51 @@ twice is how "one slice per release" becomes a sentence nobody is keeping.
 - **The `.97` Windows `dotnet_test` residual** — needs the machine that reproduces it.
 - **The capability-table reconciliation and `QUALIFICATION.md` §3** — need the live pack's exported
   records, and no code change moves them.
+
+---
+
+### 2d. v0.3.8.115 — colony live stops inventing a colony
+
+**Delivers:** the console half of the last two releases — a Colony Live that draws only what the
+colony recorded, and a Micromound view that shows what the fleet listing says rather than what it
+could plausibly say.
+
+**THE PREMISE OF THE BRIEF WAS FALSE, and that was worth finding first.** The work was specified as
+"preserve the existing WebGL renderer". There was no WebGL renderer: `.111` shipped a canvas-2D
+projection with a hand-rolled 3D transform. The decision taken was to vendor three.js 0.128.0 as an
+embedded asset served from this origin — pinned at that version because later releases dropped the
+UMD build that defines `window.THREE` under a plain `<script src>`, which is what keeps the CSP at
+`script-src 'self'`. The prototype's unpkg-plus-Blob-URL fallback is not ported and a guard refuses
+it.
+
+**SEVEN THINGS `.111` INVENTED.** Enumerated in `colony-topology.js`'s header rather than here, and
+each replaced by a fact or by an honest absence. The costliest was a hand-maintained role→sector map
+resolving a miss to the Queen, which silently mis-filed every role added after it was last edited.
+Membership is now the registry's, projected once, server-side.
+
+**A GUARD FOUND THE WORST OF IT.** The §17 rule against `Math.random` in the feature failed on the
+classic fallback, and following it in found `demoTopology()` — an invented mission, three named ants
+at made-up speeds, a fabricated approval boundary — running unconditionally at startup, plus a
+`recordAt` fabricating records for unfilled particles. That same file's `setTopology` also still read
+five fields the new projection does not emit, so it would have rendered permanently blank while
+looking wired up. Both fixed. This is the release's own evidence for writing the guards before
+believing the code.
+
+**Verified by** — 3,571 tests, zero failures, and specifically: `ColonyLiveGuardTests` (fourteen
+rules, each with a vacuity floor), `UiAbsenceTests` extended to the two new assets and the vendored
+bundle, and `ConsoleAssetSplitTests` covering both new console files without being edited, because it
+enumerates the directory.
+
+**WHAT `.115` DID NOT DO, said plainly.** The Micromound console card still does not exist —
+charters, manifests, dispatch, the token mint, unlink and the evidence feed remain reachable over the
+API and rendered by nothing, recorded with that reason in the coverage ledger. Semantic zoom has four
+depths and a Back control and does not have mission-follow or a pheromone overlay bound to real
+scores. And the standing R0 hygiene below is untouched for the second release running.
+
+**Carried forward, unchanged and still named:** the list under §2c stands as written, with one
+correction — the typed-row ratchet is still at **45** and has now been skipped twice. The ratchet is
+enforced at ≤ 45, so the work cannot reverse; only this note stops it quietly stopping, and it is
+worth more the second time it has to be written.
 
 ---
 

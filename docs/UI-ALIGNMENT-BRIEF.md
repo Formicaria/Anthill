@@ -225,3 +225,35 @@ verify with the named test before assuming any of it is still broken.
 Still open and owned by the console work: the auto-opening technical report on mission completion,
 scattered terminal-state lists, canonical outcome versus answer framing, and settings that report
 "saved" for a frozen runtime field.
+
+---
+
+## 11. The Micromound console — open, and where it is tracked
+
+`ConsoleRouteCoverageTests.NoConsoleSurface` records every mapped route with no console surface and
+why. It is route-granular, and normalises a path to one key regardless of method — so when Colony
+Live began READING `/micromound/mounds` at v0.3.8.115 to decide whether to offer a device descent,
+that entry had to leave the ledger even though the POST on the same path, which mints an enrollment
+token, still has no surface at all. That deferral cannot live in the ledger any more, so it lives
+here.
+
+Open, as of v0.3.8.115:
+
+| Surface | Route | State |
+|---|---|---|
+| Mint an enrollment token | `POST /micromound/mounds` | no console form; the fleet GET is read by Colony Live, the mint is not |
+| Retire a device | `POST /micromound/unlink` | belongs on the fleet card beside the mint |
+| Issue a charter | `POST /micromound/charters` | the command path shipped at `.114`; its console did not |
+| Author a manifest | `/micromound/config` | hardware bindings, device limits, workers |
+| Dispatch a physical mission | `/micromound/missions` | approvals DO surface, through the existing queue |
+| Per-mission evidence | `/micromound/missions/*` | the `mission_status` widget payload is the intended reader |
+| Evidence feed | `/micromound/evidence` | the `evidence_feed` widget payload is the intended reader |
+| Capability resolution | `/micromound/resolve` | answers a question and issues nothing; no console asks it yet |
+| Per-mound stop / resume | `/micromound/stop`, `/micromound/stop/resume` | the global stop is a file by design |
+
+What Colony Live DOES surface at `.115`, so this table is not read as covering more than it does: the
+fleet listing is read once on enable, and the descent panel shows each device's recorded fields —
+last beat, stopped, quiesced, charter and lease, capabilities, tier. It computes no online/offline
+verdict, because `MicromoundWidgets.StatusOf` decides that from configuration the browser cannot see.
+Exposing that verdict on the fleet listing is the smallest change that would let the console show an
+at-a-glance status without a second implementation of the rule.

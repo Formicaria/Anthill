@@ -80,7 +80,12 @@ public class ConsoleRouteCoverageTests
         // evidence_feed) through the widget runtime. ------------------------------------------------
         ["/micromound/v0/enroll"] = "device endpoint: the one-time token is the auth; a mound is not an operator",
         ["/micromound/v0/sync"] = "device endpoint: the Ed25519 signature is the auth; mounds dial in, consoles do not",
-        ["/micromound/mounds"] = "UI GAP — fleet list + token mint await the micromound Integrations card (M1 UI)",
+        // "/micromound/mounds" LEFT this ledger at v0.3.8.115. Colony Live reads the fleet listing
+        // once on enable to decide whether a Micromound descent is offered at all, so the route is
+        // reached and the entry would now be excusing nothing (`TheLedger_ContainsNothingTheConsole
+        // ActuallyReaches`). What that read does NOT surface is the POST on the same path — minting
+        // an enrollment token — which normalises to the same key and so cannot be recorded here
+        // separately. It is tracked in docs/UI-ALIGNMENT-BRIEF.md with the rest of the M1 UI.
         ["/micromound/evidence"] = "UI GAP — the evidence_feed widget payload is the intended reader (M1 UI)",
         ["/micromound/stop"] = "UI GAP — per-mound stop control belongs on the fleet card; the global stop is a file by design",
         ["/micromound/stop/resume"] = "UI GAP — as /micromound/stop; resume is an explicit operator act",

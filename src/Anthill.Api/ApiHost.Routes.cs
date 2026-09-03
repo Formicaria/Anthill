@@ -113,6 +113,33 @@ public static partial class ApiHost
             ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
             return Results.Content(UiColonyLiveJs, "text/javascript; charset=utf-8");
         });
+        app.MapGet("/ui/colony-renderer.js", (HttpContext ctx) =>
+        {
+            ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
+            return Results.Content(UiColonyRendererJs, "text/javascript; charset=utf-8");
+        });
+        app.MapGet("/ui/colony-host.js", (HttpContext ctx) =>
+        {
+            ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
+            return Results.Content(UiColonyHostJs, "text/javascript; charset=utf-8");
+        });
+        app.MapGet("/ui/colony-hud.js", (HttpContext ctx) =>
+        {
+            ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
+            return Results.Content(UiColonyHudJs, "text/javascript; charset=utf-8");
+        });
+        // v0.3.8.115 — the vendored three.js, from THIS origin and nowhere else.
+        //
+        // Cached, unlike every asset above it. The others are `no-store` because a stale console
+        // silently pins an operator to the previous version's logic after an upgrade; this one is
+        // an immutable pinned third-party build whose bytes cannot change without the version
+        // changing, and re-sending 590 KB on every page load to guard against a problem it cannot
+        // have is a cost with no benefit.
+        app.MapGet("/ui/vendor/three.min.js", (HttpContext ctx) =>
+        {
+            ctx.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+            return Results.Content(UiVendorThreeJs, "text/javascript; charset=utf-8");
+        });
 
         app.MapGet("/ui/dashboard-grid.css", (HttpContext ctx) =>
         {
