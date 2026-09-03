@@ -39,7 +39,47 @@ public sealed record ColonyResident(
     string Colony,
     bool Enabled,
     bool Executable,
-    IReadOnlyList<string> Workers);
+    IReadOnlyList<ColonyWorker> Workers,
+    ColonyTrail? Trail = null);
+
+/// <summary>
+/// A WORKER, WITH BOTH OF ITS NAMES. v0.3.8.116.
+///
+/// <see cref="AntWorkerDefinition.WorkerId"/> is <c>{parent}.{id}</c> — "constraint.scope_guard" —
+/// and it is the identity an event carries in <c>ant_name</c>, so it is the only thing a record can
+/// be matched on. <see cref="AntWorkerDefinition.DisplayName"/> is "ScopeGuard", which is what the
+/// 2D colony view has always shown an operator and what the roster editor writes.
+///
+/// Until now this projection carried the id ALONE, so the Live view labelled a worker
+/// "constraint.scope_guard" while every other page in the console called the same ant "ScopeGuard".
+/// Carrying one name and displaying it is how one ant ends up with two names in one product; a
+/// parallel array of display names would be the same defect with an extra way to fall out of step.
+/// Both names travel together, on the worker.
+///
+/// <paramref name="ParentRoleId"/> is carried for the same reason: the registry owns the fact that
+/// scope_guard belongs to constraint, and a view that wants to draw that relationship should be
+/// reading it rather than splitting the id on a dot and hoping.
+/// </summary>
+public sealed record ColonyWorker(
+    string WorkerId,
+    string DisplayName,
+    string ParentRoleId,
+    bool Enabled);
+
+/// <summary>
+/// A role's REPUTATION, as the pheromone layer actually recorded it. v0.3.8.116.
+///
+/// Summed over the role's workers, because that is where the layer writes: the key is
+/// <c>worker:{id}</c>, exactly as <see cref="Anthill.Core.Pheromones.TrailGuidedSelection.TrailKeyFor"/>
+/// forms it, so reader and writer cannot drift. `Strength` is the mean over workers that HAVE a
+/// trail — a role whose workers have never run has no trail at all and this is null, which is a
+/// different thing from a strength of zero and must render differently.
+///
+/// This is the one number in the view that says anything about how well an ant has done, and it is
+/// real. There is no per-RECORD pheromone anywhere in Anthill; a design that shows one is showing
+/// something this colony does not measure.
+/// </summary>
+public sealed record ColonyTrail(double Strength, int Successes, int Failures, int WorkersWithTrail);
 
 /// <summary>
 /// THE SECTOR MAP, SERVER-SIDE, AND WHY IT MOVED HERE. v0.3.8.115.
@@ -93,11 +133,18 @@ public static class ColonySectors
     {
         ["Core"] = Queen,
         ["Command"] = Queen,
+        // v0.3.8.115.1 — THE TWO THAT FELL THROUGH. The registry declares seventeen distinct
+        // `Colony` values and this map had fifteen, so `constraint` (Command / Safety) and
+        // `scribe` (Communication / Docs) resolved to UNASSIGNED — the exact defect class this
+        // release existed to remove, reintroduced one layer over. Placed where the console's
+        // 2D chamber map has always placed them, which is the established answer.
+        ["Command / Safety"] = Queen,
         ["Context"] = Intelligence,
         ["External Research"] = Intelligence,
         ["Code"] = Forge,
         ["Workspace"] = Forge,
         ["UI"] = Forge,
+        ["Communication / Docs"] = Forge,
         ["Resources"] = Forge,
         ["Verification"] = Validation,
         ["Testing"] = Validation,
@@ -159,7 +206,13 @@ public static class ColonyLiveProjection
     /// enabled should look empty, and a view that silently drops empty chambers cannot show the
     /// difference between "this sector has no roles" and "this sector was never built".
     /// </summary>
-    public static IReadOnlyList<ColonySector> Sectors()
+    /// <param name="trailFor">
+    /// Optional lookup for a pheromone trail by key. Passed in rather than reached for, because this
+    /// projection is over the REGISTRY and must stay callable — by tests and by the guard that reads
+    /// the roster — without a database behind it. Absent lookup simply means no trails.
+    /// </param>
+    public static IReadOnlyList<ColonySector> Sectors(
+        Func<string, Anthill.Core.Pheromones.TrailView?>? trailFor = null)
     {
         var residents = new Dictionary<string, List<ColonyResident>>(StringComparer.Ordinal);
         foreach (var sector in ColonySectors.Order) residents[sector] = [];
@@ -171,13 +224,29 @@ public static class ColonyLiveProjection
         {
             var sector = ColonySectors.ForColony(role.Colony);
 
+            ColonyTrail? trail = null;
+            if (trailFor is not null && role.Workers.Count > 0)
+            {
+                double sum = 0; int ok = 0, bad = 0, seen = 0;
+                foreach (var w in role.Workers)
+                {
+                    var view = trailFor(Anthill.Core.Pheromones.TrailGuidedSelection.TrailKeyFor(w));
+                    if (view is null) continue;
+                    sum += view.Strength; ok += view.SuccessCount; bad += view.FailureCount; seen++;
+                }
+                // Null, not zero, when nothing has run: "no reputation recorded" and "a reputation
+                // of nothing" are different claims and only one of them is true here.
+                if (seen > 0) trail = new ColonyTrail(sum / seen, ok, bad, seen);
+            }
+
             residents[sector].Add(new ColonyResident(
                 role.RoleId,
                 role.DisplayName,
                 role.Colony,
                 role.Enabled,
                 role.Executable,
-                [.. role.Workers.Select(w => w.WorkerId)]));
+                [.. role.Workers.Select(w => new ColonyWorker(w.WorkerId, w.DisplayName, w.ParentRoleId, w.Enabled))],
+                trail));
 
             if (!string.IsNullOrWhiteSpace(role.Colony)) colonies[sector].Add(role.Colony);
         }

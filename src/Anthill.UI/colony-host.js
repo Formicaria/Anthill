@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────────────────
-   COLONY LIVE — the host. v0.3.8.115.
+   COLONY LIVE — the host. v0.3.8.116.
 
    The integration layer, and the only file in the feature that talks to the API.
    It exists as its own console asset for the reason the v0.3.8.52 split exists:
@@ -31,7 +31,41 @@
   function enable(area, classic) {
     topo = ColonyTopology.create();
     live = ColonyLive.create();
-    live.mount(area);
+
+    /* MOUNTING IS WHERE A RENDERER ACTUALLY FAILS, and until this was fixed it was
+       the one step outside the fallback.
+
+       `ColonyLive.create()` already guards CONSTRUCTION: if `ColonyRenderer.create()`
+       throws, it returns the classic projection instead. But `available()` only
+       proves that `window.THREE` exists and that *a* WebGL context can be created —
+       neither of which is the same as THIS renderer mounting. `mount()` resolves
+       three.js, constructs a `WebGLRenderer`, allocates textures and attaches a
+       canvas, and any of that can throw on a driver, a blocked context, or a
+       three.js whose API moved.
+
+       When it did, the exception escaped `enable()` and then `toggle()`, so
+       `classic.style.display` was never restored — leaving the WebGL root div
+       (`position:absolute; inset:0; background:#04060b`) as a black rectangle over a
+       classic canvas that had been hidden and never brought back. The view looked
+       dead and the fallback that existed for exactly this never ran.
+
+       So the mount is guarded here, in the file whose job is wiring, and the failure
+       is REPORTED rather than swallowed: the operator gets the 2D projection and the
+       console gets the real reason. */
+    try {
+      live.mount(area);
+    } catch (e) {
+      try {
+        console.warn('[colony-live] the WebGL renderer failed to mount, falling back to the '
+                   + 'classic projection: ' + ((e && e.message) || e));
+      } catch (e2) { }
+      // Remove whatever the failed mount attached before replacing it. A partial
+      // mount leaves a full-bleed opaque div, which is the black rectangle above.
+      try { live.destroy(); } catch (e3) { }
+      live = ColonyLive.createClassic();
+      live.renderer = 'canvas2d';
+      live.mount(area);
+    }
 
     var options = {
       motion: pref('colonyMotion', 'normal'),
@@ -46,7 +80,8 @@
       hud = ColonyHud.create({
         mount: area, live: live, topo: topo,
         motion: options.motion, labels: options.labels, trails: options.trails,
-        onResident: openAgentInspector
+        onResident: openAgentInspector,
+        onMoundStop: moundStop
       });
     }
 
@@ -59,9 +94,23 @@
       if (live) live.setTopology(s);
     });
 
+    /* An ant opens the HUD's ant inspector — the trail, the workers, the status —
+       and ALSO the console's existing Agent Inspector, which is where routing and
+       telemetry for that role already live. Two panels, neither duplicating the
+       other: this one is about the ant in the colony, that one about its wiring. */
     live.on('resident', function (h) {
-      openAgentInspector((h && h.data && h.data.roleId) || '');
+      var r = h && h.data;
+      if (hud && r) hud.selectAnt(r);
+      openAgentInspector((r && r.roleId) || '');
     });
+
+    // A record grain resolves to the record it stands for.
+    live.on('record', function (h) {
+      if (hud && h && h.data) hud.selectRecord(h.data);
+    });
+
+    // The level changed, so the breadcrumb and BACK have to follow the camera.
+    live.on('depth', function () { if (hud) hud.onDepth(); });
 
     // A chamber click opens the sector inspector; the HUD owns every panel so
     // there is one place that decides what an inspector shows.
@@ -107,6 +156,16 @@
     else if (!on && live) disable();
 
     classic.style.display = on ? 'none' : '';
+
+    /* THE 2D CHROME BELONGS TO THE 2D CANVAS. v0.3.8.115 fix: `toggle` hid `#c` and
+       nothing else, so the caste legend, the learning-signals panel, the partial-
+       history notice and the "+/- to zoom · drag canvas to pan · drag ant to move"
+       hint all stayed painted over the WebGL scene — describing gestures that view
+       does not have, on top of a picture they do not describe. The viewbar itself
+       STAYS: it owns the Live 3D toggle, and hiding it would strand the operator in
+       a view with no way back. */
+    document.body.classList.toggle('colony-live-3d', !!on);
+
     document.querySelectorAll('#colony-viewbar [data-colonyact="live3d"]')
       .forEach(function (b) { b.classList.toggle('on', !!on); });
     try { localStorage.setItem(VIEW_KEY, on ? '1' : '0'); } catch (e) { }
@@ -142,6 +201,52 @@
     api('/micromound/mounds').then(function (fleet) {
       if (topo) topo.ingestMound((fleet && fleet.data) || fleet);
     }).catch(function () { /* no module, or no permission: there is no mound. */ });
+  }
+
+  /* ── The one mutation this feature performs ───────────────────────────────
+     PER-MOUND STOP AND RESUME, and it lives here because this is the only file
+     in the feature allowed to reach the network — the same boundary that keeps
+     the HUD from acting on the colony behind the host's back.
+
+     Three things it deliberately does NOT do:
+
+       · It does not decide the new state. It posts, then re-reads the fleet, so
+         the panel shows the COLONY's answer. A view that flipped its own flag on
+         a 200 would disagree with the device the first time a stop was accepted
+         and then superseded.
+       · It does not touch the global stop. That is a file on disk precisely so
+         no API flow can clear it (SAFETY.md), and neither this nor micromound.js
+         offers a control that appears to.
+       · It does not claim delivery. The colony never dials a mound; a stop order
+         sits in the downlink queue until the device's next beat collects it, and
+         both this and the panel say so in those words.
+
+     A failure is reported and rethrown, so the HUD's pending state clears and
+     the operator learns the order did not land rather than watching a button
+     settle back as though it had. */
+  function moundStop(moundId, stopped) {
+    if (typeof api !== 'function' || !moundId) return Promise.resolve(false);
+    var path = stopped ? '/micromound/stop' : '/micromound/stop/resume';
+    return api(path, 'POST', { mound_id: moundId })
+      .then(function () { return api('/micromound/mounds'); })
+      .then(function (fleet) {
+        if (topo) topo.ingestMound((fleet && fleet.data) || fleet);
+        return true;
+      })
+      .catch(function (e) {
+        try {
+          console.warn('[colony-live] mound ' + (stopped ? 'stop' : 'resume')
+                     + ' failed for ' + moundId + ': ' + ((e && e.message) || e));
+        } catch (e2) { }
+        // Re-read anyway: the post may have landed and the follow-up read failed,
+        // and a stale panel is worse than a slow one.
+        if (typeof api === 'function') {
+          api('/micromound/mounds')
+            .then(function (fleet) { if (topo) topo.ingestMound((fleet && fleet.data) || fleet); })
+            .catch(function () { });
+        }
+        throw e;
+      });
   }
 
   /* Layout persists through /ui/state, not localStorage alone: a layout an

@@ -573,7 +573,7 @@
     return api;
   }
   /* ───────────────────────────────────────────────────────────────────────────
-     THE HOST — v0.3.8.115. It chooses a renderer; it does not draw.
+     THE HOST — v0.3.8.116. It chooses a renderer; it does not draw.
 
      WebGL (`colony-renderer.js` over the vendored three.js) is the primary view.
      Everything above this line — the canvas-2D projection `.111` shipped — stays
@@ -611,7 +611,14 @@
       // than one that is not there.
       descend: function () { return r.descend(); },
       focused: function () { return r.focused(); },
-      sectorIds: function () { return r.sectorIds(); }
+      sectorIds: function () { return r.sectorIds(); },
+      historical: function () { return r.historical(); },
+      /* Colour only. A chamber's NAME belongs to the registry, so the WebGL view
+         offers no rename and the classic projection has no restyle at all — a
+         control that exists on one renderer and not the other would make the
+         two views disagree about what an operator can change. */
+      setChamberStyle: function (id, cfg) { return r.setChamberStyle(id, cfg); },
+      selectedAnt: function () { return r.selectedAnt(); }
     };
   }
 

@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────────────────
-   COLONY TOPOLOGY — the normalized Colony Live model. v0.3.8.115.
+   COLONY TOPOLOGY — the normalized Colony Live model. v0.3.8.116.
 
    ONE MODEL, TWO RENDERERS. This file owns what is TRUE. `colony-renderer.js`
    (WebGL) and the classic canvas both consume the scene it emits, and neither
@@ -114,6 +114,31 @@
     function onScene(fn) { listeners.push(fn); }
     function publish() { var s = project(); listeners.forEach(function (fn) { fn(s); }); }
 
+    /* ── A worker's two names ──────────────────────────────────────────────────
+       The projection sends `{ workerId, displayName, parentRoleId, enabled }`.
+       `workerId` is `{parent}.{id}` and is the identity an event carries, so it
+       is the only thing a record may be matched on; `displayName` is what the
+       registry calls the ant and what the 2D colony view has always shown.
+
+       These readers accept the bare string the projection sent before `.116` as
+       well, because a console asset can be served from a cache older than the
+       server it is talking to, and a view that renders nothing in that window is
+       worse than one that renders the id for a minute. */
+    function workerId(w) {
+      if (!w) return '';
+      if (typeof w === 'string') return w;
+      return w.workerId || w.WorkerId || '';
+    }
+    function workerName(w) {
+      if (!w) return '';
+      if (typeof w === 'string') return w;
+      return w.displayName || w.DisplayName || workerId(w);
+    }
+    function workerParent(w) {
+      if (!w || typeof w === 'string') return '';
+      return w.parentRoleId || w.ParentRoleId || '';
+    }
+
     /** The sector a role id belongs to. Unknown → `unassigned`, NEVER queen, never guessed. */
     function sectorOfRole(roleId) {
       if (!roleId) return st.unassignedId;
@@ -134,8 +159,21 @@
       st.roleSector = Object.create(null);
       st.sectors.forEach(function (sec) {
         (sec.residents || sec.Residents || []).forEach(function (r) {
+          var sid = sec.sectorId || sec.SectorId;
           var id = r.roleId || r.RoleId;
-          if (id) st.roleSector[String(id).toLowerCase()] = sec.sectorId || sec.SectorId;
+          if (id) st.roleSector[String(id).toLowerCase()] = sid;
+          // Workers too: an event names whichever unit ran, and most executable units
+          // are workers rather than roles. Without these every worker-authored record
+          // resolved to `unassigned`.
+          //
+          // Indexed on the WORKER ID, never the display name. `ant_name` on an event is
+          // `constraint.scope_guard`; "ScopeGuard" is what an operator reads. Keying the
+          // lookup on the readable one would file every worker-authored record under
+          // `unassigned` again, for the opposite reason.
+          (r.workers || r.Workers || []).forEach(function (w) {
+            var wid = workerId(w);
+            if (wid) st.roleSector[wid.toLowerCase()] = sid;
+          });
         });
       });
 
@@ -191,7 +229,11 @@
         missionId: ev.mission_id || '',
         taskId: ev.task_id || '',
         createdAt: ev.created_at || '',
-        place: placement(id)
+        place: placement(id),
+        cluster: ev.event_type || '',
+        // Arrived on the stream, which carries no evidence join. It is not "unverified" —
+        // nothing has been asked yet, and the records read is what answers.
+        verification: 'not_scanned'
       });
       while (st.records.length > MAX_RECORDS) {
         var dropped = st.records.shift();
@@ -303,13 +345,30 @@
         return { present: false, globalStop: !!(fleet.global_stop), commandPath: !!(fleet.command_path), mounds: [] };
       }
 
+      /* THE STATUS AND THE QUEUE ARE THE SERVER'S, JOINED BY id.
+         `MicromoundWidgets.StatusOf` reads the sync interval and the configured
+         missed-beat grace to decide online / offline / quiesced / unenrolled; a
+         browser has neither, so `.116` made that method public and the fleet
+         listing carries its verdict per mound. Recomputing it here would agree
+         today and disagree silently the first time the grace is reconfigured —
+         two implementations of one rule, which is defect class 5.
+
+         Same for the downlink queue: it is a COUNT the colony holds, and it is
+         how the mound panel can say an order is waiting to be collected rather
+         than claiming it was delivered. */
+      var statusOf = fleet.status || fleet.Status || {};
+      var pending = fleet.pending_downlink || fleet.pendingDownlink || {};
+
       return {
         present: true,
         globalStop: !!(fleet.global_stop),
         commandPath: !!(fleet.command_path),
         mounds: items.map(function (m) {
+          var id = m.mound_id || m.moundId || '';
           return {
-            moundId: m.mound_id || m.moundId || '',
+            moundId: id,
+            status: Object.prototype.hasOwnProperty.call(statusOf, id) ? statusOf[id] : '',
+            pendingDownlink: Object.prototype.hasOwnProperty.call(pending, id) ? pending[id] : null,
             name: m.name || m.Name || '',
             // `edge_queen` is the WIRE value. The UI shows "Mound Major"; this
             // carries the identifier so the technical panel can state it exactly.
@@ -352,25 +411,65 @@
           var busy = (running[id] || []).some(function (x) {
             return String(x.role).toLowerCase() === String(roleId).toLowerCase();
           });
+          var trail = r.trail || r.Trail || null;
           return {
             roleId: roleId,
             name: r.displayName || r.DisplayName || roleId,
             colony: r.colony || r.Colony || '',
             enabled: r.enabled !== undefined ? r.enabled : r.Enabled,
             executable: r.executable !== undefined ? r.executable : r.Executable,
+            /* Normalised once, here, so no renderer has to know the wire shape and
+               no two of them can disagree about which name to print. */
+            workers: (r.workers || r.Workers || []).map(function (w) {
+              return {
+                id: workerId(w),
+                name: workerName(w),
+                parent: workerParent(w) || roleId,
+                enabled: (typeof w === 'object' && w)
+                  ? (w.enabled !== undefined ? !!w.enabled : (w.Enabled !== undefined ? !!w.Enabled : true))
+                  : true
+              };
+            }),
+            /* The pheromone layer's own record for this role, summed over its workers.
+               NULL when no worker has ever run — which is not a strength of zero, and the
+               inspector prints the two differently. */
+            trail: trail ? {
+              strength: trail.strength !== undefined ? trail.strength : trail.Strength,
+              successes: trail.successes !== undefined ? trail.successes : trail.Successes,
+              failures: trail.failures !== undefined ? trail.failures : trail.Failures,
+              workers: trail.workersWithTrail !== undefined ? trail.workersWithTrail : trail.WorkersWithTrail
+            } : null,
             // The only three states an ant may show. `working` requires a real
             // running task assigned to THIS role — never a guess, never a timer.
             status: busy ? 'working' : ((r.enabled !== undefined ? r.enabled : r.Enabled) ? 'idle' : 'disabled')
           };
         });
+        /* CLUSTERS, GROUPED FROM WHAT THE CHAMBER HOLDS.
+           The design gives each chamber nine named "context clusters". Anthill does not
+           have that taxonomy and inventing one would be a label with nothing behind it —
+           but it does group its records, by EVENT TYPE, and that grouping is real and is
+           what the server sends as `cluster`. So a chamber's clusters are whatever kinds
+           of record it actually contains, in descending size, and a chamber holding
+           nothing has none. */
+        var mine = records[id] || [];
+        var byCluster = Object.create(null);
+        mine.forEach(function (r) {
+          var k = r.cluster || r.recordType || 'unclassified';
+          (byCluster[k] = byCluster[k] || []).push(r);
+        });
+        var clusters = Object.keys(byCluster).map(function (k) {
+          return { id: k, label: k.replace(/_/g, ' '), records: byCluster[k], count: byCluster[k].length };
+        }).sort(function (a, b) { return b.count - a.count || (a.id < b.id ? -1 : 1); });
+
         return {
           id: id,
           label: sec.label || sec.Label || id,
           colonies: sec.colonies || sec.Colonies || [],
           residents: residents,
           runningTasks: running[id] || [],
-          records: records[id] || [],
-          recordCount: (records[id] || []).length
+          records: mine,
+          recordCount: mine.length,
+          clusters: clusters
         };
       });
 
@@ -507,7 +606,11 @@
           st.records.push({
             recordId: id, sector: it.sector || st.unassignedId, recordType: it.record_type || '',
             title: it.title || '', ant: it.ant || '', missionId: it.mission_id || '',
-            taskId: it.task_id || '', createdAt: it.created_at || '', place: placement(id)
+            taskId: it.task_id || '', createdAt: it.created_at || '', place: placement(id),
+            // The colony's own grouping, and the evidence table's verdict. Both from the
+            // server: neither is derived here, and `not_recorded` is the ordinary case.
+            cluster: it.cluster || it.record_type || '',
+            verification: it.verification || 'not_recorded'
           });
         });
         publish();

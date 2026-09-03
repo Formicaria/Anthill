@@ -68,7 +68,9 @@ public static partial class ApiHost
                     ["event_id"] = watermarkId,
                     ["created_at"] = watermarkAt,
                 },
-                ["sectors"] = ColonyLiveProjection.Sectors(),
+                // The trail lookup is handed in so the projection stays callable without a
+                // database — the roster guard runs it with no store at all.
+                ["sectors"] = ColonyLiveProjection.Sectors(Queen.Memory.GetPheromoneTrail),
                 ["runtime"] = ColonyLiveProjection.Runtime(),
                 // Stated rather than left for the client to infer from an empty sector list: a
                 // console that cannot tell "no roles here" from "the projection failed" will show
@@ -100,13 +102,47 @@ public static partial class ApiHost
 
             // One registry read for the whole page. Resolving a role per row would re-walk the
             // roster once per event for no gain.
+            // ROLES AND THEIR WORKERS BOTH. An event's `ant_name` is whichever actually ran —
+            // and the executable units are largely WORKERS (`backend_coder`, `docs_coder`,
+            // `result_compiler`), not the role ids. Indexing only roles sent every worker-authored
+            // record to `unassigned`, which is why that chamber filled up while the others sat
+            // near-empty. A worker resolves to its parent role's sector, because that is where the
+            // registry says it lives.
             var sectorOfRole = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var s in ColonyLiveProjection.Sectors())
                 foreach (var resident in s.Residents)
+                {
                     sectorOfRole[resident.RoleId] = s.SectorId;
+                    foreach (var worker in resident.Workers) sectorOfRole[worker.WorkerId] = s.SectorId;
+                }
 
             var scanned = Queen.Memory.GetRecentEvents(ColonyLiveRecordScan, type, mission);
             var truncated = scanned.Count >= ColonyLiveRecordScan;
+
+            /* VERIFICATION, FROM THE EVIDENCE TABLE. v0.3.8.116.
+               A record is `verified` when deterministic evidence for its task PASSED, `refused`
+               when evidence exists and did not, and `not_recorded` when no check ever judged it —
+               which is the ordinary case and must not read as a failure. Evidence is keyed by
+               mission, so one read per distinct mission on the page, capped: an unbounded fan-out
+               here would make a records page cost one query per row. When the cap bites, the rows
+               past it say `not_scanned` rather than silently claiming nothing was verified. */
+            const int missionScanCap = 12;
+            var verdicts = new Dictionary<string, string>(StringComparer.Ordinal);
+            var scannedMissions = new HashSet<string>(StringComparer.Ordinal);
+            var evidenceStore = (Anthill.SDK.Artifacts.IEvidenceStore)Queen.Memory;
+
+            void ScanMission(string missionId)
+            {
+                if (string.IsNullOrEmpty(missionId) || !scannedMissions.Add(missionId)) return;
+                if (scannedMissions.Count > missionScanCap) return;
+                foreach (var ev in evidenceStore.ForMission(missionId, 400))
+                {
+                    if (string.IsNullOrEmpty(ev.TaskId)) continue;
+                    // A pass anywhere wins; a refusal only stands while nothing passed.
+                    if (ev.Passed && ev.Deterministic) verdicts[ev.TaskId!] = "verified";
+                    else if (!verdicts.ContainsKey(ev.TaskId!)) verdicts[ev.TaskId!] = ev.Passed ? "verified" : "refused";
+                }
+            }
 
             var items = new List<Dictionary<string, object?>>();
             foreach (var row in scanned)
@@ -128,6 +164,15 @@ public static partial class ApiHost
                 if (!string.IsNullOrEmpty(sector) && !string.Equals(sector, recordSector, StringComparison.Ordinal))
                     continue;
 
+                var recMission = row.GetValueOrDefault("mission_id")?.ToString() ?? "";
+                var recTask = row.GetValueOrDefault("task_id")?.ToString() ?? "";
+                ScanMission(recMission);
+                var verification = string.IsNullOrEmpty(recTask)
+                    ? "not_applicable"
+                    : scannedMissions.Count > missionScanCap && !verdicts.ContainsKey(recTask)
+                        ? "not_scanned"
+                        : verdicts.GetValueOrDefault(recTask, "not_recorded");
+
                 items.Add(new Dictionary<string, object?>
                 {
                     // The stable identity everything downstream keys on — placement, dedup and
@@ -140,6 +185,11 @@ public static partial class ApiHost
                     ["mission_id"] = row.GetValueOrDefault("mission_id"),
                     ["task_id"] = row.GetValueOrDefault("task_id"),
                     ["created_at"] = createdAt,
+                    // The record's GROUPING. Anthill's real equivalent of the design's "context
+                    // cluster" is the event type — a grouping the colony already makes, rather
+                    // than a taxonomy invented for a picture.
+                    ["cluster"] = eventType,
+                    ["verification"] = verification,
                 });
 
                 if (items.Count >= limit) break;

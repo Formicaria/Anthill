@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.115**.
+Shipping release: **v0.3.8.116**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -429,8 +429,8 @@ duplicating the rule.
 nothing in this model carries a per-record score to bind one to. The canvas fallback plays no
 transition flights; the WebGL renderer does, and the fallback has no truthful source for an ant in
 transit. Growth playback cannot reach events that were never persisted, which is every Micromound
-event and 31 other publish sites — a backend gap, named in §2e. And the standing R0 hygiene is
-untouched for the second release running.
+event and four others — a backend gap, named in §2e. And the standing R0 hygiene is untouched for
+the second release running.
 
 **Carried forward, unchanged and still named:** the list under §2c stands as written, with one
 correction — the typed-row ratchet is still at **45** and has now been skipped twice. The ratchet is
@@ -439,7 +439,69 @@ worth more the second time it has to be written.
 
 ---
 
-## 2e. What comes next — the shape of v0.3.8.116 and after
+### 2f. v0.3.8.116 — what looking at it found
+
+**Delivers:** the defects `.115` could not have caught, because nothing it shipped ever ran.
+
+**THE CONSOLE HAD NO RUNTIME TEST, AND STILL DOES NOT IN CI.** `.115` was verified by source scans
+and C# facts; a browser had never loaded the renderer. A headless harness — vendored three.js, the
+renderer mounted against a synthetic scene in the projection's own shape, one screenshot — found six
+defects in minutes, including a camera that could not be orbited at all and a chamber that drew none
+of its records. It also rendered the reference package's own renderer beside it, which is how the
+halo hue and cluster tightness were measured instead of guessed. **Adding that harness to CI is the
+highest-value item this release leaves behind**, and it is now the second item in §2e.
+
+**TWO COVERAGE BUGS, ONE LESSON.** `ByColony` had fifteen of the registry's seventeen `Colony`
+values, and only role ids were indexed while most executable units are workers — so `unassigned`
+filled up in a release whose premise was that membership comes from the registry. Fourteen guards all
+checked the mapping's SHAPE and none checked its COVERAGE. The new fact reads the real roster at the
+typed-registry tier.
+
+**THEN THE DESIGN HANDOFF ARRIVED AND THE RENDERER WAS PORTED, NOT RE-DERIVED.** Everything above
+was still a rebuild from a description, and the handoff's first line is "do not rebuild this from a
+description — port the working code". Its failure table names, by symptom, four of the exact things
+this release had already produced. `colony-renderer.js` is now a port of the reference: every numeric
+constant, both GLSL shader pairs, the four canvas texture stop tables, the Catmull-Rom conduit
+sampling on a rotation-minimising frame, the pixel-sized crew orbs, the screen-space hit test and the
+per-frame easing factors, unchanged. The only edit to its own code is the IIFE wrapper, because this
+console loads plain `<script src>` under `script-src 'self'` and its assets talk through globals.
+
+Five invented numbers went out with it: a world scaled ×14 (and the 52° field, 900-unit home distance
+and fog term invented to match it), 260×mass structural grains per chamber, a `PointsMaterial` that
+cannot express the design's hard `alpha < 0.5` sprite-mask discard, a raycaster picking against a
+world-space threshold, and a SECOND halo per chamber — the reference builds a `glow` sprite and
+deliberately never adds it to the group, which reads as an oversight and is not.
+
+**AND FOUR THINGS IN THE DESIGN WERE REFUSED, WHICH IS THE PART WORTH CARRYING.** They are one defect
+in four costumes: each is true of the reference's generated sample data and false of this colony.
+Generated records (the handoff itself says to replace `buildContext()` with live sources, which is
+why `colony-topology.js` is the one file NOT ported as-is). The 120 ms mission clock, which would
+animate a per-task progress number this model does not have. The continuous conduit drift, which
+claims work is passing through a permanent structural link. And the ant work timer, which would show
+every ant busy in a colony doing nothing. Recolouring a chamber survives; renaming does not, because
+the name is the registry's `Colony` value.
+
+**Verified by** — 3,600 tests, zero failures, plus the headless harness: nine chambers built from the
+projection's own shape, focus → enter → cluster drill-in, orbit, the conduit grains measurably moving
+between two frames three seconds apart, a schema-1 layout refused and a schema-2 layout accepted, the
+Micromound panel opening from its own chamber with the stop reaching the host, and zero page errors.
+
+The twenty new facts over `.115` are almost all `§18`, which holds the design port. The one worth
+naming is `ThePortedConstants_StillAgreeWithTheVendoredReference`: it reads
+`docs/design/colony-live-3d/reference/colony-renderer.js` and the port side by side and compares 61
+extracted constants. Every other guard in that file asserts a literal transcribed by hand, so it can
+only catch a constant being DELETED; this one catches a constant being CHANGED to something
+plausible, which is how a ported renderer actually drifts. It also fails loudly if a pattern stops
+matching the REFERENCE, so it cannot pass by reading nothing — the failure mode four guards in this
+file have already had.
+
+**Carried, and now overdue:** the typed-row ratchet has not moved for three releases. The standing
+rule is one slice per release; three misses means the rule is not being kept, and `.117` should
+either honour it or delete it rather than let it decay into a sentence nobody applies.
+
+---
+
+## 2e. What comes next — the shape of v0.3.8.117 and after
 
 The universal-workflow program closed at `.113` and R0 closed at `.114`. There is no successor
 program: what remains is R-numbered work, standing hygiene, and a small number of findings the last
@@ -449,14 +511,26 @@ items.
 
 **The named findings from `.114`–`.115`, in the order they cost the most.**
 
-1. **Bus-only events cannot be replayed or reconstructed.** Every Micromound event and 31 other
-   publish sites reach `/events/stream` without ever being written to the events table. Three
-   consequences, all live: a reconnecting console silently loses them, Colony Growth Playback cannot
-   show them at all, and no audit after the fact can prove they happened. `.115` states the limit
-   honestly in the timeline's coverage line, which is the right thing to do about a gap and is not a
-   fix. **The fix is a decision, not a patch:** persist-then-publish for the classes that are
-   evidence, transient on purpose for the rest, with the split written down rather than inherited
-   from whichever call site was written first.
+1. **A MODULE CANNOT PERSIST AN EVENT, so its events cannot be replayed or reconstructed.**
+   Measured after `.115` shipped, correcting a figure that release stated wrongly: there are **12**
+   bus-only `Events.Publish` call sites across 11 files, **8 of them Micromound** — not the "31" the
+   `.115` entry claims. The other **198** event sites go through `SqliteMemory.LogEvent`, which
+   already writes the row and THEN publishes it, so the ordinary path was never the problem.
+
+   The 12 are not carelessness, and that is the finding. `Anthill.Core` is off-limits to a module by
+   the boundary rule; a module receives an `IModuleContext` and an event bus and has no persistence
+   path at all. Micromound publishes to the bus because publishing is the only thing it can do.
+
+   Three consequences, all live: a reconnecting console silently loses those events, Colony Growth
+   Playback cannot show them, and no audit after the fact can prove a charter was issued. `.115`
+   states the limit honestly in the timeline's coverage line, which is the right thing to do about a
+   gap and is not a fix.
+
+   **The fix is a SEAM, not a sweep.** `EventTypes` already requires every event type to be declared
+   and `EventVocabularyTests` enforces it, so the declaration is where durability belongs: each type
+   says durable or transient, and the composition root — which may name a module — persists the
+   durable ones. The guard is available at the TOP tier for once, which is rare for this kind of
+   work: publish a declared-durable event, then assert the row is in the table. No source scan.
 
 2. **The typed-row ratchet, still at 45, skipped twice.** `.114` and `.115` both spent themselves
    elsewhere. `TheUntypedStoreSurface_OnlyShrinks` enforces ≤ 45 so it cannot reverse, and nothing
@@ -470,13 +544,19 @@ items.
    surface to finish, and it should stop being both — the same shape as `ollama_model_present` and
    `/config/health` before it.
 
-4. **`Anthill.Tests.Micromound` is outside `Anthill.sln`.** It builds under the `MICROMOUND` define
+4. **The console has no runtime test.** Every Colony Live guard is a source scan or a C# fact; no
+   browser loads the renderer in CI, which is why `.115` shipped a view with no orbit control and no
+   record particles and went green. A headless Chromium harness that mounts the renderer against a
+   synthetic scene and asserts on the rendered frame — it built, it drew N chambers, no page errors —
+   would have failed on every one of those. `.116` built that harness ad hoc; it belongs in the repo.
+
+5. **`Anthill.Tests.Micromound` is outside `Anthill.sln`.** It builds under the `MICROMOUND` define
    against a sibling checkout, so a solution-wide run is complete for the solution and silently
    excludes 166 tests — plus, as of `.115`, the console vocabulary guards. Every release has to
    remember a second command. Folding it in behind a property, or making the solution run fail loudly
    when it was skipped, removes a step that currently depends on somebody remembering.
 
-5. **Colony Live's remaining gaps.** No pheromone overlay bound to real scores (nothing in the model
+6. **Colony Live's remaining gaps.** No pheromone overlay bound to real scores (nothing in the model
    carries a per-record score); the canvas fallback plays no transition flights; and sector
    membership has no history, so a reconstructed frame is drawn in today's chambers and says so.
 
