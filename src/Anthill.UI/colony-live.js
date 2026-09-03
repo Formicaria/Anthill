@@ -105,7 +105,7 @@
        no floor: an empty chamber is empty. */
     function seatOf(place, r) { var u = place.a * 2 - 1, th = place.b * TAU, sq = Math.sqrt(Math.max(0, 1 - u * u)); return [sq * Math.cos(th) * r, u * r, sq * Math.sin(th) * r]; }
     function hashPlace(str) { var h = 2166136261 >>> 0; for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } var a = ((h >>> 0) % 10007) / 10007, b = ((Math.imul(h, 2654435761) >>> 0) % 10007) / 10007, c = ((Math.imul(h ^ 0x9e3779b9, 40503) >>> 0) % 10007) / 10007; return { a: a, b: b, c: c }; }
-    var GOLDEN = Math.PI * (3 - Math.sqrt(5)), SPIRAL = 2.399963;
+    var GOLDEN = Math.PI * (3 - Math.sqrt(5)), SPIRAL_STEP = 2.399963;   // the golden angle, for the strata spirals
     function unit(str, salt) { return hashPlace(salt + ':' + str).a; }
     /* CLUSTERS ARE REAL AND SO ARE THEIR SEATS (ported from the retired renderer, geometry intact).
        A chamber's clusters are the kinds of record it actually holds, in a stable order, on a
@@ -148,13 +148,13 @@
           var dir = [unit(id, 'dx') * 2 - 1, unit(id, 'dy') * 2 - 1, unit(id, 'dz') * 2 - 1], len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
           var spread = s.R * .16, kk = .5 + depth * .75;
           var o = [cl.center[0] * kk + dir[0] / len * spread, cl.center[1] * kk + dir[1] / len * spread, cl.center[2] * kk + dir[2] / len * spread];
-          var ang = k * SPIRAL, rad = s.R * .86 * band * Math.sqrt((k + .55) / mcount);
+          var ang = k * SPIRAL_STEP, rad = s.R * .86 * band * Math.sqrt((k + .55) / mcount);
           var org = [Math.cos(ang) * rad, y, Math.sin(ang) * rad];
           var rec = { id: id, title: r.title || r.recordType || 'record', type: r.recordType || r.type || 'record', ant: r.ant || '—', mission: r.missionId || '', taskId: r.taskId || '', time: r.createdAt || '', verif: r.verification || 'not_scanned', cluster: cl.id, pher: pher };
           var prev = old[id], pt = prev || { born: performance.now(), ph: place.b * TAU, rec: null };
           var radN = Math.min(1, Math.hypot(o[0], o[1], o[2]) / s.R), edge = 1 - .72 * Math.pow(radN, 2.6);
           if (prev && (Math.abs(prev.o[0] - o[0]) + Math.abs(prev.o[1] - o[1]) + Math.abs(prev.o[2] - o[2])) > .5) pt.settle = { from: prev.o.slice(), to: o.slice(), t: 0 };
-          pt.o = o; pt.org = org; pt.layer = verified ? 2 : 0; pt.cl = ci; pt.stratum = ci;
+          pt.o = o.slice();   // its own array: the settle interpolates INTO it from a frozen `to` pt.org = org; pt.layer = verified ? 2 : 0; pt.cl = ci; pt.stratum = ci;
           pt.sz = (1.15 + pher * 1.7) * (.72 + .28 * edge) * .9; pt.a = Math.min(1, .82 + pher * .2) * (.86 + .14 * edge); pt.coreMix = Math.min(1, Math.pow(1 - radN, 1.5) * 1.15);
           pt.rec = rec; pt.resident = null;
           pts.push(pt);
