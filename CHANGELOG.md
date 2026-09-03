@@ -29,6 +29,20 @@ one. Its label is the projection's unless the operator renamed it, and the renam
 `/ui/state` with the positions (schema 3; an older schema resets rather than migrates). Nothing is
 seeded, nothing is floored: an empty chamber is drawn empty, and a hover reads the real counts.
 
+**WHAT DRIVING THE PAGE FOUND, AND WHAT IT CHANGED.** The port was verified in the browser against a
+live colony, not by reading it, and the V&V pass paid for itself four times over. The retired
+renderer's chamber geometry came across intact — clusters on a golden-angle lattice, each record
+seated by its durability, and on focus the cloud cross-fades into ordered strata, one level per
+cluster with one label per level — and then two defects in that port hid every record: a constant
+named `SPIRAL` clobbered by the galaxy's own `SPIRAL` (every grain projected to `NaN`, silently),
+and a line comment that swallowed the statement assigning each record's ordered seat. Both are
+guarded now. An orbit that began over a chamber was dragging the chamber and persisting the accident
+to `/ui/state` — moving one now takes its nucleus or Shift. The View menu was clipped by its own bar.
+Mounds and Follow did nothing rather than say why; they disable with the reason. Labels step down a
+row instead of overprinting. The canvas renders at the device pixel ratio, so a 125% display no
+longer softens every grain. The classic canvas stops drawing every frame under Live. The sky rings
+the colony instead of sitting in one hemisphere. Reset layout re-frames the survey.
+
 **THE GUARDS THAT PROTECTED THE CONTRACT SURVIVE; THE ONES THAT PINNED THE WEBGL PORT WENT WITH IT.**
 `ColonyLiveGuardTests` keeps deterministic placement, no timers (the page chrome refreshes on the
 reducer's scene, not a clock), the host as the only file that fetches (the page may call `/projects`
