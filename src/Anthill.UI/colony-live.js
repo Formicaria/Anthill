@@ -339,8 +339,29 @@
       return { schema: LAYOUT_SCHEMA, positions: positions, names: names };
     }
     function saveLayout() { emit('layout', layoutSnapshot()); }
+    /* THE WEBGL BUILD'S LAYOUT (schema 2) IS MIGRATED, NOT DROPPED. `.116`–`.117` persisted
+       `{ schema: 2, sectors: { id: [x, y, z] } }` in three.js coordinates: y up, home seats on a
+       ±16.5 ring with the outliers at ±33 (see the retired renderer's LOOK table, kept verbatim
+       below as the migration's source of truth). This world is ~10× that scale with −y up. An
+       operator's arrangement is their OFFSET from a home seat, so that is what carries: offset ×10,
+       y flipped, applied to this world's home seat, then written back as schema 3 so it happens
+       once. Schema 1 (the `.115` world, factor never recorded) still resets — a guessed factor
+       would be a fiction dressed as a migration. */
+    var SCHEMA2_HOME = { queen: [0, 0, 0], intel: [-16.5, 0, 16.5], forge: [16.5, 0, 16.5], valid: [16.5, 0, -16.5], memory: [-16.5, 0, -16.5], output: [0, 17, 0], mound: [0, -17, 0], homelab: [33, 0, 0], unassigned: [-33, 0, 0] };
+    var SCHEMA2_SCALE = 10;
+    function migrateSchema2(l) {
+      var positions = {}, any = false;
+      SEC.forEach(function (s) {
+        var p = l.sectors && l.sectors[s.id], h = SCHEMA2_HOME[s.id];
+        if (!h || !Array.isArray(p) || p.length !== 3 || !p.every(function (n) { return typeof n === 'number' && isFinite(n) && Math.abs(n) <= 120; })) return;
+        positions[s.id] = [s.defPos[0] + (p[0] - h[0]) * SCHEMA2_SCALE, s.defPos[1] - (p[1] - h[1]) * SCHEMA2_SCALE, s.defPos[2] + (p[2] - h[2]) * SCHEMA2_SCALE];
+        any = true;
+      });
+      return any ? { schema: LAYOUT_SCHEMA, positions: positions, names: {}, migratedFrom: 2 } : null;
+    }
     function applyLayout(l) {
-      if (!l || l.schema !== LAYOUT_SCHEMA) return false;   // an older schema resets rather than migrates
+      if (l && l.schema === 2 && l.sectors) { var m2 = migrateSchema2(l); if (!m2) return false; var ok2 = applyLayout(m2); if (ok2) saveLayout(); return ok2; }
+      if (!l || l.schema !== LAYOUT_SCHEMA) return false;   // schema 1 or unknown: reset, not guessed
       SEC.forEach(function (s) {
         var p = l.positions && l.positions[s.id];
         if (Array.isArray(p) && p.length === 3 && p.every(function (n) { return typeof n === 'number' && isFinite(n) && Math.abs(n) <= 1200; })) s.pos = p.slice();
