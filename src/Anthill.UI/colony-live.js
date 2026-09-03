@@ -765,8 +765,17 @@
       if (anchor && anchor !== cv) { el.insertBefore(crumb, anchor.nextSibling); el.insertBefore(cv, anchor.nextSibling); }
       else { el.appendChild(cv); el.appendChild(crumb); }
       document.body.appendChild(tip);
-      function fit() { var rc = el.getBoundingClientRect(); W = cv.width = Math.max(50, rc.width); H = cv.height = Math.max(50, rc.height); scx = W / 2; scy = H / 2; if (!focused && !follow) goal.dist = fitDist(); }
-      fit(); cam.dist = goal.dist; ctx = cv.getContext('2d');
+      // Render at the device's pixel ratio. A 1:1 backing store on a 125% or 150% display is
+      // upscaled by the compositor, which softens every 1px grain and dims the whole colony —
+      // the same build looked crisp in one browser and muddy in another for exactly this reason.
+      function fit() {
+        var rc = el.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+        W = Math.max(50, rc.width); H = Math.max(50, rc.height); scx = W / 2; scy = H / 2;
+        cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); cv.style.width = W + 'px'; cv.style.height = H + 'px';
+        if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        if (!focused && !follow) goal.dist = fitDist();
+      }
+      fit(); cam.dist = goal.dist; ctx = cv.getContext('2d'); fit();
       ro = new ResizeObserver(fit); ro.observe(el);
       cv.addEventListener('mousedown', onDown);
       window.addEventListener('mousemove', onMove);
