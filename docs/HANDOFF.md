@@ -4,9 +4,13 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: main carries **v0.3.8.117** (`fcf12a7`, tagged, CI green); `.116` (`1028121`) is tagged behind
-it. **v0.3.8.118 is complete and green in the working tree** — a backend/orchestration release that
-adds an input contract and a pre-dispatch stage and deliberately claims nothing else.
+State: main carries **v0.3.8.118** (`ee41262`). **The Colony Live UI has been re-ported** onto the
+approved read model: the WebGL renderer, its HUD and the vendored three.js are gone (rejected in
+review); the canvas-2D formicarium from `.111` — the landing page in focus mode, the live bar, the
+composer that hands off to Chat, sector/record panels, the galaxy sky — now consumes `.115`'s
+reducer and endpoints unchanged (`/colony/live/snapshot`, `/colony/live/records`, the stream
+watermark, `/ui/state` layout persistence, the fleet listing, per-mound stop). A chamber's grains are
+its records, its orbs are its residents, and nothing is seeded.
 
 MAIN IS PR-PROTECTED. A bare `git push` to main is rejected by a repository rule (GH013) — every
 change goes through a branch and a PR, including a one-commit docs fix. Paid at `.115`.
@@ -122,7 +126,8 @@ COVERAGE, so two of the registry's seventeen colony values and every worker id f
 `unassigned`. When a guard family is about "one implementation of a rule", ask separately whether that
 one implementation is COMPLETE.
 
-Third, and it cost the most: **`colony-renderer.js` IS A PORT, NOT A REBUILD — DO NOT RE-DERIVE ITS
+Third, and it cost the most (and is now moot — that renderer was rejected and removed, and the
+lesson stands as a lesson): **`colony-renderer.js` WAS A PORT, NOT A REBUILD — DO NOT RE-DERIVE ITS
 MATH.** The design handoff (`UI mockups.zip` → `design_handoff_colony_live_3d/`, vendored at
 `docs/design/colony-live-3d/`) opens with "do not rebuild this from a description", and by the time it
 arrived this release had independently produced four of the five failures its table names by symptom.
@@ -170,11 +175,15 @@ record→record mission threads) each have a persisted row behind them; worker d
 a world fourteen times this one; the ×14 factor was never written down, so back-solving it would be a
 fiction dressed as a migration. A schema-1 payload resets to home.
 
-FIVE FILES, ONE JOB EACH, and the boundary is guarded: `colony-topology.js` (what is true, no fetch,
-no drawing), `colony-renderer.js` (WebGL, no state decisions), `colony-live.js` (renderer choice +
-the canvas fallback), `colony-host.js` (the ONLY file that fetches), `colony-hud.js` (chrome and
-controls). `ColonyLiveGuardTests` enforces that split, thirteen other rules, and the ten `§18` rules
-that hold the design port.
+FOUR FILES, ONE JOB EACH, and the boundary is guarded: `colony-topology.js` (what is true, no fetch,
+no drawing), `colony-live.js` (the canvas renderer — draws the scene, no state decisions, no fetch),
+`colony-host.js` (the ONLY file that fetches), `colony-home.js` (the page: focus, live bar, panels,
+composer → Chat). `ColonyLiveGuardTests` enforces that split and the rules that survived the port:
+deterministic placement, no timers, server-owned membership, records decided once, approvals
+resolved-or-unresolved, nothing invented about a mound, history derived not re-enacted, the
+fallback on a failed mount, grains-are-records, no fabricated ant work, server labels with operator
+override, server-side layout with an older schema refused, screen-space picking, stop posted then
+re-read, and the composer as a doorway. The `§18` design-port rules went with the WebGL renderer.
 
 **WHAT IS LEFT, all outside the closed program:**
 - **Orchestration items 3–8** — all blocked on a per-task authoritative execution record that does

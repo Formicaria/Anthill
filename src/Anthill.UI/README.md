@@ -8,13 +8,24 @@ app.js              the console                       (~503 KB)
 mission-thread.js   the mission conversation view
 dashboard-grid.js   the responsive grid               (v3.3.0)
 dashboard-grid.css
-colony-topology.js  Colony Live: projection layer      (design doc §14 — owns state, never fetches)
-colony-live.js      Colony Live: 3D formicarium renderer (design doc §17 — renders, never decides)
+colony-topology.js  Colony Live: the reducer over the read model (/colony/live/snapshot, /records,
+                    the stream watermark, /graph, approvals, the fleet) — owns state, never fetches
+colony-live.js      Colony Live: the formicarium renderer, canvas-2D with a 3D projection — renders
+                    the reducer's scene, never decides, never fetches
+colony-host.js      Colony Live: the wiring — the ONLY file that reaches the network (hydration,
+                    /ui/state layout persistence, per-mound stop); toggle; default on
+colony-home.js      Colony Live: the page — focus mode, the live bar, sector/record panels, and the
+                    composer that hands every message to Chat (a doorway, not a pipeline)
+micromound.js       the Micromound console (Tools › Micromound)
 ```
 
-Colony Live is opt-in (`Live 3D` in the Colony viewbar); the classic canvas is the default and the
-permanent fallback. The topology is fed from the handlers app.js already runs — `pollGraph`,
-`loadColonyRegistry`, `pollApprovals`, the event stream — so the feature adds no request of its own.
+Colony Live is the default view and the landing page (`/colony/live`, full-screen "focus" until the
+operator opens the console around it); `Classic 2D` in the live bar opts out, and the classic canvas
+is the permanent fallback. Everything the renderer draws comes from the read model: a chamber's
+grains are its persisted records (placed by a hash of their id, `verified` ones in the core), its
+orbs are the registry's residents, its label is the projection's unless the operator renamed it.
+There is no vendored runtime — no three.js — so the console stays first-party and the CSP stays
+`script-src 'self'`.
 
 ## Why this is a folder and not a project
 

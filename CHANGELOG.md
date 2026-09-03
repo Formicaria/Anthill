@@ -1,3 +1,46 @@
+## Unreleased
+
+**THE COLONY LIVE UI, RE-PORTED ONTO THE APPROVED BACKEND.** `.115`–`.117` shipped two things together:
+a read model — `/colony/live/snapshot` with the projection's server-owned role→sector membership and
+a stream watermark, `/colony/live/records` typed and bounded with the evidence table's verdict on
+each record, layout persistence in `/ui/state`, the fleet listing and per-mound stop — and a WebGL
+port of the design reference with its own HUD and a vendored three.js. The backend was approved. The
+UI was not. This release removes the WebGL renderer, the HUD and the vendored library, and puts the
+`.111` canvas formicarium on the approved read model instead — unchanged endpoints, unchanged
+reducer, a different picture.
+
+**WHAT THE PICTURE IS NOW.** Colony › Live is the landing page. It opens in **focus** — the colony is
+the whole page, nav rail, header and side columns folded away; **Console** brings them back. A live
+bar above it reads the state the console already holds (mission goal, tasks complete over tasks in
+graph, the approvals badge as a `needs you` chip that opens Chat) and the renderer's views (Survey,
+Mission, Memory, Mounds, Follow, Reset view, a View menu for sky/motion/labels/trails/layout, and
+the 3D/2D switch in both states). A composer at its foot resolves WHERE a message lives — a
+project, a project named on the spot, or the `Questions` project for a plain question — and hands the
+text to Chat's own send; it never runs a pipeline of its own. The sky is the galaxy, built in world
+space so a drag moves it as a sky.
+
+**WHAT IT DRAWS IS THE READ MODEL AND NOTHING ELSE.** A chamber's grains are its persisted records,
+placed by the hash of their id so they land in the same place on every reload, seated by their
+cluster (the event type — the colony's own grouping), and moved into the core when the evidence
+table says `verified`. Its orbs are the registry's residents, workers beside their role, coloured by
+the reducer's status — `working` only with a running task. The chambers are the server's nine,
+`homelab` and `unassigned` among them; the mound chamber exists only when the fleet listing returned
+one. Its label is the projection's unless the operator renamed it, and the rename persists in
+`/ui/state` with the positions (schema 3; an older schema resets rather than migrates). Nothing is
+seeded, nothing is floored: an empty chamber is drawn empty, and a hover reads the real counts.
+
+**THE GUARDS THAT PROTECTED THE CONTRACT SURVIVE; THE ONES THAT PINNED THE WEBGL PORT WENT WITH IT.**
+`ColonyLiveGuardTests` keeps deterministic placement, no timers (the page chrome refreshes on the
+reducer's scene, not a clock), the host as the only file that fetches (the page may call `/projects`
+for its composer and nothing of the read model), server-owned membership with coverage, records
+decided once on the wire, approvals resolved-or-unresolved with nothing here deciding one, nothing
+invented about a mound, history derived not re-enacted, and the fallback on a failed mount — and
+gains the rules the canvas renderer must keep: grains are records and orbs are residents, no
+fabricated ant work, server labels with operator override, server-side layout with an older schema
+refused, screen-space picking, stop posted then re-read, and the composer as a doorway. The `§18`
+constant-by-constant comparison against the reference renderer is gone with the renderer it
+compared. `docs/design/colony-live-3d/` stays as the record of the design and says so at the top.
+
 ## v0.3.8.118 - the mission honours what was asked, or says why it cannot
 
 **THE LOGO CORRECTION `.117` SHOULD HAVE CARRIED.** `.117` shipped a hand-drawn SVG *in the style of*
