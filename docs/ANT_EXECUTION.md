@@ -25,6 +25,26 @@ permission, side-effect permission, patch-proposal permission. The runtime rejec
 the contract. **No role or worker has apply permission — patch application lives only in the
 queen/director approval pipeline.**
 
+## The catalog is also the planning authority — v0.3.8.118
+
+`AntExecutionCatalog.Contracts` is what `Planning/DispatchPlanner` reads to decide whether a
+requested workflow can be honoured, BEFORE any worker runs. That makes the catalog load-bearing in a
+second way: a task type absent from every contract is now a REFUSAL with a named code, not a silent
+substitution. The planner is pure — no model, no store, no dispatch, clock read once — so its answer
+is a function of the catalog and the registry alone and can be asserted in a unit test.
+
+`SchedulingMode` is read there as three separate questions, and collapsing them is a defect:
+
+| mode | may a plan author a step for it? | may an operator REQUIRE it? |
+| --- | --- | --- |
+| `PlannerSelectable` | yes | yes |
+| `PolicyInserted` (tester, soldier, verifier) | **no** — the runtime already inserts one, and two that disagree is worse than either | **yes, and it is SATISFIED** |
+| `FailureTriggered` (medic) | no | no — nothing can promise a failure |
+| `PostFinalization` (archivist) | no | no — it runs after the plan is closed |
+
+The middle row is the one that cost a build: "the planner cannot pick it" was first read as "it is
+unavailable", which refuses precisely the missions that ask to be verified.
+
 ## Capability enforcement at dispatch
 
 `ToolRegistry.RunTool` authorizes BEFORE running: unknown ant names are refused (spoofing grants

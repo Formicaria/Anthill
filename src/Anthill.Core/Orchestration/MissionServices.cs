@@ -22,8 +22,11 @@ public interface IMissionCoordinator
     /// v0.3.8.95 — <paramref name="projectId"/> carries the owning project from the conversation
     /// that started the mission, so the mission's workspace can be a worktree of the project's own
     /// repository. Null for missions started outside a project; behaviour is then unchanged.</summary>
+    /// <param name="workflow">v0.3.8.118 — what the operator asked for, structurally. Null (the
+    /// default, and every caller that predates this parameter) plans exactly as before.</param>
     string RunMission(string goal, Action<string>? onMissionCreated, CancellationToken cancel = default,
-        Action<Queen.MissionOutcome>? onMissionFinished = null, string? projectId = null);
+        Action<Queen.MissionOutcome>? onMissionFinished = null, string? projectId = null,
+        Missions.RequestedWorkflow? workflow = null);
 
     /// <summary>The plan a dispatch would run, without creating a mission.</summary>
     MissionPlan PlanPreview(string goal);

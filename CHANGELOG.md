@@ -1,3 +1,87 @@
+## v0.3.8.118 - the mission honours what was asked, or says why it cannot
+
+**THE LOGO CORRECTION `.117` SHOULD HAVE CARRIED.** `.117` shipped a hand-drawn SVG *in the style of*
+the supplied Anthill mark rather than the mark itself, on the reasoning that a vector redraw was the
+"proper" way to do an icon and would scale cleanly to 16px. That reasoning was about the
+implementer's convenience, not the logo. The nav mark, the favicon and `src/Anthill.Desktop/anthill.ico`
+now come from the artwork itself — background keyed out, trimmed, `#e40a60`, embedded at 64px with
+the `.ico` generated from the full-resolution source at seven sizes. PNG rather than SVG because the
+source is raster and tracing it would be redrawing it again.
+
+The lesson is `.116`'s, un-generalised: **when someone hands you the artifact, use the artifact.** A
+redraw is a rebuild-from-description wearing different clothes and it fails the same way — it looks
+close, and it is not the thing. `.116` learned that about a renderer and wrote it down, and then this
+release did it to a logo.
+
+**AND `ShippedChangelogTests` CAUGHT THE CORRECTION BEING PUT IN THE WRONG PLACE.** The logo fix was
+first written into the `.117` entry, which was already tagged and released — the third time this
+repository has had new work written into a shipped entry while a release was in flight, and the first
+time a test said so instead of a reader. The guard's message names the remedy exactly: move the new
+text into the entry for the release being prepared. This one.
+
+---
+
+**MISSION ORCHESTRATION IGNORED REQUESTED WORKFLOWS, AND IT WAS NOT A DISPATCH BUG.** Live tests
+showed missions converting explicit multi-role requests into researcher `section_analysis` tasks
+against a fixed `researcher.mission_researcher` → `builder.result_compiler` → `verifier.result_verifier`
+chain. The cause: `MissionRequest` carried `{ Goal, IdempotencyKey }`, and a repo-wide search for
+`requested_roles`, `output_schema`, `workflow_spec` or any equivalent returned **zero matches in
+production or test code**. There was no input contract to ignore.
+
+**The mechanism is worth reading twice.** `Planner.cs:128` gates spec ingestion on
+`IsLongInput(goal)`, which is `goal.Length > 6000` and nothing else. A detailed workflow request is
+by construction a long input — **so the more precisely an operator specified roles, ordering and
+output shape, the more certain it became that the entire request would be chunked into one
+`section_analysis` task per 6000 characters.** Precision was punished. A "is this a giant document to
+summarise?" heuristic was answering "is this an instruction to follow?".
+
+**WHAT THIS RELEASE ADDS.** `RequestedWorkflow` is the missing input contract. It keeps apart three
+things the runtime had collapsed into one:
+
+- a **label** is what the operator called a step — free text, descriptive, never executable;
+- a **task type** is one some worker contract declares it supports — the only thing dispatched on;
+- a **role** is neither.
+
+Treating a label as executable is how an arbitrary name was handed to a worker as though it were
+runnable. Labels are now preserved verbatim AND resolved, separately.
+
+`DispatchPlanner` is a pure pre-dispatch stage: given what was asked and what the colony can do, it
+returns a plan or the reasons there is not one. It refuses unsupported task types, unsupported output
+schemas, unknown roles, role/task-type mismatches, unresolvable labels and dangling dependencies —
+**and refusing is the feature.** A refusal costs an operator a minute; a silent substitution produces
+plausible output against a question nobody asked, and nothing afterwards records which happened.
+Labels match exactly and never fuzzily, because near-matching is how a request becomes something
+adjacent to itself without anyone being told.
+
+`DispatchPlan` is the record everything downstream will be measured against — planned tasks with both
+names, closure requirements written down BEFORE the run, and a row for every registered role carrying
+`registered / enabled / routable / dispatchable / dispatched / required / satisfied_by_policy` plus a
+mandatory reason. `Registered` and `Dispatched` are separate fields now: reading the first as the
+second is how a role that never ran was presented as having participated. `Completed` and `Failed`
+are structurally forced to stay false at planning time, because a plan cannot know them.
+
+**THE FIRST TEST RUN TAUGHT THE DESIGN.** The verifier is `SchedulingMode.PolicyInserted`, which
+`AntExecutionCatalog` documents as "inserted by POLICY whenever its inputs exist, whatever the plan
+says — the steps a plan must not be able to omit". The planner initially treated "the planner cannot
+pick it" as "it is unavailable", which would have refused precisely the missions this release most
+wants to succeed: the ones asking to be verified. Corrected into three distinct answers from one
+field — requiring a policy-inserted role is SATISFIED; authoring a step for one is refused with the
+alternative named, because two verifier tasks that disagree are worse than either alone; requiring a
+lifecycle-only role (the medic runs on failure, the archivist after finalization) is refused because
+nothing can promise it. `Routable` and `Dispatchable` became separate fields for the same reason
+`Registered` and `Dispatched` had to.
+
+**NOTHING CHANGES FOR ANY MISSION TODAY.** No API field or CLI flag supplies a workflow yet, so every
+mission plans `planner_chosen` and runs the path it always did. The single visible difference is one
+`mission_dispatch_planned` event per mission recording that the planner chose — which is itself the
+fact that was previously nowhere. `Planner.cs:128`'s character-count gate is untouched; moving it
+waits on the execution records.
+
+**WHAT IS NOT DONE.** Items 3–8 of the brief — authoritative execution records, artifact and evidence
+handoff, verification that reads execution rather than a compiler's narrative, closure enforcement so
+`checks: 0` can never close as complete, and unsourced-claim rejection — all need per-task execution
+records that do not exist yet. That is the next slice, and none of it is claimed here.
+
 ## v0.3.8.117 - the colony view stops being opt-in
 
 **COLONY LIVE 3D IS THE DEFAULT.** Two releases went into a view an operator had to know about to
