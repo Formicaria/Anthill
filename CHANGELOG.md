@@ -1,4 +1,4 @@
-## Unreleased
+## v0.3.8.119 - the colony page, on the backend that was approved
 
 **THE COLONY LIVE UI, RE-PORTED ONTO THE APPROVED BACKEND.** `.115`–`.117` shipped two things together:
 a read model — `/colony/live/snapshot` with the projection's server-owned role→sector membership and
@@ -26,8 +26,11 @@ table says `verified`. Its orbs are the registry's residents, workers beside the
 the reducer's status — `working` only with a running task. The chambers are the server's nine,
 `homelab` and `unassigned` among them; the mound chamber exists only when the fleet listing returned
 one. Its label is the projection's unless the operator renamed it, and the rename persists in
-`/ui/state` with the positions (schema 3; an older schema resets rather than migrates). Nothing is
-seeded, nothing is floored: an empty chamber is drawn empty, and a hover reads the real counts.
+`/ui/state` with the positions (schema 3). A layout arranged in the retired WebGL build (schema 2:
+three.js coordinates, y up, a ±16.5 ring) is MIGRATED, not dropped — the operator's offset from each
+home seat carries across at ×10 with y flipped, then persists as schema 3, once. Schema 1 still
+resets, because its factor was never recorded. Nothing is seeded, nothing is floored: an empty
+chamber is drawn empty, and a hover reads the real counts.
 
 **WHAT DRIVING THE PAGE FOUND, AND WHAT IT CHANGED.** The port was verified in the browser against a
 live colony, not by reading it, and the V&V pass paid for itself four times over. The retired

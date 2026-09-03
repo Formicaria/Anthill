@@ -669,18 +669,28 @@ public class ColonyLiveGuardTests
     }
 
     /// <summary>
-    /// THE LAYOUT LIVES IN /ui/state AND AN OLDER SCHEMA RESETS RATHER THAN MIGRATES. Seats recorded
-    /// by an earlier world scale replayed here would land chambers far outside any camera limit; a
-    /// layout that does not say it is schema 3, or names a coordinate no camera can reach, is refused.
-    /// There is no second store: the renderer emits, the host persists, nothing reads localStorage.
+    /// THE LAYOUT LIVES IN /ui/state; THE WEBGL BUILD'S LAYOUT IS MIGRATED, THE `.115` ONE IS NOT.
+    /// Schema 2 (`.116`–`.117`) recorded seats in three.js coordinates on a ±16.5 ring, y up; its
+    /// home table is kept verbatim here and an operator's OFFSET from home carries across at ×10
+    /// with y flipped, then persists as schema 3 — so an arrangement made in the retired build is
+    /// not thrown away. Schema 1's factor was never recorded, so it resets: a guessed factor would be
+    /// a fiction dressed as a migration. There is no second store: the renderer emits, the host
+    /// persists, nothing reads localStorage.
     /// </summary>
     [Fact]
-    public void ASavedLayout_IsServerSide_AndAnOlderSchemaIsRefused()
+    public void ASavedLayout_IsServerSide_Schema2Migrates_AndSchema1IsRefused()
     {
         var live = Code("colony-live.js");
         Assert.Contains("var LAYOUT_SCHEMA = 3;", live);
         Assert.Contains("l.schema !== LAYOUT_SCHEMA", live);
         Assert.Contains("Math.abs(n) <= 1200", live);
+        // The migration: the retired renderer's home seats, verbatim, and the offset rule.
+        Assert.Contains("intel: [-16.5, 0, 16.5]", live);
+        Assert.Contains("homelab: [33, 0, 0]", live);
+        Assert.Contains("var SCHEMA2_SCALE = 10;", live);
+        Assert.Contains("s.defPos[1] - (p[1] - h[1]) * SCHEMA2_SCALE", live);   // y flips: three.js up is this world's −y
+        Assert.Contains("if (l && l.schema === 2 && l.sectors)", live);
+        Assert.Contains("if (ok2) saveLayout();", live);                        // written back once, as schema 3
         Assert.Contains("emit('layout', layoutSnapshot())", live);
         Assert.False(live.Contains("localStorage", StringComparison.Ordinal),
             "colony-live.js reads or writes localStorage. The layout has one store, /ui/state, through the host.");

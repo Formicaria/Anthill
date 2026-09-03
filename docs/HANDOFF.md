@@ -4,8 +4,9 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: main carries **v0.3.8.118** (`ee41262`). **The Colony Live UI has been re-ported** onto the
-approved read model: the WebGL renderer, its HUD and the vendored three.js are gone (rejected in
+State: main carries **v0.3.8.118** (`ee41262`) plus the Colony Live re-port (`36c9288`, PR #87,
+rebase-merged, 7/7 checks). **`release/v0.3.8.119` is the release commit for it.** The Colony Live UI
+has been re-ported onto the approved read model: the WebGL renderer, its HUD and the vendored three.js are gone (rejected in
 review); the canvas-2D formicarium from `.111` — the landing page in focus mode, the live bar, the
 composer that hands off to Chat, sector/record panels, the galaxy sky — now consumes `.115`'s
 reducer and endpoints unchanged (`/colony/live/snapshot`, `/colony/live/records`, the stream
@@ -182,7 +183,8 @@ composer → Chat). `ColonyLiveGuardTests` enforces that split and the rules tha
 deterministic placement, no timers, server-owned membership, records decided once, approvals
 resolved-or-unresolved, nothing invented about a mound, history derived not re-enacted, the
 fallback on a failed mount, grains-are-records, no fabricated ant work, server labels with operator
-override, server-side layout with an older schema refused, screen-space picking, stop posted then
+override, server-side layout with the WebGL build's schema-2 layout migrated by offset and schema 1
+refused, screen-space picking, stop posted then
 re-read, and the composer as a doorway. The `§18` design-port rules went with the WebGL renderer.
 
 **WHAT IS LEFT, all outside the closed program:**
