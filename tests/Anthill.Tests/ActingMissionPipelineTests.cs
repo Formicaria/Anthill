@@ -507,21 +507,35 @@ public class ActingMissionPipelineTests : IDisposable
         var runtime = SourceText.CodeOnly(File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
             "src", "Anthill.Core", "Configuration", "AnthillRuntime.cs")));
 
-        // v0.3.8.112 — the MEMBER, not 2,500 characters of it, three times over. The budget was a
-        // guess about how long the editable-key set is, and that set is exactly the thing this
-        // guard exists to watch GROW — so every key added moved the later ones closer to falling
-        // out of the window, and the guard would have started reporting keys as absent while they
-        // sat two lines below the cut. See docs/GUARDS.md.
-        var editable = runtime.IndexOf("EditableConfigKeys", StringComparison.Ordinal);
-        Assert.True(editable >= 0, "EditableConfigKeys is no longer recognisable in AnthillRuntime.cs");
-        var editableKeys = SourceText.MemberBody(runtime, editable);
+        // v0.3.8.112 read the MEMBER rather than 2,500 characters of it, which fixed the character
+        // budget but left the guard at the bottom of the hierarchy: it searched source text for the
+        // IDENTIFIER `EditableConfigKeys` and then for three quoted key names inside it.
+        //
+        // v0.3.8.114 deleted that identifier — the editable set is a projection over ConfigCatalog
+        // now — and this guard broke on a rename, having asserted nothing about behaviour. The rule
+        // was right and the reader was wrong, which is this repository's most-repeated shape.
+        //
+        // So it asks the RUNTIME. `docs/GUARDS.md` puts a runtime black-box first, and this is one:
+        // no rename can break it, a projection that stops working fails it, and it is answering the
+        // question the operator actually cares about — "can the surface write this key?" — instead
+        // of "does a particular file contain this string?".
+        var editableKeys = Anthill.Core.Configuration.AnthillRuntime.EditableSettingKeys;
+
+        // AND IT IS NOT VACUOUS. A projection returning nothing would satisfy every Contains below
+        // by never being reached; the floor is well under the ~100 keys the surface carries, so it
+        // measures emptiness rather than pinning a count that legitimately moves.
+        Assert.True(editableKeys.Count >= 50,
+            $"only {editableKeys.Count} editable settings were found. The editable set is a "
+          + "projection over ConfigCatalog's declarations, and a projection that stops seeing them "
+          + "reports an empty surface rather than failing — which is how every key below would "
+          + "pass by not being checked.");
 
         // acting_coder_enabled is an editable key…
-        Assert.Contains("\"acting_coder_enabled\"", editableKeys, StringComparison.Ordinal);
+        Assert.Contains("acting_coder_enabled", editableKeys);
         // …and v0.3.8.97 adds the two the qualification day demanded three restarts for: the
         // operator's check declarations, and the deliverable evaluation layer's switch.
-        Assert.Contains("\"workspace_checks\"", editableKeys, StringComparison.Ordinal);
-        Assert.Contains("\"objective_verification_enabled\"", editableKeys, StringComparison.Ordinal);
+        Assert.Contains("workspace_checks", editableKeys);
+        Assert.Contains("objective_verification_enabled", editableKeys);
 
         // …the loader warns about the relic location…
         Assert.Contains("WarnAboutLegacyConfigs(path)", runtime, StringComparison.Ordinal);

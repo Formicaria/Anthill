@@ -409,4 +409,71 @@ public static class EventTypes
     // producer writes did not appear, and could not have failed. v0.3.8.85 came close: its comment
     // in Queen.cs says the property "held by luck rather than by design" because a stopped mission
     // usually gives the archivist nothing to propose. It was not luck. The filter matched nothing.
+
+    // ---- v0.3.8.114: the fifteen the LogEvent sweep could never see -----------------------------
+    //
+    // THE SECOND EMISSION CHANNEL. Every sweep before this one read `LogEvent(...)` call sites, and
+    // this codebase emits through TWO channels: the persisted log, and the event bus as
+    // `Publish(new ColonyEvent { EventType = ... })`. Thirty-two sites use the second, and fifteen
+    // names lived only there — declared nowhere, so nothing could filter on them.
+    //
+    // The asymmetry is the finding, and it was visible in this file's own guard the whole time:
+    // `EveryDeclaredEvent_IsPublishedBySomething` has always counted the bus as publication ("two
+    // channels count as publication, and conflating them would have produced a false finding
+    // here"), while `EveryEventTheRuntimeLogs_IsDeclaredInTheVocabulary` read only `LogEvent`. One
+    // direction knew about the bus and the other did not.
+    //
+    // Same shape as v0.3.8.112's `approval_request_approved` and `approval_request_rejected` — the
+    // rule was right, the reader was narrower than the rule — at five times the scale. Two of them
+    // are mission-lane events an operator's console could never have filtered on.
+    public const string ProviderRun = "provider_run";
+    public const string HealthCheckFailed = "health_check_failed";
+    public const string IncidentCandidate = "incident_candidate";
+    public const string IncidentOpened = "incident_opened";
+    public const string IncidentPattern = "incident_pattern";
+    public const string IncidentFixRecorded = "incident_fix_recorded";
+    public const string RiskAnalysis = "risk_analysis";
+    public const string CredentialUsed = "credential_used";
+    public const string ProxmoxTaskFailed = "proxmox_task_failed";
+    public const string HomelabStopEngaged = "homelab_stop_engaged";
+    public const string BackupRecordUpserted = "backup_record_upserted";
+    public const string MissionLearningRecorded = "mission_learning_recorded";
+    public const string MissionArchivistRecorded = "mission_archivist_recorded";
+
+    // ---- v0.3.8.114: the Micromound vocabulary, which lived outside this file entirely ----------
+    //
+    // THE SAME DEFECT AS THE BLOCK ABOVE, ONE DIRECTORY OVER. `MicromoundEvents` held twenty event
+    // names as its own literals, and this file — the vocabulary a subscriber filters against — named
+    // none of them. Nor could the sweep find them: `BusLiteral` reads `EventType = "..."` and the
+    // module publishes `EventType = eventType` through one helper, so every name was invisible in
+    // both directions at once. A colony that speaks a word no dictionary lists is a colony whose
+    // console cannot show it.
+    //
+    // THE LITERALS LIVE HERE AND NOWHERE ELSE. `MicromoundEvents` is now an alias table over these
+    // constants — `public const string CharterIssued = EventTypes.MicromoundCharterIssued;` — which
+    // is what the previous block called "the real fix … declare it and compose against the
+    // vocabulary rather than against a string", applied where it was cheap enough to do at once.
+    // The module keeps its own short names, because `MicromoundEvents.CharterIssued` reads better at
+    // a call site than the qualified one, and there is exactly one string behind both.
+    public const string MicromoundEnrollmentTokenMinted = "micromound_enrollment_token_minted";
+    public const string MicromoundMoundEnrolled = "micromound_mound_enrolled";
+    public const string MicromoundEnrollmentRefused = "micromound_enrollment_refused";
+    public const string MicromoundSyncAccepted = "micromound_sync_accepted";
+    public const string MicromoundSyncRefused = "micromound_sync_refused";
+    public const string MicromoundChainBroken = "micromound_chain_broken";
+    public const string MicromoundStopInEffect = "micromound_stop_in_effect";
+    public const string MicromoundStopCleared = "micromound_stop_cleared";
+    public const string MicromoundCharterIssued = "micromound_charter_issued";
+    public const string MicromoundCharterRefused = "micromound_charter_refused";
+    public const string MicromoundConfigurationIssued = "micromound_configuration_issued";
+    public const string MicromoundConfigurationRefused = "micromound_configuration_refused";
+    public const string MicromoundMissionDispatched = "micromound_mission_dispatched";
+    public const string MicromoundMissionRefused = "micromound_mission_refused";
+    public const string MicromoundMissionApprovalRequired = "micromound_mission_approval_required";
+    public const string MicromoundMissionReported = "micromound_mission_reported";
+    public const string MicromoundEvidenceIngested = "micromound_evidence_ingested";
+    public const string MicromoundActionDegraded = "micromound_action_degraded";
+    public const string MicromoundDownlinkRefused = "micromound_downlink_refused";
+    public const string MicromoundMoundQuiesced = "micromound_mound_quiesced";
+    public const string MicromoundMoundUnlinked = "micromound_mound_unlinked";
 }

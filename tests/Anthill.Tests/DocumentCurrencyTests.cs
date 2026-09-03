@@ -50,6 +50,11 @@ public class DocumentCurrencyTests
         // v0.3.8.112 — the guard hierarchy. CURRENT: it describes how guards are written, which is
         // a standing rule rather than a report on one moment, and it names no version.
         "GUARDS.md",
+        // v0.3.8.114 — the configuration reference. CURRENT by construction rather than by
+        // discipline: it is GENERATED from `ConfigCatalog` and `ConfigCatalogTests` regenerates and
+        // compares it, so it cannot describe a setting the runtime does not have. It is the one
+        // document in this list that could not go stale without failing the build.
+        "CONFIGURATION.md",
     };
 
     /// <summary>

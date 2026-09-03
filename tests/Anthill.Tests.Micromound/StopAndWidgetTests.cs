@@ -67,27 +67,35 @@ public class StopTests
         workspace.EngageGlobalStop();
 
         device.EnqueueUplink(EnvelopeKinds.MoundSync, new { state = "chartered" }, Now);
-        var sync = new MicromoundSync(store, bus);
+        var sync = Colony.Build(store, bus).Sync;
         var outcome = sync.AcceptUplink("mm-1", device.DrainUplink(), Now);
 
         // Stop halts action, not observation — the mound keeps sensing and syncing.
         Assert.True(outcome.Accepted, string.Join("; ", outcome.Refusals));
         Assert.True(outcome.StopInEffect);
 
-        var downlink = sync.DownlinkKindsFor(outcome);
-        Assert.Single(downlink);
-        Assert.Equal(EnvelopeKinds.Stop, downlink[0]);
+        // A STOP ORDER AND THE ACK, IN THAT ORDER — §7 puts the stop ahead of everything queued,
+        // and the ack is still owed: the beat was accepted, and refusing to acknowledge it would
+        // tell a stopped mound to hoard the very evidence the stop asked it to keep capturing.
+        Assert.Equal([EnvelopeKinds.Stop, EnvelopeKinds.Ack], MicromoundSync.DownlinkKindsFor(outcome));
         Assert.True(bus.Saw(MicromoundEvents.StopInEffect));
     }
 
+    /// <summary>
+    /// The kinds come off the envelopes, so an outcome carrying none reports none — and, crucially,
+    /// a stop flag with no signed stop envelope behind it does NOT report a stop. That is the
+    /// disagreement the old implementation could produce: it answered from `StopInEffect` alone.
+    /// </summary>
     [Fact]
-    public void With_no_stop_in_effect_the_colony_sends_nothing_back()
+    public void The_downlink_kinds_describe_the_envelopes_and_not_the_stop_flag()
     {
         using var workspace = new TempWorkspace();
-        var sync = new MicromoundSync(new InMemoryMoundStore(), new RecordingEventBus());
-        var outcome = new SyncOutcome(true, [], 3, "sha256:00", StopInEffect: false);
 
-        Assert.Empty(sync.DownlinkKindsFor(outcome));
+        Assert.Empty(MicromoundSync.DownlinkKindsFor(
+            new SyncOutcome(true, [], 3, "sha256:00", StopInEffect: false)));
+
+        Assert.Empty(MicromoundSync.DownlinkKindsFor(
+            new SyncOutcome(true, [], 3, "sha256:00", StopInEffect: true)));
     }
 }
 
@@ -165,7 +173,7 @@ public class WidgetTests
         var payloads = new[]
         {
             MicromoundWidgets.BuildFleet(mounds, workspace.Options, Now),
-            MicromoundWidgets.BuildMissionStatus(mounds),
+            MicromoundWidgets.BuildMissionStatus(store, mounds, new MicromoundEvidence(store, new RecordingEventBus()), Now),
             MicromoundWidgets.BuildEvidenceFeed(store, mounds, 10)
         };
 
@@ -177,15 +185,33 @@ public class WidgetTests
         }
     }
 
+    /// <summary>
+    /// THE WIDGET SAYS THE COMMAND PATH EXISTS, BECAUSE IT DOES. v0.3.8.114.
+    ///
+    /// This test used to assert `phase: M1` and `command_path: false`, and it was right when it was
+    /// written. Leaving it would have made the guard the thing keeping the lie in place: the field
+    /// an operator reads to find out whether the colony can direct a mound, pinned to "no" by a
+    /// test, three releases after the answer became yes.
+    /// </summary>
     [Fact]
-    public void The_mission_widget_says_plainly_that_there_is_no_command_path()
+    public void The_mission_widget_reports_the_command_path_and_what_authority_is_out()
     {
         using var workspace = new TempWorkspace();
+        var store = new InMemoryMoundStore();
+        var evidence = new MicromoundEvidence(store, new RecordingEventBus());
 
-        using var doc = JsonDocument.Parse(MicromoundWidgets.BuildMissionStatus([]));
+        var chartered = Mound("mm-1", Now.ToWire());
+        chartered.CharterId = "charter-1";
+        chartered.LeaseExpiresAt = Now.AddMinutes(15).ToWire();
+        store.UpsertMound(chartered);
 
-        Assert.Equal("M1", doc.RootElement.GetProperty("phase").GetString());
-        Assert.False(doc.RootElement.GetProperty("command_path").GetBoolean());
+        using var doc = JsonDocument.Parse(
+            MicromoundWidgets.BuildMissionStatus(store, [chartered], evidence, Now));
+
+        Assert.True(doc.RootElement.GetProperty("command_path").GetBoolean());
+        Assert.Equal(1, doc.RootElement.GetProperty("chartered").GetInt32());
+        Assert.Equal(1, doc.RootElement.GetProperty("lease_held").GetInt32());
+        Assert.Equal(0, doc.RootElement.GetProperty("awaiting_collection").GetInt32());
     }
 
     [Fact]

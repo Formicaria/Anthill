@@ -1,3 +1,103 @@
+## v0.3.8.114 - the colony can direct a mound, and the beat answers
+
+**R0 CLOSES.** The generated configuration schema was its last open item — one declaration per key,
+with the CLR type and the default DERIVED from `AnthillConfig` by reflection rather than restated,
+`--emit-config` regenerating `config.example.json` and `docs/CONFIGURATION.md`, and a test comparing
+the committed files byte for byte against a fresh render. A seventy-line hand-maintained
+`EditableConfigKeys` HashSet became a projection of it.
+
+**AND `.112` WAS WRONG TO CALL ITS OWN WORK "R0'S LAST ITEM".** It was not; the generated schema was
+still open, and `.112` and `.113` both shipped past it. A tagged entry is frozen, so the correction
+is here.
+
+**THE EXAMPLE FILE IS NOT A DUMP OF THE DEFAULTS.** The first render deleted 148 lines, because
+`config.example.json` is a curated example whose illustrative values differ from the shipped defaults
+on purpose — `model_routes` shows four populated routes against a default of `{}`. `ExampleJson`
+carries those. Chasing the vacuity floor on the secret-blanking guard then exposed a real hole: a
+`Secret` was blanked only when it had NO example. And four safety gates were being illustrated as
+enabled while shipping `false` — resolved toward the shipped defaults, and pinned.
+
+---
+
+**THE COMMAND PATH EXISTS.** `.60` shipped the uplink and said plainly what it had not built: "M1 has
+no command path, so the colony can see mounds and cannot direct them." This release builds the other
+half — a signing identity, charters, configuration authoring, physical missions, structured evidence,
+and the capability resolver. Every one of them signs an envelope into a downlink queue, because the
+colony never dials a mound; a device behind NAT in a shed dials in, and that is the whole design.
+
+**AND THE BEAT NOW ANSWERS, which is what made any of it work.** Three protocol obligations were
+unmet, and each breaks a fleet on its own.
+
+**The ack.** PROTOCOL.md §6's retention rule is written in terms of exactly one message: until an ack
+covers a sequence number, the device's uplink queue must retain the envelope and its evidence store
+must retain the proof. We sent none. Every mound would have grown its backlog until it spilled.
+
+**The lease, and this is the one that would have taken the fleet down quietly.** §5: an acknowledged
+`mound_sync` renews the lease, and nothing on-device can extend it. The device renews when it sees an
+ack covering its beat's sequence number. So a colony that sends no ack does not merely fail to renew
+— every chartered mound runs its lease down and enters `safe_state` on schedule, while beating
+perfectly, reported online by the fleet widget, and silently refusing every actuation from then on.
+
+**The downlink.** §1: the response carries any pending downlink. A charter this colony signs and
+queues is not delivered by being queued.
+
+**THE DEVICE-FACING WIRE SHAPE WAS INVENTED RATHER THAN READ, and a real MicroMound could not have
+used either endpoint.** `/v0/enroll` demanded a `mound_id` the device does not send, read the key
+from `public_key` where `HttpEnrollmentClient` writes `device_public_key`, and returned no
+`controller_public_key` — so even a device that got past the first two could never verify a downlink
+envelope. `/v0/sync` expected `{mound_id, envelopes[]}` and answered an object, where
+`HttpSyncTransport` POSTs one raw envelope and parses the whole response body as `List<Envelope>`.
+The token is now the enrolment lookup, which it always was: M1 checked it against a mound the DEVICE
+named, which is backwards as well as unusable.
+
+**Nothing caught any of it because both ends of every test were ours.** `SimulatedPeerTests` puts the
+real device on the other end — `SimMound`, composed through `MoundComposition`, the runtime the
+shipped host builds — and rounds every exchange through JSON. It enrols, charters, dispatches,
+executes and reports, and asserts from the DEVICE's side at every step. Its lease test beats for an
+hour against a fifteen-minute lease; only the acks can keep that alive. `DeviceWireContractTests`
+reads the enrolment and sync shapes out of the pinned checkout's own HTTP clients — the weakest guard
+tier in `docs/GUARDS.md`, chosen because the field names live in private records inside an executable
+and there is no type to reflect over from this side.
+
+**A REPLAY IS NOT AN ATTACK, and refusing it deadlocks the fleet.** The ack rides the sync response,
+so a lost response means the device re-sends the identical batch — the ordinary case. `SyncTests`
+asserted that refusal; the device's own loop retries into it forever. An already-acknowledged prefix
+is now dropped and re-acked, and nothing is processed twice, which is the property that actually
+mattered.
+
+**A STOP DISCARDS THE QUEUE.** §7: clearing a stop restores nothing, and the authority in force
+before it is not reinstated. A charter queued before a stop and delivered after the resume reinstates
+exactly that, by arithmetic rather than by anyone deciding to.
+
+**PHYSICAL APPROVALS GO IN ANTHILL'S QUEUE, NOT A SECOND ONE.** A mission policy says needs a person
+becomes an ordinary `ApprovalRequest` with `ActionType = physical_action`, decided through the
+existing `/approve/{id}`, and carried out by the SAME dispatcher with `ApprovalGranted` set — through
+a composition-root seam, because `Anthill.Core` must not learn about an optional module. `.110`
+established the rule: an approval REPLAYS the work it authorized, or it changed a grade and did
+nothing. The replay re-runs every gate against the world as it is now, because an approval is
+permission to attempt work, never a promise the conditions still hold.
+
+**THE MICROMOUND EVENT VOCABULARY LIVED NOWHERE.** Twenty names, declared only as literals inside the
+module, invisible to `EventTypes` and to the vocabulary sweep — which reads `EventType = "..."`, and
+the module publishes through one helper. The same defect `.114`'s own earlier commit fixed for the
+homelab, one directory over. The strings moved to `EventTypes`; the module keeps short aliases.
+
+**`RemoveMound` SWEPT TWO TABLES WHEN THERE WERE TWO.** There are nine. A mound id can be re-minted,
+so a charter, a queued downlink envelope or a pile of evidence outliving its device is authority and
+proof addressed to whatever claims that id next. The guard reads the SCHEMA — any table with a
+`mound_id` missing from the sweep list fails it.
+
+**AND NO HYGIENE.** The typed-row ratchet did not move — still 45 — and central package management,
+`AnalysisMode` and the four remaining literal-only guards are all untouched. The ratchet permits that
+(it requires ≤ 45, not a fall every release); PLAN records it anyway, because a slice quietly skipped
+twice is how "one slice per release" stops being true without anybody deciding it.
+
+**WHAT IS NOT IN THIS RELEASE.** No UI. The integration brief's acceptance experience — an operator
+adding a mound, configuring it, chartering it and watching evidence arrive from the console — is
+**not** delivered and is not described as delivered. Everything here is reachable over the API and
+nothing here renders. Deferring it was an explicit operator decision; recording the deferral is the
+brief's own requirement, and a deferral nobody writes down becomes a capability somebody assumes.
+
 ## v0.3.8.113 - typed database rows, and the end of the program
 
 **THE UNIVERSAL-WORKFLOW PROGRAM ENDS HERE.** §2b began at `.98` with one claim: that a mission class

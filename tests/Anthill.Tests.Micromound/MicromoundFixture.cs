@@ -48,6 +48,44 @@ public sealed class RecordingEventBus : IEventBus
     }
 }
 
+/// <summary>
+/// THE WHOLE CONTROLLER, COMPOSED THE ONE WAY. v0.3.8.114.
+///
+/// The sync beat now needs the identity (it signs acks and stop orders), the charter service (an
+/// acknowledged beat renews the lease) and the evidence service (it ingests what arrived), which is
+/// four constructor arguments a test would otherwise assemble by hand each time — and assemble
+/// slightly differently, which is how a test ends up proving something the composition root does
+/// not do. `ApiHost.InitMicromound` builds exactly this graph.
+/// </summary>
+public sealed record Colony(
+    InMemoryMoundStore Store,
+    RecordingEventBus Bus,
+    MicromoundIdentity Identity,
+    MicromoundCharters Charters,
+    MicromoundConfiguration Configuration,
+    MicromoundMissions Missions,
+    MicromoundEvidence Evidence,
+    MicromoundResolver Resolver,
+    MicromoundSync Sync)
+{
+    public static Colony Build(InMemoryMoundStore? store = null, RecordingEventBus? bus = null)
+    {
+        store ??= new InMemoryMoundStore();
+        bus ??= new RecordingEventBus();
+
+        var identity = new MicromoundIdentity(store);
+        var charters = new MicromoundCharters(store, identity, bus);
+        var evidence = new MicromoundEvidence(store, bus);
+
+        return new Colony(store, bus, identity, charters,
+            new MicromoundConfiguration(store, identity, bus),
+            new MicromoundMissions(store, identity, bus),
+            evidence,
+            new MicromoundResolver(store),
+            new MicromoundSync(store, bus, identity, charters, evidence));
+    }
+}
+
 /// <summary>A throwaway workspace so the MICROMOUND_STOP file can be created and removed safely.</summary>
 public sealed class TempWorkspace : IDisposable
 {
