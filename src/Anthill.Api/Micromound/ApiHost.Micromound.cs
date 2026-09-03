@@ -298,16 +298,35 @@ public static partial class ApiHost
         {
             var auth = RequireAuth(ctx, MicromoundPermissions.Read); if (auth is not null) return auth;
             var options = MicromoundRuntime.Options;
+
+            // v0.3.8.115 — the STATUS VERDICT, keyed by mound id beside the records.
+            //
+            // Deliberately a sibling map rather than a field spliced into each item: `items` is the
+            // serialization of `MoundRecord` itself, and projecting it by hand here would create a
+            // second, hand-maintained list of its fields that goes stale the next time one is added.
+            // A caller joins on `mound_id`, which costs one lookup and cannot drift.
+            var mounds = Mounds.ListMounds();
+            var globalStop = MicromoundStop.IsEngaged(options);
+            var now = DateTimeOffset.UtcNow;
+
             return ApiJson.Ok(new Dictionary<string, object?>
             {
-                ["global_stop"] = MicromoundStop.IsEngaged(options),
+                ["global_stop"] = globalStop,
                 ["stop_file"] = MicromoundStop.PathFor(options),
+                ["status"] = mounds.ToDictionary(
+                    m => m.MoundId,
+                    m => (object?)MicromoundWidgets.StatusOf(m, options, now, globalStop),
+                    StringComparer.Ordinal),
+                ["pending_downlink"] = mounds.ToDictionary(
+                    m => m.MoundId,
+                    m => (object?)Mounds.PendingDownlinkCount(m.MoundId),
+                    StringComparer.Ordinal),
                 // v0.3.8.114 — this said `M1` and `command_path: false` until the command path
                 // existed, and then it kept saying it. The colony now issues charters,
                 // configuration and missions, and this is the field an operator checks to find out.
                 ["command_path"] = true,
                 ["controller_public_key"] = MicromoundId.PublicKeyHex,
-                ["items"] = Mounds.ListMounds(),
+                ["items"] = mounds,
             });
         });
 

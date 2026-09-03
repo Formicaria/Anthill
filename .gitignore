@@ -43,3 +43,14 @@ dotnet-install.sh
 
 # Materialized per-run by the colony (AgentCliCatalog.MaterializeLocalSettings) — machine state, not source.
 .claude/settings.local.json
+
+# Release-time scratch — RELEASE_MSG.txt is read from disk by ReleaseNotesTests
+# and must stay untracked; the rest is build/test output and old delivery patches.
+RELEASE_MSG.txt
+test-*.txt
+build-*.txt
+release-*.ps1
+_*logs/
+Claude outputs/
+*.diff
+*.patch

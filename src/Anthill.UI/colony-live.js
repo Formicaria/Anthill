@@ -8,8 +8,18 @@
    discipline the existing canvas has.
 
    Boundary rule: this file renders. It never decides. All state arrives through
-   ColonyLive.setTopology(scene) — normally fed by colony-topology.js. Without a
-   topology it renders a clearly-labelled DEMO colony so the view is testable.
+   ColonyLive.setTopology(scene) — normally fed by colony-topology.js.
+
+   v0.3.8.115 — WITHOUT A TOPOLOGY IT RENDERS AN EMPTY COLONY. Until this release
+   it invented one: `demoTopology()` drew a mission along queen→intel→forge→valid
+   and staffed it with three ants named "researcher", "builder" and "evidence"
+   moving at made-up speeds, `recordAt` fabricated a record for any particle the
+   backend had not filled, and a tooltip labelled the result "demo data". A
+   fallback that invents a colony is worse than no fallback: it is indistinguishable
+   from a real one at a glance, and this view's whole claim is that everything in
+   it traces to a backend fact. The chambers, their positions and their colours are
+   still constants — that is a spatial grammar, not data — and everything that
+   claims the colony DID something now arrives from setTopology or is absent.
 
    Public API:
      const live = ColonyLive.create();
@@ -34,10 +44,21 @@
     { id: 'valid', label: 'VALIDATION', color: '#c25f6e', core: '#d98a96', pos: [310, -20, 50], R: 58, n: 230, rot: .000045 },
     { id: 'memory', label: 'MEMORY', color: '#d9b054', core: '#ecd39a', pos: [210, 180, -40], R: 60, n: 250, rot: -.00003 },
     { id: 'output', label: 'OUTPUT', color: '#8f78c9', core: '#b3a0e0', pos: [-180, 200, -70], R: 56, n: 220, rot: .00004 },
-    { id: 'mound', label: 'MICROMOUND', color: '#a55a7e', core: '#c9cfdc', pos: [-95, 265, 70], R: 34, n: 110, rot: .00006 }
+    { id: 'mound', label: 'MICROMOUND', color: '#a55a7e', core: '#c9cfdc', pos: [-95, 265, 70], R: 34, n: 110, rot: .00006 },
+    // v0.3.8.115 — the two chambers this projection did not have.
+    //
+    // `ColonySectors` has nine sectors and this file had seven, so a record filed to `homelab` or
+    // `unassigned` had nowhere to land and was silently not drawn. `unassigned` matters most: it is
+    // where an unrecognised role goes, and the WHOLE POINT of routing it there rather than to the
+    // Queen is that an operator can SEE it. A fallback that drops it restores the defect it replaced.
+    { id: 'homelab', label: 'HOMELAB', color: '#6b9e78', core: '#a7cbb0', pos: [330, 210, 90], R: 50, n: 190, rot: -.000035 },
+    { id: 'unassigned', label: 'UNASSIGNED', color: '#7b8494', core: '#b9c2cf', pos: [-360, 120, -110], R: 44, n: 150, rot: .000042 }
   ];
-  var ROOT_PAIRS = [['queen', 'intel', 3, 26], ['queen', 'forge', 3, 30], ['queen', 'valid', 2, 40], ['queen', 'memory', 2, 34], ['queen', 'output', 3, 26], ['intel', 'forge', 2, -20], ['forge', 'valid', 2, 22], ['valid', 'memory', 2, 26], ['memory', 'output', 2, 38]];
-  var CLN = { queen: ['plans', 'decisions', 'directives', 'durable authority'], intel: ['conversations', 'context windows', 'web lookups', 'durable memories'], forge: ['patches', 'artifacts', 'build logs', 'durable memories'], valid: ['test runs', 'evidence', 'checks', 'durable memories'], memory: ['outcomes', 'patterns', 'pheromones', 'durable core'], output: ['results', 'reports', 'deliveries', 'durable memories'], mound: ['beats', 'syncs', 'telemetry', 'chain'] };
+  var ROOT_PAIRS = [['queen', 'intel', 3, 26], ['queen', 'forge', 3, 30], ['queen', 'valid', 2, 40], ['queen', 'memory', 2, 34], ['queen', 'output', 3, 26], ['intel', 'forge', 2, -20], ['forge', 'valid', 2, 22], ['valid', 'memory', 2, 26], ['memory', 'output', 2, 38],
+    // Both hang off the Queen like every other sector. `unassigned` is deliberately connected
+    // rather than floating: it holds real roles the registry knows and this view does not.
+    ['queen', 'homelab', 2, 34], ['queen', 'unassigned', 2, -28]];
+  var CLN = { queen: ['plans', 'decisions', 'directives', 'durable authority'], intel: ['conversations', 'context windows', 'web lookups', 'durable memories'], forge: ['patches', 'artifacts', 'build logs', 'durable memories'], valid: ['test runs', 'evidence', 'checks', 'durable memories'], memory: ['outcomes', 'patterns', 'pheromones', 'durable core'], output: ['results', 'reports', 'deliveries', 'durable memories'], mound: ['beats', 'syncs', 'telemetry', 'chain'], homelab: ['hosts', 'services', 'actions', 'durable memories'], unassigned: ['roles this view does not place'] };
   var CLSLOT = [[-.62, -.38, .05], [.62, -.28, -.05], [.4, .55, .08], [0, .1, 0]];
   var LKEY = 'anthill.colonyLive.layout';
 
@@ -49,7 +70,7 @@
     var live = function () { return !reduced && opts.motion !== 'off'; };
 
     var rnd = lcg(42);
-    var SEC = SECTOR_DEFS.map(function (d) { return Object.assign({ morph: 0, frozen: null, defPos: d.pos.slice(), defLabel: d.label, demo: true }, d, { pos: d.pos.slice() }); });
+    var SEC = SECTOR_DEFS.map(function (d) { return Object.assign({ morph: 0, frozen: null, defPos: d.pos.slice(), defLabel: d.label }, d, { pos: d.pos.slice() }); });
     var bySec = {}; SEC.forEach(function (s) { bySec[s.id] = s; });
 
     // point clouds: shell = recent, mid = working set, core = durable (§5)
@@ -87,25 +108,9 @@
     var fils = [];
     roots.forEach(function (r) { for (var k = 0; k < 4; k++) fils.push({ r: r, i: 3 + Math.floor(rnd() * 12), off: [(rnd() - .5) * 70, 30 + rnd() * 60, (rnd() - .5) * 70] }); });
 
-    // active route + ants — REPLACED wholesale by setTopology; demo defaults below
+    // Active route, ants and attention markers: EMPTY until setTopology fills them.
     var rootIndex = {}; roots.forEach(function (r, i) { rootIndex[r.a + '>' + r.b] = i; rootIndex[r.b + '>' + r.a] = i; });
     var circuit = [], retSeg = null, ants = [], attention = [];
-    function routeFromSectorPath(path, paused) {
-      circuit = [];
-      for (var i = 0; i < path.length - 1; i++) {
-        var ri = rootIndex[path[i] + '>' + path[i + 1]];
-        if (ri == null) continue;
-        var r = roots[ri], rev = r.a !== path[i];
-        circuit.push({ pts: r.strands[0], rev: rev, col: bySec[path[i + 1]].color, pausedAt: (i === path.length - 2 && paused) ? .88 : null });
-      }
-      buildStreams();
-    }
-    function demoTopology() {
-      routeFromSectorPath(['queen', 'intel', 'forge', 'valid'], true);
-      retSeg = { pts: roots[rootIndex['valid>memory']].strands[0] };
-      ants = [{ seg: 0, t: 0, sp: .00023, paused: false, label: 'researcher' }, { seg: 2, t: .86, sp: 0, paused: true, label: 'builder' }, { seg: -1, t: .3, sp: .00016, paused: false, gold: true, label: 'evidence' }];
-      attention = [{ sector: 'valid', kind: 'approval', label: 'approval boundary' }];
-    }
 
     // pheromone streams (the 3h connection language: particles, not lines)
     var rootStreams = [], circStreams = [], retStream = [], authStream = [];
@@ -156,7 +161,10 @@
       try { localStorage.setItem(LKEY, JSON.stringify({ positions: positions, names: names })); } catch (e) { }
     }
 
-    demoTopology(); buildStreams();
+    // No demoTopology(). The streams are the chambers' own structural conduits,
+    // which exist whether or not the colony is doing anything; the mission route,
+    // the ants and the attention markers stay EMPTY until setTopology fills them.
+    buildStreams();
 
     // ---- rendering ----
     function drawStrand(pts, col, alpha, lw, ts) {
@@ -337,45 +345,104 @@
     var api = {
       survey: function () { SEC.forEach(function (s) { s.frozen = null; }); focused = null; follow = false; selRec = null; goal.yaw = -.3; goal.pitch = .4; goal.dist = 900; goal.tgt = [0, 20, 0]; setCrumb('colony survey'); emit('deselect'); },
       focus: function (id) { var s = bySec[id]; if (!s) return; if (s.frozen == null) s.frozen = live() ? performance.now() * s.rot : 0; focused = id; follow = false; goal.tgt = s.pos.slice(); goal.dist = s.R * 4.6; setCrumb('colony survey → ' + s.label.toLowerCase()); emit('sector', s); },
-      followMission: function () { follow = true; focused = null; goal.dist = 460; setCrumb('following active mission'); },
+      /* §12 — FOLLOW MEANS FOLLOW SOMETHING REAL, or say there is nothing to follow.
+         This used to set `follow = true`, pull the camera to 460 and print "following
+         active mission" whether or not a mission existed. The route now comes from
+         persisted task edges, so "the active mission" is exactly the chambers those
+         edges touch: the camera centres their midpoint and the crumb names them. With
+         no edges there is no mission to follow, and it says so instead of framing an
+         empty colony and calling it a mission. */
+      followMission: function () {
+        var touched = [];
+        circuit.forEach(function (sg) {
+          var pts = sg.pts;
+          if (pts && pts.length) touched.push(pts[0], pts[pts.length - 1]);
+        });
+        if (!touched.length) {
+          follow = false;
+          setCrumb('no recorded mission route to follow');
+          emit('follow', { following: false, reason: 'no persisted task edges between chambers' });
+          return;
+        }
+        var c = [0, 0, 0];
+        touched.forEach(function (p) { c[0] += p[0]; c[1] += p[1]; c[2] += p[2]; });
+        c[0] /= touched.length; c[1] /= touched.length; c[2] /= touched.length;
+        follow = true; focused = null; selRec = null;
+        goal.tgt = c; goal.dist = 460;
+        setCrumb('following the recorded mission route (' + circuit.length + ' segment'
+               + (circuit.length === 1 ? '' : 's') + ')');
+        emit('follow', { following: true, segments: circuit.length });
+      },
       resetView: function () { api.survey(); },
       resetLayout: function () { SEC.forEach(function (s) { s.pos = s.defPos.slice(); s.label = s.defLabel; }); rebuildAll(); try { localStorage.removeItem(LKEY); } catch (e) { } },
       renameSector: function (id, name) { var s = bySec[id]; if (s && name && name.trim()) { s.label = name.trim().toUpperCase(); saveLayout(); } },
       setOptions: function (o) { Object.assign(opts, o || {}); },
       stopMound: function (v) { bySec.mound.stopped = v !== false; },
+      /* The scene shape is colony-topology.js's, and v0.3.8.115 changed it.
+         This function used to read `scene.route`, `scene.pausedForApproval`,
+         `scene.evidenceReturn`, `scene.ants` and a `scene.records` map — five
+         fields the projection no longer emits, three of which were inferences it
+         deliberately stopped making. Left as it was, every one of those reads
+         would have been `undefined` and this view would have rendered a permanently
+         empty colony while looking like it was wired up: the quietest possible
+         failure, and the exact shape of defect class 2. */
       setTopology: function (scene) {
-        // scene: { route: [sectorIds], pausedForApproval, evidenceReturn, ants:[{seg,t,gold}],
-        //          counts: {sectorId: {shell, mid, core}}, records: {sectorId: [recordFacts]},
-        //          mound: {online, stopped, ...} } — see colony-topology.js
         if (!scene) return;
-        if (scene.route) routeFromSectorPath(scene.route, !!scene.pausedForApproval);
-        if (scene.evidenceReturn) { var ri = rootIndex[scene.evidenceReturn.join('>')]; if (ri != null) { retSeg = { pts: roots[ri].strands[0] }; retStream = mkStream(retSeg.pts, 8, .00008, .00013); } }
-        if (scene.ants) ants = scene.ants;
-        if (scene.records) SEC.forEach(function (s) { s.records = scene.records[s.id] || null; s.demo = !s.records; });
-        if (scene.mound) bySec.mound.stopped = !!scene.mound.stopped;
-        attention = scene.attention || attention;
+
+        // ROUTES: persisted task edges, and only those. `pausedAt` is null on every
+        // segment because an approval no longer stops an ant on a line — it is
+        // reported as attention at the sector the projection resolved it to.
+        circuit = [];
+        (scene.edges || []).forEach(function (e) {
+          var ri = rootIndex[e.from + '>' + e.to];
+          if (ri == null) return;                       // no conduit between these chambers
+          var r = roots[ri], to = bySec[e.to];
+          circuit.push({ pts: r.strands[0], rev: r.a !== e.from, col: (to || bySec.queen).color, pausedAt: null });
+        });
+        buildStreams();
+
+        // RECORDS: the projection's own per-sector lists, in its vocabulary.
+        // This view predates `homelab` and `unassigned` as chambers, so records
+        // filed there have nowhere to land here and are not drawn. The WebGL
+        // renderer builds a chamber per sector and does show them.
+        SEC.forEach(function (s) { s.records = null; });
+        (scene.sectors || []).forEach(function (sec) {
+          var s = bySec[sec.id];
+          if (!s) return;
+          s.records = (sec.records || []).map(function (r) {
+            return { title: r.title || r.recordType, type: r.recordType, ant: r.ant || '—', time: r.createdAt || '—' };
+          });
+        });
+
+        // ATTENTION: one marker per approval, at the sector it belongs to. An
+        // approval the projection could not place is already reported at the
+        // Queen with `resolved:false`, and the label says which it is.
+        attention = (scene.approvals || []).map(function (a) {
+          return { sector: a.sector, kind: 'approval', label: a.resolved ? (a.title || 'approval') : 'unresolved approval' };
+        });
+
+        // NO ANTS IN TRANSIT. This projection has no truthful source for an ant
+        // moving between chambers — the WebGL renderer plays a finite flight per
+        // recorded transition, and this one has no equivalent. An empty array is
+        // the honest answer; the `.111` version's drifting ants were the invention.
+        ants = [];
+        retSeg = null;
+
+        // The mound chamber dims on the colony-wide stop, which is a recorded fact.
+        bySec.mound.stopped = !!(scene.mound && scene.mound.globalStop);
       },
+      /* The record behind a particle, or NULL.
+         The chamber's particle cloud is a fixed-size volume — a spatial grammar,
+         built once — while the records the colony has actually written are however
+         many there are. Most particles therefore stand for nothing, and this says
+         so. Until v0.3.8.115 it invented a plausible record for those: a title, a
+         type, a verification state, even a pheromone score, all generated from the
+         particle's index. Callers must handle null; a tooltip with nothing to say
+         does not open. */
       recordAt: function (secId, idx) {
-        // Truthful record surface: real records from topology when present; demo facts otherwise.
-        var s = bySec[secId], p = s.pts[idx];
-        if (s.records && s.records[idx % s.records.length]) return s.records[idx % s.records.length];
-        if (!p.rec) {
-          var h = (idx * 2654435761) >>> 0;
-          p.rec = { title: s.label.toLowerCase() + ' record ' + idx + ' (demo)', type: ['conversation', 'task', 'artifact', 'evidence', 'memory'][h % 5], ant: '—', mission: 'demo', time: '—', verif: p.layer === 2 ? 'verified' : 'unverified', phero: 20 + (h % 60), rel: [(h + 13) % s.n, (h + 97) % s.n, (h + 211) % s.n] };
-        }
-        return p.rec;
-      },
-      verifyRecord: function (secId, idx) { // visual settle — call ONLY after the backend confirms
-        var s = bySec[secId], p = s.pts[idx];
-        if (p.layer === 2) return;
-        var mlen = Math.hypot(p.o[0], p.o[1], p.o[2]) || 1, target = s.R * .26;
-        p.settle = { from: p.o.slice(), to: [p.o[0] / mlen * target, p.o[1] / mlen * target, p.o[2] / mlen * target], t: 0 };
-        p.layer = 2; p.a = .85;
-      },
-      addRecordPoint: function (secId) { // call when the backend writes a record (SSE event)
-        var s = bySec[secId]; if (!s || s.pts.length > s.n + 40) return;
-        var u = Math.random() * 2 - 1, th = Math.random() * TAU, sq = Math.sqrt(1 - u * u);
-        s.pts.push({ o: [sq * Math.cos(th) * s.R * .95, u * s.R * .95, sq * Math.sin(th) * s.R * .95], layer: 0, cl: s.pts.length % 3, clOff: [0, 0, 0], sz: 1.1, a: .8, ph: Math.random() * TAU, born: performance.now(), rec: null });
+        var s = bySec[secId];
+        if (!s || !s.records || !s.records.length) return null;
+        return s.records[idx] || null;
       },
       mount: mount, unmount: unmount, destroy: destroy, on: on
     };
@@ -464,7 +531,18 @@
       if (moved) return;
       var m = local(e);
       var pi = pickPoint(m.x, m.y);
-      if (pi != null) { selRec = { sec: focused, idx: pi }; var s = bySec[focused]; var w = s.pts[pi]._w; if (w) { goal.tgt = w.slice(); goal.dist = Math.max(120, s.R * 2.2); } var rec = api.recordAt(focused, pi); setCrumb('colony survey → ' + s.label.toLowerCase() + ' → ' + rec.title); emit('record', { sector: focused, index: pi, record: rec }); return; }
+      if (pi != null) {
+        var s = bySec[focused], w = s.pts[pi]._w;
+        var rec = api.recordAt(focused, pi);
+        // A particle with no record behind it is scenery. Selecting it moves the
+        // camera and says the chamber's name; it does not open an inspector on a
+        // record that does not exist.
+        if (w) { goal.tgt = w.slice(); goal.dist = Math.max(120, s.R * 2.2); }
+        selRec = rec ? { sec: focused, idx: pi } : null;
+        setCrumb('colony survey → ' + s.label.toLowerCase() + (rec ? ' → ' + rec.title : ''));
+        if (rec) emit('record', { sector: focused, index: pi, record: rec });
+        return;
+      }
       for (var i = 0; i < SEC.length; i++) { var s2 = SEC[i], pr = proj(s2.pos); if (pr && Math.hypot(pr.x - m.x, pr.y - m.y) < Math.max(20, s2.R * pr.s)) { selRec = null; api.focus(s2.id); return; } }
       if (selRec) { selRec = null; var sf = bySec[focused]; if (sf) { goal.tgt = sf.pos.slice(); goal.dist = sf.R * 4.6; setCrumb('colony survey → ' + sf.label.toLowerCase()); } emit('deselect'); return; }
       api.survey();
@@ -476,6 +554,7 @@
       hovPt = pi;
       if (pi != null) {
         var s = bySec[focused], r = api.recordAt(focused, pi);
+        if (!r) { cv.style.cursor = 'grab'; tip.style.display = 'none'; return; }
         cv.style.cursor = 'pointer';
         tip.innerHTML = '<div style="font-size:10.5px;font-weight:600;color:' + s.color + ';margin-bottom:2px"></div>';
         tip.firstChild.textContent = r.title;
@@ -487,11 +566,68 @@
       for (var i = 0; i < SEC.length; i++) { var s2 = SEC[i], pr = proj(s2.pos); if (pr && Math.hypot(pr.x - m.x, pr.y - m.y) < Math.max(18, s2.R * pr.s)) { hit = s2; break; } }
       if (hit && !dragging()) {
         cv.style.cursor = 'pointer';
-        tip.textContent = hit.label + (hit.demo ? ' · demo data' : '');
+        tip.textContent = hit.label;
         tip.style.display = 'block'; tip.style.left = (e.clientX + 14) + 'px'; tip.style.top = (e.clientY - 10) + 'px';
       } else { if (!dragging()) cv.style.cursor = 'grab'; tip.style.display = 'none'; }
     }
     return api;
   }
-  window.ColonyLive = { create: create };
+  /* ───────────────────────────────────────────────────────────────────────────
+     THE HOST — v0.3.8.115. It chooses a renderer; it does not draw.
+
+     WebGL (`colony-renderer.js` over the vendored three.js) is the primary view.
+     Everything above this line — the canvas-2D projection `.111` shipped — stays
+     exactly as it was and becomes the FALLBACK, which is the honest role for it:
+     a machine with no WebGL, a lost context that will not restore, or a missing
+     vendored asset must still show the colony rather than a blank panel.
+
+     Both paths consume the SAME scene from `colony-topology.js`, so the choice of
+     renderer can never change what the operator is told is true — only how it is
+     drawn. That is the one-model rule, and it is why the fallback is a real
+     fallback rather than a second, quietly different view.
+     ─────────────────────────────────────────────────────────────────────────── */
+  function webglHost() {
+    var r = window.ColonyRenderer.create();
+    var handlers = {};
+    function on(name, fn) { (handlers[name] = handlers[name] || []).push(fn); r.on(name, fn); }
+    return {
+      renderer: 'webgl',
+      mount: function (el) { return r.mount(el); },
+      destroy: function () { r.destroy(); },
+      setTopology: function (scene) { r.setScene(scene); },
+      setOptions: function (o) { r.setOptions(o); },
+      on: on,
+      survey: function () { r.survey(); },
+      focus: function (id) { r.focus(id); },
+      enter: function (id) { r.enter(id); },
+      followMission: function () { r.survey(); },
+      resetView: function () { r.resetView(); },
+      resetLayout: function () { r.resetLayout(); },
+      getLayout: function () { return r.getLayout(); },
+      setLayout: function (l) { return r.setLayout(l); },
+      depth: function () { return r.depth(); },
+      // §15. The classic projection has no camera, so it answers `false` and the
+      // HUD offers no descent — a control that silently does nothing is worse
+      // than one that is not there.
+      descend: function () { return r.descend(); },
+      focused: function () { return r.focused(); },
+      sectorIds: function () { return r.sectorIds(); }
+    };
+  }
+
+  function createHost() {
+    if (window.ColonyRenderer && window.ColonyRenderer.available()) {
+      try { return webglHost(); }
+      catch (e) {
+        // A renderer that throws on construction must not take the page with it.
+        // Say so once, then fall through to the view that cannot fail this way.
+        try { console.warn('[colony-live] WebGL renderer unavailable, using the classic projection: ' + (e && e.message)); } catch (e2) { }
+      }
+    }
+    var classic = create();
+    classic.renderer = 'canvas2d';
+    return classic;
+  }
+
+  window.ColonyLive = { create: createHost, createClassic: create };
 })();

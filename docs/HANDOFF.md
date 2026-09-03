@@ -4,8 +4,8 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: main carries **v0.3.8.112** (`cc1e780`). **`release/v0.3.8.113` is complete and green**:
-typed database rows, and the end of the universal-workflow program.
+State: main carries **v0.3.8.114** (`b9d4b1d0`, tagged). **v0.3.8.115 is complete and green in the
+working tree and is NOT committed**: Colony Live, the console half of the last two releases.
 
 NOTE ON HISTORY: every commit SHA changed on 2026-09-01 when authorship was folded to three
 contributors. Anything quoting a SHA from before that date is dead. See the "anthill" project doc
@@ -14,36 +14,40 @@ contributors. Anything quoting a SHA from before that date is dead. See the "ant
 TWO PEOPLE LAND ON `main` NOW. `.111` (Colony Live) arrived from xchronusx while `.112` was being
 built. Every release block must `git fetch` and verify HEAD before applying a patch.
 
-**THE PROGRAM IS OVER.** §2b ran `.98` → `.113`. It existed to make a mission class work end to end
-on a shared spine with a deterministic gate for its own promise, and five classes now do:
-`system_audit`, `troubleshooting`, `system_action`, `external_action`, `research`. There is no §2b
-successor; what remains is R-numbered work and standing hygiene.
+WHAT `.115` DELIVERS, in two halves. **Colony Live**: two read-model endpoints
+(`/colony/live/snapshot`, `/colony/live/records`), a vendored three.js WebGL renderer, a HUD asset
+carrying breadcrumbs/controls/inspectors/timeline/descent, growth playback reconstructed from
+persisted records only, a Micromound descent, and approvals decided through app.js's existing
+`doApproval`. **The Micromound console**: `micromound.js`, closing all seven UI GAPs `.114` recorded
+— fleet, mint, unlink, stop/resume, charters, manifests, mission dispatch, mission evidence, the
+resolver and the evidence feed. `MicromoundWidgets.StatusOf` is public and the fleet listing carries
+its verdict, so no client computes a status.
 
-WHAT `.113` DELIVERS. The first typed-row slice (approvals) and a RATCHET at **45**, down from 50.
+**THE THING TO CARRY FORWARD FROM `.115`.** The brief said "preserve the existing WebGL renderer".
+There was none — `.111` shipped canvas-2D with a hand-rolled projection. Checking the premise before
+building on it was the highest-value thing this release did, and the second-highest was writing the
+§17 guards BEFORE believing the code: the `Math.random` rule failed on the classic fallback and
+exposed `demoTopology()` inventing a mission, three named ants and a fabricated approval boundary at
+every startup, plus a `setTopology` reading five fields the new projection does not emit, which would
+have rendered permanently blank while looking wired up. Neither was found by reading.
 
-WHY A RATCHET: `Dictionary<string, object?>` is on fifty public store methods and read by a hundred
-consumer files. PLAN has said "one slice at a time" since the item was written, which admits it spans
-releases — so the count is enforced by `TypedRowMigrationTests.TheUntypedStoreSurface_OnlyShrinks`.
-Lower it when a slice lands; never raise it.
+FIVE FILES, ONE JOB EACH, and the boundary is guarded: `colony-topology.js` (what is true, no fetch,
+no drawing), `colony-renderer.js` (WebGL, no state decisions), `colony-live.js` (renderer choice +
+the canvas fallback), `colony-host.js` (the ONLY file that fetches), `colony-hud.js` (chrome and
+controls). `ColonyLiveGuardTests` enforces that split and thirteen other rules.
 
-THE BUG THE SLICE FOUND, and the reason to do the migration at all:
-`GetApprovalRequest` unprotected `decision_note` and `GetApprovalForTarget` did NOT. Same column,
-plaintext through one reader and ciphertext through the other. Four readers of one table, the field
-cipher in exactly one of them. A row-shaped API has nowhere for "how a row becomes an approval" to
-live, so each reader answers it again.
-
-ALSO: nine `Str(row, "status") != ApprovalStatus.X.Value()` string comparisons became enum
-comparisons; `Memory.RowValues` replaces the private row helpers `.110` gave `MissionRehydration`
-(the second copy had already appeared, three releases in); and the Homelab module still takes a ROW
-because it may reference only the SDK — the API host projects at the composition edge, with a guard
-pinning every key.
-
-THE §2b TERMINAL GUARD IS FIXED. It asserted `to > from`, which cannot hold for a program's last
-release. The relaxation is one release wide: `to < from` still fails, and the equal case is admitted
-only when the table really holds one row.
-
-**WHAT IS LEFT, all outside the program now:**
-- The remaining 45 untyped store methods — one slice per release, each lowering the ratchet.
+**WHAT IS LEFT, all outside the closed program:**
+- The remaining **45** untyped store methods — one slice per release, each lowering the ratchet.
+  SKIPPED TWICE NOW (`.114` and `.115`). The ratchet is enforced at ≤ 45 so it cannot reverse; this
+  line is the only thing stopping it quietly stopping.
+- **Bus-only events.** Every Micromound event and 31 other publish sites reach `/events/stream`
+  without ever being written. They cannot be replayed on reconnect, cannot appear in growth playback,
+  and cannot be audited after the fact. The fix is a DECISION — persist-then-publish for the classes
+  that are evidence, transient on purpose for the rest, with the split written down. `docs/PLAN.md`
+  §2e carries it as the top item.
+- **Three widget payloads read by nobody.** `mound_fleet`, `mission_status`, `evidence_feed` are
+  built on every Micromound mutation for a widget runtime that never rendered them, and `.115`'s
+  console reads the routes directly. Retire them or finish them; they should not stay both.
 - `AnalysisMode` beyond the SDK default — needs its own census (with warnings-as-errors on, every CA
   diagnostic becomes a build failure).
 - Central package management — failure mode is "nothing builds".
@@ -56,12 +60,29 @@ only when the table really holds one row.
 - R4–R10 have not started. R6 (execution sandbox) gates R9.
 
 PROCESS FACTS WORTH KEEPING:
+- NEVER run `git` through the device bridge. It takes `index.lock` and cannot unlink it.
+- `git apply` is ATOMIC. It prints "Applied patch to X cleanly" per file and can still reject the
+  whole patch, having applied NOTHING. Deliver files whole and verify by hashing both sides.
+- Never `dotnet test --no-build`. It reports a pass from a stale assembly over a failed build.
+- A namespace whose last segment matches a type or property name shadows it. `Anthill.Core.ColonyLive`
+  is named that way on purpose: the records carry a `Colony` property.
 - `Anthill.Core` AND `Anthill.Tests` both declare a global `using Task = …`. Adding that alias is
   CS1537. Paid twice, at `.109` and `.110`.
 - A new event type must be declared in `EventTypes` or `EventVocabularyTests` refuses it — and since
   `.112` that guard resolves named constants too, so it sees far more call sites than it used to.
+- `Anthill.Tests.Micromound` is NOT in `Anthill.sln`; it builds separately under the MICROMOUND
+  define, against the sibling `micromound` checkout. A solution-wide run is complete for the solution
+  and silently excludes it — including, since `.115`, the console vocabulary guards. ALWAYS run both.
+- The static `.nav-item` divs in `index.html` are LEGACY DEAD DOM. `buildNav` renders `#nav-scroll`
+  from the `IA` table in app.js, so a new page must be added there or it has a route, a container, a
+  PAGE_ENTER handler and no way for an operator to reach it. Paid at `.115`, caught before shipping.
+- The console's CSP-safe click dispatcher resolves `data-onclick="fn(args)"` through `window[...]`,
+  so every handler in a console asset must be a top-level global — and no two assets may declare the
+  same one (`ConsoleAssetSplitTests`).
 - `docs/GUARDS.md` is the guard hierarchy, and `GuardHierarchyTests` enforces two of its rules.
 - `RELEASE_MSG.txt` is untracked, read by `ReleaseNotesTests`, and cannot travel in a `git diff`.
+- `gh pr merge --delete-branch` fast-forwards main without setting an upstream; a bare
+  `git pull --ff-only` then fails with "no tracking information". Set the upstream first.
 
 THE LIVE PACK is still the operator's step — `anthill/live-pack-runbook.md`. FIVE recognized classes.
 

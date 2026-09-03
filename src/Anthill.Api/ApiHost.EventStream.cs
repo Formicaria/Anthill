@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using Anthill.Core.Common;
+using Anthill.Core.ColonyLive;
 using Anthill.SDK.Events;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -158,6 +159,7 @@ public static partial class ApiHost
     private static string Serialize(ColonyEvent ev) => Serialize(new Dictionary<string, object?>
     {
         ["id"] = ev.Id,
+        ["event_type_creates_record"] = ColonyLiveProjection.CreatesDurableRecord(ev.EventType),
         ["mission_id"] = ev.MissionId,
         ["task_id"] = ev.TaskId,
         ["ant_name"] = ev.AntName,
@@ -167,10 +169,23 @@ public static partial class ApiHost
         ["created_at"] = ev.CreatedAt.ToIso(),
     });
 
+    /// <summary>
+    /// v0.3.8.115 — `creates_record` rides the wire so exactly ONE implementation decides it.
+    ///
+    /// Colony Live grows a chamber only when the colony STORED something, and most events are the
+    /// colony saying something. `/colony/live/records` applies that rule server-side; a live event
+    /// arriving on this stream needs the same answer, and the obvious way to get it — a matching
+    /// regex in the browser — is two implementations of one rule that drift the first time an event
+    /// type is added. `.111` already shipped that regex client-side and then never called it.
+    ///
+    /// So the server answers, once, and the client reads a boolean it cannot get wrong.
+    /// </summary>
     private static string Serialize(Dictionary<string, object?> row) =>
         JsonSerializer.Serialize(new Dictionary<string, object?>
         {
             ["id"] = row.GetValueOrDefault("id"),
+            ["event_type_creates_record"] =
+                ColonyLiveProjection.CreatesDurableRecord(row.GetValueOrDefault("event_type")?.ToString()),
             ["mission_id"] = row.GetValueOrDefault("mission_id"),
             ["task_id"] = row.GetValueOrDefault("task_id"),
             ["ant_name"] = row.GetValueOrDefault("ant_name"),

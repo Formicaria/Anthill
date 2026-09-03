@@ -225,3 +225,50 @@ verify with the named test before assuming any of it is still broken.
 Still open and owned by the console work: the auto-opening technical report on mission completion,
 scattered terminal-state lists, canonical outcome versus answer framing, and settings that report
 "saved" for a frozen runtime field.
+
+---
+
+## 11. The Micromound console — CLOSED at v0.3.8.115
+
+`ConsoleRouteCoverageTests.NoConsoleSurface` records every mapped route with no console surface and
+why. It is route-granular and normalises a path to one key regardless of method — so when Colony Live
+began READING `/micromound/mounds` at v0.3.8.115 to decide whether to offer a device descent, that
+entry had to leave the ledger even though the POST on the same path still had no surface. This
+section was written to hold that one deferral. It held it for the length of one release.
+
+`src/Anthill.UI/micromound.js` shipped in the same release and the whole Micromound UI-GAP block left
+the ledger with it:
+
+| Surface | Route | State at v0.3.8.115 |
+|---|---|---|
+| Fleet, with the colony's status verdict | `GET /micromound/mounds` | rendered — table with class, status, last beat, charter, lease, queued downlink |
+| Mint an enrollment token | `POST /micromound/mounds` | rendered — shown once, stored nowhere, guarded by `AMintedToken_IsNeverPersisted` |
+| Retire a device | `POST /micromound/unlink` | rendered — confirms, and repeats the API's note that the device is not told |
+| Per-mound stop / resume | `POST /micromound/stop`, `/stop/resume` | rendered on each fleet row |
+| Issue a charter | `POST /micromound/charters` | rendered — capabilities, routines, ceiling, duration, lease, safe state, evidence policy, per-capability limits |
+| Author a manifest | `POST /micromound/config` | rendered — hardware bindings, capabilities, routines, workers, reasoning mode, safe state |
+| Dispatch a physical mission | `POST /micromound/missions` | rendered — ordered steps with conditions; reports dispatch or the approval it parked |
+| Per-mission evidence | `GET /micromound/missions/{id}` | rendered — device verdict and colony verdict, side by side, never merged |
+| Capability resolution | `GET /micromound/resolve` | rendered — every candidate with its blockers, not only the eligible ones |
+| Evidence feed | `GET /micromound/evidence` | rendered — fleet feed, and per-device recent beats |
+
+Still absent, and correctly so: `POST /micromound/v0/enroll` and `/v0/sync` are DEVICE endpoints. A
+mound is not an operator; it dials in, and its auth is a one-time token or an Ed25519 signature.
+
+**The rule this section is really about.** Every form field was read off the type that declares it —
+`Micromound.Protocol` for the wire shapes, `ApiHost.Micromound.cs` for the request bodies — because
+v0.3.8.114 named the defect class for the opposite and paid a whole release for it at the front door
+of the integration. `ConsoleVocabularyTests` keeps that true going forward at the typed tier: the
+console's five closed vocabularies are compared against the protocol's own sets, so a protocol change
+fails a test instead of leaving the console quietly a version behind.
+
+**What the console still does NOT compute.** Nothing. Online/offline is the colony's verdict,
+carried on the fleet listing since `MicromoundWidgets.StatusOf` became public at v0.3.8.115 — the
+console renders it and does not recompute it, because the rule reads configuration a browser cannot
+see.
+
+**One thing worth retiring rather than finishing.** `mound_fleet`, `mission_status` and
+`evidence_feed` widget payloads are still built on every Micromound mutation for a widget runtime
+that was going to render them. The console now reads the routes directly. That is a second surface
+with no reader — the same shape as `/config/health` before v0.3.8.35 — and it is carried in
+`docs/PLAN.md` §2e.
