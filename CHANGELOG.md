@@ -1,3 +1,52 @@
+## v0.3.8.117 - the colony view stops being opt-in
+
+**COLONY LIVE 3D IS THE DEFAULT.** Two releases went into a view an operator had to know about to
+find: it was opt-in, remembered per browser, and the colony page opened on the canvas projection.
+Now `.117` defaults it ON and only an explicit opt-out keeps the canvas. A machine with no WebGL
+still lands on the canvas — `createHost()` falls back on its own and the mount is guarded — because
+the default decides INTENT, not capability.
+
+**AND THE 2D VIEW IS ONE VIEW.** Command, Active and Chambers are hidden; Expanded is renamed **2D
+View** and is the only 2D option, because when the canvas IS shown it is a fallback and should show
+everything rather than a filtered subset. They are hidden and not deleted: `colonyView` still drives
+`buildNodes()` and the chamber layout, and ripping three modes out is a change with its own blast
+radius. Chambers is on its way out entirely.
+
+**ONE CONTROL BAR AND ONE RESET.** The colony page had two rows of controls in two corners — the
+viewbar's (motion, labels, pheromones, zoom, reset) and the 3D HUD's (survey, mission, memory,
+mounds, history, view) — with nothing to say from looking which row owned what. The HUD now renders
+its bar INTO `#colony-viewbar` when the host hands it a mount, and drops its own chrome so the
+buttons join that row instead of starting a second one.
+
+Four reset buttons became one. `⤾ Reset` resets whichever renderer is showing: pan, zoom and dragged
+ants in 2D; camera and chamber layout in 3D. The reason to press reset is usually that you have lost
+track of the view, which is a poor moment to ask which of four buttons applies. The `+`/`−` zoom
+buttons drive the 3D camera too — they were 2D-only, so in the 3D view they were two controls that
+visibly did nothing.
+
+**THE CONDUITS ARE 40% QUIETER.** The reference runs 60 grains on a structural conduit, 24 on a
+lateral and 40 on the authority root. This colony has eighteen roots to its sixteen and far fewer
+record grains per chamber, so at the reference's density the streams stopped being supporting texture
+and became the loudest thing in the frame. Now 36 / 15 / 24. Every other conduit constant — radius,
+rest, sharpness, drift speed, taper — is still the reference's, so a stream LOOKS the same; there is
+simply less of it.
+
+That change is the first entry in a new **named-divergence table** inside
+`ThePortedConstants_StillAgreeWithTheVendoredReference`. A ported constant this console changes on
+purpose does not get quietly dropped from the comparison — that would leave the strongest guard in
+the file blind to exactly the values most likely to move again. It is pinned on BOTH sides, so
+lowering it further and the reference changing underneath it both fail, and both say why.
+
+**A NEW MARK.** The Formicaria logo is now the rounded terminal tile holding a forager and a `>_`
+prompt, in the brand crimson, replacing the blue-node terminal glyph. One artwork in three places —
+the nav mark, the data-URI favicon, and `src/Anthill.Desktop/anthill.ico`, which the desktop shell
+embeds and the Windows installer uses for its setup, uninstall and shortcut icons.
+
+It was rendered and looked at before it shipped, at 16 / 24 / 32 / 64 / 200. The first draft was a
+smear below 24px: the ant's legs ran through the `>_` and the three body segments merged. The ant
+sits high and the prompt owns the bottom-left band by itself for that reason, and the leg strokes are
+thinner than the body. Same lesson as `.116` — the render is the review.
+
 ## v0.3.8.116 - what looking at it found
 
 **A CORRECTION TO `.115` FIRST.** That entry says "31 other publish sites" reach the stream without

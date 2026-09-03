@@ -985,10 +985,26 @@
       return c;
     }
 
+    /* GRAIN COUNT IS THE ONE PORTED CONSTANT THIS CONSOLE DELIBERATELY LOWERS.
+       The reference runs 60 grains on a structural conduit, 24 on a lateral and 40
+       on the authority root — over its sixteen roots, about 650 points in flight.
+       This colony has eighteen roots, not sixteen, and its chambers hold far fewer
+       record grains than the reference's generated ones, so the streams stopped
+       being the supporting texture and became the loudest thing in the frame.
+
+       Cut to roughly 60% of the reference. The stream still reads as a chain of
+       distinct dots — which is what the hard sprite-mask discard is for — and the
+       chambers get the eye back. Every other conduit constant (radius, rest,
+       sharpness, drift speed, taper) is the reference's, so the LOOK of a stream
+       is unchanged; there is simply less of it.
+
+       `ThePortedConstants_StillAgreeWithTheVendoredReference` knows about this:
+       it is listed as a named divergence with both values pinned, so lowering it
+       further, or the reference changing underneath, both fail loudly. */
     function conduitSpec(rt) {
       var lateral = rt.kind === 'lateral', auth = rt.kind === 'authority';
       return {
-        n: auth ? 40 : lateral ? 24 : 60,
+        n: auth ? 24 : lateral ? 15 : 36,
         streams: auth ? 2 : lateral ? 1 : 2,
         rad: auth ? 0.44 : lateral ? 0.5 : 0.8,
         rest: auth ? 0.3 : lateral ? 0.14 : 0.32,
@@ -1945,6 +1961,22 @@
                || opts.motion === 'off';
       },
       survey: survey, focus: focus, enter: enter, resetView: survey,
+      /* The viewbar's +/- buttons. Same exponential step the wheel uses and the same floor, so a
+         button press and a wheel notch are the same gesture — and the same `pushDepth`, so the
+         breadcrumb follows a zoom however it was made. */
+      zoom: function (f) {
+        if (!fin(f) || f <= 0) return;
+        var ch = state.focus ? chambers[state.focus] : null;
+        var minD = ch ? ch.r * 1.45 : 18;
+        want.dist = clamp(want.dist / f, minD, LIMITS.dist[1]);
+        if (ch) {
+          var lvl = want.dist < ch.r * 2.35 ? 2 : want.dist < ch.r * 4.8 ? 1 : 0;
+          if (lvl === 0) { state.focus = null; state.cluster = null; state.record = null; want.target.copy(HOME.target); }
+          if (lvl < state.level && state.level > 2) state.level = 2;
+          if (state.level < 3 || lvl === 0) state.level = lvl;
+        }
+        pushDepth();
+      },
       descend: descend,
       setChamberStyle: setChamberStyle,
       getLayout: getLayout, setLayout: setLayout, resetLayout: resetLayout,
