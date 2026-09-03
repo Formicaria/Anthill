@@ -748,4 +748,40 @@ public class ColonyLiveGuardTests
         // A plain question runs as a chat turn and never invents a project to run work in.
         Assert.Contains("if (mode === 'mission' && $('ccp-scope') && $('ccp-scope').value === 'q') mode = 'chat';", home);
     }
+
+    /// <summary>
+    /// HYDRATION SURVIVES THE SIGN-IN SCREEN. Colony Live enables at DOMContentLoaded, which on a
+    /// fresh session is the sign-in page: both bounded reads are refused, and before this guard the
+    /// colony then drew an empty sky FOREVER — the operator signed in and got stars and no chambers.
+    ///
+    /// The fix is a re-attempt, not a poll: hydrate() is idempotent (a snapshot already applied makes
+    /// it a no-op), guarded against overlap, and re-attempted on the two things that mean the session
+    /// changed — the page being entered, and the first event arriving on the stream. Anything on a
+    /// timer here would be the polling this feature exists to avoid.
+    /// </summary>
+    [Fact]
+    public void Hydration_IsReAttemptedAfterSignIn_AndIsNeverPolled()
+    {
+        var host = Code("colony-host.js");
+
+        // Idempotent and non-overlapping: the guard clause names both conditions.
+        Assert.Contains("function hydrated()", host);
+        Assert.Contains("if (typeof api !== 'function' || !topo || hydrating || hydrated()) return;", host);
+        Assert.Contains("hydrating = true;", host);
+
+        // A refused snapshot is a FAILED hydration, so the retry still has work to do: the chain
+        // throws rather than applying an empty body and calling the colony hydrated.
+        Assert.Contains("if (!body || !body.sectors) throw new Error", host);
+
+        // The two triggers, and the door the page uses.
+        Assert.Contains("if (!hydrated()) hydrate();", host);
+        Assert.Contains("hydrate: hydrate,", host);
+        Assert.Contains("ColonyHost.hydrate()", Code("colony-home.js"));
+
+        // ... and nothing on a clock anywhere in the feature.
+        foreach (var asset in ColonyAssets)
+            foreach (var timer in new[] { "setInterval", "setTimeout(hydrate" })
+                Assert.False(Code(asset).Contains(timer, StringComparison.Ordinal),
+                    $"{asset} uses {timer}. Colony Live reads on a trigger, never on a clock.");
+    }
 }

@@ -23,7 +23,18 @@
   to approach.
 - **Light mode.** `Sky: Light` is paper — a cool off-white page, no stars, the chambers' palette
   darkened and every label in dark ink — and `Auto` (the default) follows the console theme, so
-  Settings › Theme → Light turns the whole page, live bar and composer included.
+  Settings › Theme → Light turns the whole page, live bar and composer included. Light is not the
+  dark sky with a white background: the pale halo that reads as depth against black reads as a
+  smudge on paper, so on paper the chamber glow is a stronger tint that falls off late and closes
+  on a faint rim, the labels are the chamber's colour darkened further, and the conduit strands
+  carry roughly twice the alpha — the same weight to the eye.
+- **Fixed: a colony of stars and no chambers after signing in.** Colony Live enables at
+  `DOMContentLoaded`, which on a fresh session is the sign-in screen: both bounded reads were
+  refused, nothing retried them, and the operator signed in to an empty sky. Hydration is now
+  re-attempted — idempotent, non-overlapping, and on a trigger rather than a clock: when the page
+  is entered (sign-in restores the layout, which enters it) and when the first event arrives on
+  the stream, which connects only after auth. A snapshot that has landed makes every later attempt
+  a no-op, and a refused snapshot no longer counts as a hydration.
 
 ## v0.3.8.119 - the colony page, on the backend that was approved
 

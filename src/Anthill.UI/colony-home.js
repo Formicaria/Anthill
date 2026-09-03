@@ -336,6 +336,7 @@
       PAGE_ENTER['colony'] = function () {
         if (typeof prev === 'function') prev();
         loadProjects(false); refreshBar();
+        if (window.ColonyHost) ColonyHost.hydrate();   // a no-op once hydrated; the fix for enabling before sign-in
         setTimeout(function () { var i = $('ccp-input'); if (i && !focusOn()) return; if (i) i.focus(); }, 60);
       };
     }
