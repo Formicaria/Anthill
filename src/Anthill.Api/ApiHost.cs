@@ -71,6 +71,17 @@ public static partial class ApiHost
     // Colony Live (design doc §17, stage 3) — projection layer + 3D renderer, split assets like the rest.
     private static string UiColonyTopologyJs = "";
     private static string UiColonyLiveJs = "";
+    private static string UiColonyRendererJs = "";
+    private static string UiColonyHostJs = "";
+    private static string UiColonyHudJs = "";
+    private static string UiMicromoundJs = "";
+
+    /// <summary>
+    /// three.js 0.128.0, vendored. Served from this origin so the CSP stays `script-src 'self'`;
+    /// see the EmbeddedResource note in `Anthill.Api.csproj` for why the UMD build and why the pin
+    /// is a decision rather than a bump.
+    /// </summary>
+    private static string UiVendorThreeJs = "";
     private static string UiGridCss = "";
     // One shared client for the host's own internal probes (Ollama reachability, model list).
     // A per-request `new HttpClient` leaks sockets under the header's periodic polling; this
@@ -268,6 +279,11 @@ public static partial class ApiHost
         UiConsoleExtrasJs = LoadUiAsset("console-extras.js");
         UiColonyTopologyJs = LoadUiAsset("colony-topology.js");
         UiColonyLiveJs = LoadUiAsset("colony-live.js");
+        UiColonyRendererJs = LoadUiAsset("colony-renderer.js");
+        UiColonyHostJs = LoadUiAsset("colony-host.js");
+        UiColonyHudJs = LoadUiAsset("colony-hud.js");
+        UiMicromoundJs = LoadUiAsset("micromound.js");
+        UiVendorThreeJs = LoadUiAsset("vendor.three.min.js");
         UiGridCss = LoadUiAsset("dashboard-grid.css");
         InitHomelab(); // v1.9.0 homelab foundation (read-only; see Homelab/ApiHost.Homelab.cs)
 
@@ -398,6 +414,7 @@ public static partial class ApiHost
         if (AnthillRuntime.EnableMicromound) MapMicromoundEndpoints(app);
 #endif
         MapEventStreamEndpoints(app);   // v3.8.3: SSE — see ApiHost.EventStream.cs
+        MapColonyLiveEndpoints(app);    // v0.3.8.115: the Colony Live read model — see ColonyLive/
         AssertNoDuplicateRoutes(app);
 
         Console.WriteLine($"ANTHILL v{AnthillRuntime.Version} API listening on http://{AnthillRuntime.ApiHost}:{AnthillRuntime.ApiPort}");

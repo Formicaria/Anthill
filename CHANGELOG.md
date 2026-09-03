@@ -1,3 +1,157 @@
+## v0.3.8.115 - colony live stops inventing a colony
+
+**THE VIEW NOW ONLY DRAWS WHAT THE COLONY RECORDED.** Colony Live shipped at `.111` with a header
+promising that "everything in the scene traces to a backend fact" and a body that did not. Seven
+things in it were invented, and every one was live in production. The full list is in
+`colony-topology.js`'s header, where the next person to open the file will read it; the two that
+mattered most:
+
+- A hand-written role→sector table of about twenty-two ids, resolving a miss as
+  `sectorOfAnt(ant) || 'queen'`. The registry has owned membership all along
+  (`AntRoleDefinition.Colony`), so every role added after that table was last edited — and every
+  plugin-contributed role — was silently filed under the QUEEN. Membership now arrives from
+  `/colony/live/snapshot`, and an unrecognised role lands in `unassigned`, visibly.
+- Every one of the last 120 events turned into a "record" with `verif: 'recorded'`, so a task
+  starting and a memory being written grew the same chamber by the same amount. The file DECLARED a
+  `RECORD_EVENTS` regex for exactly this and never called it. The rule is now one C# method,
+  `ColonyLiveProjection.CreatesDurableRecord`, and it travels on the wire so there is one
+  implementation rather than a client opinion.
+
+**AND THE FALLBACK WAS WORSE THAN THE VIEW.** This was found by a guard, not by reading. The §17
+rule forbidding `Math.random` in the feature failed on `colony-live.js` — the classic 2D projection —
+and following it in showed `demoTopology()` running unconditionally at startup: a mission drawn along
+queen→intel→forge→valid, three ants named "researcher", "builder" and "evidence" moving at invented
+speeds, a fabricated approval boundary, and a `recordAt` that generated a title, a type, a
+verification state and a pheromone score for any particle the backend had not filled. A fallback that
+invents a colony is worse than no fallback: at a glance it is indistinguishable from a real one. All
+of it is gone. An empty colony now looks empty.
+
+**THAT SAME FILE WOULD HAVE RENDERED BLANK FOREVER.** Its `setTopology` still read `scene.route`,
+`scene.pausedForApproval`, `scene.evidenceReturn`, `scene.ants` and a `scene.records` map — five
+fields the new projection does not emit, three of them inferences it deliberately stopped making.
+Left alone, every read would have been `undefined` and the fallback would have drawn nothing while
+looking correctly wired: the quietest possible failure, and the shape of defect class 2. It now reads
+the projection it is actually given.
+
+---
+
+**A WEBGL RENDERER, VENDORED RATHER THAN FETCHED.** The brief assumed one already existed; it did
+not. three.js 0.128.0 ships as an EmbeddedResource beside the console's own assets and is served from
+this origin — the version is pinned because later releases dropped the UMD build that defines
+`window.THREE` under a plain `<script src>`, which is what keeps the CSP at `script-src 'self'` with
+no `blob:` and no inline script. The reference prototype fetched it from unpkg and evaluated it from
+a Blob URL when the vendored copy was missing; that path is not ported, and
+`NoConsoleAsset_LoadsCodeFromAnywhereButThisOrigin` refuses it — including inside the vendored bundle
+itself, which is the one asset that could plausibly have carried a fallback. A colony with no WebGL
+falls back to the canvas projection, which now tells the truth too.
+
+**THE READ MODEL IS TWO ENDPOINTS AND NO NEW TABLE.** `/colony/live/snapshot` answers the two
+questions the existing endpoints could not — which sector a role lives in, and where the snapshot
+ends and the stream begins. The watermark is read BEFORE the projection, never after: an event
+logged between the two then falls after the mark and is applied from the stream, where taking it last
+would put it before the mark and inside neither. `/colony/live/records` serves chamber interiors,
+bounded at a 600-row scan, and says `scan_truncated` rather than presenting a partial page as a whole
+history. Both are projections over existing repositories; if either disagrees with the registry, the
+registry is right and this is a bug.
+
+**GROWTH PLAYBACK RECONSTRUCTS; IT DOES NOT RE-ENACT.** Two things in the model carry their own
+timestamps and can honestly be replayed: persisted records and recorded transitions. Three go empty
+in a historical frame, because the model holds only their present value — running tasks, the
+approvals queue, and the mound fleet — and a past frame showing today's value is the exact lie
+playback exists to avoid. One thing is shown but labelled: the chambers are the colony's CURRENT
+sectors, since registry membership has no history, and the HUD prints that caveat rather than
+pretending the colony never changed shape. The coverage limit is stated too — events that reach the
+SSE bus without being persisted, every Micromound event among them, cannot be reconstructed at all.
+
+**MICROMOUND DESCENT SHOWS RECORDED FIELDS AND COMPUTES NO VERDICT.** The camera travels the Queen→
+mound authority conduit — the one edge in the scene that is a grant rather than a dependency — and
+is refused outright when no device is enrolled, because a descent into empty space presented as
+arrival at a machine is the fabrication this release is about. The panel shows last beat, stopped,
+quiesced, charter, lease and capabilities as the fleet listing recorded them. It does NOT say
+online or offline: `MicromoundWidgets.StatusOf` decides that from the beat interval and the
+configured missed-beat grace, neither of which the browser has, and a second opinion here would
+disagree the moment that configuration changed. `edge_queen` reads as "Mound Major" in the UI with
+the wire identifier kept visible beside it.
+
+**APPROVALS ARE DECIDED THROUGH THE CONSOLE'S OWN PATH.** The HUD calls `doApproval` — app.js's
+function, already carrying the bearer token, already refreshing the queue — and a guard refuses a
+second route built here. The card clears when the next poll says the approval is gone, not because
+the button was pressed; until then the control shows pending, which is the truth. An approval the
+projection cannot place is reported as unresolved attention at the Queen and says so in the panel,
+rather than being attached to whatever route was last drawn.
+
+**`/micromound/mounds` LEFT THE `NoConsoleSurface` LEDGER** — and then the rest of the Micromound
+block left with it, below.
+
+---
+
+**AND THE MICROMOUND CONSOLE, WHICH `.114` DEFERRED.** That release shipped the command path and said
+plainly that its UI had not been built, recording seven routes in the coverage ledger as UI GAPs —
+the deferral written where it could be CHECKED rather than only asserted in prose. That block is now
+empty. `src/Anthill.UI/micromound.js` lists the fleet with the colony's own status verdict, mints and
+retires devices, engages and clears the per-mound stop, issues charters and manifests, composes and
+dispatches physical missions, reads one mission's two verdicts, asks the capability resolver, and
+shows the evidence feed. The only Micromound routes still in the ledger are the two DEVICE endpoints:
+a mound is not an operator, it dials in, and its auth is a one-time token or an Ed25519 signature
+rather than a session.
+
+**EVERY FORM FIELD WAS READ OFF THE DECLARING TYPE.** `.114` named a defect class for the opposite —
+a wire contract invented from PROTOCOL.md instead of read from the client — which made enrolment
+impossible through the front door for a whole release while every test passed, because both ends of
+every test were ours. So `MissionStep`, `StepCondition`, `CapabilityLimits`, `WorkerDefinition` and
+`HardwareBinding` came from `Micromound.Protocol`, and the request bodies from the file that
+deserializes them. `ConsoleVocabularyTests` sits in `Anthill.Tests.Micromound`, where the protocol
+assembly exists, and compares the console's five closed vocabularies against the protocol's own sets
+at the TYPED tier rather than by scanning text: adding an operation to the protocol now fails a test
+instead of quietly leaving the console a version behind.
+
+**THE ONE NARROWING IS ASSERTED AS A NARROWING.** The charter form offers three action ceilings where
+the protocol has four. `hazardous` is real and `MicromoundCharters.Issue` refuses it, so offering it
+would be a control whose only possible outcome is a refusal — and the guard checks BOTH halves, so if
+the issuer ever stops refusing it, the console is no longer allowed to keep hiding it.
+
+**`MicromoundWidgets.StatusOf` IS PUBLIC, AND THE FLEET LISTING CARRIES ITS VERDICT.** This closes the
+one thing Colony Live had deferred for a good reason. The status rule reads the beat interval and the
+configured missed-beat grace; a browser has neither, so a console that wanted to show "online" could
+only recompute the rule and then disagree the first time that configuration changed. Carrying the
+answer is smaller than duplicating the rule. It rides as a map keyed by mound id beside `items`
+rather than spliced into each record, so nothing here becomes a second hand-maintained list of
+`MoundRecord`'s fields.
+
+**A CONSOLE THAT NEVER SAYS "DELIVERED".** The colony does not dial a mound; a device behind NAT in a
+shed dials in. Everything issued lands in a downlink queue, so the word shown is "awaiting
+collection" — the field the API actually returns — and a manifest the API accepted is reported as NOT
+in force, because the mound validates it against its own drivers and may still refuse. A guard
+forbids the three claims that would paper over that. The global stop is displayed and is deliberately
+not a button: it is a file on disk precisely so that no API flow can clear it.
+
+**AND TWO COLONY LIVE GAPS FOUND WHILE CLOSING THE FIRST.** The canvas fallback had seven chambers
+where `ColonySectors` has nine, so a record filed to `homelab` or `unassigned` had nowhere to land
+and was silently not drawn — and `unassigned` is precisely where an unrecognised role goes, so
+dropping it restored the defect this release exists to remove. And `followMission` set a flag, pulled
+the camera back and printed "following active mission" whether or not one existed; it now centres the
+chambers the persisted task edges actually touch, or says there is no recorded route to follow.
+
+**FOURTEEN GUARDS, EACH WITH A VACUITY FLOOR.** `ColonyLiveGuardTests` states every rule this release
+depends on: deterministic placement, no repeating timer, one file performs I/O, membership from the
+server, one implementation of the record rule, transitions play once per event id, history mutates
+nothing and shows no live-only fact, approvals through the real path, no invented mound, and none of
+the reference package's scaffolding. Each asserts that its scan can see what it claims to look for,
+because `docs/GUARDS.md`'s standing lesson — a guard that cannot express success is not a guard, it
+is a deadline — has now arrived five times.
+
+**WHAT `.115` DID NOT DO, said plainly.** Colony Live has no pheromone overlay bound to real scores,
+because nothing in this model carries a per-record score to bind one to. The canvas fallback plays no
+transition flights; the WebGL renderer does, and the fallback has no truthful source for an ant in
+transit. Growth playback cannot reach events that were never persisted — every Micromound event and
+31 other publish sites reach the stream without ever being written, so they can be neither replayed
+on reconnect nor reconstructed here; the timeline states that rather than letting a sparse history
+read as a quiet colony, and the fix is a backend decision recorded in `docs/PLAN.md` §2e. Three
+Micromound widget payloads (`mound_fleet`, `mission_status`, `evidence_feed`) are still built on
+every mutation and read by nobody, now that the console reads the routes directly. And the standing
+R0 hygiene is untouched again — the typed-row ratchet did not move for the second release running,
+recorded here for the same reason `.114` recorded it.
+
 ## v0.3.8.114 - the colony can direct a mound, and the beat answers
 
 **R0 CLOSES.** The generated configuration schema was its last open item — one declaration per key,

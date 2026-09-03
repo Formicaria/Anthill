@@ -544,6 +544,67 @@ a.nav-logo-link:focus-visible{outline:2px solid var(--logo-node,#93bdf2);outline
 .topo-ov{position:static !important;top:auto !important;left:auto !important;right:auto !important;bottom:auto !important;}
 .ov-hidden{display:none !important;}
 
+/* -- Colony Live HUD (v0.3.8.115) -------------------------------------------
+   The chrome colony-hud.js builds over the WebGL canvas. Pointer events are off
+   on the container and back on for the controls, so dragging a chamber through
+   an empty region of the HUD still reaches the renderer. */
+.clh{position:absolute;inset:0;pointer-events:none;font-family:var(--mono,var(--font));z-index:4;}
+.clh>*{pointer-events:auto;}
+.clh-hidden{display:none !important;}
+.clh-crumbs{position:absolute;top:10px;left:12px;display:flex;align-items:center;gap:5px;
+  font-size:10px;color:var(--muted);letter-spacing:.04em;}
+.clh-sep{color:var(--dim);}
+.clh-crumb{color:var(--text);}
+.clh-depth{margin-left:8px;font-size:8px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;}
+.clh-controls{position:absolute;top:8px;right:12px;display:flex;flex-wrap:wrap;justify-content:flex-end;
+  align-items:center;gap:4px;max-width:70%;}
+.clh-btn{background:rgba(2,6,23,.72);border:1px solid var(--border);color:var(--muted);
+  font-size:9px;border-radius:4px;padding:3px 7px;letter-spacing:.04em;}
+.clh-btn:hover{color:var(--text);border-color:var(--hud-cyan,var(--blue));}
+.clh-btn:disabled{opacity:.45;cursor:default;}
+.clh-btn:focus-visible{outline:2px solid var(--hud-cyan,var(--blue));outline-offset:1px;}
+.clh-sel-wrap{display:flex;align-items:center;gap:3px;}
+.clh-sel-lbl{font-size:8px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;}
+.clh-sel{background:rgba(2,6,23,.72);border:1px solid var(--border);color:var(--muted);
+  font-size:9px;border-radius:4px;padding:2px 4px;}
+.clh-notice{position:absolute;top:34px;left:12px;max-width:46ch;background:rgba(2,6,23,.78);
+  border:1px solid var(--border);border-left:2px solid var(--dim);border-radius:5px;
+  padding:6px 9px;font-size:9px;line-height:1.55;color:var(--muted);}
+.clh-notice.clh-history{border-left-color:var(--queen);color:var(--text);}
+.clh-panel{position:absolute;top:44px;right:12px;width:300px;max-height:calc(100% - 110px);
+  overflow-y:auto;background:rgba(2,6,23,.9);border:1px solid var(--border);border-radius:6px;
+  padding:10px 12px 12px;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);}
+.clh-x{float:right;background:none;border:none;color:var(--dim);font-size:11px;line-height:1;}
+.clh-x:hover{color:var(--text);}
+.clh-h{font-size:11px;color:var(--text);margin-bottom:7px;font-weight:600;}
+.clh-h5{font-size:8px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;
+  margin:9px 0 4px;border-top:1px solid var(--border);padding-top:6px;}
+.clh-row{display:flex;justify-content:space-between;gap:10px;font-size:9px;padding:1.5px 0;}
+.clh-k{color:var(--dim);flex:0 0 auto;}
+.clh-v{color:var(--muted);text-align:right;word-break:break-word;}
+.clh-unresolved .clh-v{color:var(--queen);}
+.clh-list{display:flex;flex-direction:column;gap:2px;}
+.clh-item{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;
+  background:rgba(148,163,184,.05);border:1px solid transparent;border-radius:3px;padding:3px 5px;font-size:9px;}
+.clh-item:hover{border-color:var(--border);}
+.clh-item-n{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.clh-item-s{color:var(--dim);flex:0 0 auto;font-size:8px;}
+.clh-res-working .clh-item-n{color:var(--text);}
+.clh-res-disabled{opacity:.5;}
+.clh-note{font-size:9px;color:var(--dim);line-height:1.6;margin-top:6px;}
+.clh-appr{border:1px solid var(--border);border-radius:5px;padding:7px 8px;margin-bottom:7px;}
+.clh-appr-t{font-size:10px;color:var(--text);margin-bottom:5px;}
+.clh-appr-btns{display:flex;gap:5px;margin-top:6px;}
+.clh-appr-btns .clh-btn{flex:1;text-align:center;}
+.clh-approve{border-color:rgba(52,211,153,.4);}
+.clh-reject{border-color:rgba(248,113,113,.4);}
+.clh-timeline{position:absolute;left:12px;right:12px;bottom:12px;display:flex;align-items:center;
+  gap:10px;background:rgba(2,6,23,.85);border:1px solid var(--border);border-radius:6px;padding:7px 11px;}
+.clh-scrub{flex:1;accent-color:var(--queen);}
+.clh-stamp{font-size:9px;color:var(--muted);flex:0 0 auto;}
+.clh-coverage{font-size:8px;color:var(--dim);flex:0 0 auto;}
+@media (prefers-reduced-motion: reduce){.clh-btn,.clh-item{transition:none !important;}}
+
 .chud-legend{background:rgba(2,6,23,.55);border:1px solid rgba(34,211,238,.18);border-radius:6px;padding:7px 9px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
   /* v2.14.15: the legend now lists every registry ant instead of the first 15, so it scrolls
      rather than growing past the canvas. */
@@ -2693,6 +2754,175 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         #page-homelab .hl-node{transition:none;}
       }
       </style>
+      <div class="page page-scroll" id="page-micromound">
+        <style id="mm-theme">
+          #page-micromound .mm-card{border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:12px;background:rgba(255,255,255,.012);}
+          #page-micromound h3{font-size:12px;margin-bottom:3px;}
+          #page-micromound .mm-lede{font-size:10px;color:var(--dim);line-height:1.65;margin-bottom:9px;}
+          .mm-table{width:100%;border-collapse:collapse;font-size:10px;}
+          .mm-table th{text-align:left;font-size:8px;text-transform:uppercase;letter-spacing:.09em;color:var(--dim);border-bottom:1px solid var(--border);padding:4px 6px;}
+          .mm-table td{padding:5px 6px;border-bottom:1px solid rgba(148,163,184,.09);vertical-align:top;}
+          .mm-table tr.mm-sel{background:rgba(255,63,164,.06);}
+          .mm-sub{font-size:8px;color:var(--dim);font-family:var(--mono);}
+          .mm-link{color:var(--queen);font-size:10px;padding:0;}
+          .mm-link:hover{text-decoration:underline;}
+          .mm-btn{background:rgba(2,6,23,.6);border:1px solid var(--border);color:var(--muted);font-size:9px;border-radius:4px;padding:3px 7px;margin-right:3px;}
+          .mm-btn:hover{color:var(--text);border-color:var(--blue);}
+          .mm-btn.mm-danger:hover{border-color:rgba(248,113,113,.6);color:#f87171;}
+          .mm-btn:focus-visible{outline:2px solid var(--blue);outline-offset:1px;}
+          .mm-acts{white-space:nowrap;}
+          .mm-st{font-size:8px;text-transform:uppercase;letter-spacing:.08em;padding:1px 5px;border-radius:3px;border:1px solid var(--border);}
+          .mm-st-online{color:#34d399;border-color:rgba(52,211,153,.4);}
+          .mm-st-offline{color:var(--dim);}
+          .mm-st-stopped{color:#f87171;border-color:rgba(248,113,113,.4);}
+          .mm-st-quiesced{color:#fbbf24;border-color:rgba(251,191,36,.4);}
+          .mm-st-unenrolled{color:var(--blue);border-color:rgba(96,165,250,.4);}
+          .mm-stop{border:1px solid rgba(248,113,113,.5);background:rgba(248,113,113,.07);color:#f87171;font-size:10px;padding:7px 9px;border-radius:5px;margin-bottom:9px;}
+          .mm-empty,.mm-note{font-size:9px;color:var(--dim);line-height:1.7;margin-top:7px;}
+          .mm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin-bottom:8px;}
+          .mm-f{display:flex;flex-direction:column;gap:2px;}
+          .mm-f label{font-size:8px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);}
+          .mm-f input,.mm-f select,.mm-f textarea{background:rgba(2,6,23,.6);border:1px solid var(--border);color:var(--text);font-size:10px;border-radius:4px;padding:4px 6px;font-family:var(--mono);}
+          .mm-f textarea{min-height:56px;resize:vertical;}
+          .mm-f input:focus-visible,.mm-f select:focus-visible,.mm-f textarea:focus-visible{outline:2px solid var(--blue);outline-offset:1px;}
+          .mm-wide{grid-column:1/-1;}
+          .mm-say{font-size:10px;margin:8px 0;min-height:14px;}
+          .mm-say.mm-ok{color:#34d399;}
+          .mm-say.mm-bad{color:#f87171;}
+          .mm-token{border:1px solid rgba(251,191,36,.5);background:rgba(251,191,36,.06);border-radius:5px;padding:9px 11px;margin-top:9px;}
+          .mm-token-h{font-size:10px;color:#fbbf24;margin-bottom:5px;}
+          .mm-token-v{display:block;font-size:11px;word-break:break-all;color:var(--text);background:rgba(2,6,23,.6);padding:6px 8px;border-radius:4px;}
+          .mm-kv{display:flex;justify-content:space-between;gap:12px;font-size:10px;padding:2px 0;}
+          .mm-kv>span:first-child{color:var(--dim);flex:0 0 auto;}
+          .mm-pre{font-size:9px;max-height:280px;overflow:auto;background:rgba(2,6,23,.55);border:1px solid var(--border);border-radius:4px;padding:8px;margin-top:6px;}
+          .mm-cand{border:1px solid var(--border);border-radius:4px;padding:5px 7px;margin-top:4px;font-size:10px;}
+          .mm-cand.mm-ok{border-color:rgba(52,211,153,.4);}
+          .mm-target{font-family:var(--mono);color:var(--queen);}
+        </style>
+
+        <div class="page-head">
+          <h2>Micromound</h2>
+          <p class="page-sub">Physical devices this colony has adopted, and the authority it has granted them.</p>
+        </div>
+
+        <div class="mm-card">
+          <h3>Fleet</h3>
+          <p class="mm-lede">Every mound this colony knows, with the status IT computed. The colony
+            never dials a mound &mdash; a device behind NAT dials in &mdash; so everything issued
+            below waits in a downlink queue until the device beats.</p>
+          <div id="mm-fleet"></div>
+          <div class="mm-say" id="mm-say"></div>
+        </div>
+
+        <div class="mm-card">
+          <h3>Adopt a device</h3>
+          <p class="mm-lede">Mints a one-time enrollment token. The colony stores only a hash: the
+            plaintext appears once, in the response, and nowhere else ever.</p>
+          <div class="mm-grid">
+            <div class="mm-f"><label for="mm-new-id">Mound id</label><input id="mm-new-id" placeholder="mm-workshop"></div>
+            <div class="mm-f"><label for="mm-new-name">Name</label><input id="mm-new-name" placeholder="Workshop controller"></div>
+            <div class="mm-f"><label for="mm-new-tier">Class</label><select id="mm-new-tier">
+              <option value="edge_queen">Mound Major (edge_queen)</option>
+              <option value="deterministic_controller">Deterministic Controller</option>
+            </select></div>
+          </div>
+          <button class="mm-btn" data-onclick="mmMint()">Mint enrollment token</button>
+          <div id="mm-token"></div>
+        </div>
+
+        <div class="mm-card">
+          <h3>Charter &mdash; acting on <span class="mm-target" data-mm-target>(none)</span></h3>
+          <p class="mm-lede">A charter is the delegation document: a complete replacement, never a
+            diff, and the only thing that lets a mound act at all. <code>hazardous</code> is not
+            offered because the issuer refuses it.</p>
+          <div class="mm-grid">
+            <div class="mm-f"><label for="mm-ch-ceiling">Action ceiling</label><select id="mm-ch-ceiling">
+              <option value="observe">observe</option><option value="benign">benign</option><option value="controlled">controlled</option>
+            </select></div>
+            <div class="mm-f"><label for="mm-ch-duration">Duration (s)</label><input id="mm-ch-duration" placeholder="3600"></div>
+            <div class="mm-f"><label for="mm-ch-lease">Lease TTL (s)</label><input id="mm-ch-lease" placeholder="900"></div>
+            <div class="mm-f"><label for="mm-ch-safe">Safe state</label><input id="mm-ch-safe" placeholder="all_actuators_off"></div>
+            <div class="mm-f"><label for="mm-ch-ref">Mission ref</label><input id="mm-ch-ref"></div>
+            <div class="mm-f"><label for="mm-ch-evint">Evidence min interval (s)</label><input id="mm-ch-evint" placeholder="60"></div>
+            <div class="mm-f mm-wide"><label for="mm-ch-caps">Capabilities (comma or newline)</label><textarea id="mm-ch-caps" placeholder="sense.temperature, act.water_valve"></textarea></div>
+            <div class="mm-f mm-wide"><label for="mm-ch-routines">Routines</label><textarea id="mm-ch-routines"></textarea></div>
+            <div class="mm-f mm-wide"><label for="mm-ch-evidence">Evidence required for (capability patterns)</label><textarea id="mm-ch-evidence" placeholder="act.*"></textarea></div>
+            <div class="mm-f mm-wide"><label for="mm-ch-limits">Limits &mdash; one capability per line: <code>capability max_on_s=30 min_off_s=60 min=0 max=1 max_rate_per_h=4</code></label><textarea id="mm-ch-limits"></textarea></div>
+          </div>
+          <button class="mm-btn" data-onclick="mmIssueCharter()">Issue charter</button>
+        </div>
+
+        <div class="mm-card">
+          <h3>Manifest &mdash; acting on <span class="mm-target" data-mm-target>(none)</span></h3>
+          <p class="mm-lede">The hardware map an operator authors. It grants nothing: device limits
+            can only NARROW what a charter later spends. The mound validates it against its own
+            drivers and may still refuse &mdash; that refusal arrives as an ack, never inferred.</p>
+          <div class="mm-grid">
+            <div class="mm-f"><label for="mm-cf-reasoning">Reasoning mode</label><select id="mm-cf-reasoning">
+              <option value="none">none</option><option value="remote">remote</option><option value="local">local</option>
+            </select></div>
+            <div class="mm-f"><label for="mm-cf-safe">Safe state</label><input id="mm-cf-safe" placeholder="all_actuators_off"></div>
+            <div class="mm-f mm-wide"><label for="mm-cf-hw">Hardware &mdash; one per line: <code>device driver key=value key=value</code></label><textarea id="mm-cf-hw" placeholder="soil_probe adc_ads1115 channel=0"></textarea></div>
+            <div class="mm-f mm-wide"><label for="mm-cf-caps">Capabilities</label><textarea id="mm-cf-caps"></textarea></div>
+            <div class="mm-f mm-wide"><label for="mm-cf-routines">Routines</label><textarea id="mm-cf-routines"></textarea></div>
+            <div class="mm-f mm-wide"><label for="mm-cf-workers">Workers &mdash; one per line: <code>name | purpose | runtime_type | consumes | exposes | ceiling | offline | requires_reasoning</code></label><textarea id="mm-cf-workers" placeholder="Soil Ant | waters when dry | deterministic | sense.soil | | benign | drain | false"></textarea></div>
+          </div>
+          <button class="mm-btn" data-onclick="mmIssueConfig()">Author manifest</button>
+        </div>
+
+        <div class="mm-card">
+          <h3>Physical mission &mdash; acting on <span class="mm-target" data-mm-target>(none)</span></h3>
+          <p class="mm-lede">Ordered, deterministic steps &mdash; no expression language. When policy
+            says a person must answer, nothing is queued for the device and the request is parked in
+            ANTHILL's one approvals queue, where you answer it like anything else.</p>
+          <div class="mm-grid">
+            <div class="mm-f"><label for="mm-ms-origin">Origin</label><select id="mm-ms-origin">
+              <option value="user">user</option><option value="queen">queen</option><option value="workflow">workflow</option>
+              <option value="automation">automation</option><option value="system">system</option>
+            </select></div>
+            <div class="mm-f"><label for="mm-ms-worker">Worker (blank = Mound Major's choice)</label><input id="mm-ms-worker"></div>
+            <div class="mm-f"><label for="mm-ms-duration">Duration (s)</label><input id="mm-ms-duration" placeholder="900"></div>
+            <div class="mm-f mm-wide"><label for="mm-ms-reason">Reason (recorded, never branched on)</label><input id="mm-ms-reason"></div>
+            <div class="mm-f mm-wide"><label for="mm-ms-steps">Steps &mdash; one per line: <code>step_id | op | capability | params | evidence_tag | confirms | condition</code><br>ops: sense, act, routine, verify, report &nbsp;&middot;&nbsp; params: <code>on_s=10</code> &nbsp;&middot;&nbsp; condition: <code>before lt 30</code></label><textarea id="mm-ms-steps" style="min-height:96px" placeholder="before | sense | sense.soil_moisture | | before&#10;water | act | act.water_valve | on_s=10 | watering | | before lt 30&#10;after | sense | sense.soil_moisture | | after&#10;confirm | verify | sense.soil_moisture | | | water"></textarea></div>
+          </div>
+          <button class="mm-btn" data-onclick="mmDispatch()">Dispatch mission</button>
+        </div>
+
+        <div class="mm-card">
+          <h3>Mission evidence</h3>
+          <p class="mm-lede">What the colony can PROVE about one mission, beside what the device
+            claimed. Both verdicts, never merged.</p>
+          <div class="mm-grid">
+            <div class="mm-f mm-wide"><label for="mm-ms-id">Mission id</label><input id="mm-ms-id"></div>
+          </div>
+          <button class="mm-btn" data-onclick="mmMission()">Look up</button>
+          <div id="mm-mission-out"></div>
+        </div>
+
+        <div class="mm-card">
+          <h3>Capability resolver</h3>
+          <p class="mm-lede">Asks whether physical work is possible and issues nothing. Every mound is
+            listed, not only the eligible ones: &ldquo;nothing can do this&rdquo; and &ldquo;one could,
+            but its lease lapsed&rdquo; are different answers.</p>
+          <div class="mm-grid">
+            <div class="mm-f"><label for="mm-rs-cap">Capability or routine</label><input id="mm-rs-cap" placeholder="act.water_valve"></div>
+            <div class="mm-f"><label for="mm-rs-origin">Origin</label><select id="mm-rs-origin">
+              <option value="user">user</option><option value="queen">queen</option><option value="workflow">workflow</option>
+              <option value="automation">automation</option><option value="system">system</option>
+            </select></div>
+          </div>
+          <button class="mm-btn" data-onclick="mmResolve()">Resolve</button>
+          <div id="mm-resolve-out"></div>
+        </div>
+
+        <div class="mm-card">
+          <h3>Evidence feed</h3>
+          <p class="mm-lede">The fleet feed, or one device's recent beats from the Fleet table above.</p>
+          <button class="mm-btn" data-onclick="mmEvidence()">Load fleet feed</button>
+          <div id="mm-evidence-out"></div>
+        </div>
+      </div>
+
       <div class="page page-scroll" id="page-homelab">
         <style id="hl3-theme">
           /* v2.3.2 Service Deck */
@@ -4025,12 +4255,21 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 <script src="/ui/console-extras.js" defer></script>
 <!-- Colony Live (design doc §17, stage 3) — topology before live (live consumes the topology's scene). Both
      after app.js like every split asset; app.js reaches them only at click time. -->
+<!-- Colony Live. Load order is load-bearing: three.js defines window.THREE, the renderer
+     reads it, and colony-live.js picks a renderer at create() time. All same-origin, so the
+     CSP stays script-src 'self' and the page still carries no inline script. -->
+<script src="/ui/vendor/three.min.js" defer></script>
 <script src="/ui/colony-topology.js" defer></script>
+<script src="/ui/colony-renderer.js" defer></script>
 <script src="/ui/colony-live.js" defer></script>
+<script src="/ui/colony-hud.js" defer></script>
+<script src="/ui/colony-host.js" defer></script>
 <!-- v0.3.8.52: the homelab domain, split out of app.js. AFTER app.js on purpose — its
      PAGE_ENTER['homelab'] registration runs at load and needs PAGE_ENTER to exist. `defer`
      guarantees the order (deferred scripts execute in document order), and
      ConsoleAssetSplitTests asserts it. -->
 <script src="/ui/homelab.js" defer></script>
+<!-- v0.3.8.115: the Micromound console. AFTER app.js — its PAGE_ENTER registration runs at load. -->
+<script src="/ui/micromound.js" defer></script>
 </body>
 </html>

@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.114**.
+Shipping release: **v0.3.8.115**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -370,6 +370,118 @@ twice is how "one slice per release" becomes a sentence nobody is keeping.
 - **The `.97` Windows `dotnet_test` residual** — needs the machine that reproduces it.
 - **The capability-table reconciliation and `QUALIFICATION.md` §3** — need the live pack's exported
   records, and no code change moves them.
+
+---
+
+### 2d. v0.3.8.115 — colony live stops inventing a colony
+
+**Delivers:** the console half of the last two releases — a Colony Live that draws only what the
+colony recorded, and a Micromound view that shows what the fleet listing says rather than what it
+could plausibly say.
+
+**THE PREMISE OF THE BRIEF WAS FALSE, and that was worth finding first.** The work was specified as
+"preserve the existing WebGL renderer". There was no WebGL renderer: `.111` shipped a canvas-2D
+projection with a hand-rolled 3D transform. The decision taken was to vendor three.js 0.128.0 as an
+embedded asset served from this origin — pinned at that version because later releases dropped the
+UMD build that defines `window.THREE` under a plain `<script src>`, which is what keeps the CSP at
+`script-src 'self'`. The prototype's unpkg-plus-Blob-URL fallback is not ported and a guard refuses
+it.
+
+**SEVEN THINGS `.111` INVENTED.** Enumerated in `colony-topology.js`'s header rather than here, and
+each replaced by a fact or by an honest absence. The costliest was a hand-maintained role→sector map
+resolving a miss to the Queen, which silently mis-filed every role added after it was last edited.
+Membership is now the registry's, projected once, server-side.
+
+**A GUARD FOUND THE WORST OF IT.** The §17 rule against `Math.random` in the feature failed on the
+classic fallback, and following it in found `demoTopology()` — an invented mission, three named ants
+at made-up speeds, a fabricated approval boundary — running unconditionally at startup, plus a
+`recordAt` fabricating records for unfilled particles. That same file's `setTopology` also still read
+five fields the new projection does not emit, so it would have rendered permanently blank while
+looking wired up. Both fixed. This is the release's own evidence for writing the guards before
+believing the code.
+
+**Verified by** — 3,571 tests, zero failures, and specifically: `ColonyLiveGuardTests` (fourteen
+rules, each with a vacuity floor), `UiAbsenceTests` extended to the two new assets and the vendored
+bundle, and `ConsoleAssetSplitTests` covering both new console files without being edited, because it
+enumerates the directory.
+
+**AND THE MICROMOUND CONSOLE SHIPPED WITH IT.** `.114` deferred it explicitly and recorded seven
+routes in the coverage ledger as UI GAPs so the deferral could be CHECKED rather than asserted. That
+block is now empty: `src/Anthill.UI/micromound.js` lists the fleet with the colony's own status
+verdict, mints and retires devices, engages and clears the per-mound stop, issues charters and
+manifests, composes and dispatches physical missions, reads one mission's two verdicts, asks the
+resolver and shows the evidence feed. Only the two DEVICE endpoints remain in the ledger, because a
+mound is not an operator.
+
+Every form field was read off the declaring type — `Micromound.Protocol` for the wire shapes,
+`ApiHost.Micromound.cs` for the request bodies. `ConsoleVocabularyTests` lives in
+`Anthill.Tests.Micromound` and compares the console's five closed vocabularies against the protocol's
+own sets at the TYPED tier, so adding an operation to the protocol fails a test rather than quietly
+leaving the console a version behind. The one deliberate narrowing — ceilings stop at `controlled` —
+is asserted as a narrowing, against the issuer's own refusal of `hazardous`.
+
+`MicromoundWidgets.StatusOf` became public and the fleet listing carries its verdict, closing the one
+thing `.115` had first deferred for a good reason: the console could not show online/offline without
+recomputing a rule from configuration a browser cannot see, and carrying the answer is smaller than
+duplicating the rule.
+
+**WHAT `.115` DID NOT DO, said plainly.** Colony Live has no pheromone overlay bound to real scores —
+nothing in this model carries a per-record score to bind one to. The canvas fallback plays no
+transition flights; the WebGL renderer does, and the fallback has no truthful source for an ant in
+transit. Growth playback cannot reach events that were never persisted, which is every Micromound
+event and 31 other publish sites — a backend gap, named in §2e. And the standing R0 hygiene is
+untouched for the second release running.
+
+**Carried forward, unchanged and still named:** the list under §2c stands as written, with one
+correction — the typed-row ratchet is still at **45** and has now been skipped twice. The ratchet is
+enforced at ≤ 45, so the work cannot reverse; only this note stops it quietly stopping, and it is
+worth more the second time it has to be written.
+
+---
+
+## 2e. What comes next — the shape of v0.3.8.116 and after
+
+The universal-workflow program closed at `.113` and R0 closed at `.114`. There is no successor
+program: what remains is R-numbered work, standing hygiene, and a small number of findings the last
+two releases surfaced and deliberately did not chase. This section exists because "what is next" was
+being reconstructed from three documents every release, and the reconstruction kept losing the same
+items.
+
+**The named findings from `.114`–`.115`, in the order they cost the most.**
+
+1. **Bus-only events cannot be replayed or reconstructed.** Every Micromound event and 31 other
+   publish sites reach `/events/stream` without ever being written to the events table. Three
+   consequences, all live: a reconnecting console silently loses them, Colony Growth Playback cannot
+   show them at all, and no audit after the fact can prove they happened. `.115` states the limit
+   honestly in the timeline's coverage line, which is the right thing to do about a gap and is not a
+   fix. **The fix is a decision, not a patch:** persist-then-publish for the classes that are
+   evidence, transient on purpose for the rest, with the split written down rather than inherited
+   from whichever call site was written first.
+
+2. **The typed-row ratchet, still at 45, skipped twice.** `.114` and `.115` both spent themselves
+   elsewhere. `TheUntypedStoreSurface_OnlyShrinks` enforces ≤ 45 so it cannot reverse, and nothing
+   makes it fall. One slice per release, each lowering the ratchet in the same commit, is the
+   standing rule — a third skip means the rule is not being kept, and it should then be rewritten or
+   dropped rather than quietly missed.
+
+3. **Three widget payloads read by nobody.** `mound_fleet`, `mission_status` and `evidence_feed` are
+   built on every Micromound mutation for a widget runtime that was going to render them. `.115`'s
+   console reads the routes directly instead. That is either a second surface to retire or a first
+   surface to finish, and it should stop being both — the same shape as `ollama_model_present` and
+   `/config/health` before it.
+
+4. **`Anthill.Tests.Micromound` is outside `Anthill.sln`.** It builds under the `MICROMOUND` define
+   against a sibling checkout, so a solution-wide run is complete for the solution and silently
+   excludes 166 tests — plus, as of `.115`, the console vocabulary guards. Every release has to
+   remember a second command. Folding it in behind a property, or making the solution run fail loudly
+   when it was skipped, removes a step that currently depends on somebody remembering.
+
+5. **Colony Live's remaining gaps.** No pheromone overlay bound to real scores (nothing in the model
+   carries a per-record score); the canvas fallback plays no transition flights; and sector
+   membership has no history, so a reconstructed frame is drawn in today's chambers and says so.
+
+**The R-numbered order is unchanged.** R1 is the live one. R4 needs the live pack, which is the
+operator's step. R6 gates R9, and nothing below R6 has started.
 
 ---
 

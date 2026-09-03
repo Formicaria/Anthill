@@ -153,7 +153,17 @@ public static class MicromoundWidgets
     /// Reporting it as offline would tell an operator to check the network when the answer is to
     /// issue authority.
     /// </summary>
-    internal static string StatusOf(MoundRecord mound, MicromoundOptions options, DateTimeOffset now,
+    /// <summary>
+    /// PUBLIC SINCE v0.3.8.115, so the console does not have to have an opinion.
+    ///
+    /// This verdict reads `SyncIntervalSeconds` and the configured `MoundOfflineAfterMissedBeats`
+    /// grace. A browser has neither, so a client that wanted to show "online" had exactly two
+    /// options: recompute the rule from fields it can see — a second implementation that disagrees
+    /// the moment the grace is reconfigured — or say nothing. Colony Live chose to say nothing at
+    /// `.115`, correctly and unhelpfully. Widening this is the smaller change: one rule, computed
+    /// where its inputs live, carried on the wire.
+    /// </summary>
+    public static string StatusOf(MoundRecord mound, MicromoundOptions options, DateTimeOffset now,
         bool globalStop)
     {
         if (globalStop || mound.Stopped) return "stopped";
