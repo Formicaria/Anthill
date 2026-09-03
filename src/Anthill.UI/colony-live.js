@@ -146,7 +146,8 @@
           var verified = r.verification === 'verified', pher = trailOf(r.ant);
           var durable = (verified ? .55 : .1) + pher * .45, depth = 1 - Math.min(.94, durable);
           var dir = [unit(id, 'dx') * 2 - 1, unit(id, 'dy') * 2 - 1, unit(id, 'dz') * 2 - 1], len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
-          var spread = s.R * .16, kk = .5 + depth * .75;
+          // a crowded cluster spreads wider in the cloud, so thirty records read as a swarm, not a blot
+          var spread = s.R * (.16 + .18 * Math.min(1, (mcount - 1) / 20)), kk = .5 + depth * .75;
           var o = [cl.center[0] * kk + dir[0] / len * spread, cl.center[1] * kk + dir[1] / len * spread, cl.center[2] * kk + dir[2] / len * spread];
           var ang = k * SPIRAL_STEP, rad = s.R * .86 * band * Math.sqrt((k + .55) / mcount);
           var org = [Math.cos(ang) * rad, y, Math.sin(ang) * rad];
@@ -154,7 +155,7 @@
           var prev = old[id], pt = prev || { born: performance.now(), ph: place.b * TAU, rec: null };
           var radN = Math.min(1, Math.hypot(o[0], o[1], o[2]) / s.R), edge = 1 - .72 * Math.pow(radN, 2.6);
           if (prev && (Math.abs(prev.o[0] - o[0]) + Math.abs(prev.o[1] - o[1]) + Math.abs(prev.o[2] - o[2])) > .5) pt.settle = { from: prev.o.slice(), to: o.slice(), t: 0 };
-          pt.o = o.slice();   // its own array: the settle interpolates INTO it from a frozen `to` pt.org = org; pt.layer = verified ? 2 : 0; pt.cl = ci; pt.stratum = ci;
+          pt.o = o.slice(); pt.org = org; pt.layer = verified ? 2 : 0; pt.cl = ci; pt.stratum = ci;   // o is its own array: the settle interpolates INTO it from a frozen `to`
           pt.sz = (1.15 + pher * 1.7) * (.72 + .28 * edge) * .9; pt.a = Math.min(1, .82 + pher * .2) * (.86 + .14 * edge); pt.coreMix = Math.min(1, Math.pow(1 - radN, 1.5) * 1.15);
           pt.rec = rec; pt.resident = null;
           pts.push(pt);
@@ -577,7 +578,7 @@
           var hp = isFocused && hovPt === pi;
           var sh = shadeAt(w, s.pos);                 // lit hemisphere + rim, per point, per frame
           // grains grow as the strata form, so a level's records read as a row and not as dust
-          var rad = Math.max(.6, p.sz * q.s * (.95 + .5 * sh) * (res ? 1 : 1 + m * .9)) * (hp ? 1.5 : 1);
+          var rad = Math.max(.6, p.sz * q.s * (.95 + .5 * sh) * (res ? 1 : 1 + m * .4)) * (hp ? 1.5 : 1);
           ctx.beginPath(); ctx.arc(q.x, q.y, rad, 0, TAU);
           ctx.fillStyle = 'rgba(' + col + ',' + Math.min(1, a * tw * (.7 + .8 * sh) * LT.expo * (hp ? 1.4 : 1)) + ')'; ctx.fill();
           if (res && res.status === 'working') { ctx.beginPath(); ctx.arc(q.x, q.y, rad + 3, 0, TAU); ctx.strokeStyle = 'rgba(' + c1.join(',') + ',' + (.35 * tw) + ')'; ctx.lineWidth = 1; ctx.stroke(); }
