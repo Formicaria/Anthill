@@ -21,7 +21,7 @@ concurrency:
 # rather than at each checkout site: a commit to micromound must not be able to turn this
 # repository's CI red with nobody having touched this repository. Bump deliberately.
 env:
-  MICROMOUND_REF: v0.1.0
+  MICROMOUND_REF: v0.9.10
 
 jobs:
   build-and-test:

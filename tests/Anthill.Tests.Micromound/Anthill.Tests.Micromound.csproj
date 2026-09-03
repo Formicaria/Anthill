@@ -8,7 +8,28 @@
 
   <PropertyGroup>
     <MicromoundRepoPath Condition="'$(MicromoundRepoPath)' == ''">$(MSBuildThisFileDirectory)..\..\..\micromound</MicromoundRepoPath>
+    <MicromoundRepoFullPath>$([System.IO.Path]::GetFullPath('$(MicromoundRepoPath)'))</MicromoundRepoFullPath>
   </PropertyGroup>
+
+  <!--
+    THE CHECKOUT THIS ASSEMBLY WAS COMPILED AGAINST, baked in at build time.
+
+    `DeviceWireContractTests` reads the device's HTTP clients out of the pinned micromound
+    checkout — the one contract that cannot be checked from a type or a runtime on this side,
+    because the field names live in private records inside an executable. Finding that checkout
+    from `typeof(SimMound).Assembly.Location` does NOT work: the reference is COPIED into this
+    project's output directory, so the walk lands inside the ANTHILL repo and finds nothing. And a
+    hardcoded sibling path stops pointing at the thing under test the moment anybody overrides
+    `MicromoundRepoPath` — which CI does.
+
+    So MSBuild records the path it actually resolved, and the guard reads that.
+  -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>MicromoundRepoPath</_Parameter1>
+      <_Parameter2>$(MicromoundRepoFullPath)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />

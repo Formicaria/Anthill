@@ -16,6 +16,27 @@ public sealed partial class Queen
 {
     private const string Divider = "\n--------------------------------------------------\n";
 
+    /// <summary>
+    /// WHAT TO DO WHEN A PHYSICAL ACTION IS APPROVED — a composition-root seam, set by
+    /// <c>ApiHost.InitMicromound</c> and null everywhere else. v0.3.8.114.
+    ///
+    /// v0.3.8.110 established the rule this exists to keep: an approval REPLAYS the step it
+    /// authorized, at the moment the decision is recorded, because "the operator's answer changed a
+    /// grade and never did the work it authorized" is the defect that release closed. A physical
+    /// mission is the same shape — somebody said yes to watering the greenhouse, and the greenhouse
+    /// must actually be watered.
+    ///
+    /// It is a delegate rather than a call because the direction of the dependency is fixed:
+    /// Micromound is an optional module that may reference the SDK and the wire contract and
+    /// nothing else of ours, and this assembly must not learn about it to keep that true. When the
+    /// module is not compiled in, nothing sets this and nothing produces a
+    /// <see cref="ApprovalActionType.PhysicalAction"/> approval for it to miss.
+    ///
+    /// It returns the sentence an operator reads. A null return means "the hook ran and had
+    /// nothing to say", which is different from the hook being absent, and both are reported.
+    /// </summary>
+    public static Func<ApprovalRequest, string?>? PhysicalActionReplay { get; set; }
+
     private static string Str(Dictionary<string, object?> row, string key, string fallback = "") =>
         row.TryGetValue(key, out var v) && v is not null ? v.ToString() ?? fallback : fallback;
 
@@ -77,6 +98,23 @@ public sealed partial class Queen
                      + $"Mission outcome after re-evaluation: {resumption.Outcome ?? "not graded"}."
                      : $"Nothing was replayed — {resumption.Reason}\n"
                      + "The mission's outcome stops reporting that it is waiting on this.");
+        }
+
+        // v0.3.8.114 — AND A PHYSICAL ACTION IS REPLAYED THE SAME WAY, for the same reason. An
+        // operator who approves watering the greenhouse has authorized the watering, not a status
+        // change; asking them to then go and re-issue the mission would hand them a second step for
+        // a decision they have already made. The work happens through the ONE dispatcher, with
+        // `ApprovalGranted` set — there is no approved-mission code path separate from the ordinary
+        // one, which is the property §15 of the integration brief is about.
+        if (updated is not null && updated.ActionType == ApprovalActionType.PhysicalAction)
+        {
+            var replay = PhysicalActionReplay?.Invoke(updated);
+
+            return $"Approval recorded.\nID: {approvalId}\nStatus: approved\n\n"
+                 + $"Action: {updated.TargetId}\n"
+                 + (replay
+                    ?? "Nothing carried it out — this colony has no Micromound controller wired in, "
+                     + "so the decision is recorded and no physical work was issued.");
         }
 
         if (updated is not null && updated.ActionType != ApprovalActionType.PatchProposal)

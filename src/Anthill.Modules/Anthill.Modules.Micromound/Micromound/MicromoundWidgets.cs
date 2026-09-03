@@ -49,19 +49,64 @@ public static class MicromoundWidgets
     }
 
     /// <summary>
-    /// M1 has no missions to report, and says so rather than rendering an empty table that looks
-    /// like a fleet with nothing to do. The widget exists now so the Integrations tab has a stable
-    /// shape to render before M2 fills it.
+    /// THE COMMAND PATH, AS IT ACTUALLY STANDS. v0.3.8.114.
+    ///
+    /// This used to answer `phase: M1, command_path: false` with a note saying charters and
+    /// missions arrive later. They arrived, and a widget still reporting otherwise is defect class
+    /// 3 — a declaration disagreeing with the runtime — in the one surface an operator reads to
+    /// find out what the colony can do.
+    ///
+    /// What it shows per mound is AUTHORITY, not activity: chartered or not, the lease, the
+    /// autonomy policy, and what is queued. That is the set of facts that decides whether asking
+    /// for physical work would succeed, which is the question somebody opening this widget has.
+    /// Each mission carries the colony's evidence-derived verdict, never the device's claim alone.
     /// </summary>
-    public static string BuildMissionStatus(IReadOnlyList<MoundRecord> mounds) =>
-        JsonSerializer.Serialize(new MissionStatusPayload
+    public static string BuildMissionStatus(IMoundStore store, IReadOnlyList<MoundRecord> mounds,
+        MicromoundEvidence evidence, DateTimeOffset now, int perMound = 5)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(mounds);
+        ArgumentNullException.ThrowIfNull(evidence);
+
+        var items = new List<MissionStatusItem>();
+
+        foreach (var mound in mounds)
+            foreach (var mission in store.MissionsForMound(mound.MoundId, perMound))
+            {
+                var summary = evidence.SummarizeMission(mound.MoundId, mission.MissionId);
+                var report = store.GetMissionReport(mound.MoundId, mission.MissionId);
+
+                items.Add(new MissionStatusItem
+                {
+                    MoundId = mound.MoundId,
+                    Name = mound.Name,
+                    MissionId = mission.MissionId,
+                    CharterId = mission.CharterId,
+                    Worker = mission.Worker,
+                    ExpiresAt = mission.ExpiresAt,
+                    // The device's word and the colony's proof, side by side. A widget that showed
+                    // only one of them would be hiding whichever it dropped.
+                    DeviceState = report?.State ?? "",
+                    ColonyVerified = summary.AllVerified,
+                    Actions = summary.Actions,
+                    VerifiedActions = summary.Verified,
+                    Detail = summary.Detail,
+                });
+            }
+
+        return JsonSerializer.Serialize(new MissionStatusPayload
         {
-            Phase = "M1",
-            CommandPath = false,
-            Note = "Read-only integration: ANTHILL can see mounds, not direct them. " +
-                   "Charters and missions arrive in M2.",
-            Mounds = mounds.Count
+            CommandPath = true,
+            Note = "Charters, configuration and missions are issued from ANTHILL and collected on "
+                 + "the mound's next beat. Every mission's state here is what the colony can PROVE, "
+                 + "never what the device claimed.",
+            Mounds = mounds.Count,
+            Chartered = mounds.Count(m => !string.IsNullOrEmpty(m.CharterId)),
+            LeaseHeld = mounds.Count(m => !MicromoundCharters.LeaseExpired(m, now)),
+            AwaitingCollection = mounds.Sum(m => store.PendingDownlinkCount(m.MoundId)),
+            Items = [.. items.OrderByDescending(i => i.ExpiresAt, StringComparer.Ordinal)],
         }, Options);
+    }
 
     public static string BuildEvidenceFeed(IMoundStore store, IReadOnlyList<MoundRecord> mounds, int perMound)
     {
@@ -96,6 +141,17 @@ public static class MicromoundWidgets
     /// <summary>
     /// Offline is a normal state, not an incident (PROTOCOL.md §1) — so a mound that has missed
     /// its beats is reported as offline and nothing else happens.
+    ///
+    /// THE ONE PLACE THIS IS DECIDED. `MicromoundResolver` reads it rather than re-deriving
+    /// "reachable" from `LastSeen` itself; two answers to "is this mound there" would eventually
+    /// disagree, and the fleet widget and the resolver disagreeing means a console showing a mound
+    /// as online while the colony refuses to route work to it.
+    ///
+    /// v0.3.8.114 — QUIESCED joins the vocabulary, and it is NOT a kind of offline. A quiesced
+    /// mound is beating normally and holds no authority: its lease lapsed, it entered `safe_state`,
+    /// and PROTOCOL.md §5 has it waiting for a fresh charter rather than for a fresh connection.
+    /// Reporting it as offline would tell an operator to check the network when the answer is to
+    /// issue authority.
     /// </summary>
     internal static string StatusOf(MoundRecord mound, MicromoundOptions options, DateTimeOffset now,
         bool globalStop)
@@ -105,7 +161,9 @@ public static class MicromoundWidgets
         if (!ProtocolTime.TryParse(mound.LastSeen, out var seen)) return "offline";
 
         var grace = Math.Max(mound.SyncIntervalSeconds, 1) * Math.Max(options.MoundOfflineAfterMissedBeats, 1);
-        return now - seen <= TimeSpan.FromSeconds(grace) ? "online" : "offline";
+        if (now - seen > TimeSpan.FromSeconds(grace)) return "offline";
+
+        return mound.Quiesced ? "quiesced" : "online";
     }
 
     public sealed class FleetPayload
@@ -133,10 +191,31 @@ public static class MicromoundWidgets
 
     public sealed class MissionStatusPayload
     {
-        [JsonPropertyName("phase")] public string Phase { get; set; } = "";
         [JsonPropertyName("command_path")] public bool CommandPath { get; set; }
         [JsonPropertyName("note")] public string Note { get; set; } = "";
         [JsonPropertyName("mounds")] public int Mounds { get; set; }
+        [JsonPropertyName("chartered")] public int Chartered { get; set; }
+        [JsonPropertyName("lease_held")] public int LeaseHeld { get; set; }
+        /// <summary>Signed envelopes queued for mounds that have not beaten since.</summary>
+        [JsonPropertyName("awaiting_collection")] public int AwaitingCollection { get; set; }
+        [JsonPropertyName("items")] public List<MissionStatusItem> Items { get; set; } = [];
+    }
+
+    public sealed class MissionStatusItem
+    {
+        [JsonPropertyName("mound_id")] public string MoundId { get; set; } = "";
+        [JsonPropertyName("name")] public string Name { get; set; } = "";
+        [JsonPropertyName("mission_id")] public string MissionId { get; set; } = "";
+        [JsonPropertyName("charter_id")] public string CharterId { get; set; } = "";
+        [JsonPropertyName("worker")] public string Worker { get; set; } = "";
+        [JsonPropertyName("expires_at")] public string ExpiresAt { get; set; } = "";
+        /// <summary>What the mound reported, or empty when it has not reported yet.</summary>
+        [JsonPropertyName("device_state")] public string DeviceState { get; set; } = "";
+        /// <summary>What the colony can prove — every action verified, or not.</summary>
+        [JsonPropertyName("colony_verified")] public bool ColonyVerified { get; set; }
+        [JsonPropertyName("actions")] public int Actions { get; set; }
+        [JsonPropertyName("verified_actions")] public int VerifiedActions { get; set; }
+        [JsonPropertyName("detail")] public string Detail { get; set; } = "";
     }
 
     public sealed class EvidenceFeedPayload
