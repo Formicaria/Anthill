@@ -106,10 +106,34 @@ public sealed class ApiJobRegistry : IDisposable
         return job;
     }
 
+    /// <summary>
+    /// THE CONSUMER OUTLIVES NOTHING. A worker blocked inside the queue when the registry is
+    /// disposed used to take the whole process with it: `BlockingCollection.Dispose()` makes the
+    /// blocked `GetConsumingEnumerable()` throw `ObjectDisposedException` ON THE WORKER THREAD,
+    /// where a `foreach` in a bare thread body has nobody to catch it — and an unhandled exception
+    /// on a background thread is a process kill, not a logged error.
+    ///
+    /// CI found it the honest way: every one of 1,652 tests passed and the run still failed, because
+    /// the test host crashed during teardown (`Test Run Aborted. Reason: Test host process crashed`).
+    /// The same shape would end the API host on shutdown, which is the part that matters.
+    ///
+    /// So the TAKE is guarded and nothing else is: a completed-and-empty queue ends the loop
+    /// normally, a disposed one ends it quietly, and every exception the job body raises keeps the
+    /// handling it already had.
+    /// </summary>
     private void WorkerLoop()
     {
-        foreach (var job in _queue.GetConsumingEnumerable())
+        while (true)
         {
+            ApiMissionJob? job;
+            try
+            {
+                if (!_queue.TryTake(out job, Timeout.Infinite)) break;   // CompleteAdding + drained
+            }
+            catch (ObjectDisposedException) { break; }                   // disposed under a blocked take
+            catch (InvalidOperationException) { break; }                 // completed while taking
+            if (job is null) break;
+
             // Skip work cancelled while it sat in the queue. A running mission is now interruptible
             // too: its Cts token is handed to RunMission, which aborts any in-flight model call and
             // stops the scheduler — so a hung/slow mission no longer pins the single-writer queue.
@@ -342,9 +366,25 @@ public sealed class ApiJobRegistry : IDisposable
         }
     }
 
+    /// <summary>
+    /// True once every worker thread has left the queue — the state <see cref="Dispose"/> must
+    /// reach before it disposes the collection, and the one a guard can actually observe.
+    /// </summary>
+    internal bool WorkersHaveStopped() => _workers.All(w => !w.IsAlive);
+
+    /// <summary>
+    /// Stop accepting, let the workers leave, THEN dispose. The old order — complete and dispose in
+    /// consecutive statements — disposed the collection while workers were still blocked on it (see
+    /// <see cref="WorkerLoop"/>). Joining is bounded: a worker inside a long mission is not waited
+    /// on forever, and the guarded take is what keeps that case quiet.
+    /// </summary>
     public void Dispose()
     {
         _queue.CompleteAdding();
+        foreach (var worker in _workers)
+        {
+            try { worker.Join(TimeSpan.FromSeconds(2)); } catch { /* a worker that never started */ }
+        }
         _queue.Dispose();
     }
 }

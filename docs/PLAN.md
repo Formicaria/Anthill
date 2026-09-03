@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.119**.
+Shipping release: **v0.3.8.120**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -438,6 +438,37 @@ enforced at ≤ 45, so the work cannot reverse; only this note stops it quietly 
 worth more the second time it has to be written.
 
 ---
+
+### 2j. v0.3.8.120 — the colony page, tuned by hand
+
+**Delivers:** an operator's pass over `.119`, and one defect it uncovered that had nothing to do with
+polish. A chamber's records now take seats on a fixed 96-slot Fibonacci lattice — evenly spread by
+construction, stable per record — so a dominant cluster no longer reads as a lopsided clump, and the
+chamber glow is an envelope that contains every seat rather than a nucleus its outer grains escaped.
+Residents are drawn as halo, core and ring so an ant is never mistaken for a record, and clicking one
+opens an inspector that also takes a display name and a colour. Chambers take a colour, a glow size
+and a brightness; conduits take particle density, brightness and a colour; labels take All / Focused
+only / None; `Void` is black. All of it persists in the layout the `/ui/state` schema already carried,
+and `reset` returns the projection's own. `Mounds` is greyed until the fleet has one and `+ Mound`
+opens the console where a device is actually enrolled.
+
+**Light mode** is a first-class sky rather than the dark one with a white background: the chamber glow
+is a stronger tint that falls off late and closes on a rim, labels are the palette darkened further,
+and the conduit strands carry roughly twice the alpha — the same weight to the eye. `Auto` follows
+Settings › Theme.
+
+**The defect:** Colony Live enables at `DOMContentLoaded`, which on a fresh session is the sign-in
+screen. Both bounded reads were refused, nothing retried them, and the operator signed in to stars and
+no chambers — a page that looked like a rendering bug and was a lifecycle one. Hydration is now
+re-attempted on a trigger and never a clock (page entry, and the first event on the stream, which
+connects only after auth), idempotent and non-overlapping, with a refused snapshot no longer counted
+as a hydration. `ColonyLiveGuardTests.Hydration_IsReAttemptedAfterSignIn_AndIsNeverPolled` pins it.
+
+**And one that was not about the colony at all.** `ApiJobRegistry.Dispose()` disposed its queue while
+worker threads were blocked inside it, which throws on the worker thread — an unhandled background
+exception, which is a process kill rather than a logged error. CI showed it as a test host crash
+after all 1,652 tests had passed; the same shape would end the API host on shutdown. Dispose now
+drains its workers first and the take is guarded, with `JobRegistryShutdownTests` on it.
 
 ### 2i. v0.3.8.119 — the Colony Live UI re-ported onto the approved read model
 
