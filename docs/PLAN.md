@@ -439,6 +439,19 @@ worth more the second time it has to be written.
 
 ---
 
+### 2i. Unreleased — the Colony Live UI re-ported onto the approved read model
+
+**Delivers:** the `.115`–`.117` WebGL renderer, its HUD and the vendored three.js are removed — the
+UI was rejected in review; the backend it was built against was approved and is untouched. The
+`.111` canvas formicarium (landing page in focus, live bar, composer → Chat, sector/record panels,
+the galaxy sky) now consumes the reducer and the endpoints unchanged. A chamber's grains are its
+persisted records and its orbs its residents; the chambers are the server's nine; the mound exists
+only when the fleet says so; labels are the projection's unless the operator renamed them, with the
+layout in `/ui/state` (schema 3). `ColonyLiveGuardTests` keeps every rule that protected the
+contract and gains the canvas renderer's own; the `§18` constant comparison went with the renderer
+it compared. The design handoff stays under `docs/design/colony-live-3d/` as a record, and says so.
+The CHANGELOG's `## Unreleased` entry carries the full account.
+
 ### 2h. v0.3.8.118 — the mission honours what was asked, or says why it cannot
 
 **Delivers:** the first two items of the orchestration brief, and the correction `.117` shipped

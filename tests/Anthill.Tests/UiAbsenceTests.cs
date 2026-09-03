@@ -59,10 +59,9 @@ public class UiAbsenceTests
     [InlineData("dashboard-grid.css")]
     [InlineData("colony-topology.js")]
     [InlineData("colony-live.js")]
-    [InlineData("colony-renderer.js")]
     [InlineData("colony-host.js")]
-    [InlineData("colony-hud.js")]
-    [InlineData("vendor.three.min.js")]
+    [InlineData("colony-home.js")]
+    [InlineData("micromound.js")]
     public void EveryShippedAsset_IsEmbeddedAndFound(string asset)
     {
         var content = ApiHost.LoadUiAsset(asset);
@@ -75,35 +74,6 @@ public class UiAbsenceTests
     }
 
     /// <summary>
-    /// THE VENDORED three.js IS THE PINNED BUILD, AND IT IS REALLY three.js. v0.3.8.115.
-    ///
-    /// `LoadUiAsset` matches by resource-name SUFFIX and returns "" for a miss, so a broken pin, a
-    /// truncated file or an empty placeholder all produce the same symptom: a console that loads,
-    /// reports no error, and renders nothing. `EveryShippedAsset_IsEmbeddedAndFound` above catches
-    /// only the empty case.
-    ///
-    /// So this reads the bytes. The version banner pins WHICH build, the UMD preamble pins that it
-    /// is the non-module build the `script-src 'self'` load depends on, and the size floor pins that
-    /// it is the whole thing rather than a first chunk.
-    /// </summary>
-    [Fact]
-    public void TheVendoredThreeJs_IsThePinnedUmdBuild()
-    {
-        var three = ApiHost.LoadUiAsset("vendor.three.min.js");
-
-        Assert.Contains("three.js", three, StringComparison.OrdinalIgnoreCase);
-
-        // The UMD preamble. An ES-module build would not define `window.THREE` under a plain
-        // `<script src>`, and the console has no import map and no bundler to fix that.
-        Assert.Contains("typeof exports", three, StringComparison.Ordinal);
-        Assert.Contains("REVISION", three, StringComparison.Ordinal);
-
-        Assert.True(three.Length > 400_000,
-            $"the vendored three.js is {three.Length} bytes, which is far short of the real minified "
-          + "build. A truncated or placeholder file loads without error and renders nothing.");
-    }
-
-    /// <summary>
     /// THE CONSOLE NEVER REACHES THE INTERNET FOR CODE. v0.3.8.115.
     ///
     /// The reference prototype fetched three.js from unpkg and evaluated it from a Blob URL when the
@@ -111,22 +81,19 @@ public class UiAbsenceTests
     /// colony does not have, and it fails OPEN — a console that quietly downloads and runs remote
     /// code is worse than one that refuses to render.
     ///
-    /// Asserted over the shipped assets rather than over the loader that no longer exists, because
-    /// the rule is about what the console DOES, and the next person to add a dependency will not
-    /// read a deleted file's comment.
+    /// The console now carries NO vendored runtime at all — Colony Live draws with the 2D canvas —
+    /// so the rule is simpler still: no asset names a CDN, and none evaluates a Blob. Asserted over
+    /// the shipped assets, because the next person to add a dependency will not read a deleted
+    /// file's comment.
     /// </summary>
     [Theory]
     [InlineData("app.js")]
     [InlineData("colony-live.js")]
-    [InlineData("colony-renderer.js")]
     [InlineData("colony-host.js")]
+    [InlineData("colony-home.js")]
     [InlineData("colony-topology.js")]
-    [InlineData("colony-hud.js")]
+    [InlineData("micromound.js")]
     [InlineData("index.html")]
-    // The vendored bundle itself, because it is the asset that COULD have carried a fallback: the
-    // prototype's loader is what fetched from unpkg, and a "vendored" copy that phones home on a
-    // cache miss would satisfy every other test in this file.
-    [InlineData("vendor.three.min.js")]
     public void NoConsoleAsset_LoadsCodeFromAnywhereButThisOrigin(string asset)
     {
         var text = ApiHost.LoadUiAsset(asset);
@@ -135,9 +102,9 @@ public class UiAbsenceTests
 
         foreach (var forbidden in new[] { "unpkg.com", "cdn.jsdelivr", "cdnjs.cloudflare", "esm.sh", "skypack" })
             Assert.False(text.Contains(forbidden, StringComparison.OrdinalIgnoreCase),
-                $"'{asset}' names {forbidden}. The console's one runtime dependency is vendored and "
-              + "served from this origin; a remote fetch would need a CSP this colony does not have "
-              + "and a network it may not have either.");
+                $"'{asset}' names {forbidden}. The console has no runtime dependency and every asset "
+              + "is served from this origin; a remote fetch would need a CSP this colony does not "
+              + "have and a network it may not have either.");
 
         Assert.False(text.Contains("createObjectURL(new Blob", StringComparison.Ordinal),
             $"'{asset}' evaluates script from a Blob URL. That needs `script-src blob:` and is how "

@@ -550,147 +550,8 @@ a.nav-logo-link:focus-visible{outline:2px solid var(--logo-node,#93bdf2);outline
 .topo-ov{position:static !important;top:auto !important;left:auto !important;right:auto !important;bottom:auto !important;}
 .ov-hidden{display:none !important;}
 
-/* -- Colony Live HUD (v0.3.8.116) -------------------------------------------
-   The chrome colony-hud.js builds over the WebGL canvas, ported from the design.
-   Pointer events are off on the container and back on for controls, so dragging a
-   chamber through an empty region still reaches the renderer. */
-body.colony-live-3d .topo-ov-slot > *:not(#colony-viewbar):not(:has(#colony-viewbar)){display:none !important;}
-
-.clh{position:absolute;inset:0;pointer-events:none;font-family:var(--mono,var(--font));z-index:4;}
-.clh>*{pointer-events:auto;}
-.clh-hidden{display:none !important;}
-
-/* breadcrumbs + level, top-left */
-.clh-crumbs{position:absolute;top:10px;left:12px;display:flex;align-items:center;gap:7px;
-  background:rgba(9,13,24,.9);border:1px solid rgba(38,46,68,.9);border-radius:8px;
-  padding:5px 9px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}
-.clh-crumb{font-size:9px;color:var(--dim);letter-spacing:.12em;}
-.clh-crumb-on{color:var(--text);}
-.clh-sep{color:var(--dim);font-size:9px;}
-.clh-level{font-size:8px;color:var(--queen);letter-spacing:.12em;margin-left:4px;}
-.clh-back{margin-left:6px;}
-
-/* control bar, bottom-right */
-.clh-bar{position:absolute;bottom:12px;right:12px;display:flex;align-items:center;gap:4px;
-  background:rgba(9,13,24,.9);border:1px solid rgba(38,46,68,.9);border-radius:8px;padding:5px 7px;
-  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}
-.clh-bar-sep{width:1px;height:13px;background:var(--border);margin:0 3px;}
-.clh-btn{background:transparent;border:1px solid transparent;color:var(--muted);
-  font-size:9px;border-radius:4px;padding:3px 7px;letter-spacing:.1em;}
-.clh-btn:hover{color:var(--queen);border-color:rgba(255,63,164,.45);}
-.clh-btn:disabled{opacity:.45;cursor:default;}
-.clh-btn:focus-visible{outline:2px solid var(--queen);outline-offset:1px;}
-
-/* view popover */
-.clh-pop{position:absolute;bottom:52px;right:12px;width:250px;background:rgba(13,19,32,.96);
-  border:1px solid rgba(38,46,68,.9);border-radius:8px;padding:8px 10px;
-  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}
-.clh-pop-h{font-size:8px;color:var(--dim);letter-spacing:.14em;margin-bottom:6px;}
-.clh-pop-row{display:block;width:100%;text-align:left;background:none;border:none;
-  color:var(--muted);font-size:10px;padding:4px 2px;}
-.clh-pop-row:hover{color:var(--queen);}
-
-/* notices */
-.clh-notice{position:absolute;top:46px;left:12px;max-width:46ch;background:rgba(9,13,24,.9);
-  border:1px solid rgba(38,46,68,.9);border-left:2px solid var(--dim);border-radius:8px;
-  padding:6px 9px;font-size:9px;line-height:1.55;color:var(--muted);}
-.clh-notice.clh-history{border-left-color:var(--queen);color:var(--text);}
-
-/* inspectors, right */
-.clh-panel{position:absolute;top:56px;right:12px;width:322px;max-height:calc(100% - 130px);
-  overflow-y:auto;background:rgba(10,14,26,.92);border:1px solid rgba(38,46,68,.9);border-radius:8px;
-  padding:10px 12px 12px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);}
-.clh-x{float:right;background:none;border:none;color:var(--dim);font-size:11px;line-height:1;}
-.clh-x:hover{color:var(--text);}
-.clh-kick{font-size:8px;color:var(--queen);letter-spacing:.16em;margin-bottom:3px;}
-.clh-h{font-size:12px;color:var(--cream,#f4e9d6);margin-bottom:8px;font-weight:600;}
-.clh-h5{font-size:8px;color:var(--dim);text-transform:uppercase;letter-spacing:.12em;
-  margin:10px 0 5px;border-top:1px solid var(--border);padding-top:7px;}
-.clh-row{display:flex;justify-content:space-between;gap:10px;font-size:9.5px;padding:2px 0;}
-.clh-k{color:var(--dim);flex:0 0 auto;}
-.clh-v{color:var(--muted);text-align:right;word-break:break-word;}
-.clh-ok .clh-v{color:#10b981;}
-.clh-bad .clh-v{color:#ef4444;}
-.clh-unresolved .clh-v{color:var(--queen);}
-.clh-meter{height:3px;background:rgba(38,46,68,.9);border-radius:2px;margin:4px 0 2px;overflow:hidden;}
-.clh-meter-f{height:100%;background:var(--amber,#f59e0b);}
-.clh-list{display:flex;flex-direction:column;gap:2px;}
-.clh-item{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;
-  background:rgba(148,163,184,.05);border:1px solid transparent;border-radius:3px;padding:3px 6px;font-size:9.5px;}
-.clh-item:hover{border-color:var(--border);}
-.clh-item-n{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.clh-item-s{color:var(--dim);flex:0 0 auto;font-size:8px;}
-.clh-res-working .clh-item-n{color:var(--cream,#f4e9d6);}
-.clh-res-disabled{opacity:.5;}
-.clh-note{font-size:9px;color:var(--dim);line-height:1.65;margin-top:7px;}
-
-/* approvals */
-.clh-appr{border:1px solid var(--border);border-radius:5px;padding:7px 8px;margin-bottom:7px;}
-.clh-appr-t{font-size:10px;color:var(--text);margin-bottom:5px;}
-.clh-appr-btns{display:flex;gap:5px;margin-top:6px;}
-.clh-appr-btns .clh-btn{flex:1;text-align:center;border-color:var(--border);}
-.clh-approve{border-color:rgba(255,63,164,.5);color:var(--queen);}
-.clh-reject{border-color:rgba(248,113,113,.4);}
-
-/* active-work strip, bottom-left */
-.clh-strip{position:absolute;bottom:12px;left:12px;width:404px;background:rgba(9,13,24,.9);
-  border:1px solid rgba(38,46,68,.9);border-radius:8px;padding:8px 11px;
-  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}
-.clh-strip-id{font-size:9px;color:var(--dim);font-family:var(--mono);margin-bottom:6px;}
-.clh-segs{display:flex;gap:3px;margin-bottom:6px;}
-.clh-seg{flex:1;height:3px;background:var(--queen);border:none;border-radius:2px;padding:0;}
-.clh-seg:hover{background:var(--cream,#f4e9d6);}
-.clh-strip-t{font-size:9.5px;color:var(--muted);}
-.clh-strip-appr{display:flex;align-items:center;justify-content:space-between;gap:8px;
-  margin-top:7px;padding-top:7px;border-top:1px solid var(--border);
-  font-size:9px;color:var(--queen);}
-
-/* growth playback */
-.clh-timeline{position:absolute;left:12px;right:436px;bottom:64px;display:flex;align-items:center;
-  gap:10px;background:rgba(9,13,24,.9);border:1px solid rgba(38,46,68,.9);border-radius:8px;padding:7px 11px;}
-.clh-scrub{flex:1;accent-color:var(--queen);}
-.clh-stamp{font-size:9px;color:var(--muted);flex:0 0 auto;}
-.clh-coverage{font-size:8px;color:var(--dim);flex:0 0 auto;}
-@media (prefers-reduced-motion: reduce){.clh-btn,.clh-item{transition:none !important;}}
-
-.chud-legend{background:rgba(2,6,23,.55);border:1px solid rgba(34,211,238,.18);border-radius:6px;padding:7px 9px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
-  /* v2.14.15: the legend now lists every registry ant instead of the first 15, so it scrolls
-     rather than growing past the canvas. */
-  max-height:38vh;overflow-y:auto;}
-/* v0.3.8.55 (field report): the legend panels fold to their headers. The wrap layout the legend
-   always had moved onto its .chud-body so the header can sit above it. */
-.chud-legend .chud-body{display:flex;flex-wrap:wrap;gap:5px 10px;}
-.chud-hd{cursor:pointer;user-select:none;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:8px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);}
-.chud-legend .chud-hd{margin-bottom:5px;}
-.chud-hd .ov-caret{color:var(--dim);font-size:9px;}
-.topo-ov.ov-collapsed .chud-body{display:none !important;}
-.topo-ov.ov-collapsed .chud-hd{margin-bottom:0;}
-.chud-caste{display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);}
-.chud-caste .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
-.chud-caste.on{color:var(--text);}
-/* v0.3.8.49 (§18): the state-legend header separates caste colours from state-ring colours. */
-.chud-state-hd{font-size:8px;font-weight:700;letter-spacing:.1em;color:var(--dim);margin:6px 0 2px;padding-top:5px;border-top:1px solid rgba(255,255,255,.06);}
-.chud-caste.on .dot{box-shadow:0 0 7px currentColor;animation:chud-pulse 1.5s ease-in-out infinite;}
-.chud-phero{background:rgba(2,6,23,.55);border:1px solid rgba(34,211,238,.18);border-radius:6px;padding:8px 10px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);}
-.chud-phero-hd{font-size:8px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin-bottom:6px;}
-.chud-trail{margin-bottom:5px;}
-.chud-trail:last-child{margin-bottom:0;}
-.chud-trail .tk{font-size:9px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:228px;}
-.chud-trail .tb{height:3px;border-radius:2px;background:rgba(255,255,255,.06);margin-top:2px;overflow:hidden;}
-.chud-trail .tb>i{display:block;height:100%;border-radius:2px;transition:width .5s ease;}
-.chud-empty{font-size:9px;color:var(--dim);line-height:1.4;}
-@keyframes chud-pulse{0%,100%{opacity:.55;}50%{opacity:1;}}
-@media (prefers-reduced-motion:reduce){ .chud-caste.on .dot{animation:none;} }
-.colony-viewbar{position:absolute;top:10px;right:10px;z-index:6;display:flex;gap:4px;align-items:center;background:rgba(2,6,23,.6);border:1px solid rgba(34,211,238,.18);border-radius:6px;padding:5px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);}
-.cv-btn{border:0;background:transparent;color:var(--dim);font-size:10px;border-radius:4px;padding:5px 7px;cursor:pointer;}
-.cv-btn:hover{color:var(--text);background:rgba(255,255,255,.06);}
-.cv-btn.on{color:var(--queen);background:rgba(var(--queen-rgb),.12);}
 /* v0.3.8.117: retired view modes stay in the DOM so app.js keeps working, and out of sight. */
 .cv-hidden{display:none !important;}
-/* v0.3.8.117: the 3D HUD renders its control bar INTO #colony-viewbar rather than floating a
-   second bar bottom-right. One row of controls, one place to look. */
-.clh-bar.clh-bar-inline{position:static;bottom:auto;right:auto;background:none;border:0;
-  padding:0;backdrop-filter:none;-webkit-backdrop-filter:none;gap:3px;}
 #colony-right{
   width:225px;flex-shrink:0;overflow-y:auto;overflow-x:hidden;
   border-left:1px solid var(--border);display:flex;flex-direction:column;padding:8px;gap:8px;
@@ -1795,6 +1656,89 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       outline:2px solid var(--queen);outline-offset:2px;border-radius:6px;}
     /* Respect reduced-motion for the redesign's nav transitions (matches the rest of the app). */
     @media (prefers-reduced-motion:reduce){ .nav-chev,.nav-child,.subnav-tab{transition:none !important;} }
+    /* ---- Colony Live home (design doc §17) ------------------------------------------------- */
+    #colony-stage{flex:1;min-width:0;display:flex;flex-direction:column;position:relative;background:#050608;}
+    .clb{flex:none;display:flex;align-items:center;gap:10px;height:40px;padding:0 12px;
+      border-bottom:1px solid rgba(255,255,255,.06);background:rgba(5,6,8,.92);
+      font-family:var(--mono);font-size:10.5px;color:var(--muted);letter-spacing:.02em;white-space:nowrap;overflow:hidden;}
+    .clb-brand{font-weight:700;letter-spacing:.22em;color:var(--cream);font-size:11px;}
+    .clb-sub{letter-spacing:.22em;color:#5ec4cf;font-size:10px;}
+    .clb-sep{width:1px;height:16px;background:rgba(255,255,255,.12);flex:none;}
+    .clb-mission{display:flex;align-items:center;gap:6px;min-width:0;max-width:34vw;}
+    .clb-dot{width:6px;height:6px;border-radius:50%;background:var(--dim);flex:none;}
+    .clb-dot.on{background:var(--queen);box-shadow:0 0 8px rgba(var(--queen-rgb),.7);animation:clb-pulse 1.6s ease-in-out infinite;}
+    @keyframes clb-pulse{0%,100%{opacity:1}50%{opacity:.45}}
+    .clb-goal{overflow:hidden;text-overflow:ellipsis;color:var(--text);}
+    .clb-goal.idle{color:var(--dim);}
+    .clb-prog{width:110px;height:3px;border-radius:2px;background:rgba(255,255,255,.08);overflow:hidden;flex:none;}
+    .clb-prog-fill{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--queen-deep),var(--queen));transition:width .6s ease;}
+    .clb-count{color:var(--dim);min-width:26px;}
+    .clb-spacer{flex:1;}
+    .clb-needs{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:12px;cursor:pointer;
+      border:1px solid rgba(255,215,106,.45);background:rgba(255,215,106,.08);color:#ffd76a;font:inherit;font-size:10.5px;}
+    .clb-needs:hover{background:rgba(255,215,106,.16);}
+    .clb-needs-dot{width:6px;height:6px;border-radius:50%;background:#ffd76a;box-shadow:var(--glow-gold);}
+    .clb-views{display:flex;align-items:center;gap:2px;padding:2px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(255,255,255,.02);}
+    .clb-btn{height:24px;padding:0 9px;border-radius:6px;border:1px solid transparent;background:transparent;color:var(--muted);font:inherit;font-size:10.5px;cursor:pointer;}
+    .clb-btn:hover{color:var(--text);background:rgba(255,255,255,.05);}
+    .clb-btn.on{color:#ff8fc4;background:rgba(var(--queen-rgb),.12);border-color:rgba(var(--queen-rgb),.28);}
+    .clb-focus{color:var(--text);}
+    /* composer */
+    .ccp{flex:none;padding:10px 14px 8px;background:linear-gradient(0deg,rgba(5,6,8,.98) 55%,rgba(5,6,8,.6));}
+    .ccp-box{max-width:820px;margin:0 auto;display:flex;align-items:flex-end;gap:8px;padding:8px 8px 8px 10px;border-radius:16px;
+      /* Opaque on purpose: UiShellTests forbids frosted glass over the colony, and the rule is
+         right — the map should never be read THROUGH the thing that talks to it. */
+      background:rgba(14,18,28,.97);border:1px solid rgba(255,255,255,.1);box-shadow:0 12px 40px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.04);}
+    .ccp-box:focus-within{border-color:rgba(var(--queen-rgb),.45);box-shadow:0 12px 40px rgba(0,0,0,.45),0 0 0 3px rgba(var(--queen-rgb),.12);}
+    .ccp-scope{display:flex;flex-direction:column;gap:6px;flex:none;}
+    .ccp-sel{height:30px;max-width:190px;padding:0 8px;border-radius:9px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:var(--text);font:inherit;font-size:11.5px;cursor:pointer;}
+    .ccp-newname{height:30px;width:190px;padding:0 9px;border-radius:9px;border:1px solid rgba(var(--queen-rgb),.35);background:rgba(255,255,255,.04);color:var(--text);font:inherit;font-size:11.5px;}
+    .ccp-input{flex:1;min-width:0;min-height:30px;max-height:160px;resize:none;padding:6px 4px;border:none;outline:none;background:transparent;color:var(--text);font:inherit;font-size:13.5px;line-height:1.45;}
+    .ccp-input::placeholder{color:var(--dim);}
+    .ccp-actions{display:flex;gap:6px;flex:none;}
+    .ccp-btn{height:30px;padding:0 13px;border-radius:9px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:var(--text);font:inherit;font-size:12px;cursor:pointer;}
+    .ccp-btn:hover{background:rgba(255,255,255,.1);}
+    .ccp-btn:disabled{opacity:.4;cursor:not-allowed;}
+    .ccp-run{border-color:rgba(var(--queen-rgb),.5);background:rgba(var(--queen-rgb),.16);color:#ffb3d8;}
+    .ccp-run:hover{background:rgba(var(--queen-rgb),.28);}
+    .ccp-foot{max-width:820px;margin:6px auto 0;display:flex;justify-content:space-between;gap:12px;font-family:var(--mono);font-size:9.5px;color:rgba(185,194,207,.45);}
+    .ccp-state{color:var(--muted);}
+    .ccp-state.err{color:#ff8fa8;}
+    /* focus mode: the stage is the page (scoped with :has so leaving the page restores the chrome) */
+    body.colony-focus:has(#page-colony.active) #nav-rail,
+    body.colony-focus:has(#page-colony.active) #top-header,
+    body.colony-focus:has(#page-colony.active) #domain-subnav,
+    body.colony-focus:has(#page-colony.active) #colony-left,
+    body.colony-focus:has(#page-colony.active) #colony-right{display:none !important;}
+    /* live on: the classic-only controls step aside; the old CTA bar yields to the composer */
+    body.colony-live-on #colony-viewbar,
+    body.colony-live-on #zoom-hint,
+    body.colony-live-on #mission-bar,
+    body.colony-live-on .chud-legend,
+    body.colony-live-on .chud-phero{display:none !important;}
+    .clb-sel{height:24px;padding:0 6px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:var(--text);font:inherit;font-size:10.5px;cursor:pointer;}
+    .clb-pop-wrap{position:relative;display:inline-flex;}
+    .clb-pop{position:absolute;top:30px;right:0;z-index:30;min-width:230px;padding:8px;border-radius:10px;
+      background:rgba(10,13,20,.98);border:1px solid rgba(255,255,255,.12);box-shadow:0 14px 40px rgba(0,0,0,.5);display:flex;flex-direction:column;gap:6px;}
+    .clb-row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-family:var(--mono);font-size:10.5px;color:var(--muted);}
+    .clb-row-btn{width:100%;justify-content:center;border:1px solid rgba(255,255,255,.1);margin-top:2px;}
+    .clb-sector{position:absolute;top:50px;left:14px;z-index:5;display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:10px;
+      background:rgba(10,13,20,.9);border:1px solid rgba(255,255,255,.1);font-family:var(--mono);font-size:10.5px;color:var(--muted);}
+    .clb-sector-dot{width:8px;height:8px;border-radius:50%;background:var(--dim);}
+    .clb-sector-name{width:170px;height:24px;padding:0 6px;border-radius:6px;border:1px solid transparent;background:transparent;color:var(--cream);font:inherit;font-size:11px;letter-spacing:.12em;text-transform:uppercase;}
+    .clb-sector-name:hover,.clb-sector-name:focus{border-color:rgba(255,255,255,.14);background:rgba(255,255,255,.04);outline:none;}
+    .clb-record{position:absolute;top:92px;left:14px;z-index:5;max-width:340px;padding:8px 10px;border-radius:10px;
+      background:rgba(10,13,20,.92);border:1px solid rgba(255,255,255,.1);font-family:var(--mono);font-size:10.5px;color:var(--muted);}
+    .clb-record-title{font-size:11.5px;color:var(--cream);margin-bottom:3px;word-break:break-word;}
+    .clb-record-meta{color:var(--dim);margin-bottom:6px;}
+    .clb-record-row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+    .clb-record-tag{padding:1px 7px;border-radius:9px;border:1px solid rgba(94,196,207,.4);color:#8fd8df;font-size:9.5px;}
+    body:not(.colony-live-on) #clb-record,
+    body:not(.colony-live-on) #clb-sector,
+    body:not(.colony-live-on) #clb-views .clb-btn:not(#clb-3d):not(.clb-focus),
+    body:not(.colony-live-on) .clb-pop-wrap{display:none;}
+    @media (max-width:900px){ .clb-views .clb-btn:not(.clb-focus){display:none;} .clb-prog,.clb-count{display:none;} .ccp-sel{max-width:130px;} }
+    @media (prefers-reduced-motion:reduce){ .clb-dot.on{animation:none;} .clb-prog-fill{transition:none;} }
   </style>
 
   <!-- -- Nav Rail ------------------------------------------------------------ -->
@@ -2272,7 +2216,63 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 
         </div><!-- /colony-left -->
 
-        <!-- Canvas area -->
+        <!-- Colony Live home (design doc §17): the stage holds the Live topbar, the ONE canvas
+             area (still re-parented to Dashboard/Chat exactly as before), and the composer. In
+             focus mode (body.colony-focus, the landing default) the nav rail, header and both side
+             columns fold away and the stage is the page. colony-home.js drives it. -->
+        <div id="colony-stage">
+          <div id="colony-live-bar" class="clb" role="toolbar" aria-label="Colony Live">
+            <span class="clb-brand">ANTHILL</span><span class="clb-sub">COLONY LIVE</span>
+            <span class="clb-sep"></span>
+            <span class="clb-mission"><span class="clb-dot" id="clb-dot"></span><span class="clb-goal" id="clb-goal">colony idle</span></span>
+            <span class="clb-prog" id="clb-prog" title="Tasks complete in the active mission"><span class="clb-prog-fill" id="clb-prog-fill"></span></span>
+            <span class="clb-count" id="clb-count"></span>
+            <span class="clb-spacer"></span>
+            <button class="clb-needs" id="clb-needs" data-homeact="needs" title="Approvals waiting on you — opens Chat" style="display:none"><span class="clb-needs-dot"></span><span id="clb-needs-txt">0 need you</span></button>
+            <div class="clb-views" id="clb-views">
+              <button class="clb-btn on" data-homeact="survey" title="The whole colony">Survey</button>
+              <button class="clb-btn" data-homeact="mission" title="Approach the Queen's core">Mission</button>
+              <button class="clb-btn" data-homeact="memory" title="Approach Memory">Memory</button>
+              <button class="clb-btn" data-homeact="mounds" title="Approach the Micromound">Mounds</button>
+              <button class="clb-btn" data-homeact="follow" title="Ride the active mission circuit">Follow</button>
+              <button class="clb-btn" data-homeact="resetview" title="Reset orbit and zoom">Reset view</button>
+              <span class="clb-sep"></span>
+              <span class="clb-pop-wrap">
+                <button class="clb-btn" id="clb-viewbtn" data-homeact="viewmenu" title="View options" aria-haspopup="true" aria-expanded="false">View ▾</button>
+                <div class="clb-pop" id="clb-viewpop" role="menu" style="display:none">
+                  <label class="clb-row"><span>Environment</span>
+                    <select class="clb-sel" id="clb-env" aria-label="Environment">
+                      <option value="space">Galaxy</option><option value="strata">Strata</option>
+                      <option value="plane">Plane</option><option value="nebula">Nebula</option><option value="void">Void</option>
+                    </select></label>
+                  <label class="clb-row"><span>Motion</span>
+                    <select class="clb-sel" id="clb-motion" aria-label="Motion"><option value="off">Off</option><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option></select></label>
+                  <label class="clb-row"><span>Labels</span>
+                    <select class="clb-sel" id="clb-labels" aria-label="Labels"><option value="normal" selected>All sectors</option><option value="min">Focused only</option></select></label>
+                  <label class="clb-row"><span>Pheromone trails</span>
+                    <select class="clb-sel" id="clb-trails" aria-label="Pheromone trails"><option value="on" selected>On</option><option value="off">Off</option></select></label>
+                  <button class="clb-btn clb-row-btn" data-homeact="resetlayout" title="Return every sector to its canonical position and name">⌂ Reset colony layout</button>
+                </div>
+              </span>
+              <button class="clb-btn" id="clb-3d" data-homeact="toggle3d" title="Switch between Colony Live and the classic 2D canvas">Classic 2D</button>
+              <button class="clb-btn clb-focus" id="clb-focus" data-homeact="focus" title="Toggle the full-screen colony and the console around it">Console</button>
+            </div>
+          </div>
+          <!-- the focused sector: rename it, read its counts, step back. Shown by colony-home.js on
+               the renderer's 'sector' event, hidden on 'deselect'. -->
+          <div id="clb-sector" class="clb-sector" style="display:none">
+            <span class="clb-sector-dot" id="clb-sector-dot"></span>
+            <input class="clb-sector-name" id="clb-sector-name" maxlength="28" aria-label="Sector name" title="Rename this sector (Enter to save)">
+            <span class="clb-sector-facts" id="clb-sector-facts"></span>
+            <button class="clb-btn" data-homeact="survey" title="Back to the whole colony (Esc)">← Survey</button>
+          </div>
+          <!-- a selected record: event-derived facts, read-only (the §19 record index does not exist
+               yet, and this card does not pretend it does). "Open ant" goes to the Agent Inspector. -->
+          <div id="clb-record" class="clb-record" style="display:none">
+            <div class="clb-record-title" id="clb-record-title"></div>
+            <div class="clb-record-meta" id="clb-record-meta"></div>
+            <div class="clb-record-row"><span class="clb-record-tag" id="clb-record-verif">recorded</span><button class="clb-btn" data-homeact="openant" id="clb-record-open">Open ant →</button></div>
+          </div>
         <div id="colony-canvas-area">
           <canvas id="c"></canvas>
           <!-- Canvas 2.0 HUD overlay: caste legend + live pheromone trails -->
@@ -2349,6 +2349,27 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="bar-hint">Describe what you want done — the Queen plans it and the colony carries it out.</div>
           </div>
         </div><!-- /colony-canvas-area -->
+          <!-- The composer. A doorway, not a second pipeline (§3: Chat is the one mission entry):
+               it resolves WHERE the message lives — a project, a new project, or the Questions
+               project for a plain question — then hands the text to Chat's own send. -->
+          <div id="colony-composer" class="ccp">
+            <div class="ccp-box">
+              <div class="ccp-scope">
+                <select id="ccp-scope" class="ccp-sel" aria-label="Where this conversation lives" title="Where this conversation lives">
+                  <option value="q">Just a question</option>
+                  <option value="new">New project…</option>
+                </select>
+                <input id="ccp-newname" class="ccp-newname" placeholder="Name the project" maxlength="120" aria-label="New project name" style="display:none">
+              </div>
+              <textarea id="ccp-input" class="ccp-input" rows="1" maxlength="20000" placeholder="Ask the colony, or describe the work…" aria-label="Message to the colony"></textarea>
+              <div class="ccp-actions">
+                <button class="ccp-btn" id="ccp-ask" data-homeact="ask" title="Ask — a streamed answer, no work started (Enter)">Ask</button>
+                <button class="ccp-btn ccp-run" id="ccp-run" data-homeact="run" title="Run — the Queen plans it and the colony carries it out (Ctrl+Enter)">Run mission</button>
+              </div>
+            </div>
+            <div class="ccp-foot"><span class="ccp-state" id="ccp-state"></span><span class="ccp-hint" id="ccp-hint">drag orbit · scroll zoom · click a sphere to approach · shell = recent context, core = durable memory</span></div>
+          </div>
+        </div><!-- /colony-stage -->
 
         <!-- Right sidebar: inspector + events -->
         <div id="colony-right">
@@ -4306,17 +4327,14 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 <script src="/ui/inspector-routing.js" defer></script>
 <script src="/ui/themes.js" defer></script>
 <script src="/ui/console-extras.js" defer></script>
-<!-- Colony Live (design doc §17, stage 3) — topology before live (live consumes the topology's scene). Both
-     after app.js like every split asset; app.js reaches them only at click time. -->
-<!-- Colony Live. Load order is load-bearing: three.js defines window.THREE, the renderer
-     reads it, and colony-live.js picks a renderer at create() time. All same-origin, so the
-     CSP stays script-src 'self' and the page still carries no inline script. -->
-<script src="/ui/vendor/three.min.js" defer></script>
+<!-- Colony Live. Load order is load-bearing: the reducer (topology) before the renderer (live)
+     before the wiring (host) before the page chrome (home). All same-origin, no vendored
+     libraries — the renderer is canvas-2D — so the CSP stays script-src 'self' and the page
+     still carries no inline script. -->
 <script src="/ui/colony-topology.js" defer></script>
-<script src="/ui/colony-renderer.js" defer></script>
 <script src="/ui/colony-live.js" defer></script>
-<script src="/ui/colony-hud.js" defer></script>
 <script src="/ui/colony-host.js" defer></script>
+<script src="/ui/colony-home.js" defer></script>
 <!-- v0.3.8.52: the homelab domain, split out of app.js. AFTER app.js on purpose — its
      PAGE_ENTER['homelab'] registration runs at load and needs PAGE_ENTER to exist. `defer`
      guarantees the order (deferred scripts execute in document order), and
