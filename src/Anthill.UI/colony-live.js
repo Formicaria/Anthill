@@ -56,11 +56,28 @@
     var root = null, cv = null, ctx = null, tip = null, crumb = null;
     var W = 0, H = 0, scx = 0, scy = 0, raf = 0, ro = null, destroyed = false;
     var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    var opts = { motion: 'normal', labels: 'normal', trails: true, env: 'space' };   // env: space (galaxy, default) | strata | plane | nebula | void
+    // env: space (galaxy, default) | light | strata | plane | nebula | void.  labels: none | min | normal.
+    // conduits: density less | normal | more; bright 0.4–2; color null (each conduit's own) or '#rrggbb'.
+    var opts = { motion: 'normal', labels: 'normal', trails: true, env: 'space', conduits: { density: 'normal', bright: 1, color: null } };
+    function isLight() { return opts.env === 'light'; }
+    // text ink and the sector palette follow the environment: dark ink on the light page, and the
+    // chamber colours darkened so grains read on paper instead of washing out
+    function ink(a) { return isLight() ? 'rgba(29,40,54,' + a + ')' : 'rgba(201,210,221,' + a + ')'; }
+    function dim(a) { return isLight() ? 'rgba(79,100,125,' + a + ')' : 'rgba(107,116,136,' + a + ')'; }
+    function shade3(c, k) { return [Math.round(c[0] * k), Math.round(c[1] * k), Math.round(c[2] * k)]; }
+    function lighten3(c, k) { return [Math.round(c[0] + (255 - c[0]) * k), Math.round(c[1] + (255 - c[1]) * k), Math.round(c[2] + (255 - c[2]) * k)]; }
+    function sectorColors(s) {
+      var base = (s.style && s.style.color) ? h2(s.style.color) : h2(s.color);
+      var core = (s.style && s.style.color) ? lighten3(base, .38) : h2(s.core);
+      if (isLight()) { base = shade3(base, .62); core = shade3(core, .55); }
+      return { c0: base, c1: core };
+    }
     var live = function () { return !reduced && opts.motion !== 'off'; };
 
     var rnd = lcg(42);
-    var SEC = SECTOR_DEFS.map(function (d) { return Object.assign({ morph: 0, frozen: null, defPos: d.pos.slice(), defLabel: d.label, present: false, pts: [], links: [], records: [], residents: [], clusters: [], counts: null }, d, { pos: d.pos.slice() }); });
+    var SEC = SECTOR_DEFS.map(function (d) { return Object.assign({ morph: 0, frozen: null, defPos: d.pos.slice(), defLabel: d.label, present: false, pts: [], links: [], records: [], residents: [], clusters: [], counts: null, style: { color: null, glow: 1, bright: 1 } }, d, { pos: d.pos.slice() }); });
+    // operator overrides for ants: { roleIdLower: { name, color } } — presentation, persisted with the layout
+    var antStyles = {};
     var bySec = {}; SEC.forEach(function (s) { bySec[s.id] = s; });
     /** A chamber is drawn only when the scene names it (the mound only when the fleet has one). */
     function shown() { return SEC.filter(function (s) { return s.present; }); }
@@ -85,7 +102,7 @@
 
     // active route + ants — REPLACED wholesale by setTopology; demo defaults below
     var rootIndex = {}; roots.forEach(function (r, i) { rootIndex[r.a + '>' + r.b] = i; rootIndex[r.b + '>' + r.a] = i; });
-    var circuit = [], retSeg = null, ants = [], attention = [], partial = false;
+    var circuit = [], retSeg = null, ants = [], attention = [], partial = false, lastScene = null;
     function routeFromSectorPath(path, paused) {
       circuit = [];
       for (var i = 0; i < path.length - 1; i++) {
@@ -123,9 +140,17 @@
           center: [Math.cos(th) * rad * R * shellFrac, y * R * shellFrac * .85, Math.sin(th) * rad * R * shellFrac] };
       });
     }
+    /* SYMMETRIC CLOUD SEATS. The reference seated records inside their cluster with a hashed
+       direction, which reads as lopsided clumps once one cluster dominates. The cloud is now a
+       fixed Fibonacci lattice of 96 slots on the sphere — evenly spread by construction — and a
+       record takes the slot its id hashes to (linear probe on collision), at a radius its
+       durability decides. Stable per record, symmetric per chamber, and the ordered strata on
+       focus are untouched. */
+    var SLOTS = 96, LATTICE = [];
+    for (var li = 0; li < SLOTS; li++) { var zz = 1 - 2 * (li + .5) / SLOTS, rr = Math.sqrt(Math.max(0, 1 - zz * zz)), ph = li * GOLDEN; LATTICE.push([Math.cos(ph) * rr, zz, Math.sin(ph) * rr]); }
     function rebuildSector(s, sec) {
       var old = {}; s.pts.forEach(function (p) { if (p.rec) old[p.rec.id] = p; });
-      var pts = [], links = [];
+      var pts = [], links = [], taken = {};
       // the trail the colony recorded for whichever unit authored a record; a role with no trail is
       // null, which is not zero — nothing has run
       var trails = {};
@@ -145,10 +170,10 @@
           var place = r.place || hashPlace(String(id));
           var verified = r.verification === 'verified', pher = trailOf(r.ant);
           var durable = (verified ? .55 : .1) + pher * .45, depth = 1 - Math.min(.94, durable);
-          var dir = [unit(id, 'dx') * 2 - 1, unit(id, 'dy') * 2 - 1, unit(id, 'dz') * 2 - 1], len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
-          // a crowded cluster spreads wider in the cloud, so thirty records read as a swarm, not a blot
-          var spread = s.R * (.16 + .18 * Math.min(1, (mcount - 1) / 20)), kk = .5 + depth * .75;
-          var o = [cl.center[0] * kk + dir[0] / len * spread, cl.center[1] * kk + dir[1] / len * spread, cl.center[2] * kk + dir[2] / len * spread];
+          var slot = Math.floor(unit(id, 'slot') * SLOTS) % SLOTS, probe = 0; while (taken[slot] && probe < SLOTS) { slot = (slot + 1) % SLOTS; probe++; }
+          var ring = Math.floor(Object.keys(taken).length / SLOTS); taken[slot] = true;   // a 97th record starts a second, inner ring
+          var seatR = s.R * (verified ? .30 + (1 - depth) * .1 : .62 + depth * .28) * (ring ? .8 : 1);
+          var o = [LATTICE[slot][0] * seatR, LATTICE[slot][1] * seatR, LATTICE[slot][2] * seatR];
           var ang = k * SPIRAL_STEP, rad = s.R * .86 * band * Math.sqrt((k + .55) / mcount);
           var org = [Math.cos(ang) * rad, y, Math.sin(ang) * rad];
           var rec = { id: id, title: r.title || r.recordType || 'record', type: r.recordType || r.type || 'record', ant: r.ant || '—', mission: r.missionId || '', taskId: r.taskId || '', time: r.createdAt || '', verif: r.verification || 'not_scanned', cluster: cl.id, pher: pher };
@@ -168,11 +193,13 @@
         var n = Math.max(1, (sec.residents || []).length), th = ri / n * TAU + .7, yy = Math.sin(ri * 2.4) * .25;
         var base = [Math.cos(th) * s.R * .55, yy * s.R, Math.sin(th) * s.R * .55];
         var rowX = ((ri + .5) / n - .5) * s.R * 2.2;
-        pts.push({ o: base, org: [rowX, top, 0], layer: 1, cl: 0, sz: 2.4, a: .95, ph: ri, born: 0, rec: null, below: !!(ri % 2), resident: { roleId: r.roleId, name: r.name || r.roleId, status: r.status, trail: r.trail || null, workers: (r.workers || []).length } });
+        var ov = antStyles[String(r.roleId || '').toLowerCase()] || {};
+        pts.push({ o: base, org: [rowX, top, 0], layer: 1, cl: 0, sz: 2.4, a: .95, ph: ri, born: 0, rec: null, below: !!(ri % 2), antColor: ov.color || null, resident: { roleId: r.roleId, name: ov.name || r.name || r.roleId, registryName: r.name || r.roleId, status: r.status, trail: r.trail || null, workers: (r.workers || []).length, color: ov.color || null } });
         var roleIdx = pts.length - 1;
         (r.workers || []).forEach(function (w, wi) {
           var wn = (r.workers || []).length, wt = th + (wi - (wn - 1) / 2) * .28;
-          pts.push({ o: [Math.cos(wt) * s.R * .68, base[1] + (wi % 2 ? .08 : -.08) * s.R, Math.sin(wt) * s.R * .68], org: [rowX + (wi - (wn - 1) / 2) * s.R * .12, top - s.R * .16, 0], layer: 1, cl: 0, sz: 1.4, a: .8, ph: wi, born: 0, rec: null, resident: { roleId: w.id, name: w.name || w.id, parent: w.parent || r.roleId, status: w.enabled === false ? 'disabled' : r.status, worker: true } });
+          var ovw = antStyles[String(w.id || '').toLowerCase()] || {};
+          pts.push({ o: [Math.cos(wt) * s.R * .68, base[1] + (wi % 2 ? .08 : -.08) * s.R, Math.sin(wt) * s.R * .68], org: [rowX + (wi - (wn - 1) / 2) * s.R * .12, top - s.R * .16, 0], layer: 1, cl: 0, sz: 1.4, a: .8, ph: wi, born: 0, rec: null, antColor: ovw.color || ov.color || null, resident: { roleId: w.id, name: ovw.name || w.name || w.id, registryName: w.name || w.id, parent: w.parent || r.roleId, status: w.enabled === false ? 'disabled' : r.status, worker: true, color: ovw.color || null } });
           links.push([pts.length - 1, roleIdx]);   // the roster chain: worker → its role
         });
       });
@@ -189,14 +216,19 @@
     // pheromone streams (the 3h connection language: particles, not lines)
     var rootStreams = [], circStreams = [], retStream = [], authStream = [];
     function mkStream(pts, n, s0, s1) { var out = []; for (var i = 0; i < n; i++) out.push({ pts: pts, t: rnd(), sp: s0 + rnd() * (s1 - s0), n: (rnd() - .5) * 10, ph: rnd() * TAU }); return out; }
+    function densityK() { return opts.conduits.density === 'less' ? .5 : opts.conduits.density === 'more' ? 1.9 : 1; }
     function buildStreams() {
       // pace (mockup 2a): unhurried. A particle takes ~25–60 s to cross a root; the circuit is the
-      // fastest thing on screen and still takes ~15 s a segment.
-      rootStreams = roots.filter(function (r) { return r.a === 'queen'; }).map(function (r) { return mkStream(r.strands[0], 6, .000016, .00003); });
-      circStreams = circuit.map(function (sg) { return { col: sg.col, ps: mkStream(sg.pts, 22, .00004, .00007) }; });
-      retStream = retSeg ? mkStream(retSeg.pts, 8, .00003, .00005) : [];
-      authStream = mkStream(authority.strands[0], 7, .00002, .000035);
+      // fastest thing on screen and still takes ~15 s a segment. Counts scale with the operator's
+      // density choice (less / normal / more).
+      var k = densityK();
+      rootStreams = roots.filter(function (r) { return r.a === 'queen'; }).map(function (r) { return mkStream(r.strands[0], Math.round(6 * k), .000016, .00003); });
+      circStreams = circuit.map(function (sg) { return { col: sg.col, ps: mkStream(sg.pts, Math.round(22 * k), .00004, .00007) }; });
+      retStream = retSeg ? mkStream(retSeg.pts, Math.round(8 * k), .00003, .00005) : [];
+      authStream = mkStream(authority.strands[0], Math.round(7 * k), .00002, .000035);
     }
+    /** A conduit's particle colour: the operator's override, else its own (darkened on the light page). */
+    function conduitRGB(own) { var c = opts.conduits.color ? h2(opts.conduits.color) : own.split(',').map(Number); if (isLight()) c = shade3(c, .7); return c.join(','); }
 
     // 3c galaxy environment: world-space stars + dust so everything parallaxes
     var DUST = [], STARS = [];
@@ -330,14 +362,25 @@
     function lightOffset(s, pr) { var q = proj([s.pos[0] + LKEY[0] * s.R * .55, s.pos[1] + LKEY[1] * s.R * .55, s.pos[2] + LKEY[2] * s.R * .55]); return q ? { dx: q.x - pr.x, dy: q.y - pr.y, front: q.zc < pr.zc } : { dx: 0, dy: 0, front: true }; }
     function pathAt(pts, t, rev) { if (rev) t = 1 - t; var fi = Math.min(.999, Math.max(0, t)) * (pts.length - 1), jj = Math.floor(fi); return V(pts[jj], pts[Math.min(pts.length - 1, jj + 1)], fi - jj); }
     function setCrumb(t) { if (crumb) crumb.textContent = t + (partial ? ' · partial history' : ''); }
+    /** The tooltip and breadcrumb are DOM, so they take their ink from the environment here. */
+    function restyleChrome() {
+      if (tip) { tip.style.background = isLight() ? 'rgba(255,255,255,.96)' : 'rgba(6,8,10,.94)'; tip.style.borderColor = isLight() ? 'rgba(29,50,80,.18)' : 'rgba(255,255,255,.12)'; tip.style.color = isLight() ? '#4f647d' : '#8b93a8'; }
+      if (crumb) crumb.style.color = isLight() ? 'rgba(29,40,54,.55)' : 'rgba(185,194,207,.45)';
+    }
 
     // operator layout: positions and name overrides. Emitted to the host, which persists them in
     // /ui/state beside the console's other layout; applied back through setLayout. One store.
     function layoutSnapshot() {
-      var positions = {}, names = {};
-      SEC.forEach(function (s) { positions[s.id] = s.pos.slice(); if (s.label !== s.defLabel) names[s.id] = s.label; });
-      return { schema: LAYOUT_SCHEMA, positions: positions, names: names };
+      var positions = {}, names = {}, styles = {};
+      SEC.forEach(function (s) {
+        positions[s.id] = s.pos.slice(); if (s.label !== s.defLabel) names[s.id] = s.label;
+        if (s.style.color || s.style.glow !== 1 || s.style.bright !== 1) styles[s.id] = { color: s.style.color || null, glow: s.style.glow, bright: s.style.bright };
+      });
+      var ants = {}; Object.keys(antStyles).forEach(function (k) { if (antStyles[k].name || antStyles[k].color) ants[k] = antStyles[k]; });
+      return { schema: LAYOUT_SCHEMA, positions: positions, names: names, styles: styles, ants: ants };
     }
+    function validColor(c) { return typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c) ? c.toLowerCase() : null; }
+    function clampNum(v, lo, hi, dflt) { v = Number(v); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : dflt; }
     function saveLayout() { emit('layout', layoutSnapshot()); }
     /* THE WEBGL BUILD'S LAYOUT (schema 2) IS MIGRATED, NOT DROPPED. `.116`–`.117` persisted
        `{ schema: 2, sectors: { id: [x, y, z] } }` in three.js coordinates: y up, home seats on a
@@ -367,8 +410,12 @@
         if (Array.isArray(p) && p.length === 3 && p.every(function (n) { return typeof n === 'number' && isFinite(n) && Math.abs(n) <= 1200; })) s.pos = p.slice();
         var nm = l.names && l.names[s.id];
         if (typeof nm === 'string' && nm.trim()) { s.label = nm.trim().toUpperCase().slice(0, 28); s.renamed = true; }
+        var st = l.styles && l.styles[s.id];
+        if (st && typeof st === 'object') s.style = { color: validColor(st.color), glow: clampNum(st.glow, .5, 2.5, 1), bright: clampNum(st.bright, .3, 2.5, 1) };
       });
-      rebuildAll(); return true;
+      antStyles = {};
+      if (l.ants && typeof l.ants === 'object') Object.keys(l.ants).slice(0, 200).forEach(function (k) { var a = l.ants[k] || {}; var nm2 = typeof a.name === 'string' ? a.name.trim().slice(0, 28) : ''; var col = validColor(a.color); if (nm2 || col) antStyles[String(k).toLowerCase()] = { name: nm2 || null, color: col }; });
+      rebuildAll(); if (lastScene) api.setTopology(lastScene); return true;
     }
 
     buildStreams();   // nothing lit until the topology says so — an idle colony is idle
@@ -488,9 +535,23 @@
         if (st.spike) { var L = st.sz * 4 * tw2; ctx.strokeStyle = 'rgba(' + st.c + ',' + (a3 * .35) + ')'; ctx.lineWidth = .6; ctx.beginPath(); ctx.moveTo(q2.x - L, q2.y); ctx.lineTo(q2.x + L, q2.y); ctx.moveTo(q2.x, q2.y - L); ctx.lineTo(q2.x, q2.y + L); ctx.stroke(); }
       }
     }
+    /* LIGHT. The console's light theme is paper, not a dimmed night: a cool off-white page with a
+       faint warm vignette, no stars, no galaxy; the chambers' palette is darkened by sectorColors()
+       and every label uses dark ink. Chosen explicitly (Sky: Light) or automatically when the
+       console theme is light — the page decides that, not this file. */
+    function envLight(ts) {
+      var g = ctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, '#f6f7fa'); g.addColorStop(1, '#e9edf3');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      var v = ctx.createRadialGradient(W * .5, H * .45, Math.min(W, H) * .2, W * .5, H * .45, Math.max(W, H) * .8);
+      v.addColorStop(0, 'rgba(255,255,255,.55)'); v.addColorStop(1, 'rgba(190,200,215,.35)');
+      ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+      DUST.forEach(function (d) { if (live()) { d.p[1] -= d.sp * 1.4; if (d.p[1] < -400) d.p[1] = 400; } var q = proj(d.p); if (!q) return; ctx.beginPath(); ctx.arc(q.x, q.y, Math.max(.4, q.s), 0, TAU); ctx.fillStyle = 'rgba(90,105,130,' + (.07 * fog(q.zc)) + ')'; ctx.fill(); });
+    }
     function drawEnv(ts) {
       if (opts.env === 'strata') { envStrata(ts); return; }
-      ctx.fillStyle = opts.env === 'void' ? '#030304' : '#050607'; ctx.fillRect(0, 0, W, H);
+      if (opts.env === 'light') { envLight(ts); return; }
+      ctx.fillStyle = opts.env === 'void' ? '#000000' : '#050607'; ctx.fillRect(0, 0, W, H);
       if (opts.env === 'space') { drawGalaxy(ts); drawDust(ts); }
       else if (opts.env === 'nebula') {
         FOG.forEach(function (f) {
@@ -519,14 +580,16 @@
       drawEnv(ts);
       // roots + streams: the Queen's spokes always, the inter-sector roots only while they carry flow
       var flowing = circuit.map(function (sg) { return sg.pts; }); if (retSeg) flowing.push(retSeg.pts);
-      // strokes are a whisper ghost; the particles are the connection
-      roots.forEach(function (r) { if (!bySec[r.a].present || !bySec[r.b].present) return; var carries = flowing.indexOf(r.strands[0]) >= 0; if (r.a === 'queen' || carries) drawStrand(r.strands[0], 'rgba(146,158,176,$A)', carries ? .035 : .02, 2.2, ts); });
-      if (bySec.mound.present) authority.strands.forEach(function (st) { drawStrand(st, 'rgba(226,31,123,$A)', .03, 2.2, ts); });
-      rootStreams.forEach(function (ps, i) { var r = roots.filter(function (x) { return x.a === 'queen'; })[i]; if (r && r.b && bySec[r.b].present) drawStream(ps, '146,158,176', .3); });
-      if (bySec.mound.present) drawStream(authStream, '226,31,123', .4);
+      // strokes are a whisper ghost; the particles are the connection (a touch brighter than before,
+      // and scaled by the operator's conduit brightness)
+      var cb = opts.conduits.bright, strandInk = isLight() ? 'rgba(60,72,90,$A)' : 'rgba(146,158,176,$A)';
+      roots.forEach(function (r) { if (!bySec[r.a].present || !bySec[r.b].present) return; var carries = flowing.indexOf(r.strands[0]) >= 0; if (r.a === 'queen' || carries) drawStrand(r.strands[0], strandInk, (carries ? .055 : .032) * cb, 2.2, ts); });
+      if (bySec.mound.present) authority.strands.forEach(function (st) { drawStrand(st, 'rgba(226,31,123,$A)', .045 * cb, 2.2, ts); });
+      rootStreams.forEach(function (ps, i) { var r = roots.filter(function (x) { return x.a === 'queen'; })[i]; if (r && r.b && bySec[r.b].present) drawStream(ps, conduitRGB('146,158,176'), .42 * cb); });
+      if (bySec.mound.present) drawStream(authStream, conduitRGB('226,31,123'), .5 * cb);
       var dens = opts.motion === 'low' ? .55 : 1;
-      circStreams.forEach(function (cs, ci) { var c = h2(cs.col); drawStream(cs.ps.slice(0, Math.ceil(cs.ps.length * dens)), c[0] + ',' + c[1] + ',' + c[2], .8, 1.5, circuit[ci] && circuit[ci].rev); });
-      if (opts.trails) drawStream(retStream, '217,176,84', .6, 1.3);
+      circStreams.forEach(function (cs, ci) { var c = h2(cs.col); drawStream(cs.ps.slice(0, Math.ceil(cs.ps.length * dens)), conduitRGB(c[0] + ',' + c[1] + ',' + c[2]), Math.min(1, .95 * cb), 1.6, circuit[ci] && circuit[ci].rev); });
+      if (opts.trails) drawStream(retStream, conduitRGB('217,176,84'), .75 * cb, 1.4);
       drawSpheres(ts);
       drawAttention(ts);
       drawAnts(ts);
@@ -555,24 +618,30 @@
         var isFocused = focused === s.id;
         var rot = s.frozen != null ? s.frozen : (live() ? ts * s.rot : 0);
         var cr = Math.cos(rot), sr = Math.sin(rot);
-        var c0 = h2(s.color), c1 = h2(s.core);
+        var pal = sectorColors(s), c0 = pal.c0, c1 = pal.c1, sty = s.style;
         var selHere = selRec && selRec.sec === s.id ? selRec.idx : null;
         var relSet = selHere != null && s.pts[selHere].rec ? (s.pts[selHere].rec.rel || []) : null;
         var wantMorph = isFocused && cam.dist < s.R * 5.5 ? 1 : 0;
         s.morph += (wantMorph - s.morph) * .05;
         var m = s.morph;
         var nr = s.R * .34 * pr.s;
-        var nuc = s.id === 'queen' ? '232,178,90' : c1.join(',');
-        var g = ctx.createRadialGradient(pr.x, pr.y, 0, pr.x, pr.y, Math.max(4, nr * 2.2));
-        g.addColorStop(0, 'rgba(' + nuc + ',' + (.3 * (1 - m * .65) * LT.expo * fog(pr.zc)) + ')'); g.addColorStop(1, 'rgba(' + nuc + ',0)');
-        ctx.beginPath(); ctx.arc(pr.x, pr.y, Math.max(4, nr * 2.2), 0, TAU); ctx.fillStyle = g; ctx.fill();
+        var nuc = (s.id === 'queen' && !sty.color) ? (isLight() ? '150,110,40' : '232,178,90') : c1.join(',');
+        // THE CHAMBER GLOW ENCOMPASSES ITS CONTENTS: every seat lies within .92R, the envelope reaches
+        // 1.2R × the operator's glow size, brightness scales with theirs; a nucleus sits inside it.
+        var env = Math.max(6, s.R * 1.2 * sty.glow * pr.s), eb = (isLight() ? .16 : .13) * sty.bright * (1 - m * .5) * LT.expo * fog(pr.zc);
+        var eg = ctx.createRadialGradient(pr.x, pr.y, 0, pr.x, pr.y, env);
+        eg.addColorStop(0, 'rgba(' + nuc + ',' + eb + ')'); eg.addColorStop(.62, 'rgba(' + c0.join(',') + ',' + (eb * .55) + ')'); eg.addColorStop(1, 'rgba(' + c0.join(',') + ',0)');
+        ctx.beginPath(); ctx.arc(pr.x, pr.y, env, 0, TAU); ctx.fillStyle = eg; ctx.fill();
+        var g = ctx.createRadialGradient(pr.x, pr.y, 0, pr.x, pr.y, Math.max(4, nr * 1.6 * sty.glow));
+        g.addColorStop(0, 'rgba(' + nuc + ',' + (.3 * sty.bright * (1 - m * .65) * LT.expo * fog(pr.zc)) + ')'); g.addColorStop(1, 'rgba(' + nuc + ',0)');
+        ctx.beginPath(); ctx.arc(pr.x, pr.y, Math.max(4, nr * 1.6 * sty.glow), 0, TAU); ctx.fillStyle = g; ctx.fill();
         var lo = lightOffset(s, pr);
         if (lo.front) {
           var hr = Math.max(3, nr * 1.4), hg = ctx.createRadialGradient(pr.x + lo.dx, pr.y + lo.dy, 0, pr.x + lo.dx, pr.y + lo.dy, hr);
           hg.addColorStop(0, 'rgba(235,240,250,' + (.10 * LT.expo * fog(pr.zc)) + ')'); hg.addColorStop(1, 'rgba(235,240,250,0)');
           ctx.beginPath(); ctx.arc(pr.x + lo.dx, pr.y + lo.dy, hr, 0, TAU); ctx.fillStyle = hg; ctx.fill();
         }
-        ctx.strokeStyle = 'rgba(' + c0.join(',') + ',' + ((isFocused ? .1 : .06) * fog(pr.zc)) + ')'; ctx.lineWidth = .6;
+        ctx.strokeStyle = 'rgba(' + c0.join(',') + ',' + ((isFocused ? .045 : .022) * fog(pr.zc)) + ')'; ctx.lineWidth = .6;   // linkage: almost transparent
         s.links.forEach(function (lk) {
           var pa = s.pts[lk[0]], pb = s.pts[lk[1]];
           if (pa.hidden || pb.hidden) return;
@@ -593,17 +662,25 @@
           // a resident's colour is its STATUS: working = the chamber's core colour with a pulse;
           // idle = the chamber colour; disabled = grey. A record is shell (chamber) or core (verified).
           var col;
-          if (res) col = res.status === 'working' ? c1.join(',') : res.status === 'disabled' ? '110,118,134' : c0.join(',');
+          if (res) { var ac = p.antColor ? h2(p.antColor) : null; if (ac && isLight()) ac = shade3(ac, .7); col = res.status === 'disabled' ? '110,118,134' : ac ? ac.join(',') : (res.status === 'working' ? c1.join(',') : c0.join(',')); }
           else { var mix = p.layer === 2 ? 1 : (p.coreMix || 0); col = Math.round(c0[0] + (c1[0] - c0[0]) * mix) + ',' + Math.round(c0[1] + (c1[1] - c0[1]) * mix) + ',' + Math.round(c0[2] + (c1[2] - c0[2]) * mix); }
           var tw = res ? (res.status === 'working' && live() ? .8 + Math.sin(ts * .004 + p.ph) * .2 : 1) : (live() && p.layer === 0 ? .85 + Math.sin(ts * .0012 + p.ph) * .15 : 1);
           var hp = isFocused && hovPt === pi;
           var sh = shadeAt(w, s.pos);                 // lit hemisphere + rim, per point, per frame
           // grains grow as the strata form, so a level's records read as a row and not as dust
           var rad = Math.max(.6, p.sz * q.s * (.95 + .5 * sh) * (res ? 1 : 1 + m * .4)) * (hp ? 1.5 : 1);
-          ctx.beginPath(); ctx.arc(q.x, q.y, rad, 0, TAU);
-          ctx.fillStyle = 'rgba(' + col + ',' + Math.min(1, a * tw * (.7 + .8 * sh) * LT.expo * (hp ? 1.4 : 1)) + ')'; ctx.fill();
-          if (res && res.status === 'working') { ctx.beginPath(); ctx.arc(q.x, q.y, rad + 3, 0, TAU); ctx.strokeStyle = 'rgba(' + c1.join(',') + ',' + (.35 * tw) + ')'; ctx.lineWidth = 1; ctx.stroke(); }
-          if (res && !res.worker && isFocused && m > .25) label(res.name, q.x, p.below ? q.y + rad + 11 : q.y - rad - 6, "8px 'IBM Plex Mono',monospace", 'rgba(201,210,221,' + (.75 * m) + ')', 'center');
+          var alpha = Math.min(1, a * tw * (.7 + .8 * sh) * LT.expo * (hp ? 1.4 : 1));
+          if (res) {
+            // AN ANT IS NOT A GRAIN: a soft halo, a bright core and a ring — the record grains are
+            // flat discs. Working ants pulse; a worker is the same shape, smaller.
+            var hrad = rad * 2.6, hg2 = ctx.createRadialGradient(q.x, q.y, 0, q.x, q.y, hrad);
+            hg2.addColorStop(0, 'rgba(' + col + ',' + (alpha * .55) + ')'); hg2.addColorStop(1, 'rgba(' + col + ',0)');
+            ctx.beginPath(); ctx.arc(q.x, q.y, hrad, 0, TAU); ctx.fillStyle = hg2; ctx.fill();
+            ctx.beginPath(); ctx.arc(q.x, q.y, rad, 0, TAU); ctx.fillStyle = 'rgba(' + col + ',' + alpha + ')'; ctx.fill();
+            ctx.beginPath(); ctx.arc(q.x, q.y, rad * .45, 0, TAU); ctx.fillStyle = isLight() ? 'rgba(255,255,255,' + (alpha * .9) + ')' : 'rgba(255,250,240,' + (alpha * .85) + ')'; ctx.fill();
+            ctx.beginPath(); ctx.arc(q.x, q.y, rad + 2.2, 0, TAU); ctx.strokeStyle = 'rgba(' + col + ',' + (alpha * (res.status === 'working' ? .9 * tw : .45)) + ')'; ctx.lineWidth = res.status === 'working' ? 1.4 : .9; ctx.stroke();
+          } else { ctx.beginPath(); ctx.arc(q.x, q.y, rad, 0, TAU); ctx.fillStyle = 'rgba(' + col + ',' + alpha + ')'; ctx.fill(); }
+          if (res && !res.worker && isFocused && m > .25 && opts.labels !== 'none') label(res.name, q.x, p.below ? q.y + rad + 11 : q.y - rad - 6, "8px 'IBM Plex Mono',monospace", ink(.8 * m), 'center');
           if (hp) { ctx.beginPath(); ctx.arc(q.x, q.y, Math.max(4, p.sz * q.s + 5), 0, TAU); ctx.strokeStyle = 'rgba(' + c0.join(',') + ',.7)'; ctx.lineWidth = 1; ctx.stroke(); }
         });
         if (selHere != null && s.pts[selHere]._q) {
@@ -621,11 +698,11 @@
           for (var k2 = 0; k2 < 6; k2++) { var th3 = k2 * 1.047 + .5; var w2 = [s.pos[0] + Math.cos(th3) * s.R * .62, s.pos[1] + Math.sin(th3) * s.R * .5, s.pos[2] + Math.sin(th3 * 2) * 8]; var q2 = proj(w2); if (q2) { ctx.beginPath(); ctx.arc(q2.x, q2.y, Math.max(.8, 1.6 * q2.s), 0, TAU); ctx.fillStyle = 'rgba(201,207,220,' + (.5 * fog(q2.zc)) + ')'; ctx.fill(); } }
           if (s.stopped) { ctx.beginPath(); ctx.arc(pr.x, pr.y, s.R * 1.2 * pr.s, 0, TAU); ctx.strokeStyle = 'rgba(226,31,123,.8)'; ctx.lineWidth = 2.2; ctx.stroke(); }
         }
-        if (opts.labels !== 'min' || isFocused || s.id === 'queen') {
+        if (opts.labels !== 'none' && (opts.labels !== 'min' || isFocused || s.id === 'queen')) {
           label(s.label + (s.id === 'mound' && s.stopped ? ' · STOPPED' : ''), pr.x, pr.y + (s.R + 18) * pr.s,
             '600 ' + Math.max(8, Math.min(11, 9 * pr.s * 8)) + "px 'IBM Plex Mono',monospace", 'rgba(' + c0.join(',') + ',' + ((isFocused ? .85 : .5) * fog(pr.zc)) + ')', 'center');
         }
-        if (isFocused && m > .25 && s.strata && s.strata.length) {
+        if (isFocused && m > .25 && s.strata && s.strata.length && opts.labels !== 'none') {
           // one label per stratum, at the level's right edge (rotates with the chamber), each on its
           // own level so labels cannot stack; the level's ring is a faint guide under its records
           s.strata.forEach(function (st) {
@@ -635,9 +712,9 @@
             for (var ai = 0; ai <= 36; ai++) { var aa = ai / 36 * TAU, rx = Math.cos(aa) * s.R * .86 * st.band, rz = Math.sin(aa) * s.R * .86 * st.band, rq = proj([s.pos[0] + rx * cr - rz * sr, s.pos[1] + st.y, s.pos[2] + rx * sr + rz * cr]); if (!rq) { ai = 99; break; } if (ai) ctx.lineTo(rq.x, rq.y); else ctx.moveTo(rq.x, rq.y); }
             ctx.strokeStyle = 'rgba(' + c0.join(',') + ',' + (.08 * m) + ')'; ctx.lineWidth = .8; ctx.stroke();
             ctx.font = "600 9px 'IBM Plex Mono',monospace"; ctx.textAlign = 'left';
-            ctx.fillStyle = 'rgba(201,210,221,' + (m * .8) + ')';
+            ctx.fillStyle = ink(m * .85);
             ctx.fillText(String(st.label).toUpperCase().slice(0, 28), q.x + 8, q.y + 3);
-            ctx.font = "8px 'IBM Plex Mono',monospace"; ctx.fillStyle = 'rgba(107,116,136,' + m + ')';
+            ctx.font = "8px 'IBM Plex Mono',monospace"; ctx.fillStyle = dim(m);
             ctx.fillText(st.count + (st.count === 1 ? ' record' : ' records'), q.x + 8, q.y + 14);
           });
           ctx.textAlign = 'center';
@@ -705,15 +782,29 @@
       focus: function (id) { var s = bySec[id]; if (!s) return; if (s.frozen == null) s.frozen = live() ? performance.now() * s.rot : 0; focused = id; follow = false; goal.tgt = s.pos.slice(); goal.dist = s.R * 4.6; setCrumb('colony survey → ' + s.label.toLowerCase()); emit('sector', s); },
       followMission: function () { follow = true; focused = null; goal.dist = 460; setCrumb('following active mission'); },
       resetView: function () { api.survey(); },
-      resetLayout: function () { SEC.forEach(function (s) { s.pos = s.defPos.slice(); s.label = s.serverLabel || s.defLabel; s.renamed = false; }); rebuildAll(); saveLayout(); if (!focused) api.survey(); },
+      resetLayout: function () { SEC.forEach(function (s) { s.pos = s.defPos.slice(); s.label = s.serverLabel || s.defLabel; s.renamed = false; s.style = { color: null, glow: 1, bright: 1 }; }); antStyles = {}; rebuildAll(); if (lastScene) api.setTopology(lastScene); saveLayout(); if (!focused) api.survey(); },
       resetAll: function () { api.resetLayout(); api.survey(); },
       renameSector: function (id, name) { var s = bySec[id]; if (s && name && name.trim()) { s.label = name.trim().toUpperCase().slice(0, 28); s.renamed = s.label !== s.serverLabel; saveLayout(); } },
       setLayout: applyLayout,
       getLayout: layoutSnapshot,
       zoom: function (f) { goal.dist = Math.max(90, Math.min(1500, goal.dist / (f || 1))); },
-      setOptions: function (o) { Object.assign(opts, o || {}); },
+      setOptions: function (o) {
+        o = o || {};
+        var before = opts.conduits.density;
+        if (o.conduits) { opts.conduits = Object.assign({}, opts.conduits, o.conduits); if (opts.conduits.color && !validColor(opts.conduits.color)) opts.conduits.color = null; opts.conduits.bright = clampNum(opts.conduits.bright, .4, 2, 1); delete o.conduits; }
+        Object.assign(opts, o);
+        if (opts.conduits.density !== before) buildStreams();
+        if (root) root.classList.toggle('cl-light', isLight());
+        restyleChrome();
+      },
+      getOptions: function () { return { motion: opts.motion, labels: opts.labels, trails: opts.trails, env: opts.env, conduits: Object.assign({}, opts.conduits) }; },
+      setSectorStyle: function (id, patch) { var s = bySec[id]; if (!s) return; patch = patch || {}; if ('color' in patch) s.style.color = validColor(patch.color); if ('glow' in patch) s.style.glow = clampNum(patch.glow, .5, 2.5, 1); if ('bright' in patch) s.style.bright = clampNum(patch.bright, .3, 2.5, 1); saveLayout(); },
+      getSectorStyle: function (id) { var s = bySec[id]; return s ? { color: s.style.color, glow: s.style.glow, bright: s.style.bright, defaultColor: s.color } : null; },
+      setAntStyle: function (roleId, patch) { var k = String(roleId || '').toLowerCase(); if (!k) return; var cur = antStyles[k] || { name: null, color: null }; patch = patch || {}; if ('name' in patch) cur.name = (typeof patch.name === 'string' && patch.name.trim()) ? patch.name.trim().slice(0, 28) : null; if ('color' in patch) cur.color = validColor(patch.color); if (cur.name || cur.color) antStyles[k] = cur; else delete antStyles[k]; if (lastScene) api.setTopology(lastScene); saveLayout(); },
+      getAntStyle: function (roleId) { return Object.assign({ name: null, color: null }, antStyles[String(roleId || '').toLowerCase()] || {}); },
       stopMound: function (v) { bySec.mound.stopped = v !== false; },
       setTopology: function (scene) {
+        lastScene = scene || lastScene;
         /* The reducer's scene (colony-topology.js `project()`):
              sectors[]     { id, label, residents[{roleId,name,status,workers[],trail}], runningTasks[],
                              records[{recordId,title,recordType,ant,missionId,taskId,createdAt,cluster,verification,place}],
@@ -778,7 +869,7 @@
     function mount(el) {
       root = el;
       cv = document.createElement('canvas');
-      cv.style.cssText = 'position:absolute;top:0;left:0;display:block;cursor:grab';
+      cv.style.cssText = 'position:absolute;top:0;left:0;display:block;cursor:grab'; el.classList.toggle('cl-light', isLight());
       tip = document.createElement('div');
       tip.style.cssText = 'position:fixed;display:none;z-index:60;background:rgba(6,8,10,.94);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:8px 11px;pointer-events:none;min-width:150px;font:9px "IBM Plex Mono",monospace;color:#8b93a8';
       crumb = document.createElement('div');
@@ -789,7 +880,7 @@
       var anchor = el.querySelector('canvas');
       if (anchor && anchor !== cv) { el.insertBefore(crumb, anchor.nextSibling); el.insertBefore(cv, anchor.nextSibling); }
       else { el.appendChild(cv); el.appendChild(crumb); }
-      document.body.appendChild(tip);
+      document.body.appendChild(tip); restyleChrome();
       // Render at the device's pixel ratio. A 1:1 backing store on a 125% or 150% display is
       // upscaled by the compositor, which softens every 1px grain and dims the whole colony —
       // the same build looked crisp in one browser and muddy in another for exactly this reason.

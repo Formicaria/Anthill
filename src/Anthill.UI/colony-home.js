@@ -70,6 +70,8 @@
     var running = !!(sc && (sc.sectors || []).some(function (x) { return (x.runningTasks || []).length; }));
     var b;
     if ((b = document.querySelector('[data-homeact="mounds"]'))) { b.disabled = !mound; b.title = mound ? 'Approach the Micromound' : 'No mound in the fleet — nothing to approach'; }
+    // no mound → offer the door to adopting one (the Micromound console mints enrollment tokens)
+    if ((b = $('clb-addmound'))) b.style.display = mound ? 'none' : '';
     if ((b = document.querySelector('[data-homeact="follow"]'))) { b.disabled = !running; b.title = running ? 'Ride the active mission circuit' : 'No task is running — nothing to follow'; }
   }
   function refreshBar() {
@@ -103,28 +105,36 @@
   }
   // ---- environment ----------------------------------------------------------------------------
   var ENV_KEY = 'anthill.colony.env';
+  function consoleIsLight() { return document.documentElement.dataset.theme === 'light'; }
+  function resolveEnv(v) { return v === 'auto' ? (consoleIsLight() ? 'light' : 'space') : v; }
   function applyEnv(v) {
     var live = liveApi();
-    if (live) live.setOptions({ env: v });
+    if (live) live.setOptions({ env: resolveEnv(v) });
     var sel = $('clb-env'); if (sel && sel.value !== v) sel.value = v;
     try { localStorage.setItem(ENV_KEY, v); } catch (e) { }
   }
-  function initialEnv() { var v = null; try { v = localStorage.getItem(ENV_KEY); } catch (e) { } return /^(strata|plane|space|nebula|void)$/.test(v || '') ? v : 'space'; }
+  function initialEnv() { var v = null; try { v = localStorage.getItem(ENV_KEY); } catch (e) { } return /^(auto|strata|plane|space|light|nebula|void)$/.test(v || '') ? v : 'auto'; }
+  // Auto follows the console theme live: switching Settings › Theme to light turns the page to paper.
+  if (window.MutationObserver) new window.MutationObserver(function () { if (initialEnv() === 'auto') applyEnv('auto'); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
   // ---- view options + sector panel --------------------------------------------------------------
   function popShow(on) { var p = $('clb-viewpop'), b = $('clb-viewbtn'); if (!p) return; p.style.display = on ? '' : 'none'; if (b) b.setAttribute('aria-expanded', on ? 'true' : 'false'); }
+  var conduitAuto = true;
   function applyView() {
-    var live = liveApi(), mo = $('clb-motion'), lb = $('clb-labels'), tr = $('clb-trails');
+    var live = liveApi(), mo = $('clb-motion'), lb = $('clb-labels'), tr = $('clb-trails'), cd = $('clb-cdens'), cb = $('clb-cbright'), cc = $('clb-ccolor');
     // motion + trails go through app.js's validated preference path (it also feeds the classic canvas)
     if (typeof setColonyPref === 'function') { if (mo) setColonyPref('motion', mo.value); if (tr) setColonyPref('pheromones', tr.value === 'off' ? 'off' : 'all'); }
-    if (live && lb) live.setOptions({ labels: lb.value });
-    try { localStorage.setItem('anthill.colony.view', JSON.stringify({ motion: mo && mo.value, labels: lb && lb.value, trails: tr && tr.value })); } catch (e) { }
+    var conduits = { density: cd ? cd.value : 'normal', bright: cb ? Number(cb.value) : 1, color: (!conduitAuto && cc) ? cc.value : null };
+    if (live) live.setOptions({ labels: lb ? lb.value : 'normal', conduits: conduits });
+    var ab = document.querySelector('[data-homeact="conduitauto"]'); if (ab) ab.classList.toggle('on', conduitAuto);
+    try { localStorage.setItem('anthill.colony.view', JSON.stringify({ motion: mo && mo.value, labels: lb && lb.value, trails: tr && tr.value, conduits: conduits })); } catch (e) { }
   }
   function restoreView() {
     var v = null; try { v = JSON.parse(localStorage.getItem('anthill.colony.view') || 'null'); } catch (e) { }
-    if (!v) return;
-    var mo = $('clb-motion'), lb = $('clb-labels'), tr = $('clb-trails');
+    if (!v) { applyView(); return; }
+    var mo = $('clb-motion'), lb = $('clb-labels'), tr = $('clb-trails'), cd = $('clb-cdens'), cb = $('clb-cbright'), cc = $('clb-ccolor');
     if (mo && v.motion) mo.value = v.motion; if (lb && v.labels) lb.value = v.labels; if (tr && v.trails) tr.value = v.trails;
+    if (v.conduits) { if (cd && v.conduits.density) cd.value = v.conduits.density; if (cb && v.conduits.bright) cb.value = v.conduits.bright; if (v.conduits.color) { conduitAuto = false; if (cc) cc.value = v.conduits.color; } else conduitAuto = true; }
     applyView();
   }
   var sectorId = null;
@@ -138,13 +148,21 @@
     if (name) name.value = s.label;
     var c = s.counts || {};
     if (facts) facts.textContent = (c.records ? c.records + ' record' + (c.records === 1 ? '' : 's') : 'no records') + (c.verified ? ' (' + c.verified + ' verified)' : '') + ' · ' + (c.residents || 0) + ' resident' + (c.residents === 1 ? '' : 's') + (c.running ? ' · ' + c.running + ' running' : '');
+    var live = liveApi(), st = live && live.getSectorStyle(s.id);
+    if (st) { var col = $('clb-sec-color'), gl = $('clb-sec-glow'), br = $('clb-sec-bright'); if (col) col.value = st.color || st.defaultColor; if (gl) gl.value = st.glow; if (br) br.value = st.bright; if (dot) dot.style.background = st.color || st.defaultColor; }
   }
   var recordAnt = null;
   function showResident(h) {
     var box = $('clb-record'); if (!box) return;
     var res = h && h.resident; if (!res) { box.style.display = 'none'; recordAnt = null; return; }
     recordAnt = String(res.parent || res.roleId || '').toLowerCase();
+    antId = res.roleId; lastResident = res;
     $('clb-record-title').textContent = res.name || res.roleId;
+    // the editable half: the registry id never changes; the operator sets how it is shown here
+    var live = liveApi(), edit = $('clb-ant-edit'), nm = $('clb-ant-name'), col = $('clb-ant-color');
+    if (edit) edit.style.display = '';
+    if (nm) { nm.value = (res.name && res.name !== res.registryName) ? res.name : ''; nm.placeholder = res.registryName || res.roleId; }
+    if (col && live) { var st = live.getSectorStyle(sectorId) || {}; col.value = res.color || st.color || st.defaultColor || '#c9cfdc'; }
     var tr = res.trail && isFinite(res.trail.strength) ? res.trail : null;
     $('clb-record-meta').textContent = [res.worker ? 'worker of ' + res.parent : 'role', res.roleId, res.status, tr ? ('trail ' + Number(tr.strength).toFixed(2) + ' · ' + (tr.successes || 0) + '✓ ' + (tr.failures || 0) + '✗') : 'no trail recorded', res.workers ? res.workers + ' worker' + (res.workers === 1 ? '' : 's') : ''].filter(Boolean).join(' · ');
     var tag = $('clb-record-verif'); tag.textContent = res.status || 'idle'; tag.className = 'clb-record-tag' + (res.status === 'working' ? ' ok' : res.status === 'disabled' ? ' bad' : '');
@@ -154,7 +172,8 @@
   function showRecord(r) {
     var box = $('clb-record'); if (!box) return;
     if (!r) { box.style.display = 'none'; recordAnt = null; return; }
-    var rec = r.record || {}; recordAnt = String(rec.ant || '').toLowerCase();
+    var rec = r.record || {}; recordAnt = String(rec.ant || '').toLowerCase(); antId = null;
+    var edit = $('clb-ant-edit'); if (edit) edit.style.display = 'none';
     $('clb-record-title').textContent = rec.title || rec.type || 'record';
     $('clb-record-meta').textContent = [rec.type, rec.ant, rec.mission && ('mission ' + String(rec.mission).slice(0, 8)), rec.taskId && ('task ' + String(rec.taskId).slice(0, 8)), rec.time].filter(Boolean).join(' · ');
     var v = rec.verif || 'not_scanned', tag = $('clb-record-verif');
@@ -163,6 +182,22 @@
     var open = $('clb-record-open'); if (open) open.style.display = recordAnt && recordAnt !== '—' ? '' : 'none';
     box.style.display = '';
   }
+  function applySectorStyle() {
+    var live = liveApi(); if (!live || !sectorId) return;
+    var col = $('clb-sec-color'), gl = $('clb-sec-glow'), br = $('clb-sec-bright'), st = live.getSectorStyle(sectorId);
+    live.setSectorStyle(sectorId, { color: (col && st && col.value !== st.defaultColor) ? col.value : null, glow: gl ? Number(gl.value) : 1, bright: br ? Number(br.value) : 1 });
+    var dot = $('clb-sector-dot'); if (dot && col) dot.style.background = col.value;
+  }
+  // ---- the ant inspector (a resident card with a name and a colour the operator may set) ----------
+  var antId = null;
+  function applyAntStyle() {
+    var live = liveApi(); if (!live || !antId) return;
+    var nm = $('clb-ant-name'), col = $('clb-ant-color'), info = live.getSectorStyle(sectorId) || {};
+    var base = info.color || info.defaultColor || '#c9cfdc';
+    live.setAntStyle(antId, { name: nm ? nm.value : null, color: (col && col.value !== base) ? col.value : null });
+    var t = $('clb-record-title'); if (t && nm) t.textContent = nm.value.trim() || (lastResident && lastResident.registryName) || antId;
+  }
+  var lastResident = null;
   function renameSector() { var live = liveApi(), name = $('clb-sector-name'); if (live && sectorId && name && name.value.trim()) { live.renameSector(sectorId, name.value.trim()); name.value = name.value.trim().toUpperCase(); name.blur(); } }
 
   // ---- composer -------------------------------------------------------------------------------
@@ -259,6 +294,10 @@
     else if (act === 'viewmenu') { var p = $('clb-viewpop'); popShow(p && p.style.display === 'none'); }
     else if (act === 'openant') { if (recordAnt && typeof nodes !== 'undefined' && typeof showInspector === 'function') { var n = nodes.find(function (x) { return x.ant === recordAnt || x.worker === recordAnt || x.id === recordAnt; }); if (n) { setFocus(false); showInspector(n); } } }
     else if (act === 'resetlayout') { var lv = liveApi(); if (lv) lv.resetLayout(); popShow(false); }
+    else if (act === 'conduitauto') { conduitAuto = !conduitAuto; applyView(); }
+    else if (act === 'secstylereset') { var l2 = liveApi(); if (l2 && sectorId) { l2.setSectorStyle(sectorId, { color: null, glow: 1, bright: 1 }); showSector(l2.sectorInfo(sectorId) && Object.assign({}, l2.sectorInfo(sectorId), { records: [] })); } }
+    else if (act === 'antstylereset') { var l3 = liveApi(); if (l3 && antId) { l3.setAntStyle(antId, { name: null, color: null }); var nm2 = $('clb-ant-name'); if (nm2) nm2.value = ''; var t2 = $('clb-record-title'); if (t2 && lastResident) t2.textContent = lastResident.registryName || antId; } }
+    else if (act === 'addmound') { go('/tools/micromound'); }
     else if (act === 'toggle3d') { if (window.ColonyHost) ColonyHost.toggle(); syncToggle(); }
     else if (act === 'ask') send('chat');
     else if (act === 'run') send('mission');
@@ -278,7 +317,13 @@
     }
     var sel = $('ccp-scope'); if (sel) sel.addEventListener('change', scopeChanged);
     var env = $('clb-env'); if (env) { env.value = initialEnv(); env.addEventListener('change', function () { applyEnv(env.value); }); }
-    ['clb-motion', 'clb-labels', 'clb-trails'].forEach(function (id) { var el = $(id); if (el) el.addEventListener('change', applyView); });
+    ['clb-motion', 'clb-labels', 'clb-trails', 'clb-cdens', 'clb-cbright'].forEach(function (id) { var el = $(id); if (el) el.addEventListener(id === 'clb-cbright' ? 'input' : 'change', applyView); });
+    var cc = $('clb-ccolor'); if (cc) cc.addEventListener('input', function () { conduitAuto = false; applyView(); });
+    ['clb-sec-color', 'clb-sec-glow', 'clb-sec-bright'].forEach(function (id) { var el = $(id); if (el) el.addEventListener('input', applySectorStyle); });
+    var an = $('clb-ant-name'); if (an) { an.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); applyAntStyle(); an.blur(); } if (e.key === 'Escape') e.stopPropagation(); }); an.addEventListener('blur', function () { if (antId) applyAntStyle(); }); }
+    var ac = $('clb-ant-color'); if (ac) ac.addEventListener('input', applyAntStyle);
+    // the sector panel's own inputs must not be swallowed by the stage's click handler
+    ['clb-sector', 'clb-record', 'clb-viewpop'].forEach(function (id) { var el = $(id); if (el) el.addEventListener('keydown', function (e) { if (e.key === 'Escape' && e.target.tagName === 'INPUT') e.stopPropagation(); }); });
     document.addEventListener('click', function (e) { if (!e.target.closest('.clb-pop-wrap')) popShow(false); });
     var sn = $('clb-sector-name'); if (sn) sn.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); renameSector(); } if (e.key === 'Escape') { e.stopPropagation(); sn.blur(); } });
     if (sn) sn.addEventListener('blur', function () { if (sectorId) renameSector(); });
