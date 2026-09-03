@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.117**.
+Shipping release: **v0.3.8.118**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -439,6 +439,52 @@ worth more the second time it has to be written.
 
 ---
 
+### 2h. v0.3.8.118 — the mission honours what was asked, or says why it cannot
+
+**Delivers:** the first two items of the orchestration brief, and the correction `.117` shipped
+without.
+
+**ROOT CAUSE OF THE FIXED-WORKFLOW BEHAVIOUR, and it is not a dispatch bug.** `MissionRequest`
+carried `{ Goal, IdempotencyKey }`; a repo-wide search for `requested_roles`, `output_schema` or any
+equivalent returned **zero matches in production or test code**. There was no input contract to
+ignore. Worse, the goal string was also the trigger for spec ingestion — `Planner.cs:128` gates on
+`goal.Length > 6000` — so **the more precisely an operator specified roles, ordering and output
+shape, the more certain it became that the whole request would be chunked into `section_analysis`
+tasks.** Precision was punished. Full evidence in the project doc `orchestration-root-cause.md`.
+
+**WHAT `.118` ADDS.** `RequestedWorkflow` is the missing input contract, and it keeps three things
+apart that the runtime had collapsed into one: a LABEL is what the operator called a step and is
+descriptive; a TASK TYPE is what some worker contract declares it supports and is executable; a ROLE
+is neither. Treating a label as executable is how an arbitrary name reached a worker.
+`DispatchPlanner` resolves or REFUSES before dispatch — unsupported task types, unsupported output
+schemas, unknown roles, role/type mismatches, unresolvable labels, dangling dependencies. Labels
+match exactly and never fuzzily, because near-matching is how a request becomes something adjacent
+to itself without anyone being told.
+
+**THE FAILING TEST TAUGHT THE DESIGN, TWICE.** The verifier is `SchedulingMode.PolicyInserted` —
+the registry's words are "the steps a plan must not be able to omit" — and the planner first treated
+"the planner cannot pick it" as "it is unavailable", which would have refused exactly the missions
+this release most wants to succeed: the ones asking to be verified. Requiring a policy-inserted role
+is now SATISFIED; authoring a step for one is refused with the alternative named; requiring a
+lifecycle-only role (medic, archivist) is refused because nothing can promise it. `Routable` and
+`Dispatchable` became separate fields for the same reason `Registered` and `Dispatched` had to.
+
+**AND A GUARD CAUGHT THE AUTHOR.** `ShippedChangelogTests` failed this release because the `.117`
+entry had been edited after its tag — the logo correction was written into a shipped entry instead
+of a new one. Third occurrence in this repository, first one caught by a test rather than by a
+reader. The correction lives here, where it belongs.
+
+**Verified by** — 3,615 tests. Nothing supplies a `workflow` yet (no API field, no CLI flag), so
+every mission plans `planner_chosen` and runs exactly the path it did before; the only visible
+change is one event per mission recording that the planner chose.
+
+**Carried:** items 3–8 of the brief — authoritative execution records, artifact/evidence handoff,
+real verification, closure enforcement, unsourced-claim rejection — all need task records that do
+not exist yet. `Planner.cs:128`'s character-count gate is still live and moving it waits on those.
+The typed-row ratchet is at **45** for a fourth release.
+
+---
+
 ### 2g. v0.3.8.117 — the colony view stops being opt-in
 
 **Delivers:** the shell around the renderer `.116` built, and the first deliberate divergence from
@@ -459,8 +505,12 @@ value most likely to move again; pinning both means lowering it further AND the 
 underneath it each fail with a reason attached. **That is the pattern for every future deviation
 from a ported design** — record it in the comparison, never remove it from the comparison.
 
-**AND A NEW MARK**, rendered at five sizes and looked at before shipping. The first draft smeared
-below 24px. Same lesson as `.116`.
+**AND THE ANTHILL MARK, FROM THE ARTWORK** — the supplied logo, keyed off its background and used as
+the nav mark, the favicon and the `.ico`. The first attempt hand-drew an SVG *in the style of* it,
+which is `.116`'s lesson un-generalised: **when someone hands you the artifact, use the artifact.** A
+redraw is a rebuild-from-description in different clothes and fails the same way — close, and not the
+thing. Worth carrying, because "I'll make a cleaner vector version" is a tempting instinct every time
+an icon comes up.
 
 ---
 
@@ -526,13 +576,61 @@ either honour it or delete it rather than let it decay into a sentence nobody ap
 
 ---
 
-## 2e. What comes next — the shape of v0.3.8.117 and after
+## 2e. What comes next — the shape of v0.3.8.119 and after
 
 The universal-workflow program closed at `.113` and R0 closed at `.114`. There is no successor
 program: what remains is R-numbered work, standing hygiene, and a small number of findings the last
-two releases surfaced and deliberately did not chase. This section exists because "what is next" was
-being reconstructed from three documents every release, and the reconstruction kept losing the same
-items.
+several releases surfaced and deliberately did not chase. This section exists because "what is next"
+was being reconstructed from three documents every release, and the reconstruction kept losing the
+same items.
+
+### The orchestration slice — `.118` opened it, and items 3–8 are the rest of it
+
+`.118` shipped the input contract (`RequestedWorkflow`) and the pre-dispatch stage
+(`DispatchPlanner` / `DispatchPlan`) and claimed nothing beyond them. The remainder of the brief —
+authoritative execution records, artifact and evidence handoff, verification that reads execution,
+closure enforcement, unsourced-claim rejection — all depend on ONE missing thing, and naming it is
+what `.118`'s investigation bought: **there is no per-task authoritative execution record.** Every
+downstream item is a consumer of a row that does not exist yet.
+
+`docs/ORCHESTRATION-FINDINGS.md` is the map, gathered by reading the eight code locations the brief
+named rather than reasoning from the symptom. Three of its findings change what the remaining work
+should be, and a session that skips them will build the wrong fix:
+
+- **▲ `checks: 0` counts the wrong thing and gates nothing.** Two unrelated evidence concepts exist.
+  `IEvidenceStore` holds the durable rows verification actually reads. `MissionReport.Checks` counts
+  per-task `AntEvidence` rows of kind `"check"`, written in exactly one place — `TesterAnt`. So
+  `checks: 0` means "no tester dispatched `run_allowlisted_check`", not "no evidence", and its only
+  consumer is `Render` itself. `IEvidenceStore.HasDeterministicPass` is implemented and called ONLY
+  from tests. Closure enforcement must gate on the store, not on the display counter.
+
+- **▲ Verification is stronger than the brief assumed; the leak is upstream of it.** `VerifierAnt`
+  asks the evidence store first and downgrades a model-only PASS to `Unknown`; `EvidenceVerdict.For`
+  counts only `deterministic == true` rows; `MissionEvaluator.Evaluate` distinguishes `NotRun` from
+  `Failed`. Prose alone cannot produce `completed_verified` in the wired configuration. The defect is
+  that `mission.Status` never consults any of it — `Queen.cs:1299-1302` computes structural status
+  purely from task terminal states. **The fix belongs at `Queen.cs:1299-1302`, not in `VerifierAnt`.**
+
+- **▲ The planner's provider fallback is invisible to the mission record.** `Planner.CreateTasks`
+  substitutes a static plan on four conditions, every one of them recorded only by
+  `Console.Error.WriteLine` — no event, no artifact, nothing an operator or a later stage can read.
+  `ResearcherAnt` and `BuilderAnt` offline fallbacks return plain `"succeeded"` with no warning, and
+  `WebResearchAnt.SummarizeSource` silently substitutes a truncated snippet. This is the cheapest
+  item on the list and the one with the worst failure mode: a colony that ignored the goal, with a
+  green run behind it.
+
+Two more from the same inspection, lower cost and worth carrying:
+
+- `Strategist.GenerateGoal` has a model rewrite the charter for standing objectives with **no check
+  that the rewrite preserved meaning**. Every other human path reaches `Mission.Goal` verbatim.
+- Cross-mission recall is prose with artifact ids discarded (`SqliteMemory.Operations.cs:1299-1301`)
+  while within-mission recall is typed and keeps them (`ArtifactContext.cs:192-195`). Unresolved
+  artifact ids are reported ONLY inline in the prompt text — `ArtifactContext.cs` calls `LogEvent`
+  nowhere, so an unresolved handoff is invisible to the record.
+
+**And the gate `.118` deliberately did not move.** `Planner.cs:128` still routes on
+`goal.Length > 6000`. It should route on whether a `RequestedWorkflow` was supplied, but changing it
+before execution records exist would trade a known-bad heuristic for an unmeasurable one.
 
 **The named findings from `.114`–`.115`, in the order they cost the most.**
 

@@ -702,7 +702,8 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
     /// dispatching. Without it a hung/slow model call could pin the single-writer queue for minutes.
     /// </summary>
     public string RunMission(string goal, Action<string>? onMissionCreated, CancellationToken cancel = default,
-        Action<MissionOutcome>? onMissionFinished = null, string? projectId = null)
+        Action<MissionOutcome>? onMissionFinished = null, string? projectId = null,
+        Missions.RequestedWorkflow? workflow = null)
     {
         Console.WriteLine($"Queen received mission: {goal}");
         var missionStartedAt = AnthillTime.NowUtc();
@@ -817,6 +818,86 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
             ["long_input_threshold"] = AnthillRuntime.LongInputThreshold,
             ["spec_ingestion_enabled"] = AnthillRuntime.EnableSpecIngestion,
         });
+
+        // v0.3.8.118 — THE PRE-DISPATCH PLANNING STAGE, BEFORE ANY WORKER EXISTS.
+        //
+        // What the live tests found: a request naming roles, an ordering and an output shape was
+        // silently converted into researcher `section_analysis` tasks, and nothing recorded that the
+        // substitution had happened. The cause was not a dispatch bug — `MissionRequest` carried
+        // `{ Goal, IdempotencyKey }` and there was no structured request to honour. `Planner`'s only
+        // long-input gate is `goal.Length > LongInputThreshold`, so the more precisely an operator
+        // specified what they wanted, the more certain the whole thing became a chunked summary.
+        //
+        // This stage answers two questions the runtime could not previously ask. Can the colony
+        // execute what was requested — and if not, stop HERE, because a refusal costs a minute while
+        // a substitution produces plausible output against a question nobody asked. And what was
+        // decided, written down before anything runs, so a verifier can later be measured against a
+        // record rather than against whatever narrative survived truncation.
+        //
+        // A mission with no structured workflow — nearly all of them, and every one that predates
+        // this parameter — plans `planner_chosen` and proceeds down exactly the path it always did.
+        var dispatch = Planning.DispatchPlanner.Plan(mission.Id, goal, workflow);
+        if (!dispatch.Ok)
+        {
+            Memory.LogEvent(mission.Id, SDK.Events.EventTypes.MissionDispatchPlanRefused, dispatch.Explanation,
+                metadata: new()
+                {
+                    ["blockers"] = dispatch.Blockers.Select(b => new Dictionary<string, object?>
+                    {
+                        ["code"] = b.Code, ["subject"] = b.Subject, ["detail"] = b.Detail,
+                    }).ToList(),
+                });
+
+            // BLOCKED, NOT FAILED. Nothing broke and nothing was attempted: the colony cannot
+            // execute what was asked for, and it will not be able to on a retry either. The
+            // distinction is the brief's — a planning failure must never read as completion, and
+            // `failed_permanent` would invite the one response guaranteed to be useless.
+            mission.Status = MissionStatus.Failed;
+            mission.FinalResult = dispatch.Explanation;
+            mission.UserResult = dispatch.Explanation;
+            Memory.SaveMission(mission);
+            Memory.SaveMissionEvaluation(new Outcomes.MissionEvaluation(
+                MissionId: mission.Id,
+                OutcomeCode: Outcomes.MissionOutcome.BlockedMissingCapability,
+                StructuralStatus: mission.Status.Value(),
+                VerificationStatus: Outcomes.MissionEvaluation.Verification.NotRun,
+                DeliverableStatus: Outcomes.MissionEvaluation.Deliverable.NotSatisfied,
+                StopReason: "dispatch_plan_refused",
+                EvaluatorVersion: Planning.DispatchPlan.Version,
+                EvaluatedAt: AnthillTime.NowUtc().ToIso(),
+                Explanation: dispatch.Explanation));
+            return mission.Id;
+        }
+
+        var plan = dispatch.Plan!;
+        Memory.LogEvent(mission.Id, SDK.Events.EventTypes.MissionDispatchPlanned, dispatch.Explanation,
+            metadata: new()
+            {
+                ["planner_version"] = plan.PlannerVersion,
+                ["strategy"] = plan.Strategy,
+                ["strategy_reason"] = plan.StrategyReason,
+                ["planned_at"] = plan.PlannedAt,
+                ["output_schema"] = plan.OutputSchema,
+                ["permission_mode"] = plan.PermissionMode,
+                ["closure_requirements"] = plan.ClosureRequirements.ToList(),
+                ["required_checks"] = plan.RequiredChecks.ToList(),
+                ["tasks"] = plan.Tasks.Select(t => new Dictionary<string, object?>
+                {
+                    ["task_id"] = t.TaskId, ["label"] = t.Label, ["task_type"] = t.TaskType,
+                    ["role"] = t.Role, ["depends_on"] = t.DependsOnTaskIds.ToList(),
+                    ["expected_output_schema"] = t.ExpectedOutputSchema, ["source"] = t.Source,
+                }).ToList(),
+                // Every role the colony knows about, including the ones that will not run and why.
+                // `registered` was previously being read as `participated`.
+                ["roles"] = plan.Roles.Select(r => new Dictionary<string, object?>
+                {
+                    ["role_id"] = r.RoleId, ["registered"] = r.Registered, ["enabled"] = r.Enabled,
+                    ["routable"] = r.Routable, ["dispatchable"] = r.Dispatchable,
+                    ["dispatched"] = r.Dispatched, ["required"] = r.Required,
+                    ["satisfied_by_policy"] = r.SatisfiedByPolicy, ["reason"] = r.Reason,
+                }).ToList(),
+                ["unmet_required_roles"] = plan.UnmetRequiredRoles.Select(r => r.RoleId).ToList(),
+            });
 
         // v3.1.0 (ADR-001): planning is a service. The Queen says WHEN a plan is made and owns
         // everything that happens to it afterwards; it no longer also implements how one is built.

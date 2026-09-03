@@ -66,6 +66,12 @@ public class DocumentCurrencyTests
     {
         "RELEASE-REPORT-v0.3.8.42.md", "UI-CONTRACT-AUDIT.md", "UI-ALIGNMENT-BRIEF.md",
         "DASHBOARD_GRID_MIGRATION.md",
+        // v0.3.8.118 — the eight-location orchestration inspection. HISTORICAL, and the
+        // classification is the honest one rather than the convenient one: every claim in it is
+        // a file:line citation measured against `main` at `fcf12a7`, and line numbers rot the
+        // first time somebody edits the file above them. It records what was true on one day.
+        // The work items it implies live in `docs/PLAN.md` §2e, which IS current and is kept so.
+        "ORCHESTRATION-FINDINGS.md",
     };
 
     /// <summary>Documents whose whole content is "this moved" — they point and stop.</summary>

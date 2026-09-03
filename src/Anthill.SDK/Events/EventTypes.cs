@@ -40,6 +40,16 @@ public static class EventTypes
     public const string MissionCreated = "mission_created";
     public const string MissionStarted = "mission_started";
     public const string MissionClassified = "mission_classified";
+
+    /// <summary>v0.3.8.118 — the pre-dispatch plan, persisted before any worker is invoked. This is
+    /// the record later stages are measured against; without it a verifier can only review whatever
+    /// narrative survived truncation.</summary>
+    public const string MissionDispatchPlanned = "mission_dispatch_planned";
+
+    /// <summary>v0.3.8.118 — the request named something the runtime cannot execute, so the mission
+    /// stopped BEFORE dispatch. Emitted instead of silently substituting a plan the operator did not
+    /// ask for, which is what used to happen.</summary>
+    public const string MissionDispatchPlanRefused = "mission_dispatch_plan_refused";
     public const string MissionContextResolved = "mission_context_resolved";
     public const string MissionEvaluated = "mission_evaluated";
     public const string MissionOutcome = "mission_outcome";
