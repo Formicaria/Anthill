@@ -621,6 +621,14 @@ public class ColonyLiveGuardTests
                 $"colony-live.js carries '{filler}' — seeded filler or demo scaffolding. A chamber's "
               + "particles are its records; a chamber with none is empty.");
 
+        // The strata spiral steps by the golden angle under its OWN name. `.119`'s first cut named the
+        // constant SPIRAL, which the galaxy's spiral object (`var SPIRAL = null`, same function scope,
+        // hoisted) silently clobbered — every record grain projected to NaN and drew nothing, with no
+        // error anywhere. A chamber with ten records looked like a chamber with none.
+        Assert.Contains("SPIRAL_STEP = 2.399963", live);
+        Assert.Contains("var ang = k * SPIRAL_STEP", live);
+        Assert.Single(Regex.Matches(live, @"\bSPIRAL = null\b"));   // the galaxy declares it once; nothing else may
+
         // The only points the operator can pick are the ones that ARE something.
         Assert.Contains("if (p._q && (p.rec || p.resident))", live);
         Assert.Contains("return (p && (p.rec || p.resident)) || null;", live);
