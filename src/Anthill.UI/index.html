@@ -1736,6 +1736,37 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
     .clb-record-row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
     .clb-record-tag{padding:1px 7px;border-radius:9px;border:1px solid rgba(94,196,207,.4);color:#8fd8df;font-size:9.5px;}
     .clb-record-tag.ok{border-color:rgba(69,227,111,.45);color:#7fe3a0;}
+    .clb-pop-hd{font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:var(--dim);margin:4px 0 -2px;}
+    .clb-range{width:110px;accent-color:var(--queen);}
+    .clb-range-s{width:64px;vertical-align:middle;}
+    .clb-color{width:26px;height:22px;padding:0;border:1px solid rgba(255,255,255,.14);border-radius:6px;background:transparent;cursor:pointer;}
+    .clb-colorrow{display:inline-flex;align-items:center;gap:6px;}
+    .clb-mini{height:20px;padding:0 7px;font-size:9.5px;}
+    .clb-mini-lbl{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:9px;color:var(--dim);}
+    .clb-addmound{border:1px dashed rgba(255,255,255,.18);}
+    .clb-ant-edit{display:flex;align-items:center;gap:6px;margin:4px 0 6px;}
+    .clb-ant-name{flex:1;height:24px;padding:0 7px;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--cream);font:inherit;font-size:11px;}
+    /* the light theme: the live chrome becomes paper, like the rest of the console */
+    html[data-theme="light"] #colony-stage{background:#eef1f6;}
+    html[data-theme="light"] .clb{background:rgba(255,255,255,.92);border-bottom-color:rgba(29,50,80,.12);color:var(--muted);}
+    html[data-theme="light"] .clb-brand{color:var(--text);}
+    html[data-theme="light"] .clb-sub{color:#0a87a5;}
+    html[data-theme="light"] .clb-sep{background:rgba(29,50,80,.14);}
+    html[data-theme="light"] .clb-views{border-color:rgba(29,50,80,.12);background:rgba(29,50,80,.03);}
+    html[data-theme="light"] .clb-btn:hover{background:rgba(29,50,80,.06);}
+    html[data-theme="light"] .clb-btn.on{color:var(--queen-deep);background:rgba(var(--queen-rgb),.12);border-color:rgba(var(--queen-rgb),.3);}
+    html[data-theme="light"] .clb-sel,html[data-theme="light"] .clb-color,html[data-theme="light"] .clb-ant-name{border-color:rgba(29,50,80,.16);background:#fff;color:var(--text);}
+    html[data-theme="light"] .clb-pop,html[data-theme="light"] .clb-sector,html[data-theme="light"] .clb-record{background:rgba(255,255,255,.97);border-color:rgba(29,50,80,.14);box-shadow:0 14px 40px rgba(29,50,80,.14);color:var(--muted);}
+    html[data-theme="light"] .clb-sector-name,html[data-theme="light"] .clb-record-title{color:var(--text);}
+    html[data-theme="light"] .clb-sector-name:hover,html[data-theme="light"] .clb-sector-name:focus{border-color:rgba(29,50,80,.16);background:rgba(29,50,80,.04);}
+    html[data-theme="light"] .ccp{background:linear-gradient(0deg,rgba(238,241,246,.98) 55%,rgba(238,241,246,.6));}
+    html[data-theme="light"] .ccp-box{background:rgba(255,255,255,.98);border-color:rgba(29,50,80,.14);box-shadow:0 12px 40px rgba(29,50,80,.12),inset 0 1px 0 rgba(255,255,255,.6);}
+    html[data-theme="light"] .ccp-sel,html[data-theme="light"] .ccp-newname,html[data-theme="light"] .ccp-btn{border-color:rgba(29,50,80,.16);background:rgba(29,50,80,.03);color:var(--text);}
+    html[data-theme="light"] .ccp-run{border-color:rgba(var(--queen-rgb),.5);background:rgba(var(--queen-rgb),.12);color:var(--queen-deep);}
+    html[data-theme="light"] .ccp-input{color:var(--text);}
+    html[data-theme="light"] .ccp-foot{color:rgba(79,100,125,.7);}
+    html[data-theme="light"] .clb-needs{border-color:rgba(168,95,7,.5);background:rgba(168,95,7,.08);color:#a85f07;}
+    html[data-theme="light"] .clb-needs-dot{background:#a85f07;box-shadow:none;}
     .clb-record-tag.bad{border-color:rgba(255,65,108,.45);color:#ff8fa8;}
     body:not(.colony-live-on) #clb-record,
     body:not(.colony-live-on) #clb-sector,
@@ -2238,6 +2269,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <button class="clb-btn" data-homeact="mission" title="Approach the Queen's core">Mission</button>
               <button class="clb-btn" data-homeact="memory" title="Approach Memory">Memory</button>
               <button class="clb-btn" data-homeact="mounds" title="Approach the Micromound">Mounds</button>
+              <button class="clb-btn clb-addmound" data-homeact="addmound" id="clb-addmound" title="Adopt a Micromound — opens the Micromound console (Tools › Micromound) where enrollment tokens are minted" style="display:none">+ Mound</button>
               <button class="clb-btn" data-homeact="follow" title="Ride the active mission circuit">Follow</button>
               <button class="clb-btn" data-homeact="resetview" title="Reset orbit and zoom">Reset view</button>
               <span class="clb-sep"></span>
@@ -2246,16 +2278,22 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                 <div class="clb-pop" id="clb-viewpop" role="menu" style="display:none">
                   <label class="clb-row"><span>Environment</span>
                     <select class="clb-sel" id="clb-env" aria-label="Environment">
-                      <option value="space">Galaxy</option><option value="strata">Strata</option>
+                      <option value="auto">Auto (theme)</option>
+                      <option value="space">Galaxy</option><option value="light">Light</option><option value="strata">Strata</option>
                       <option value="plane">Plane</option><option value="nebula">Nebula</option><option value="void">Void</option>
                     </select></label>
                   <label class="clb-row"><span>Motion</span>
                     <select class="clb-sel" id="clb-motion" aria-label="Motion"><option value="off">Off</option><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option></select></label>
                   <label class="clb-row"><span>Labels</span>
-                    <select class="clb-sel" id="clb-labels" aria-label="Labels"><option value="normal" selected>All sectors</option><option value="min">Focused only</option></select></label>
+                    <select class="clb-sel" id="clb-labels" aria-label="Labels"><option value="normal" selected>All</option><option value="min">Focused only</option><option value="none">None</option></select></label>
                   <label class="clb-row"><span>Pheromone trails</span>
                     <select class="clb-sel" id="clb-trails" aria-label="Pheromone trails"><option value="on" selected>On</option><option value="off">Off</option></select></label>
-                  <button class="clb-btn clb-row-btn" data-homeact="resetlayout" title="Return every sector to its canonical position and name">⌂ Reset colony layout</button>
+                  <div class="clb-pop-hd">Conduits</div>
+                  <label class="clb-row"><span>Particles</span>
+                    <select class="clb-sel" id="clb-cdens" aria-label="Conduit particles"><option value="less">Less</option><option value="normal" selected>Normal</option><option value="more">More</option></select></label>
+                  <label class="clb-row"><span>Brightness</span><input type="range" class="clb-range" id="clb-cbright" min="0.4" max="2" step="0.1" value="1" aria-label="Conduit brightness"></label>
+                  <label class="clb-row"><span>Colour</span><span class="clb-colorrow"><input type="color" class="clb-color" id="clb-ccolor" value="#9aa6b8" aria-label="Conduit colour"><button class="clb-btn clb-mini" data-homeact="conduitauto" title="Each conduit keeps its own colour">auto</button></span></label>
+                  <button class="clb-btn clb-row-btn" data-homeact="resetlayout" title="Return every sector to its canonical position, name and style">⌂ Reset colony layout</button>
                 </div>
               </span>
               <button class="clb-btn" id="clb-3d" data-homeact="toggle3d" title="Switch between Colony Live and the classic 2D canvas">Classic 2D</button>
@@ -2268,12 +2306,22 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <span class="clb-sector-dot" id="clb-sector-dot"></span>
             <input class="clb-sector-name" id="clb-sector-name" maxlength="28" aria-label="Sector name" title="Rename this sector (Enter to save)">
             <span class="clb-sector-facts" id="clb-sector-facts"></span>
+            <span class="clb-sep"></span>
+            <input type="color" class="clb-color" id="clb-sec-color" aria-label="Chamber colour" title="Chamber colour">
+            <label class="clb-mini-lbl" title="Glow size">glow <input type="range" class="clb-range clb-range-s" id="clb-sec-glow" min="0.5" max="2.5" step="0.1" value="1" aria-label="Glow size"></label>
+            <label class="clb-mini-lbl" title="Brightness">bright <input type="range" class="clb-range clb-range-s" id="clb-sec-bright" min="0.3" max="2.5" step="0.1" value="1" aria-label="Brightness"></label>
+            <button class="clb-btn clb-mini" data-homeact="secstylereset" title="Back to this chamber's own colour, glow and brightness">reset</button>
             <button class="clb-btn" data-homeact="survey" title="Back to the whole colony (Esc)">← Survey</button>
           </div>
           <!-- a selected record: event-derived facts, read-only (the §19 record index does not exist
                yet, and this card does not pretend it does). "Open ant" goes to the Agent Inspector. -->
           <div id="clb-record" class="clb-record" style="display:none">
             <div class="clb-record-title" id="clb-record-title"></div>
+            <div class="clb-ant-edit" id="clb-ant-edit" style="display:none">
+              <input class="clb-ant-name" id="clb-ant-name" maxlength="28" placeholder="display name" aria-label="Ant display name" title="A name for this ant on the colony page (Enter to save; the registry id does not change)">
+              <input type="color" class="clb-color" id="clb-ant-color" aria-label="Ant colour" title="This ant's orb colour">
+              <button class="clb-btn clb-mini" data-homeact="antstylereset" title="Back to the registry name and the chamber colour">reset</button>
+            </div>
             <div class="clb-record-meta" id="clb-record-meta"></div>
             <div class="clb-record-row"><span class="clb-record-tag" id="clb-record-verif">recorded</span><button class="clb-btn" data-homeact="openant" id="clb-record-open">Open ant →</button></div>
           </div>
