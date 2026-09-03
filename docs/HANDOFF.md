@@ -40,11 +40,14 @@ controls). `ColonyLiveGuardTests` enforces that split and thirteen other rules.
 - The remaining **45** untyped store methods — one slice per release, each lowering the ratchet.
   SKIPPED TWICE NOW (`.114` and `.115`). The ratchet is enforced at ≤ 45 so it cannot reverse; this
   line is the only thing stopping it quietly stopping.
-- **Bus-only events.** Every Micromound event and 31 other publish sites reach `/events/stream`
-  without ever being written. They cannot be replayed on reconnect, cannot appear in growth playback,
-  and cannot be audited after the fact. The fix is a DECISION — persist-then-publish for the classes
-  that are evidence, transient on purpose for the rest, with the split written down. `docs/PLAN.md`
-  §2e carries it as the top item.
+- **A module cannot persist an event.** 12 bus-only `Events.Publish` sites across 11 files, 8 of
+  them Micromound; the other 198 event sites go through `LogEvent`, which already persists then
+  publishes. The reason is the module boundary — `Anthill.Core` is off-limits to a module, so it has
+  a bus and no persistence path. Those events cannot be replayed on reconnect, cannot appear in
+  growth playback, and cannot be audited. The fix is a SEAM: durability declared on the event type,
+  the composition root persisting the durable ones. `docs/PLAN.md` §2e is the top item.
+  NOTE: the `.115` CHANGELOG says "31 other publish sites". That is wrong and the entry is tagged,
+  so the correction belongs in `.116`'s entry — not in `.115`'s.
 - **Three widget payloads read by nobody.** `mound_fleet`, `mission_status`, `evidence_feed` are
   built on every Micromound mutation for a widget runtime that never rendered them, and `.115`'s
   console reads the routes directly. Retire them or finish them; they should not stay both.
