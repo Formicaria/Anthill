@@ -4,14 +4,22 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: main carries **v0.3.8.118** (`ee41262`) plus the Colony Live re-port (`36c9288`, PR #87,
-rebase-merged, 7/7 checks). **`release/v0.3.8.119` is the release commit for it.** The Colony Live UI
-has been re-ported onto the approved read model: the WebGL renderer, its HUD and the vendored three.js are gone (rejected in
-review); the canvas-2D formicarium from `.111` — the landing page in focus mode, the live bar, the
-composer that hands off to Chat, sector/record panels, the galaxy sky — now consumes `.115`'s
-reducer and endpoints unchanged (`/colony/live/snapshot`, `/colony/live/records`, the stream
-watermark, `/ui/state` layout persistence, the fleet listing, per-mound stop). A chamber's grains are
-its records, its orbs are its residents, and nothing is seeded.
+State: main carries **v0.3.8.119** (the Colony Live re-port, PR #87) plus the colony polish batch
+(PR #89, rebase-merged). **`release/v0.3.8.120` is the release commit for it.** The Colony Live UI
+runs on the approved read model — the WebGL renderer, its HUD and the vendored three.js went with the
+review that rejected them; the canvas-2D formicarium consumes `.115`'s reducer and endpoints unchanged
+(`/colony/live/snapshot`, `/colony/live/records`, the stream watermark, `/ui/state` layout
+persistence, the fleet listing, per-mound stop). A chamber's grains are its records, its orbs are its
+residents, and nothing is seeded.
+
+`.120` is the operator's pass over that page: symmetric 96-slot record seats inside a glow that
+contains them, residents drawn and inspectable as ants (display name and colour, persisted with the
+layout), stylable chambers and conduits, a Labels: None option, `+ Mound` beside a greyed `Mounds`,
+and a light sky that is designed for paper rather than inverted from the dark one. It also carries the
+defect that pass uncovered: **Colony Live enables at `DOMContentLoaded`, which on a fresh session is
+the sign-in screen** — both bounded reads were refused, nothing retried them, and signing in left an
+empty sky. Hydration is now re-attempted on page entry and on the first stream event, idempotent and
+never on a clock, and a guard pins it.
 
 MAIN IS PR-PROTECTED. A bare `git push` to main is rejected by a repository rule (GH013) — every
 change goes through a branch and a PR, including a one-commit docs fix. Paid at `.115`.
