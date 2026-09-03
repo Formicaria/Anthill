@@ -106,12 +106,21 @@
     try { localStorage.setItem(VIEW_KEY, on ? '1' : '0'); } catch (e) { }
   }
 
-  /* ── The read model. Two bounded reads on enable, then nothing. ─────────── */
+  /* ── The read model. Two bounded reads on enable, then nothing — unless enable happened before
+     the operator signed in, in which case both reads were refused and the colony would draw
+     nothing forever. Found live: Live is enabled at DOMContentLoaded, which on a fresh session is
+     the sign-in screen. So hydration is RE-ATTEMPTED — once per trigger, never on a clock — when
+     the page is entered and when the first event arrives on the stream (which only connects after
+     auth). A snapshot that has already landed makes every later attempt a no-op. */
+  var hydrating = false;
+  function hydrated() { try { return !!(topo && topo.project().meta.hydrated); } catch (e) { return false; } }
   function hydrate() {
-    if (typeof api !== 'function') return;
-
+    if (typeof api !== 'function' || !topo || hydrating || hydrated()) return;
+    hydrating = true;
     api('/colony/live/snapshot').then(function (snap) {
-      if (topo) topo.applySnapshot((snap && snap.data) || snap);
+      var body = (snap && snap.data) || snap;
+      if (!body || !body.sectors) throw new Error((snap && snap.message) || 'snapshot refused');
+      if (topo) topo.applySnapshot(body);
       return api('/ui/state');
     }).then(function (st) {
       var saved = ((st && st.data) || st || {}).colony_live_layout;
@@ -120,8 +129,8 @@
     }).then(function (recs) {
       if (topo) topo.ingestRecords((recs && recs.data) || recs);
     }).catch(function (e) {
-      try { console.warn('[colony-live] read model unavailable: ' + (e && e.message)); } catch (e2) { }
-    });
+      try { console.warn('[colony-live] read model unavailable (will retry on page entry or first event): ' + (e && e.message)); } catch (e2) { }
+    }).then(function () { hydrating = false; });
 
     /* §15. The fleet listing, once, on enable — not polled. A colony without the Micromound
        module does not map this route, so a 404 is the ORDINARY case: no mound is ingested and
@@ -164,7 +173,7 @@
 
   // One subscription for the page's life; toggling must not stack listeners.
   if (typeof onColonyEvent === 'function') {
-    onColonyEvent(function (ev) { if (topo) topo.ingestEvent(ev); });
+    onColonyEvent(function (ev) { if (!topo) return; if (!hydrated()) hydrate(); topo.ingestEvent(ev); });
   }
 
   /* COLONY LIVE IS THE DEFAULT VIEW (`.117`). Only an explicit '0' — an operator who turned it
@@ -192,6 +201,8 @@
     /** Fires with the renderer on enable and with null on disable, so chrome can (re)hook it. */
     onLive: function (fn) { if (typeof fn === 'function') { liveListeners.push(fn); if (live) fn(live); } },
     moundStop: moundStop,
+    /** Re-attempt hydration (a no-op once the snapshot has landed) — the page calls this on entry. */
+    hydrate: hydrate,
     renderer: function () { return live ? 'canvas2d' : null; }
   };
 })();

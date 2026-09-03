@@ -582,7 +582,9 @@
       var flowing = circuit.map(function (sg) { return sg.pts; }); if (retSeg) flowing.push(retSeg.pts);
       // strokes are a whisper ghost; the particles are the connection (a touch brighter than before,
       // and scaled by the operator's conduit brightness)
-      var cb = opts.conduits.bright, strandInk = isLight() ? 'rgba(60,72,90,$A)' : 'rgba(146,158,176,$A)';
+      // On paper a whisper is silence: the strand strokes carry roughly twice the alpha they do
+      // under the galaxy, which is the same weight to the eye against a white ground.
+      var cb = opts.conduits.bright * (isLight() ? 1.9 : 1), strandInk = isLight() ? 'rgba(52,64,84,$A)' : 'rgba(146,158,176,$A)';
       roots.forEach(function (r) { if (!bySec[r.a].present || !bySec[r.b].present) return; var carries = flowing.indexOf(r.strands[0]) >= 0; if (r.a === 'queen' || carries) drawStrand(r.strands[0], strandInk, (carries ? .055 : .032) * cb, 2.2, ts); });
       if (bySec.mound.present) authority.strands.forEach(function (st) { drawStrand(st, 'rgba(226,31,123,$A)', .045 * cb, 2.2, ts); });
       rootStreams.forEach(function (ps, i) { var r = roots.filter(function (x) { return x.a === 'queen'; })[i]; if (r && r.b && bySec[r.b].present) drawStream(ps, conduitRGB('146,158,176'), .42 * cb); });
@@ -625,13 +627,29 @@
         s.morph += (wantMorph - s.morph) * .05;
         var m = s.morph;
         var nr = s.R * .34 * pr.s;
-        var nuc = (s.id === 'queen' && !sty.color) ? (isLight() ? '150,110,40' : '232,178,90') : c1.join(',');
-        // THE CHAMBER GLOW ENCOMPASSES ITS CONTENTS: every seat lies within .92R, the envelope reaches
-        // 1.2R × the operator's glow size, brightness scales with theirs; a nucleus sits inside it.
-        var env = Math.max(6, s.R * 1.2 * sty.glow * pr.s), eb = (isLight() ? .16 : .13) * sty.bright * (1 - m * .5) * LT.expo * fog(pr.zc);
+        // On paper the nucleus keeps the chamber's own core colour: the amber the dark sky gives the
+        // Queen turns to mud on white.
+        var nuc = (s.id === 'queen' && !sty.color && !isLight()) ? '232,178,90' : c1.join(',');
+        /* THE CHAMBER GLOW ENCOMPASSES ITS CONTENTS: every seat lies within .92R, the envelope reaches
+           1.2R × the operator's glow size, brightness scales with theirs; a nucleus sits inside it.
+           LIGHT MODE IS NOT THE DARK ONE WITH A WHITE SKY. A pale halo that reads as depth against
+           black reads as a smudge on paper, so the light envelope is a stronger tint that falls off
+           late and closes on a faint rim — the chamber keeps an edge instead of fogging out. */
+        var env = Math.max(6, s.R * 1.2 * sty.glow * pr.s), eb = (isLight() ? .30 : .13) * sty.bright * (1 - m * .5) * LT.expo * fog(pr.zc);
         var eg = ctx.createRadialGradient(pr.x, pr.y, 0, pr.x, pr.y, env);
-        eg.addColorStop(0, 'rgba(' + nuc + ',' + eb + ')'); eg.addColorStop(.62, 'rgba(' + c0.join(',') + ',' + (eb * .55) + ')'); eg.addColorStop(1, 'rgba(' + c0.join(',') + ',0)');
+        if (isLight()) {
+          eg.addColorStop(0, 'rgba(' + nuc + ',' + (eb * .55) + ')');
+          eg.addColorStop(.55, 'rgba(' + c0.join(',') + ',' + (eb * .5) + ')');
+          eg.addColorStop(.84, 'rgba(' + c0.join(',') + ',' + (eb * .26) + ')');
+          eg.addColorStop(1, 'rgba(' + c0.join(',') + ',0)');
+        } else {
+          eg.addColorStop(0, 'rgba(' + nuc + ',' + eb + ')'); eg.addColorStop(.62, 'rgba(' + c0.join(',') + ',' + (eb * .55) + ')'); eg.addColorStop(1, 'rgba(' + c0.join(',') + ',0)');
+        }
         ctx.beginPath(); ctx.arc(pr.x, pr.y, env, 0, TAU); ctx.fillStyle = eg; ctx.fill();
+        if (isLight()) {   // the rim: the chamber's boundary, so the glow has a shape on paper
+          ctx.beginPath(); ctx.arc(pr.x, pr.y, s.R * .98 * sty.glow * pr.s, 0, TAU);
+          ctx.strokeStyle = 'rgba(' + c0.join(',') + ',' + (.16 * sty.bright * (1 - m * .6) * fog(pr.zc)) + ')'; ctx.lineWidth = 1; ctx.stroke();
+        }
         var g = ctx.createRadialGradient(pr.x, pr.y, 0, pr.x, pr.y, Math.max(4, nr * 1.6 * sty.glow));
         g.addColorStop(0, 'rgba(' + nuc + ',' + (.3 * sty.bright * (1 - m * .65) * LT.expo * fog(pr.zc)) + ')'); g.addColorStop(1, 'rgba(' + nuc + ',0)');
         ctx.beginPath(); ctx.arc(pr.x, pr.y, Math.max(4, nr * 1.6 * sty.glow), 0, TAU); ctx.fillStyle = g; ctx.fill();
@@ -700,7 +718,8 @@
         }
         if (opts.labels !== 'none' && (opts.labels !== 'min' || isFocused || s.id === 'queen')) {
           label(s.label + (s.id === 'mound' && s.stopped ? ' · STOPPED' : ''), pr.x, pr.y + (s.R + 18) * pr.s,
-            '600 ' + Math.max(8, Math.min(11, 9 * pr.s * 8)) + "px 'IBM Plex Mono',monospace", 'rgba(' + c0.join(',') + ',' + ((isFocused ? .85 : .5) * fog(pr.zc)) + ')', 'center');
+            '600 ' + Math.max(8, Math.min(11, 9 * pr.s * 8)) + "px 'IBM Plex Mono',monospace",
+            'rgba(' + (isLight() ? shade3(c0, .62).join(',') : c0.join(',')) + ',' + ((isFocused ? .95 : (isLight() ? .8 : .5)) * fog(pr.zc)) + ')', 'center');
         }
         if (isFocused && m > .25 && s.strata && s.strata.length && opts.labels !== 'none') {
           // one label per stratum, at the level's right edge (rotates with the chamber), each on its
