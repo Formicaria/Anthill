@@ -50,7 +50,6 @@
   var ROOT_PAIRS = [['queen', 'intel', 1, 26], ['queen', 'forge', 1, 30], ['queen', 'valid', 1, 40], ['queen', 'memory', 1, 34], ['queen', 'output', 1, 26], ['intel', 'forge', 1, -20], ['forge', 'valid', 1, 22], ['valid', 'memory', 1, 26], ['memory', 'output', 1, 38]];
   // Four cluster seats inside a chamber. WHICH clusters sit in them comes from the scene — the
   // chamber's real record groupings (event types), largest first; the fourth seat is the verified core.
-  var CLSLOT = [[-.62, -.38, .05], [.62, -.28, -.05], [.4, .55, .08], [0, .1, 0]];
   var LAYOUT_SCHEMA = 3;
 
   function create() {
@@ -106,37 +105,79 @@
        no floor: an empty chamber is empty. */
     function seatOf(place, r) { var u = place.a * 2 - 1, th = place.b * TAU, sq = Math.sqrt(Math.max(0, 1 - u * u)); return [sq * Math.cos(th) * r, u * r, sq * Math.sin(th) * r]; }
     function hashPlace(str) { var h = 2166136261 >>> 0; for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } var a = ((h >>> 0) % 10007) / 10007, b = ((Math.imul(h, 2654435761) >>> 0) % 10007) / 10007, c = ((Math.imul(h ^ 0x9e3779b9, 40503) >>> 0) % 10007) / 10007; return { a: a, b: b, c: c }; }
+    var GOLDEN = Math.PI * (3 - Math.sqrt(5)), SPIRAL = 2.399963;
+    function unit(str, salt) { return hashPlace(salt + ':' + str).a; }
+    /* CLUSTERS ARE REAL AND SO ARE THEIR SEATS (ported from the retired renderer, geometry intact).
+       A chamber's clusters are the kinds of record it actually holds, in a stable order, on a
+       golden-angle lattice inside the sphere. Each record sits inside its own cluster at a depth its
+       durability decides — verified records and those authored by a unit with a strong pheromone
+       trail sit deeper — with its direction from the hash of its id, so a record keeps its seat as
+       the chamber fills up around it. */
+    function clusterSeats(sec, R) {
+      var order = (sec.clusters || []).slice().sort(function (a, b) { return a.id < b.id ? -1 : a.id > b.id ? 1 : 0; });
+      var n = order.length;
+      return order.map(function (cl, i) {
+        var y = 1 - (i / Math.max(1, n - 1)) * 1.55, rad = Math.sqrt(Math.max(.05, 1 - y * y)), th = GOLDEN * i;
+        var shellFrac = .42 + unit(cl.id, 'shell') * .36;
+        return { id: cl.id, label: cl.label || cl.id, records: cl.records || [], count: cl.count || (cl.records || []).length,
+          center: [Math.cos(th) * rad * R * shellFrac, y * R * shellFrac * .85, Math.sin(th) * rad * R * shellFrac] };
+      });
+    }
     function rebuildSector(s, sec) {
       var old = {}; s.pts.forEach(function (p) { if (p.rec) old[p.rec.id] = p; });
       var pts = [], links = [];
-      var seatIdx = {}; (sec.clusters || []).slice(0, 3).forEach(function (c, i) { seatIdx[c.id] = i; });
-      (sec.records || []).forEach(function (r) {
-        var id = r.recordId || r.id || (r.title + r.createdAt);
-        var place = r.place || hashPlace(String(id));
-        var verified = r.verification === 'verified';
-        var rec = { id: id, title: r.title || r.recordType || 'record', type: r.recordType || r.type || 'record', ant: r.ant || '—', mission: r.missionId || '', taskId: r.taskId || '', time: r.createdAt || '', verif: r.verification || 'not_scanned', cluster: r.cluster || r.recordType || '' };
-        var prev = old[id];
-        var layer = verified ? 2 : 0, cl = verified ? 3 : (seatIdx[rec.cluster] != null ? seatIdx[rec.cluster] : 3);
-        var o = verified ? seatOf(place, s.R * (.12 + place.c * .2)) : seatOf(place, s.R * (.84 + place.c * .16));
-        var pt = prev || { born: performance.now(), ph: place.b * TAU, rec: null };
-        pt.o = o; pt.layer = layer; pt.cl = cl; pt.clOff = [(place.a - .5) * .5, (place.c - .5) * .4, (place.b - .5) * .5]; pt.sz = verified ? 1.5 : 1.1; pt.a = verified ? .9 : .7; pt.rec = rec; pt.resident = null;
-        if (prev && prev.layer !== layer) pt.settle = { from: prev.o.slice(), to: o.slice(), t: 0 };
-        pts.push(pt);
+      // the trail the colony recorded for whichever unit authored a record; a role with no trail is
+      // null, which is not zero — nothing has run
+      var trails = {};
+      (sec.residents || []).forEach(function (r) { var st = r.trail && isFinite(r.trail.strength) ? Number(r.trail.strength) : 0; if (r.roleId) trails[String(r.roleId).toLowerCase()] = st; (r.workers || []).forEach(function (w) { var id = (w && (w.id || w)) || ''; if (id) trails[String(id).toLowerCase()] = st; }); });
+      function trailOf(ant) { var k = String(ant || '').toLowerCase(); return Object.prototype.hasOwnProperty.call(trails, k) ? Math.max(0, Math.min(1, trails[k])) : 0; }
+      var seats = clusterSeats(sec, s.R), C = Math.max(1, seats.length);
+      s.strata = [];
+      seats.forEach(function (cl, ci) {
+        // THE ORDERED FORMATION: one level (stratum) per cluster, records on an even golden-angle
+        // spiral within it; the cloud cross-fades into this when the chamber is focused.
+        var mcount = Math.max(1, cl.records.length);
+        var y = ((ci + .5) / C - .5) * s.R * 1.55;
+        var band = Math.sqrt(Math.max(.12, 1 - Math.pow(y / (s.R * 1.05), 2)));
+        s.strata.push({ id: cl.id, label: cl.label, count: cl.count, y: y, band: band });
+        cl.records.forEach(function (r, k) {
+          var id = r.recordId || r.id || (r.title + r.createdAt);
+          var place = r.place || hashPlace(String(id));
+          var verified = r.verification === 'verified', pher = trailOf(r.ant);
+          var durable = (verified ? .55 : .1) + pher * .45, depth = 1 - Math.min(.94, durable);
+          var dir = [unit(id, 'dx') * 2 - 1, unit(id, 'dy') * 2 - 1, unit(id, 'dz') * 2 - 1], len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+          var spread = s.R * .16, kk = .5 + depth * .75;
+          var o = [cl.center[0] * kk + dir[0] / len * spread, cl.center[1] * kk + dir[1] / len * spread, cl.center[2] * kk + dir[2] / len * spread];
+          var ang = k * SPIRAL, rad = s.R * .86 * band * Math.sqrt((k + .55) / mcount);
+          var org = [Math.cos(ang) * rad, y, Math.sin(ang) * rad];
+          var rec = { id: id, title: r.title || r.recordType || 'record', type: r.recordType || r.type || 'record', ant: r.ant || '—', mission: r.missionId || '', taskId: r.taskId || '', time: r.createdAt || '', verif: r.verification || 'not_scanned', cluster: cl.id, pher: pher };
+          var prev = old[id], pt = prev || { born: performance.now(), ph: place.b * TAU, rec: null };
+          var radN = Math.min(1, Math.hypot(o[0], o[1], o[2]) / s.R), edge = 1 - .72 * Math.pow(radN, 2.6);
+          if (prev && (Math.abs(prev.o[0] - o[0]) + Math.abs(prev.o[1] - o[1]) + Math.abs(prev.o[2] - o[2])) > .5) pt.settle = { from: prev.o.slice(), to: o.slice(), t: 0 };
+          pt.o = o; pt.org = org; pt.layer = verified ? 2 : 0; pt.cl = ci; pt.stratum = ci;
+          pt.sz = (1.15 + pher * 1.7) * (.72 + .28 * edge) * .9; pt.a = Math.min(1, .82 + pher * .2) * (.86 + .14 * edge); pt.coreMix = Math.min(1, Math.pow(1 - radN, 1.5) * 1.15);
+          pt.rec = rec; pt.resident = null;
+          pts.push(pt);
+        });
       });
-      // residents: one orb per role in the mid band, its workers as smaller orbs beside it
+      // residents: one orb per role on the mid ring, its workers as smaller orbs beside it; in the
+      // ordered formation they line up on a row above the top stratum
+      var top = s.strata.length ? s.strata[s.strata.length - 1].y + s.R * .38 : 0;
       (sec.residents || []).forEach(function (r, ri) {
-        var n = Math.max(1, (sec.residents || []).length), th = ri / n * TAU + .7, y = Math.sin(ri * 2.4) * .25;
-        var base = [Math.cos(th) * s.R * .55, y * s.R, Math.sin(th) * s.R * .55];
-        pts.push({ o: base, layer: 1, cl: 3, clOff: [0, 0, 0], sz: 2.4, a: .95, ph: ri, born: 0, rec: null, resident: { roleId: r.roleId, name: r.name || r.roleId, status: r.status, trail: r.trail || null, workers: (r.workers || []).length } });
+        var n = Math.max(1, (sec.residents || []).length), th = ri / n * TAU + .7, yy = Math.sin(ri * 2.4) * .25;
+        var base = [Math.cos(th) * s.R * .55, yy * s.R, Math.sin(th) * s.R * .55];
+        var rowX = ((ri + .5) / n - .5) * s.R * 1.5;
+        pts.push({ o: base, org: [rowX, top, 0], layer: 1, cl: 0, sz: 2.4, a: .95, ph: ri, born: 0, rec: null, resident: { roleId: r.roleId, name: r.name || r.roleId, status: r.status, trail: r.trail || null, workers: (r.workers || []).length } });
+        var roleIdx = pts.length - 1;
         (r.workers || []).forEach(function (w, wi) {
           var wn = (r.workers || []).length, wt = th + (wi - (wn - 1) / 2) * .28;
-          pts.push({ o: [Math.cos(wt) * s.R * .68, base[1] + (wi % 2 ? .08 : -.08) * s.R, Math.sin(wt) * s.R * .68], layer: 1, cl: 3, clOff: [0, 0, 0], sz: 1.4, a: .8, ph: wi, born: 0, rec: null, resident: { roleId: w.id, name: w.name || w.id, parent: w.parent || r.roleId, status: w.enabled === false ? 'disabled' : r.status, worker: true } });
-          links.push([pts.length - 1, pts.length - 2 - wi]);   // the roster chain: worker → its role
+          pts.push({ o: [Math.cos(wt) * s.R * .68, base[1] + (wi % 2 ? .08 : -.08) * s.R, Math.sin(wt) * s.R * .68], org: [rowX + (wi - (wn - 1) / 2) * s.R * .12, top + s.R * .16, 0], layer: 1, cl: 0, sz: 1.4, a: .8, ph: wi, born: 0, rec: null, resident: { roleId: w.id, name: w.name || w.id, parent: w.parent || r.roleId, status: w.enabled === false ? 'disabled' : r.status, worker: true } });
+          links.push([pts.length - 1, roleIdx]);   // the roster chain: worker → its role
         });
       });
       // a mission's thread through this chamber: records sharing a mission_id, in recorded order
       var byMission = {}; pts.forEach(function (p, i) { if (p.rec && p.rec.mission) (byMission[p.rec.mission] = byMission[p.rec.mission] || []).push(i); });
-      Object.keys(byMission).forEach(function (m) { var list = byMission[m].sort(function (a, b) { return pts[a].rec.time < pts[b].rec.time ? -1 : 1; }); if (list.length < 2) return; for (var i = 1; i < list.length; i++) links.push([list[i - 1], list[i]]); });
+      Object.keys(byMission).forEach(function (mkey) { var list = byMission[mkey].sort(function (a, b) { return pts[a].rec.time < pts[b].rec.time ? -1 : 1; }); if (list.length < 2) return; for (var i = 1; i < list.length; i++) links.push([list[i - 1], list[i]]); });
       s.pts = pts; s.links = links;
       s.records = sec.records || []; s.residents = sec.residents || []; s.clusters = sec.clusters || [];
       s.counts = { records: sec.recordCount != null ? sec.recordCount : s.records.length, running: (sec.runningTasks || []).length, residents: s.residents.length, verified: s.records.filter(function (r) { return r.verification === 'verified'; }).length };
@@ -390,7 +431,7 @@
     }
     function grain(q, sz, c, a) { var r = Math.max(.5, sz * Math.min(1.4, q.s * 1.6)); ctx.fillStyle = 'rgba(' + c + ',' + a + ')'; ctx.fillRect(q.x - r * .5, q.y - r * .5, r, r); }
     function drawGalaxy(ts) {
-      var ex = LT.expo, tw0 = ts * .0011;
+      var ex = Math.max(1, LT.expo) * 1.25, tw0 = ts * .0011;
       // 1. clouds (far, volumetric): dark wisps are drawn AFTER their colour so they carve it
       CLOUDS.forEach(function (cl) {
         var drift = live() ? Math.sin(ts * .00004 + cl.ph) * 40 : 0, base = [cl.p[0] + drift, cl.p[1] + drift * .4, cl.p[2]];
@@ -465,7 +506,24 @@
       drawAttention(ts);
       drawAnts(ts);
     }
+    // LABELS DO NOT STACK. Every label drawn in a frame is registered; one that would overlap an
+    // earlier one steps down a row (up to four rows) before it is drawn, so two chambers that project
+    // close together, or a role name over a stratum label, stay legible instead of overprinting.
+    var labelRects = [];
+    function label(text, x, y, font, fill, align) {
+      ctx.font = font; ctx.textAlign = align || 'center';
+      var wdt = ctx.measureText(text).width, h = 11;
+      var x0 = align === 'left' ? x : align === 'right' ? x - wdt : x - wdt / 2;
+      for (var tries = 0; tries < 4; tries++) {
+        var clash = labelRects.some(function (r) { return x0 < r.x + r.w && x0 + wdt > r.x && y - h < r.y && y > r.y - r.h; });
+        if (!clash) break;
+        y += h + 2;
+      }
+      labelRects.push({ x: x0, y: y, w: wdt, h: h });
+      ctx.fillStyle = fill; ctx.fillText(text, x, y);
+    }
     function drawSpheres(ts) {
+      labelRects = [];
       var order = shown().map(function (s) { return { s: s, pr: proj(s.pos) }; }).filter(function (o) { return o.pr; }).sort(function (a, b) { return b.pr.zc - a.pr.zc; });
       order.forEach(function (o) {
         var s = o.s, pr = o.pr;
@@ -478,7 +536,6 @@
         var wantMorph = isFocused && cam.dist < s.R * 5.5 ? 1 : 0;
         s.morph += (wantMorph - s.morph) * .05;
         var m = s.morph;
-        var clC = CLSLOT.map(function (sl) { return [s.pos[0] + sl[0] * s.R * .8, s.pos[1] + sl[1] * s.R * .8, s.pos[2] + sl[2] * s.R * .8]; });
         var nr = s.R * .34 * pr.s;
         var nuc = s.id === 'queen' ? '232,178,90' : c1.join(',');
         var g = ctx.createRadialGradient(pr.x, pr.y, 0, pr.x, pr.y, Math.max(4, nr * 2.2));
@@ -494,14 +551,14 @@
         s.links.forEach(function (lk) {
           var pa = s.pts[lk[0]], pb = s.pts[lk[1]];
           if (pa.hidden || pb.hidden) return;
-          var wa = ptWorld(s, pa, cr, sr, m, clC), wb = ptWorld(s, pb, cr, sr, m, clC);
+          var wa = ptWorld(s, pa, cr, sr, m), wb = ptWorld(s, pb, cr, sr, m);
           var a = proj(wa), b = proj(wb);
           if (a && b && Math.hypot(a.x - b.x, a.y - b.y) < 90 * pr.s) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
         });
         s.pts.forEach(function (p, pi) {
           if (p.settle) { p.settle.t = Math.min(1, p.settle.t + .02); var k = 1 - Math.pow(1 - p.settle.t, 3); for (var d = 0; d < 3; d++) p.o[d] = p.settle.from[d] + (p.settle.to[d] - p.settle.from[d]) * k; if (p.settle.t >= 1) delete p.settle; }
           if (p.hidden) { p._q = null; return; }
-          var w = ptWorld(s, p, cr, sr, m, clC);
+          var w = ptWorld(s, p, cr, sr, m);
           var q = proj(w); if (!q) return;
           p._q = q; p._w = w;
           var a = p.a * fog(q.zc);
@@ -511,7 +568,9 @@
           var res = p.resident;
           // a resident's colour is its STATUS: working = the chamber's core colour with a pulse;
           // idle = the chamber colour; disabled = grey. A record is shell (chamber) or core (verified).
-          var col = res ? (res.status === 'working' ? c1.join(',') : res.status === 'disabled' ? '110,118,134' : c0.join(',')) : (p.layer === 2 ? c1.join(',') : c0.join(','));
+          var col;
+          if (res) col = res.status === 'working' ? c1.join(',') : res.status === 'disabled' ? '110,118,134' : c0.join(',');
+          else { var mix = p.layer === 2 ? 1 : (p.coreMix || 0); col = Math.round(c0[0] + (c1[0] - c0[0]) * mix) + ',' + Math.round(c0[1] + (c1[1] - c0[1]) * mix) + ',' + Math.round(c0[2] + (c1[2] - c0[2]) * mix); }
           var tw = res ? (res.status === 'working' && live() ? .8 + Math.sin(ts * .004 + p.ph) * .2 : 1) : (live() && p.layer === 0 ? .85 + Math.sin(ts * .0012 + p.ph) * .15 : 1);
           var hp = isFocused && hovPt === pi;
           var sh = shadeAt(w, s.pos);                 // lit hemisphere + rim, per point, per frame
@@ -519,7 +578,7 @@
           ctx.beginPath(); ctx.arc(q.x, q.y, rad, 0, TAU);
           ctx.fillStyle = 'rgba(' + col + ',' + Math.min(1, a * tw * (.7 + .8 * sh) * LT.expo * (hp ? 1.4 : 1)) + ')'; ctx.fill();
           if (res && res.status === 'working') { ctx.beginPath(); ctx.arc(q.x, q.y, rad + 3, 0, TAU); ctx.strokeStyle = 'rgba(' + c1.join(',') + ',' + (.35 * tw) + ')'; ctx.lineWidth = 1; ctx.stroke(); }
-          if (res && !res.worker && isFocused && m > .25) { ctx.font = "8px 'IBM Plex Mono',monospace"; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(201,210,221,' + (.7 * m) + ')'; ctx.fillText(res.name, q.x, q.y + rad + 9); }
+          if (res && !res.worker && isFocused && m > .25) label(res.name, q.x, q.y - rad - 6, "8px 'IBM Plex Mono',monospace", 'rgba(201,210,221,' + (.75 * m) + ')', 'center');
           if (hp) { ctx.beginPath(); ctx.arc(q.x, q.y, Math.max(4, p.sz * q.s + 5), 0, TAU); ctx.strokeStyle = 'rgba(' + c0.join(',') + ',.7)'; ctx.lineWidth = 1; ctx.stroke(); }
         });
         if (selHere != null && s.pts[selHere]._q) {
@@ -538,34 +597,34 @@
           if (s.stopped) { ctx.beginPath(); ctx.arc(pr.x, pr.y, s.R * 1.2 * pr.s, 0, TAU); ctx.strokeStyle = 'rgba(226,31,123,.8)'; ctx.lineWidth = 2.2; ctx.stroke(); }
         }
         if (opts.labels !== 'min' || isFocused || s.id === 'queen') {
-          ctx.font = '600 ' + Math.max(8, Math.min(11, 9 * pr.s * 8)) + "px 'IBM Plex Mono',monospace"; ctx.textAlign = 'center';
-          ctx.fillStyle = 'rgba(' + c0.join(',') + ',' + ((isFocused ? .85 : .5) * fog(pr.zc)) + ')';
-          ctx.fillText(s.label + (s.id === 'mound' && s.stopped ? ' · STOPPED' : ''), pr.x, pr.y + (s.R + 18) * pr.s);
+          label(s.label + (s.id === 'mound' && s.stopped ? ' · STOPPED' : ''), pr.x, pr.y + (s.R + 18) * pr.s,
+            '600 ' + Math.max(8, Math.min(11, 9 * pr.s * 8)) + "px 'IBM Plex Mono',monospace", 'rgba(' + c0.join(',') + ',' + ((isFocused ? .85 : .5) * fog(pr.zc)) + ')', 'center');
         }
-        if (isFocused && m > .25) {
-          // seats 0–2: the chamber's three largest real clusters (event types); seat 3: verified core
-          var seats = (s.clusters || []).slice(0, 3).map(function (c) { return { label: c.label || c.id, n: c.count }; });
-          seats[3] = { label: 'verified', n: s.counts ? s.counts.verified : 0 };
-          seats.forEach(function (st, ci) {
-            if (!st) return;
-            var q = proj([clC[ci][0], clC[ci][1] - s.R * .52, clC[ci][2]]); if (!q) return;
-            ctx.font = "600 9px 'IBM Plex Mono',monospace"; ctx.textAlign = 'center';
-            ctx.fillStyle = ci === 3 ? 'rgba(' + c1.join(',') + ',' + (m * .9) + ')' : 'rgba(201,210,221,' + (m * .72) + ')';
-            ctx.fillText(String(st.label).toUpperCase().slice(0, 26), q.x, q.y);
+        if (isFocused && m > .25 && s.strata && s.strata.length) {
+          // one label per stratum, at the level's right edge (rotates with the chamber), each on its
+          // own level so labels cannot stack; the level's ring is a faint guide under its records
+          s.strata.forEach(function (st) {
+            var lx = s.R * .92 * st.band, ex = lx * cr, ez = lx * sr;
+            var q = proj([s.pos[0] + ex, s.pos[1] + st.y, s.pos[2] + ez]); if (!q) return;
+            ctx.beginPath();
+            for (var ai = 0; ai <= 36; ai++) { var aa = ai / 36 * TAU, rx = Math.cos(aa) * s.R * .86 * st.band, rz = Math.sin(aa) * s.R * .86 * st.band, rq = proj([s.pos[0] + rx * cr - rz * sr, s.pos[1] + st.y, s.pos[2] + rx * sr + rz * cr]); if (!rq) { ai = 99; break; } if (ai) ctx.lineTo(rq.x, rq.y); else ctx.moveTo(rq.x, rq.y); }
+            ctx.strokeStyle = 'rgba(' + c0.join(',') + ',' + (.08 * m) + ')'; ctx.lineWidth = .8; ctx.stroke();
+            ctx.font = "600 9px 'IBM Plex Mono',monospace"; ctx.textAlign = 'left';
+            ctx.fillStyle = 'rgba(201,210,221,' + (m * .8) + ')';
+            ctx.fillText(String(st.label).toUpperCase().slice(0, 28), q.x + 8, q.y + 3);
             ctx.font = "8px 'IBM Plex Mono',monospace"; ctx.fillStyle = 'rgba(107,116,136,' + m + ')';
-            ctx.fillText(st.n + (st.n === 1 ? ' record' : ' records'), q.x, q.y + 11);
+            ctx.fillText(st.count + (st.count === 1 ? ' record' : ' records'), q.x + 8, q.y + 14);
           });
+          ctx.textAlign = 'center';
         }
       });
     }
-    function ptWorld(s, p, cr, sr, m, clC) {
-      var w = [s.pos[0] + p.o[0] * cr - p.o[2] * sr, s.pos[1] + p.o[1], s.pos[2] + p.o[0] * sr + p.o[2] * cr];
-      if (m > .01) {
-        var cc = clC[p.cl];
-        var cw = [cc[0] + p.clOff[0] * s.R, cc[1] + p.clOff[1] * s.R, cc[2] + p.clOff[2] * s.R];
-        w = [w[0] + (cw[0] - w[0]) * m, w[1] + (cw[1] - w[1]) * m, w[2] + (cw[2] - w[2]) * m];
-      }
-      return w;
+    /** A point's live seat: the cloud seat, the ordered seat, or the blend on screen (m). One source
+        of truth for grains, links and labels, so a link never trails the grain it points at. */
+    function ptWorld(s, p, cr, sr, m) {
+      var o = p.o, g = p.org || p.o;
+      var lx = o[0] + (g[0] - o[0]) * m, ly = o[1] + (g[1] - o[1]) * m, lz = o[2] + (g[2] - o[2]) * m;
+      return [s.pos[0] + lx * cr - lz * sr, s.pos[1] + ly, s.pos[2] + lx * sr + lz * cr];
     }
     function antPos(an) {
       var sg = an.seg === -1 ? retSeg : circuit[an.seg];
@@ -735,9 +794,14 @@
       moved = false;
       var m = local(e);
       if (pickPoint(m.x, m.y) == null) {
-        for (var i = 0; i < SEC.length; i++) {
-          var s = SEC[i], pr = proj(s.pos);
-          if (pr && Math.hypot(pr.x - m.x, pr.y - m.y) < Math.max(20, s.R * pr.s)) { sphDrag = { s: s, x: e.clientX, y: e.clientY, orig: s.pos.slice(), zc: pr.zc }; cv.style.cursor = 'grabbing'; return; }
+        // Moving a chamber is deliberate: grab its nucleus, or hold Shift anywhere on it. A drag that
+        // starts on the shell orbits — otherwise every orbit that began over a chamber rearranged the
+        // colony and persisted the accident.
+        var vis = shown();
+        for (var i = 0; i < vis.length; i++) {
+          var s = vis[i], pr = proj(s.pos); if (!pr) continue;
+          var d = Math.hypot(pr.x - m.x, pr.y - m.y), grabR = e.shiftKey ? Math.max(20, s.R * pr.s) : Math.max(10, s.R * pr.s * .34);
+          if (d < grabR) { sphDrag = { s: s, x: e.clientX, y: e.clientY, orig: s.pos.slice(), zc: pr.zc }; cv.style.cursor = 'grabbing'; return; }
         }
       }
       drag = { x: e.clientX, y: e.clientY, yaw: cam.yaw, pitch: cam.pitch };
@@ -797,7 +861,8 @@
       var hit = null;
       var vis2 = shown(); for (var i = 0; i < vis2.length; i++) { var s2 = vis2[i], pr = proj(s2.pos); if (pr && Math.hypot(pr.x - m.x, pr.y - m.y) < Math.max(18, s2.R * pr.s)) { hit = s2; break; } }
       if (hit && !dragging()) {
-        cv.style.cursor = 'pointer';
+        var hpr = proj(hit.pos), overNucleus = hpr && Math.hypot(hpr.x - m.x, hpr.y - m.y) < Math.max(10, hit.R * hpr.s * .34);
+        cv.style.cursor = overNucleus ? 'move' : 'pointer';
         var hc = hit.counts || {};
         tip.textContent = hit.label + ' · ' + (hc.records ? hc.records + ' record' + (hc.records === 1 ? '' : 's') : 'no records') + (hc.verified ? ' (' + hc.verified + ' verified)' : '') + ' · ' + (hc.residents || 0) + ' resident' + (hc.residents === 1 ? '' : 's') + (hc.running ? ' · ' + hc.running + ' running' : '');
         tip.style.display = 'block'; tip.style.left = (e.clientX + 14) + 'px'; tip.style.top = (e.clientY - 10) + 'px';

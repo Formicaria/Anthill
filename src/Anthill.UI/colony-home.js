@@ -51,6 +51,7 @@
     document.querySelectorAll('#clb-views .clb-btn').forEach(function (b) { b.classList.toggle('on', b.dataset.homeact === act); });
   }
   function view(act) {
+    var btn = document.querySelector('[data-homeact="' + act + '"]'); if (btn && btn.disabled) return;
     var live = liveApi();
     if (!live) { if (act === 'resetview' && typeof colonyResetView === 'function') colonyResetView(); return; }
     if (act === 'survey') live.survey();
@@ -61,9 +62,20 @@
     else if (act === 'resetview') { live.resetView(); act = 'survey'; }
     markView(act);
   }
+  var lastScene = null;
+  function syncViewButtons() {
+    // A view that has nowhere to go is disabled rather than silently doing nothing: Mounds needs a
+    // mound in the fleet, Follow needs a running task to ride with.
+    var sc = lastScene, mound = !!(sc && sc.mound && sc.mound.present);
+    var running = !!(sc && (sc.sectors || []).some(function (x) { return (x.runningTasks || []).length; }));
+    var b;
+    if ((b = document.querySelector('[data-homeact="mounds"]'))) { b.disabled = !mound; b.title = mound ? 'Approach the Micromound' : 'No mound in the fleet — nothing to approach'; }
+    if ((b = document.querySelector('[data-homeact="follow"]'))) { b.disabled = !running; b.title = running ? 'Ride the active mission circuit' : 'No task is running — nothing to follow'; }
+  }
   function refreshBar() {
     var dot = $('clb-dot'), goal = $('clb-goal'), fill = $('clb-prog-fill'), count = $('clb-count'), needs = $('clb-needs'), needsTxt = $('clb-needs-txt');
     if (!dot || !goal) return;
+    syncViewButtons();
     var running = (typeof colonyRunning !== 'undefined') && !!colonyRunning;
     var hdr = $('mission-goal');
     var text = hdr ? (hdr.textContent || '').trim() : '';
@@ -272,7 +284,7 @@
     }
     // The header's mission line and the approvals badge are written by app.js's own pollers; the
     // bar re-reads them on every scene the reducer publishes (graph, approvals, events all publish).
-    if (window.ColonyHost) { ColonyHost.onLive(hookLive); ColonyHost.onScene(function () { if (page.classList.contains('active')) refreshBar(); }); }
+    if (window.ColonyHost) { ColonyHost.onLive(hookLive); ColonyHost.onScene(function (sc) { lastScene = sc; if (page.classList.contains('active')) refreshBar(); }); }
     refreshBar(); syncToggle();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
