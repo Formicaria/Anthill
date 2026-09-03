@@ -530,6 +530,9 @@ const IA = [
   { type:'domain', id:'colony', label:'Colony', vis:'all', sections:[
     // The living colony — topology, ant activity, pheromone signals, mission state. This is the
     // page the old standalone Dashboard became: one place for the colony at a glance.
+    // Colony Live home: the landing page. The 3D formicarium full-bleed (focus) or beside the
+    // console's side columns; its composer hands every message to Chat, which stays the one entry.
+    { label:'Live', route:'/colony/live', page:'colony', vis:'all' },
     { label:'Overview', route:'/colony', page:'overview', vis:'all' },
     // v0.3.8.55 (field report): Models & Routing merged INTO the Ant Inspector — one box per
     // role carries route, gates, telemetry and profile; the colony-wide priority and the
@@ -592,7 +595,7 @@ const DOMAIN_HOME = {};
 })();
 // Deterministic canonical home per page (first-occurrence is ambiguous for shared pages like homelab).
 Object.assign(PAGE_HOME,{
-  overview:'/colony', colony:'/colony', missions:'/projects',
+  overview:'/colony', colony:'/colony/live', missions:'/projects',
   activity:'/settings/system',
   results:'/projects', events:'/settings/system',
   patches:'/chat', objboard:'/projects',
@@ -613,7 +616,7 @@ const HLSUB_ROUTE={
 };
 // Legacy hash → new route (URL migration; §9 of the proposal).
 const LEGACY_REDIRECT={
-  overview:'/colony', colony:'/colony', missions:'/projects',
+  overview:'/colony', colony:'/colony/live', missions:'/projects',
   events:'/settings/system', results:'/projects',
   patches:'/chat', objboard:'/projects',
   pheromones:'/tools/memory', homelab:'/tools/integrations',
@@ -7050,17 +7053,11 @@ function restoreLayout(){
   try{
     // 1) An explicit deep link in the URL wins (bookmarks / shared links / back-forward).
     if(router()) return;
-    // 2) Otherwise reopen the last page, mapped to its canonical route (honoring role visibility).
-    const last=localStorage.getItem('last-page');
-    if(last && PAGE_HOME[last]){
-      const r=ROUTE_TABLE[PAGE_HOME[last]];
-      if(r && !canSee(r.vis)){ go('/dashboard',false); return; }
-      go(PAGE_HOME[last],false); return;
-    }
-    // v3.8.39: a first-time operator lands in the conversation rather than on a grid of
-    // widgets. Anyone with a remembered page keeps it — that branch is above and untouched.
-    go('/chat',false);
-  }catch{ try{ showPage('chat'); }catch{} }
+    // 2) Otherwise the colony itself: Colony Live is the landing page for everyone. A deep link
+    //    still wins (above); the remembered page no longer does — the colony is where you start,
+    //    and the composer at its foot is one keystroke from Chat.
+    go('/colony/live',false);
+  }catch{ try{ showPage('colony'); }catch{} }
 }
 
 // -- Card collapse --------------------------------------------------------------

@@ -1,3 +1,10 @@
+> **Retired (v0.3.8.119).** The WebGL port of this reference (`colony-renderer.js`, `colony-hud.js`,
+> vendored three.js) was rejected in review and removed. The Colony Live UI is the canvas-2D
+> formicarium (`src/Anthill.UI/colony-live.js` + `colony-home.js`), running on the read model this
+> handoff's backend work established — `/colony/live/snapshot`, `/colony/live/records`, the stream
+> watermark, the projection — which was approved and is unchanged. This folder is kept as the record
+> of the design and of what the backend was built to serve; nothing below is a build instruction.
+
 # Handoff: Colony Live 3D
 
 ## Start here

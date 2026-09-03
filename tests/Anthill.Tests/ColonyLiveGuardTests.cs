@@ -30,9 +30,16 @@ public class ColonyLiveGuardTests
     /// Named explicitly rather than enumerated: these guards make claims about THIS feature, and a
     /// directory sweep would silently start policing whatever lands beside it.
     /// </summary>
+    /// <summary>
+    /// The four assets of the feature after the `.119` port: the reducer over the read model, the
+    /// canvas renderer, the wiring, and the page chrome. `colony-renderer.js`, `colony-hud.js` and the
+    /// vendored three.js are gone with the WebGL UI they belonged to; the backend they were built
+    /// against — the snapshot, the records read, the projection, the stream watermark — is what the
+    /// canvas renderer now speaks, and every guard below that protected that contract survives.
+    /// </summary>
     private static readonly string[] ColonyAssets =
     [
-        "colony-topology.js", "colony-renderer.js", "colony-live.js", "colony-host.js", "colony-hud.js"
+        "colony-topology.js", "colony-live.js", "colony-host.js", "colony-home.js"
     ];
 
     private static string Raw(string asset) => File.ReadAllText(Path.Combine(UiDir(), asset));
@@ -98,23 +105,24 @@ public class ColonyLiveGuardTests
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// `.111` positioned ants with `t: 0.2 + ants.length * .25` and drifted them at a fixed speed:
-    /// a travel animation presented as progress. Nothing in this feature may place, move or size a
-    /// thing by chance — the same colony state must draw the same picture twice.
+    /// Nothing in this feature may place, move or size a thing by chance — the same colony state
+    /// must draw the same picture twice. A record grain sits where the hash of its id puts it, on
+    /// every reload and on every screen; the reducer computes that hash and the renderer reads it.
     /// </summary>
     [Fact]
     public void NoColonyAsset_PlacesAnythingAtRandom()
     {
         foreach (var asset in ColonyAssets)
             Assert.False(Code(asset).Contains("Math.random", StringComparison.Ordinal),
-                $"{asset} calls Math.random. Record and ant placement is derived from a hash of the "
-              + "record id so a re-render is stable; a random position reshuffles the colony under "
-              + "the operator's cursor and makes \"the third particle from the left\" meaningless.");
+                $"{asset} calls Math.random. Record placement is derived from a hash of the record id "
+              + "so a re-render is stable; a random position reshuffles the colony under the "
+              + "operator's cursor and makes \"the third grain from the left\" meaningless.");
 
-        // Vacuity floor: the deterministic replacement is actually present.
+        // Vacuity floor: the deterministic placement exists at both ends.
         var topo = Code("colony-topology.js");
         Assert.Contains("function hash32", topo);
         Assert.Contains("function placement", topo);
+        Assert.Contains("r.place || hashPlace(", Code("colony-live.js"));
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -125,6 +133,7 @@ public class ColonyLiveGuardTests
     /// A repeating timer is how a mission clock, a looping traffic animation and a second poll all
     /// get built. None of the three is allowed: mission progress comes from task status, transitions
     /// play once per recorded event id, and the live picture rides the stream app.js already holds.
+    /// The page chrome included — its bar refreshes when the reducer publishes, not on a clock.
     /// </summary>
     [Fact]
     public void NoColonyAsset_RunsARepeatingTimer()
@@ -137,21 +146,24 @@ public class ColonyLiveGuardTests
 
         // Vacuity floor: the scan detects setInterval where it legitimately exists.
         Assert.Contains("setInterval", File.ReadAllText(Path.Combine(UiDir(), "app.js")));
+        // And the bar's refresh really is scene-driven.
+        Assert.Contains("ColonyHost.onScene(", Code("colony-home.js"));
     }
 
     /// <summary>
     /// A recorded transition plays ONCE, keyed by the event id, and the flight is disposed when it
-    /// lands. The `.111` version restarted every ant every frame, which reads as continuous traffic
-    /// in a colony that is doing nothing.
+    /// lands. Restarting every ant every frame reads as continuous traffic in a colony doing nothing.
     /// </summary>
     [Fact]
     public void RecordedTransitions_PlayOncePerEventId()
     {
-        var r = Code("colony-renderer.js");
+        var r = Code("colony-live.js");
         Assert.Contains("playedTransitions[tr.id]", r);
         Assert.Contains("playedTransitions[tr.id] = true", r);
-        // And a historical frame never burns those ids — see §14.
-        Assert.Contains("if (sc.meta && sc.meta.history) return;", r);
+        // A historical frame never burns those ids — see §14.
+        Assert.Contains("if (scene.meta && scene.meta.history) return;", r);
+        // And a landed flight is removed, not restarted.
+        Assert.Contains("flights.splice(fi, 1)", r);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -160,8 +172,9 @@ public class ColonyLiveGuardTests
 
     /// <summary>
     /// The model must not be able to go and get more data, and the view must not be able to act on
-    /// the colony behind the host's back. Both would make the "no second fetch" boundary unenforceable
-    /// by inspection — you would have to read four files to know what the feature talks to.
+    /// the colony behind the host's back. The page chrome (`colony-home.js`) is allowed exactly one
+    /// kind of call of its own — the project list and project creation its composer needs, which
+    /// are the Chat picker's own calls — and nothing of the read model.
     /// </summary>
     [Fact]
     public void OnlyTheHost_TalksToTheApi()
@@ -173,10 +186,23 @@ public class ColonyLiveGuardTests
                 Assert.False(code.Contains(io, StringComparison.Ordinal),
                     $"{asset} performs I/O ({io}). colony-host.js is the only file in this feature "
                   + "that may reach the network.");
+            Assert.False(code.Contains("/colony/live", StringComparison.Ordinal),
+                $"{asset} names a Colony Live endpoint. The host hydrates; the model and the view consume.");
         }
+
+        foreach (var asset in new[] { "colony-topology.js", "colony-live.js" })
+            Assert.False(Code(asset).Contains("api(", StringComparison.Ordinal),
+                $"{asset} calls api(). The reducer and the renderer never fetch.");
+
+        var homeCalls = Regex.Matches(Code("colony-home.js"), @"api\('([^']+)'").Select(m => m.Groups[1].Value).ToList();
+        Assert.True(homeCalls.Count > 0, "colony-home.js makes no api() call; the composer's project scope has gone somewhere else.");
+        Assert.True(homeCalls.All(p => p == "/projects"),
+            "colony-home.js calls endpoints beyond /projects: " + string.Join(", ", homeCalls.Distinct())
+          + ". The page chrome may resolve a project for its composer and nothing more.");
 
         // Vacuity floor: the host really is the one doing it.
         Assert.Contains("api('/colony/live/snapshot')", Code("colony-host.js"));
+        Assert.Contains("api('/colony/live/records?limit=200')", Code("colony-host.js"));
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -361,7 +387,7 @@ public class ColonyLiveGuardTests
     }
 
     // ---------------------------------------------------------------------------------------------
-    // §17.6 — approvals are exact or explicitly unresolved, and decisions really leave the browser
+    // §17.6 — approvals are exact or explicitly unresolved, and nothing here decides one
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>
@@ -381,25 +407,29 @@ public class ColonyLiveGuardTests
     }
 
     /// <summary>
-    /// §11. The decision must reach the colony through the console's existing authenticated path.
-    /// A Colony Live that marked an approval "approved" in its own state and never called the server
-    /// is the specific failure this guards — the operator would believe they had answered.
+    /// The renderer draws an approval BOUNDARY only for a resolved approval — one the reducer could
+    /// place on a role and a task — and shows an unresolved one as attention at the Queen, who is
+    /// the authority that must answer it. Neither the renderer nor the page chrome decides an
+    /// approval: the chip that counts them opens Chat, where app.js's authenticated `doApproval`
+    /// already lives, and no asset here builds an approve or reject route of its own.
     /// </summary>
     [Fact]
-    public void ApprovalDecisions_GoThroughTheConsolesRealAuthenticatedPath()
+    public void NothingHere_DecidesAnApproval()
     {
-        var hud = Code("colony-hud.js");
+        var live = Code("colony-live.js");
+        Assert.Contains("return a.resolved;", live);
+        Assert.Contains("return !a.resolved;", live);
+        Assert.Contains("sector: 'queen', kind: 'approval'", live);
 
-        Assert.Contains("window.doApproval", hud);
+        foreach (var asset in ColonyAssets)
+            foreach (var forbidden in new[] { "'/approve/", "\"/approve/", "'/reject/", "\"/reject/", "doApproval(" })
+                Assert.False(Code(asset).Contains(forbidden, StringComparison.Ordinal),
+                    $"{asset} decides an approval ({forbidden}). Decisions belong to app.js's doApproval, "
+                  + "which carries the bearer token and refreshes the queue; Colony Live only shows them.");
 
-        // And NOT through a second implementation of its own.
-        foreach (var forbidden in new[] { "'/approve/", "\"/approve/", "'/reject/", "\"/reject/" })
-            Assert.False(hud.Contains(forbidden, StringComparison.Ordinal),
-                "colony-hud.js builds its own approval route. The decision endpoints belong to "
-              + "app.js's doApproval, which already carries the bearer token and already refreshes "
-              + "the queue; a second caller is a second place for the rule to drift.");
-
-        // Vacuity floor: the function it delegates to exists, and still hits the real routes.
+        // The needs-you chip is a door to Chat, not a control.
+        Assert.Contains("act === 'needs') go('/chat')", Code("colony-home.js"));
+        // Vacuity floor: the real path still exists where it is supposed to.
         var app = File.ReadAllText(Path.Combine(UiDir(), "app.js"));
         Assert.Contains("async function doApproval(", app);
         Assert.Contains("/approve/", app);
@@ -432,10 +462,22 @@ public class ColonyLiveGuardTests
               + "server's — MicromoundWidgets.StatusOf reads the beat interval and the configured "
               + "missed-beat grace, neither of which the browser has.");
 
-        // The operator-facing name for the wire value lives in the view, with the id kept visible.
-        var hud = Code("colony-hud.js");
-        Assert.Contains("edge_queen: 'Mound Major'", hud);
-        Assert.Contains("row('tier', m.tier)", hud);
+    }
+
+    /// <summary>
+    /// The renderer has a mound chamber only when the fleet listing returned one, and it says
+    /// STOPPED only from the fleet's own `stopped`. No placeholder device, no derived verdict.
+    /// </summary>
+    [Fact]
+    public void TheMoundChamber_ExistsOnlyWhenTheFleetSaysSo()
+    {
+        var live = Code("colony-live.js");
+        Assert.Contains("s.present = !!(scene.mound && scene.mound.present)", live);
+        Assert.Contains("return m.stopped;", live);
+        foreach (var asset in new[] { "colony-live.js", "colony-home.js" })
+            foreach (var invented in new[] { "'edge_queen'", "'online'", "'offline'", "'quiesced'" })
+                Assert.False(Code(asset).Contains(invented, StringComparison.Ordinal),
+                    $"{asset} carries {invented} — a mound tier or verdict the browser does not decide.");
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -494,22 +536,8 @@ public class ColonyLiveGuardTests
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// THE FALLBACK MUST COVER MOUNTING, NOT ONLY CONSTRUCTION.
-    ///
-    /// `.115` shipped with `ColonyLive.create()` guarding construction and nothing guarding
-    /// `mount()` — which is where three.js is actually resolved, the `WebGLRenderer` constructed
-    /// and the canvas attached. `available()` proves `window.THREE` exists and that *a* WebGL
-    /// context can be made; it does not prove this renderer mounts.
-    ///
-    /// The failure mode was total rather than graceful: the exception escaped `enable()` and
-    /// `toggle()`, so `classic.style.display` was never restored, and the already-attached WebGL
-    /// root — full-bleed, opaque, `#04060b` — sat as a black rectangle over a classic canvas that
-    /// had been hidden and never brought back. The view looked dead and the fallback built for
-    /// exactly this case never ran.
-    ///
-    /// Asserted on the wiring file because that is where the decision lives, and asserted with its
-    /// three parts named: the attempt is guarded, the partial mount is torn down, and the classic
-    /// projection is what replaces it.
+    /// Mounting is where a renderer actually fails. When it throws, the classic canvas must come
+    /// back — not stay hidden under a renderer that never drew — and the operator is told why.
     /// </summary>
     [Fact]
     public void ARendererThatFailsToMount_FallsBackInsteadOfBlankingTheView()
@@ -518,19 +546,26 @@ public class ColonyLiveGuardTests
 
         Assert.Contains("try {", host);
         Assert.Contains("live.mount(area);", host);
-
-        // The teardown, without which the failed mount's opaque root stays on screen.
         Assert.Contains("live.destroy();", host);
-
-        // And what replaces it is the projection that cannot fail this way.
-        Assert.Contains("ColonyLive.createClassic()", host);
-
-        // The operator is told WHY, rather than being handed a silent downgrade.
+        Assert.Contains("return false;", host);
+        // enable()'s verdict decides the classic canvas's visibility; a failed mount leaves it shown.
+        Assert.Contains("if (!enable(area, classic)) on = false;", host);
+        Assert.Contains("classic.style.display = on ? 'none' : '';", host);
         Assert.Contains("failed to mount", Raw("colony-host.js"));
+    }
 
-        // Vacuity floor: `createClassic` is a real export, so this is checking a wiring that
-        // exists rather than matching a string that happens to be present.
-        Assert.Contains("createClassic: create", Code("colony-live.js"));
+    /// <summary>
+    /// Colony Live is the default view (`.117`): only an explicit '0' — an operator who turned it
+    /// off — keeps the classic canvas, and the switch is offered in BOTH states so the canvas is
+    /// never a one-way door.
+    /// </summary>
+    [Fact]
+    public void TheLiveView_IsTheDefault_AndTheClassicCanvasIsAnOptOutWithAWayBack()
+    {
+        Assert.Contains("localStorage.getItem(VIEW_KEY) !== '0'", Code("colony-host.js"));
+        var home = Code("colony-home.js");
+        Assert.Contains("act === 'toggle3d'", home);
+        Assert.Contains("b.textContent = on ? 'Classic 2D' : 'Live 3D'", home);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -555,672 +590,142 @@ public class ColonyLiveGuardTests
                   + "shows an empty colony as empty.");
         }
     }
+
     // ---------------------------------------------------------------------------------------------
-    // §18 — the Claude Design port. v0.3.8.116.
-    //
-    // The reference renderer was ported literally: its world scale, camera, shaders, texture stop
-    // tables, conduit sampling, pixel-sized crew orbs, screen-space picking and quality ladder. Four
-    // things in it were NOT ported, and every one of them is a picture that is true of the
-    // reference's invented sample data and false of this colony. The guards below hold both halves:
-    // the ported numbers must stay the reference's, and the four exclusions must stay excluded.
+    // §19 — the canvas renderer draws the read model and nothing else. v0.3.8.119.
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// THE WORLD IS THE REFERENCE'S WORLD. `.115` scaled the reference's seats by fourteen and set
-    /// the camera to a 52° field at 900 units — and then had to invent every other constant to match,
-    /// which is why chambers sat four to six radii apart on a black field. The reference's proportions
-    /// are load-bearing: at ±16.5 with radii 3.1–7.7 the chambers sit two to three radii apart, which
-    /// is the ratio that reads as a crystal with galleries rather than a constellation.
+    /// A CHAMBER'S GRAINS ARE ITS RECORDS AND ITS ORBS ARE ITS RESIDENTS. The `.111` renderer seeded
+    /// several hundred points per sphere so an empty page looked alive, then bound records to some
+    /// of them and dimmed the rest. Nothing is seeded now: every grain is a persisted record from
+    /// the read model, placed by its hash and seated by its cluster; every orb is a registry role
+    /// or worker from the snapshot. An empty chamber is drawn empty, and `verified` — the evidence
+    /// table's verdict, read from the record — is what moves a grain into the core.
     /// </summary>
     [Fact]
-    public void TheWorldScale_AndCamera_AreTheReferences()
+    public void AChambersGrains_AreItsRecords_AndItsOrbs_AreItsResidents()
     {
-        var r = Code("colony-renderer.js");
+        var live = Code("colony-live.js");
 
-        Assert.Contains("new TH.PerspectiveCamera(42, 1, 0.5, 400)", r);
-        Assert.Contains("dist: 96", r);
-        Assert.Contains("dist: [2.2, 130]", r);
-        Assert.Contains("pos: [-16.5, 0, 16.5]", r);
-        Assert.Contains("pos: [16.5, 0, 16.5]", r);
-        Assert.Contains("r: 7.7", r);
-        Assert.Contains("r: 3.1", r);
+        Assert.Contains("function rebuildSector(s, sec)", live);
+        Assert.Contains("(sec.records || []).forEach(", live);
+        Assert.Contains("(sec.residents || []).forEach(", live);
+        Assert.Contains("var verified = r.verification === 'verified';", live);
+        Assert.Contains("verif: r.verification", live);
 
-        // And the `.115` blow-up is gone rather than merely shadowed by the new numbers.
-        foreach (var stale in new[] { "PerspectiveCamera(52", "dist: 900", "231", "dist: [90, 2400]" })
-            Assert.False(r.Contains(stale, StringComparison.Ordinal),
-                $"colony-renderer.js still carries the `.115` world scale ({stale}). Two scales in one "
-              + "file is two spatial grammars, and the constants derived from each disagree.");
+        foreach (var filler in new[] { "for (var i = 0; i < s.n;", "applyCounts", "bindRecords", "p.hidden = seen", "(demo)", "demo data" })
+            Assert.False(live.Contains(filler, StringComparison.Ordinal),
+                $"colony-live.js carries '{filler}' — seeded filler or demo scaffolding. A chamber's "
+              + "particles are its records; a chamber with none is empty.");
+
+        // The only points the operator can pick are the ones that ARE something.
+        Assert.Contains("if (p._q && (p.rec || p.resident))", live);
+        Assert.Contains("return (p && (p.rec || p.resident)) || null;", live);
     }
 
     /// <summary>
-    /// A CHAMBER'S MASS IS ITS RECORD COUNT AND NOTHING ELSE. `.115` drew 260×mass "structural"
-    /// grains per chamber so a young colony would not look empty — a cloud that said the same thing
-    /// whether the chamber held sixty records or none, which is the one claim this view exists to
-    /// make and the one it was quietly refusing to make.
-    ///
-    /// What carries a chamber's PRESENCE instead is the core light, which is light and not data: an
-    /// empty chamber is small and lit, never absent.
-    /// </summary>
-    [Fact]
-    public void AChambersParticles_AreItsRecordsAndNothingElse()
-    {
-        var r = Code("colony-renderer.js");
-
-        Assert.Contains("var total = recs.length;", r);
-        foreach (var filler in new[] { "bodyCount", "260 * lk.mass", "sizeFill", "brightFill" })
-            Assert.False(r.Contains(filler, StringComparison.Ordinal),
-                $"colony-renderer.js builds chamber geometry from '{filler}'. A chamber's particle "
-              + "count is its persisted record count; a filler term makes an empty chamber and a full "
-              + "one draw the same picture.");
-
-        // Vacuity floor: the light that carries an empty chamber is really there.
-        Assert.Contains("nucleus.scale.setScalar(lk.r * 4.2)", r);
-    }
-
-    /// <summary>
-    /// EXACTLY ONE HALO PER CHAMBER. The reference constructs a second, wider `glow` sprite at 2.8r
-    /// and never adds it to the group — it survives only as a colour handle for its restyle path.
-    /// Read quickly that looks like an oversight, and adding it produces the failure the design
-    /// handoff names by symptom: "nebula-like coloured wash filling a quadrant". Two overlapping
-    /// halos, nine chambers, additive over black, and the centre of the frame turns to fog with the
-    /// record grains lost inside it. That port defect shipped in this file for one build and was
-    /// caught by rendering it, not by reading it.
-    /// </summary>
-    [Fact]
-    public void AChamberHasOneHaloSprite_NotTwo()
-    {
-        var r = Code("colony-renderer.js");
-
-        var sprites = Regex.Matches(r, @"new TH\.Sprite\(new TH\.SpriteMaterial\(\{\s*\n?\s*map: TEX\.halo")
-                           .Count;
-        Assert.True(sprites == 1,
-            $"colony-renderer.js builds {sprites} halo sprites per chamber. The core light is one "
-          + "sprite at 4.2r in the chamber's deep hue; a second wide halo turns nine chambers into "
-          + "one coloured wash and swallows the record grains.");
-
-        Assert.False(r.Contains("glow.scale.setScalar", StringComparison.Ordinal),
-            "colony-renderer.js still scales a `glow` sprite. The reference never adds that object "
-          + "to the scene; this view does not build it at all.");
-
-        // Vacuity floor: the scan can see the halo it is counting.
-        Assert.Contains("map: TEX.halo", r);
-    }
-
-    /// <summary>
-    /// THE POINT SHADERS ARE THE DESIGN'S, INCLUDING THE HARD SPRITE MASK. `.115` used a
-    /// `PointsMaterial` with a soft alpha map, which is why twelve records read as one smudge: a
-    /// blended sprite edge merges neighbouring grains into bloom. The alpha-0.5 discard is what makes
-    /// a record look like a distinct thing.
-    /// </summary>
-    [Fact]
-    public void TheParticleShaders_AreTheDesignsAndDiscardOnTheSpriteMask()
-    {
-        var r = Code("colony-renderer.js");
-
-        Assert.Contains("attribute vec3 acolor; attribute float size; attribute float alpha; attribute vec3 aOrg;", r);
-        Assert.Contains("uniform float uScale; uniform float uAlpha; uniform float uRec; uniform float uOrg;", r);
-        Assert.Contains("gl_PointSize = clamp(size * uRec * uScale * (300.0 / max(1.0, -mv.z)), 2.0, 12.0);", r);
-        Assert.Contains("if(texture2D(uMap, gl_PointCoord).a < 0.5) discard;", r);
-        Assert.Contains("new TH.ShaderMaterial({", r);
-
-        // The conduit pair, and the wave term the recorded transitions ride.
-        Assert.Contains("uniform float uHead; uniform float uActive; uniform float uRest; uniform float uScale; uniform float uSharp;", r);
-        Assert.Contains("float wave = uActive * exp(-d * d * uSharp);", r);
-
-        // The `.115` material is gone, not merely unused.
-        Assert.False(r.Contains("new TH.PointsMaterial(", StringComparison.Ordinal),
-            "colony-renderer.js still constructs a PointsMaterial. The design's grains are a "
-          + "ShaderMaterial with a hard sprite mask; a PointsMaterial cannot express the discard.");
-    }
-
-    /// <summary>
-    /// THE TEXTURE STOP TABLES ARE THE REFERENCE'S. These four gradients are the whole reason the
-    /// view is legible: a solid disc with a hairline edge for grains, a wide soft glow for orbs, and
-    /// a power-2.2 halo with NO defined rim for the core light — a halo that ends on a circle turns a
-    /// cloud of facts into a bubble.
-    /// </summary>
-    [Fact]
-    public void TheGeneratedTextures_UseTheReferencesStops()
-    {
-        var r = Code("colony-renderer.js");
-
-        Assert.Contains("Math.pow(1 - t, 2.2) * 0.5", r);          // halo falloff
-        Assert.Contains("[0.9, 'rgba(255,255,255,1)']", r);        // dot: hairline edge
-        Assert.Contains("[0.92, 'rgba(255,255,255,1)']", r);       // conduit grain
-        Assert.Contains("[0.46, 'rgba(255,255,255,.34)']", r);     // glow shoulder
-        Assert.Contains("function antTex", r);
-        // `lockTex` is deliberately absent — see TheAuthorityConduit_CarriesNoLockBadge.
-
-        // No external asset: the console's img-src stays 'self'.
-        foreach (var fetched in new[] { "TextureLoader", "http://", "https://", ".png", ".jpg" })
-            Assert.False(r.Contains(fetched, StringComparison.Ordinal),
-                $"colony-renderer.js loads a texture from '{fetched}'. Every texture in this view is "
-              + "generated on a canvas so the console's CSP needs no img-src exception.");
-    }
-
-    /// <summary>
-    /// A CONDUIT MAY DRIFT; IT MAY ONLY BRIGHTEN FOR SOMETHING RECORDED.
-    ///
-    /// An earlier `.116` pass froze the grains outright, on the reasoning that flow along a permanent
-    /// structural link claims work is passing through it. That was the rule applied one step too far
-    /// and it bought a console that looked dead. The line is AMBIENT versus ASSERTED: drifting grains
-    /// say the passage exists and the view is live; a BRIGHT WAVE with no event behind it is a lie.
-    ///
-    /// So this guard no longer forbids motion. It forbids the two ways a conduit could brighten
-    /// without a row behind it: a head position swept from a clock, and a fourth term in the resting
-    /// brightness that nothing recorded.
-    /// </summary>
-    [Fact]
-    public void AConduitBrightens_OnlyForSomethingTheColonyRecorded()
-    {
-        var r = Code("colony-renderer.js");
-
-        // The head is set in exactly one place: the flight loop, one entry per unique event id.
-        Assert.Contains("u.uHead.value = co.head;", r);
-        var heads = Regex.Matches(r, @"\.head = ").Count;
-        Assert.True(heads == 2,
-            $"`co.head` is assigned in {heads} places. The legal two are both inside the flight loop — "
-          + "the advance and the reset on completion (the conduit's initial -1 is an object literal, "
-          + "not an assignment). A third is a head position coming from somewhere other than a "
-          + "recorded transition.");
-
-        // …and never from a clock. `ms` and `performance.now()` may pace the frame; they may not
-        // decide where along a conduit anything is.
-        foreach (var clocked in new[] { "uHead.value = ms", "% 1)", "Date.now() %" })
-            Assert.False(r.Contains(clocked, StringComparison.Ordinal),
-                $"colony-renderer.js derives conduit progress from '{clocked}'. The reference sweeps "
-              + "`(ms * 0.00016) % 1` when the host gives it no progress; there is no per-task "
-              + "progress in this model, so a swept head animates a number that does not exist.");
-
-        // Resting brightness has exactly three terms, and each names its row.
-        Assert.Contains("co.spec.rest * (state.level >= 2 ? 0.6 : 1)", r);
-        Assert.Contains("(opts.trails ? co.trail * 0.22 : 0)", r);
-        Assert.Contains("(co.busy ? 0.2 : 0)", r);
-
-        // Drift is real motion and freezes with the operator's motion preference.
-        Assert.Contains("driftConduit(co, k ? dtSec * 3 : 0)", r);
-
-        // And the flights themselves are still one-shot and still refused on a historical frame.
-        Assert.Contains("playedTransitions[tr.id] = true", r);
-        Assert.Contains("if (sc.meta && sc.meta.history) return;", r);
-    }
-
-    /// <summary>
-    /// THE PHEROMONE LAYER IS DRAWN FROM ITS TWO REAL ROWS, AT THE LEVEL EACH ONE EXISTS AT.
-    ///
-    /// `pheromone_trails` keys strength to `worker:{id}`, so an EDGE has no row of its own and a
-    /// conduit that claimed a "trail strength" would be quoting a number for a thing the table does
-    /// not describe. What an edge does have is how many recorded transitions have crossed it, and
-    /// reinforcement-by-use is what a trail is. The per-worker strength is not discarded — it lights
-    /// the ant orbs, where it belongs.
-    ///
-    /// Both are gated by the operator's `trails` preference, because a control that turns off a
-    /// display and leaves the thing it names still driving the picture is a lie about the control.
-    /// </summary>
-    [Fact]
-    public void ThePheromoneLayer_IsDrawnFromItsOwnRows()
-    {
-        var r = Code("colony-renderer.js");
-
-        // Per-edge: counted crossings, normalised, never invented.
-        Assert.Contains("function conduitState", r);
-        Assert.Contains("crossings[k] = (crossings[k] || 0) + 1;", r);
-        Assert.Contains("co.trail = most > 0 ? n / most : 0;", r);
-
-        // Per-ant: the projection's own trail strength, and null is not zero.
-        Assert.Contains("entry.res.trail && fin(entry.res.trail.strength)", r);
-        Assert.Contains("var trail = opts.trails ? a.pher : 0;", r);
-
-        // The preference reaches both.
-        Assert.Contains("opts.trails ? co.trail * 0.22 : 0", r);
-
-        // And `busy` is a real running task on a real persisted edge, not a guess about either.
-        Assert.Contains("(x.runningTasks || []).length", r);
-        Assert.Contains("(sc.edges || []).forEach", r);
-    }
-
-    /// <summary>
-    /// EVERY INTRA-CHAMBER LINK IS A ROW THAT EXISTS. Five families, each one a relationship the
-    /// colony recorded: a record belongs to its cluster (that is the event type it has), the clusters
-    /// form the chamber's context ring, a worker reports to the role the registry says it reports to,
-    /// `record.ant` names whichever unit actually ran, and records sharing a `mission_id` are one
-    /// mission's thread through this chamber.
-    ///
-    /// The last three are not in the reference — its sample data has no equivalent — so they are the
-    /// place a generated link would most easily be added to make a sparse chamber look busy. A
-    /// chamber whose records name no ant and no mission draws the cluster families and the roster
-    /// chain and nothing else; a mission with one record here contributes no segment, because a
-    /// thread of one is not a thread; and the parent of a worker is READ from `parentRoleId` rather
-    /// than recovered by splitting an id on a dot, which would be re-deriving a fact the projection
-    /// already handed over.
-    /// </summary>
-    [Fact]
-    public void EveryIntraChamberLink_IsARelationshipTheColonyRecorded()
-    {
-        var r = Code("colony-renderer.js");
-
-        Assert.Contains("slotOf[String(a.name).toLowerCase()] = a.slot;", r);
-        Assert.Contains("if (!slot) return;", r);                       // an ant this chamber does not host
-        Assert.Contains("if (!r.missionId) return;", r);                // no mission, no thread
-        Assert.Contains("if (list.length < 2) return;", r);             // a thread of one is not a thread
-        Assert.Contains("a.createdAt < b.createdAt", r);                // recorded order, not invented order
-
-        // The roster chain reads its parent rather than parsing the id for one.
-        Assert.Contains("a.parentRoleId", r);
-        Assert.Contains("seatOf[a.parentRoleId]", r);
-        Assert.False(r.Contains("split('.')", StringComparison.Ordinal),
-            "colony-renderer.js splits a worker id to find its parent. `parentRoleId` travels on the "
-          + "worker precisely so nothing has to, and the split is wrong the first time a worker id "
-          + "contains a dot of its own.");
-
-        // All five families exist and all five start dark.
-        Assert.Contains("var ring = lines(cc, ch.shellHex);", r);
-        Assert.Contains("var mission = lines(ms, TOKENS.gold);", r);
-        Assert.Contains("var chainL = lines(chain, ch.shellHex);", r);
-        Assert.Contains("var author = lines(au, ch.coreHex);", r);
-        Assert.Contains("var spoke = lines(segs, ch.coreHex);", r);
-        Assert.Contains("opacity: 0,", r);
-
-        // …and the blend helper rewrites every one of them, so a link never trails the particle it
-        // points at during the ordered-strata cross-fade.
-        foreach (var arr in new[] { "ic.g.attributes.position", "ic.g2.attributes.position",
-                                    "ic.gA.attributes.position", "ic.gM.attributes.position" })
-            Assert.Contains(arr + ".needsUpdate = true;", r);
-    }
-
-    /// <summary>
-    /// A WORKER IS LABELLED WITH ITS NAME AND MATCHED ON ITS ID, and those are two different strings.
-    /// `ant_name` on an event is `constraint.scope_guard`, so that is what a record can be joined on;
-    /// "ScopeGuard" is what the registry calls the ant and what the 2D colony view has always shown.
-    /// Printing the id under every worker orb gave one ant two names in one product, and matching on
-    /// the display name instead would file every worker-authored record under `unassigned` again —
-    /// the same defect, in the other direction.
-    /// </summary>
-    [Fact]
-    public void AWorkerOrb_ShowsItsNameAndMatchesOnItsId()
-    {
-        var r = Code("colony-renderer.js");
-        var topo = Code("colony-topology.js");
-
-        // The renderer keeps the two apart, deliberately.
-        Assert.Contains("name: w.name || w.id, matchId: w.id", r);
-        Assert.Contains("byAnt[String(entry.matchId).toLowerCase()]", r);
-        Assert.False(r.Contains("byAnt[String(entry.name)", StringComparison.Ordinal),
-            "colony-renderer.js matches records on a worker's DISPLAY name. Events carry the worker "
-          + "id; matching on the readable name files every worker-authored record as unauthored.");
-
-        // The sector index is keyed on the id, for the same reason.
-        Assert.Contains("st.roleSector[wid.toLowerCase()] = sid;", topo);
-        Assert.Contains("function workerId", topo);
-        Assert.Contains("function workerName", topo);
-        Assert.Contains("function workerParent", topo);
-
-        // And the inspector prints both, because the two answer different questions.
-        var hud = Code("colony-hud.js");
-        Assert.Contains("el('span', 'clh-item-n', w.name || w.id)", hud);
-        Assert.Contains("el('span', 'clh-item-s', w.id)", hud);
-    }
-
-    /// <summary>
-    /// AN IDLE ANT HOLDS STATION. The reference gives every ant a countdown — `a.work -= dt`, then a
-    /// cluster picked at random and a "pheromone run" laid out to it. It is the most misleading thing
-    /// this view could draw: an operator looking at a quiet colony would see every ant working.
-    ///
-    /// `working` here requires a real running task assigned to that unit, which the projection
-    /// derives from /graph, and the pheromone number an ant shows is the trail the colony recorded.
+    /// AN IDLE ANT HOLDS STATION. An ant rides a segment only because a running task in the graph
+    /// puts it there; the list is rebuilt from `runningTasks` on every scene and never carries a
+    /// countdown. A resident's `working` colour comes from the reducer's status, which requires a
+    /// real running task assigned to that unit.
     /// </summary>
     [Fact]
     public void NoAnt_RunsOnAFabricatedWorkTimer()
     {
-        var r = Code("colony-renderer.js");
-
-        foreach (var invented in new[] { "a.work", "beamDur", "lastDrop", "a.drops", "tasks_completed" })
-            Assert.False(r.Contains(invented, StringComparison.Ordinal),
-                $"colony-renderer.js carries '{invented}' — the reference's ant work timer. An ant "
-              + "that appears busy without a running task is an animation of work that is not "
-              + "happening.");
-
-        // Vacuity floor: the real status and the real trail are both read.
-        Assert.Contains("a.status === 'working'", r);
-        Assert.Contains("r.trail && fin(r.trail.strength)", r);
+        var live = Code("colony-live.js");
+        Assert.Contains("ants = [];", live);
+        Assert.Contains("running[id].forEach(function (t, k)", live);
+        Assert.Contains("res.status === 'working'", live);
+        foreach (var invented in new[] { "a.work", "beamDur", "lastDrop", "a.drops", "tasks_completed", "demoTopology" })
+            Assert.False(live.Contains(invented, StringComparison.Ordinal),
+                $"colony-live.js carries '{invented}' — an ant work timer or a seeded route. An ant that "
+              + "appears busy without a running task is an animation of work that is not happening.");
     }
 
     /// <summary>
-    /// A CHAMBER'S NAME IS THE REGISTRY'S. The reference lets an operator retitle a chamber and
-    /// recolour it in one call. Colour is presentation, like the layout that already persists to
-    /// /ui/state; a name is identity, and a console that let one page disagree with the registry
-    /// about what a colony is called would be wrong on every other page at the same time.
+    /// A CHAMBER'S NAME IS THE PROJECTION'S UNLESS THE OPERATOR OVERRODE IT. The default label comes
+    /// with the snapshot (`ColonySector.Label`, "an operator may override it; the id does not move");
+    /// an override is presentation, persisted in the layout, and a later scene never overwrites it.
+    /// Resetting the layout returns to the server's label, not to a constant in this file.
     /// </summary>
     [Fact]
-    public void AnOperatorMayRecolourAChamber_ButNotRenameOne()
+    public void AChamberLabel_IsTheServers_UnlessTheOperatorOverrodeIt()
     {
-        var r = Code("colony-renderer.js");
-
-        Assert.Contains("function setChamberStyle", r);
-        Assert.Contains("if (!cfg || !cfg.color", r);
-        Assert.False(r.Contains("cfg.label", StringComparison.Ordinal),
-            "colony-renderer.js reads cfg.label in setChamberStyle. A chamber's label is the "
-          + "registry's Colony value, projected by ColonyLiveProjection; the console renders it.");
-
-        // The label really does come from the projection rather than from this file.
-        Assert.Contains("ch.sec.label || id", r);
+        var live = Code("colony-live.js");
+        Assert.Contains("s.serverLabel = String(sec.label || s.defLabel).toUpperCase();", live);
+        Assert.Contains("if (!s.renamed) s.label = s.serverLabel;", live);
+        Assert.Contains("s.label = s.serverLabel || s.defLabel; s.renamed = false;", live);
     }
 
     /// <summary>
-    /// THE SAVED LAYOUT FROM `.115` IS REFUSED, NOT MIGRATED. Those seats were recorded in a world
-    /// fourteen times this one; replayed here every chamber lands far outside the 130-unit dolly
-    /// limit and the operator opens the view to empty space. The ×14 factor was never written down,
-    /// so back-solving it would be a fiction dressed as a migration — an old layout resets instead.
+    /// THE LAYOUT LIVES IN /ui/state AND AN OLDER SCHEMA RESETS RATHER THAN MIGRATES. Seats recorded
+    /// by an earlier world scale replayed here would land chambers far outside any camera limit; a
+    /// layout that does not say it is schema 3, or names a coordinate no camera can reach, is refused.
+    /// There is no second store: the renderer emits, the host persists, nothing reads localStorage.
     /// </summary>
     [Fact]
-    public void ASavedLayout_FromThePreviousWorldScale_IsRefused()
+    public void ASavedLayout_IsServerSide_AndAnOlderSchemaIsRefused()
     {
-        var r = Code("colony-renderer.js");
+        var live = Code("colony-live.js");
+        Assert.Contains("var LAYOUT_SCHEMA = 3;", live);
+        Assert.Contains("l.schema !== LAYOUT_SCHEMA", live);
+        Assert.Contains("Math.abs(n) <= 1200", live);
+        Assert.Contains("emit('layout', layoutSnapshot())", live);
+        Assert.False(live.Contains("localStorage", StringComparison.Ordinal),
+            "colony-live.js reads or writes localStorage. The layout has one store, /ui/state, through the host.");
 
-        Assert.Contains("schema: 2", r);
-        Assert.Contains("l.schema !== 2", r);
-        Assert.Contains("Math.abs(n) <= 120", r);
-        Assert.False(r.Contains("Math.abs(n) <= 4000", StringComparison.Ordinal),
-            "colony-renderer.js still accepts coordinates up to 4000, which is the `.115` bound. At "
-          + "this world scale that admits a saved layout no camera limit can reach.");
+        var host = Code("colony-host.js");
+        Assert.Contains("colony_live_layout: layout", host);
+        Assert.Contains("live.setLayout(saved)", host);
+        Assert.Contains("live.on('layout', saveLayout)", host);
     }
 
     /// <summary>
-    /// PICKING IS MEASURED IN PIXELS. A Points cloud raycast tests a WORLD-space threshold, which is
-    /// the wrong unit for a target aimed at with a cursor: one constant is a huge target up close and
-    /// a sub-pixel one at survey distance. `.115` set that threshold to 7 and chambers still felt
-    /// unresponsive, because no single value can be right at both ends of a 60× dolly range.
+    /// PICKING IS MEASURED IN PIXELS. A world-space threshold is a huge target up close and a
+    /// sub-pixel one at survey distance; the renderer tests the projected screen position it drew.
     /// </summary>
     [Fact]
-    public void PickingIsScreenSpace_NotARaycast()
+    public void PickingIsScreenSpace()
     {
-        var r = Code("colony-renderer.js");
-
-        Assert.Contains("function hitTest", r);
-        Assert.Contains("Math.hypot(p.x - mx, p.y - my)", r);
-        foreach (var world in new[] { "Raycaster", "ray.params.Points.threshold", "intersectObjects" })
-            Assert.False(r.Contains(world, StringComparison.Ordinal),
-                $"colony-renderer.js picks with '{world}'. A world-space threshold cannot be correct "
-              + "across the dolly range; the screen-space test makes every target the size it looks.");
+        Assert.Contains("Math.hypot(p._q.x - mx, p._q.y - my)", Code("colony-live.js"));
     }
 
     /// <summary>
-    /// A SLOW RASTERISER IS NOT ASKED TO KEEP DRAWING, AND THE LADDER CAN EXPRESS BOTH OUTCOMES. It
-    /// reacts to the FIRST slow frame rather than to a thirty-frame average — by the time an average
-    /// moves, the operator has already watched the view stutter — and a frame that blocks for a full
-    /// second stops the loop and says so, rather than degrading quality forever.
-    /// </summary>
-    [Fact]
-    public void TheQualityLadder_DegradesAndThenStops()
-    {
-        var r = Code("colony-renderer.js");
-
-        Assert.Contains("function setQuality", r);
-        Assert.Contains("function breaker", r);
-        Assert.Contains("if (rms > 1000) { breaker(rms); return; }", r);
-        Assert.Contains("else if (rms > 120) setQuality(1, rms);", r);
-        Assert.Contains("perf.avg > 45", r);
-        Assert.Contains("setDrawRange", r);
-
-        // The stall is reported rather than silently swallowed — the host and the HUD can both hear it.
-        Assert.Contains("emit('stall'", r);
-    }
-
-    /// <summary>
-    /// THE CHROME-AVOID CONTRACT HAS BOTH ENDS. The renderer places chamber labels clear of the
-    /// panels the HUD puts over the canvas, and it finds them by attribute. A renderer that reads the
-    /// attribute while nothing sets it is the "declared and reaching nobody" defect: the code looks
-    /// correct, the query returns an empty list, and every label lands under the inspector.
-    /// </summary>
-    [Fact]
-    public void TheChromeAvoidContract_IsWrittenAtBothEnds()
-    {
-        Assert.Contains("[data-chrome-avoid]", Code("colony-renderer.js"));
-        Assert.Contains("setAttribute('data-chrome-avoid'", Code("colony-hud.js"));
-        Assert.Contains("data-chrome-avoid", Raw("index.html"));
-
-        // A hidden panel measures 0x0 at the origin; keeping that rectangle would push every label
-        // away from the top-left corner for a panel that is not on screen.
-        Assert.Contains("b.width < 1 || b.height < 1", Code("colony-renderer.js"));
-    }
-    /// <summary>
-    /// THE MICROMOUND CHAMBER OPENS THE MICROMOUND. Every other chamber is a group of registry roles
-    /// and the chamber inspector answers the questions worth asking about one. The mound is a
-    /// PHYSICAL DEVICE with a stop, a charter, a lease and an enrollment — a card reading "registry
-    /// roles: 0, workers: 0" answers none of them, and that is what clicking it used to produce.
-    ///
-    /// The panel it opens carries the one control that has to be reachable from wherever the operator
-    /// is looking, because the reason to reach for it is that something is going wrong right now.
-    /// Everything else hands over to the Micromound console rather than growing a second copy of
-    /// forms whose vocabulary is a closed PROTOCOL set.
-    /// </summary>
-    [Fact]
-    public void ClickingTheMicromoundChamber_OpensTheDeviceAndNotAChamberCard()
-    {
-        var hud = Code("colony-hud.js");
-
-        Assert.Contains("id === 'mound' ? { kind: 'mound' }", hud);
-        Assert.Contains("function moundPanel", hud);
-
-        // The control an operator needs from anywhere, and its honest wording.
-        Assert.Contains("'RESUME MOUND' : 'STOP THIS MOUND'", hud);
-        Assert.Contains("o.onMoundStop", hud);
-        Assert.Contains("OPEN MICROMOUND CONSOLE", hud);
-        Assert.Contains("window.go('/tools/micromound')", hud);
-
-        // …and it is disabled rather than decorative when the path is not there.
-        Assert.Contains("stopBtn.disabled = !o.onMoundStop", hud);
-        Assert.Contains("typeof window.go !== 'function'", hud);
-
-        // The global stop is still not offered as a control, here as in micromound.js.
-        Assert.DoesNotContain("'/micromound/stop/global'", hud);
-        Assert.Contains("Stop always wins", Raw("colony-hud.js"));
-    }
-
-    /// <summary>
-    /// AND THE MUTATION GOES THROUGH THE HOST, WHICH RE-READS RATHER THAN ASSUMING. The HUD may not
-    /// reach the network — that boundary is what makes "one place fetches" checkable by inspection —
-    /// so the stop is posted by `colony-host.js`, which then re-reads the fleet listing. A view that
-    /// flipped its own `stopped` flag on a 200 would disagree with the colony the first time an order
-    /// was accepted and then superseded, and would look right while doing it.
+    /// A MOUND STOP IS POSTED BY THE HOST AND THEN RE-READ. It posts, re-reads the fleet so the
+    /// panel shows the colony's answer, never flips its own flag, and never touches the global stop.
     /// </summary>
     [Fact]
     public void AMoundStop_IsPostedByTheHostAndThenReRead()
     {
         var host = Code("colony-host.js");
-
         Assert.Contains("function moundStop", host);
         Assert.Contains("stopped ? '/micromound/stop' : '/micromound/stop/resume'", host);
         Assert.Contains("api(path, 'POST', { mound_id: moundId })", host);
-        // The re-read, on both the success and the failure path.
         Assert.Equal(3, Regex.Matches(host, @"api\('/micromound/mounds'\)").Count);
-        Assert.Contains("onMoundStop: moundStop", host);
-
-        // The state is never decided here.
-        Assert.False(host.Contains("m.stopped = ", StringComparison.Ordinal),
-            "colony-host.js writes a mound's stopped flag. The colony decides that; this re-reads it.");
+        Assert.False(host.Contains("m.stopped = ", StringComparison.Ordinal), "colony-host.js decides a mound's stopped state locally.");
+        foreach (var asset in ColonyAssets)
+            Assert.False(Code(asset).Contains("/micromound/stop/global", StringComparison.Ordinal),
+                $"{asset} reaches for the global stop, which is a file on disk precisely so no API flow can clear it.");
     }
 
     /// <summary>
-    /// NO AUTHORITY SEAL. The reference parks a lock sprite at 0.42 along the Queen→Micromound
-    /// conduit. It is a badge on a line, not a control, and it sat in the middle of the frame
-    /// implying the mound was locked to interaction — the opposite of true, now that clicking that
-    /// chamber is how an operator stops the device. The authority relationship is already said by the
-    /// conduit, which is the only edge in the colony with its own kind.
+    /// THE COMPOSER IS A DOORWAY, NOT A SECOND PIPELINE. §3 still holds — Chat is the one mission
+    /// entry. The home page's composer resolves WHERE the conversation lives, sets the hand-off state
+    /// Chat already honours, opens Chat and calls Chat's own send. It never creates a conversation
+    /// or posts a turn itself, so streaming, refusals, attachments and policy have one implementation.
     /// </summary>
     [Fact]
-    public void TheAuthorityConduit_CarriesNoLockBadge()
+    public void TheComposer_IsADoorwayToChat_NotASecondPipeline()
     {
-        var r = Code("colony-renderer.js");
-
-        foreach (var badge in new[] { "lockTex", "TEX.lock", "seal" })
-            Assert.False(r.Contains(badge, StringComparison.Ordinal),
-                $"colony-renderer.js still builds the authority seal ('{badge}'). A lock drawn over "
-              + "the one chamber an operator can act on reads as 'you may not touch this'.");
-
-        /* Vacuity floor: the authority conduit it used to sit on is still there and still its own
-           kind. This anchored on the GRAIN COUNT until `.117` lowered it deliberately, and this
-           guard — which has nothing to do with grain counts — went red. A vacuity floor has to be a
-           value that only changes when the thing under test is actually gone; anchoring one on a
-           number another change may legitimately move buys a guard that fails for the wrong reason
-           and teaches whoever hits it to edit the assertion rather than read it. `sharp` is the
-           conduit spec's most inert constant and is compared properly next door. */
-        Assert.Contains("kind: 'authority'", r);
-        Assert.Contains("sharp: auth ? 150 : 120", r);
+        var home = Code("colony-home.js");
+        Assert.Contains("chatPendingProjectId = pid; chatActiveId = null; chatComposingNew = true;", home);
+        Assert.Contains("go('/chat');", home);
+        Assert.Contains("await chatSend(mode);", home);
+        foreach (var forbidden in new[] { "/conversations", "/turns", "/missions" })
+            Assert.False(home.Contains(forbidden, StringComparison.Ordinal),
+                $"colony-home.js names {forbidden}. The composer hands its text to Chat; it does not run its own pipeline.");
+        // A plain question runs as a chat turn and never invents a project to run work in.
+        Assert.Contains("if (mode === 'mission' && $('ccp-scope') && $('ccp-scope').value === 'q') mode = 'chat';", home);
     }
-
-    /// <summary>
-    /// THE PORT STILL AGREES WITH THE SOURCE IT CAME FROM — the strongest guard in this file, and the
-    /// only one that is not a literal transcribed by hand.
-    ///
-    /// `docs/design/colony-live-3d/reference/colony-renderer.js` is the design handoff's working
-    /// implementation, vendored unchanged. `src/Anthill.UI/colony-renderer.js` is its port. Every
-    /// other check in this file asserts a constant this test file wrote down, so it can only catch a
-    /// constant being DELETED; this one reads both files and compares what it extracts, so it also
-    /// catches a constant being CHANGED to something plausible — which is how a ported renderer
-    /// actually drifts. `.115` did not change these numbers by mistake, it re-derived them, and every
-    /// re-derived one was wrong.
-    ///
-    /// Each pattern is written to match BOTH files, which is why they avoid `th.`/`TH.`,
-    /// `const`/`var` and parameter names. A pattern that stops matching the reference is reported as
-    /// loudly as a value that disagrees: this guard is not allowed to pass by reading nothing.
-    ///
-    /// If the design is ever revised: update `reference/`, run this, and it names every place the
-    /// port has fallen behind.
-    /// </summary>
-    [Fact]
-    public void ThePortedConstants_StillAgreeWithTheVendoredReference()
-    {
-        var refPath = Path.Combine(SourceText.RepoRoot(), "docs", "design", "colony-live-3d",
-                                   "reference", "colony-renderer.js");
-        Assert.True(File.Exists(refPath),
-            "docs/design/colony-live-3d/reference/colony-renderer.js is missing. It is the source this "
-          + "renderer was ported from, and docs/HANDOFF.md tells the next session not to re-derive the "
-          + "math — an instruction that is worthless without the code it points at.");
-
-        var reference = File.ReadAllText(refPath).Replace("\r\n", "\n");
-        var port = Raw("colony-renderer.js").Replace("\r\n", "\n");
-
-        (string Name, string Pattern)[] constants =
-        [
-        ("camera", @"PerspectiveCamera\((\d+),\s*1,\s*([\d.]+),\s*(\d+)\)"),
-        ("home camera", @"dist:\s*(\d+),\s*theta:\s*([\d.]+),\s*phi:\s*([\d.]+)"),
-        ("orbit limits", @"phi:\s*\[([\d.]+), Math\.PI - ([\d.]+)\],\s*dist:\s*\[([\d.]+),\s*(\d+)\]"),
-        ("resize fit", @"(\d+) \* Math\.max\(1, ([\d.]+) / camera\.aspect\)"),
-        ("point size clamp", @"clamp\(size \* uRec \* uScale \* \(([\d.]+) / max\(([\d.]+), -mv\.z\)\), ([\d.]+), ([\d.]+)\)"),
-        ("sprite mask cut", @"gl_PointCoord\)\.a < ([\d.]+)\) discard"),
-        ("conduit alpha", @"vA = aB \* \(uRest \+ ([\d.]+) \* wave\);"),
-        ("conduit size clamp", @"clamp\(aS \* \(1\.0 \+ ([\d.]+) \* wave\) \* uScale \* \(([\d.]+) / max\(([\d.]+), -mv\.z\)\), ([\d.]+), ([\d.]+)\)"),
-        ("conduit colour mix", @"mix\(uFrom, uTo, smoothstep\(([\d.]+), ([\d.]+), aT\)\)"),
-        ("conduit streams", @"streams: auth \? (\d+) : lateral \? (\d+) : (\d+)"),
-        ("conduit radius", @"rad: auth \? ([\d.]+) : lateral \? ([\d.]+) : ([\d.]+)"),
-        ("conduit rest floor", @"rest: auth \? ([\d.]+) : lateral \? ([\d.]+) : ([\d.]+)"),
-        ("conduit sharpness", @"sharp: auth \? (\d+) : (\d+)"),
-        ("halo falloff", @"Math\.pow\(1 - t, ([\d.]+)\) \* ([\d.]+)"),
-        ("nucleus scale", @"nucleus\.scale\.setScalar\(\w+\.r \* ([\d.]+)\)"),
-        ("record edge", @"1 - ([\d.]+) \* Math\.pow\(rad, ([\d.]+)\)"),
-        ("record alpha", @"82 \+ \w+\.?\w* \* ([\d.]+)\) \* \(([\d.]+) \+ ([\d.]+) \* edge\)"),
-        ("record size", @"\(([\d.]+) \+ \w+\.?\w* \* ([\d.]+)\) \* \(([\d.]+) \+ ([\d.]+) \* edge\)"),
-        ("strata height", @"- 0\.5\) \* \w+\.r \* ([\d.]+)"),
-        ("strata band", @"Math\.pow\(y / \(\w+\.r \* ([\d.]+)\), 2\)"),
-        ("strata radius", @"\w+\.r \* ([\d.]+) \* band \* Math\.sqrt\(\(k \+ ([\d.]+)\) / m\)"),
-        ("golden angle", @"ang = k \* ([\d.]+)"),
-        ("curve end trim", @"/ len \* ([\d.]+)\)"),
-        ("curve lean", @"lean = \(rnd\(\) \* 2 - 1\) \* span \* ([\d.]+)"),
-        ("curve lift", @"lift = \(rnd\(\) \* 2 - 1\) \* span \* ([\d.]+)"),
-        ("curve sag", @"p\.y -= env \* span \* ([\d.]+)"),
-        ("path samples", @"spec = \w+\.spec, N = (\d+)"),
-        ("grain speed", @"\(([\d.]+) \+ rnd\(\) \* ([\d.]+)\) \* \(primary \? 1 : ([\d.]+)\)"),
-        ("grain converge", @"([\d.]+) \+ ([\d.]+) \* Math\.pow\(env, ([\d.]+)\)\)"),
-        ("grain brightness", @"\* \(([\d.]+) \+ ([\d.]+) \* Math\.pow\(env, ([\d.]+)\)\)"),
-        ("pixel-scale fov", @"Math\.tan\((\d+) \* Math\.PI / 360\)"),
-        ("orb pixel size", @"\(detail \? (\d+) : (\d+)\) \* \(\w+\.isQueen \? ([\d.]+) : \w+\.isLead \? 1 : ([\d.]+)\)"),
-        ("crew ramp", @"\((78) - cam\.dist\) / (46)"),
-        ("link ramp", @"\((58) - cam\.dist\) / (30)"),
-        ("hit ant radius", @"bad = (\d+);"),
-        ("hit record radius", @"bd = (\d+);"),
-        ("hit cluster radius", @"bcd = (\d+);"),
-        ("hit sector radius", @"Math\.max\((\d+), Math\.abs\(edge\.x - p\.x\)\)"),
-        ("orbit gain", @"theta -= dx \* ([\d.]+)"),
-        ("tilt gain", @"phi - dy \* ([\d.]+)"),
-        ("pan gain", @"cam\.dist \* ([\d.]+)"),
-        ("wheel gain", @"Math\.exp\(e\.deltaY \* ([\d.]+)\)"),
-        ("zoom floor", @"\.r \* ([\d.]+) : (\d+)"),
-        ("level thresholds", @"r \* (2\.35) \? 2 : [\s\S]{0,40}?r \* (4\.8) \? 1 : 0"),
-        ("focus distance", @"\.r \* (3\.4)"),
-        ("enter distance", @"\.r \* (1\.8)"),
-        ("ordering step", @"wantOrg - uo\.value\) \* (?:\(reduced \? 1 : )?(0\.07)"),
-        ("ordering epsilon", @"> (0\.0008)"),
-        ("frame pacing", @"perf\.slack \? (\d+) : (\d+)"),
-        ("quality draw range", @"level === 1 \? ([\d.]+) : ([\d.]+)"),
-        ("circuit breaker", @"rms > (\d+)\) \{ breaker"),
-        ("quality step 2", @"rms > (\d+)\) setQuality\(2"),
-        ("quality step 1", @"rms > (\d+)\) setQuality\(1"),
-        ("quality average", @"perf\.avg > (\d+) && perf\.n % (\d+)"),
-        ("slack threshold", @"rms > (\d+)\) perf\.slack"),
-        ("dim other chambers", @"\.level >= 2 \? ([\d.]+) : 1"),
-        ("inside point scale", @"inside \? ([\d.]+) : 1\) - \w+\.\w+\.uniforms\.uScale"),
-        ("inside record lift", @"inside \? ([\d.]+) : 1\) - \w+\.\w+\.uniforms\.uRec"),
-        ("drift cadence", @"% 3 === 0\) driftConduit"),
-        ("link opacity", @"\? (0\.36) : \(state\.focus && !focused\w*\) \? (0\.03) : (0\.06) \+ \w+ \* (0\.16)")
-        ];
-
-        /* THE DELIBERATE DIVERGENCES, PINNED ON BOTH SIDES. A ported constant this console
-           changes on purpose does not get quietly dropped from the table — that would leave the
-           strongest guard in the file blind to exactly the values most likely to move again. It
-           is listed here with the reference's value AND ours, so lowering it further, or the
-           reference changing underneath it, both fail and both say why. */
-        (string Name, string Pattern, string Reference, string Port, string Why)[] divergences =
-        [
-            ("conduit grain count",
-             @"n: auth \? (\d+) : lateral \? (\d+) : (\d+)",
-             "[40, 24, 60]", "[24, 15, 36]",
-             "this colony has 18 roots to the reference's 16 and far fewer record grains per "
-           + "chamber, so the reference's density made the streams the loudest thing in the frame")
-        ];
-
-        var blind = new List<string>();
-        var drifted = new List<string>();
-
-        foreach (var (name, pattern, expectRef, expectPort, why) in divergences)
-        {
-            var a = Regex.Match(reference, pattern);
-            var b = Regex.Match(port, pattern);
-            if (!a.Success || !b.Success) { blind.Add($"{name}: the divergence pattern no longer matches both files"); continue; }
-            if (Show(a) != expectRef)
-                blind.Add($"{name}: the REFERENCE now reads {Show(a)}, not the {expectRef} this "
-                        + $"divergence was recorded against - re-decide it rather than re-pinning it");
-            if (Show(b) != expectPort)
-                drifted.Add($"{name}: port reads {Show(b)}, not the agreed {expectPort} ({why})");
-        }
-
-        foreach (var (name, pattern) in constants)
-        {
-            var a = Regex.Match(reference, pattern);
-            var b = Regex.Match(port, pattern);
-
-            if (!a.Success) { blind.Add($"{name}: the pattern no longer matches the REFERENCE"); continue; }
-            if (!b.Success) { drifted.Add($"{name}: gone from the port (reference has {Show(a)})"); continue; }
-            if (Show(a) != Show(b)) drifted.Add($"{name}: reference {Show(a)} vs port {Show(b)}");
-        }
-
-        Assert.True(blind.Count == 0,
-            "This guard has gone blind — the patterns below no longer match the vendored reference, so "
-          + "they prove nothing about the port either. Fix the patterns before trusting a pass:\n  "
-          + string.Join("\n  ", blind));
-
-        Assert.True(drifted.Count == 0,
-            $"colony-renderer.js has drifted from the design it was ported from in {drifted.Count} "
-          + "place(s). These are not stylistic choices — the handoff's own failure table lists what "
-          + "changing each one breaks:\n  " + string.Join("\n  ", drifted));
-
-        // Vacuity floor: a real comparison happened over a substantial table.
-        Assert.True(constants.Length + divergences.Length >= 50,
-            $"only {constants.Length + divergences.Length} constants are compared; the table has been gutted.");
-        Assert.True(reference.Length > 40_000, "the vendored reference is too small to be the real file.");
-    }
-
-    /// <summary>Groups of one match, rendered for a diff message.</summary>
-    private static string Show(Match m) =>
-        "[" + string.Join(", ", m.Groups.Cast<Group>().Skip(1).Select(g => g.Value)) + "]";
 }

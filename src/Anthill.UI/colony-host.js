@@ -1,27 +1,27 @@
 /* ─────────────────────────────────────────────────────────────────────────────
-   COLONY LIVE — the host. v0.3.8.116.
+   COLONY HOST — the wiring between the console and Colony Live.
 
-   The integration layer, and the only file in the feature that talks to the API.
-   It exists as its own console asset for the reason the v0.3.8.52 split exists:
-   `app.js` is the shared foundation, a guard holds it under 10,000 lines, and a
-   growing feature belongs beside its renderer rather than inside the foundation.
+   The ONLY file in the feature allowed to reach the network, and it reaches it
+   exactly as `.115` laid down: two bounded reads on enable (the snapshot, the
+   first records page), the saved layout from /ui/state, the fleet listing once,
+   and per-mound stop/resume. Everything live arrives through the /events/stream
+   subscription this page already holds and the polls app.js already runs
+   (`ColonyHost.ingestGraph` / `ingestApprovals` are called FROM those handlers);
+   nothing here polls anything the console can already see.
 
-   Each file in the feature has exactly one job, and none of them overlap:
-
-     colony-topology.js   what is TRUE      (no fetch, no drawing)
-     colony-renderer.js   how it LOOKS      (WebGL; no state decisions)
-     colony-live.js       which renderer    (WebGL, or the classic 2D fallback)
-     colony-host.js       wiring and I/O    (this file)
-
-   It loads after `app.js` and uses the globals that file defines — `api`,
-   `nodes`, `showInspector`, `onColonyEvent`, the colony display preferences.
+   The reducer (colony-topology.js) decides what an event means. The renderer
+   (colony-live.js) draws the scene it publishes. This file toggles, hydrates,
+   persists the operator's layout, and relays the renderer's events to the page
+   (colony-home.js) and to the console's existing Agent Inspector. It does not
+   decide, and it does not draw.
    ───────────────────────────────────────────────────────────────────────────── */
 (function () {
   'use strict';
 
-  var live = null, topo = null, hud = null;
+  var live = null, topo = null;
   var VIEW_KEY = 'anthill.colony.view3d';
   var layoutTimer = null;
+  var sceneListeners = [], liveListeners = [];
 
   function pref(name, fallback) {
     try { return typeof window[name] !== 'undefined' ? window[name] : fallback; }
@@ -32,117 +32,53 @@
     topo = ColonyTopology.create();
     live = ColonyLive.create();
 
-    /* MOUNTING IS WHERE A RENDERER ACTUALLY FAILS, and until this was fixed it was
-       the one step outside the fallback.
-
-       `ColonyLive.create()` already guards CONSTRUCTION: if `ColonyRenderer.create()`
-       throws, it returns the classic projection instead. But `available()` only
-       proves that `window.THREE` exists and that *a* WebGL context can be created —
-       neither of which is the same as THIS renderer mounting. `mount()` resolves
-       three.js, constructs a `WebGLRenderer`, allocates textures and attaches a
-       canvas, and any of that can throw on a driver, a blocked context, or a
-       three.js whose API moved.
-
-       When it did, the exception escaped `enable()` and then `toggle()`, so
-       `classic.style.display` was never restored — leaving the WebGL root div
-       (`position:absolute; inset:0; background:#04060b`) as a black rectangle over a
-       classic canvas that had been hidden and never brought back. The view looked
-       dead and the fallback that existed for exactly this never ran.
-
-       So the mount is guarded here, in the file whose job is wiring, and the failure
-       is REPORTED rather than swallowed: the operator gets the 2D projection and the
-       console gets the real reason. */
+    /* MOUNTING IS WHERE A RENDERER ACTUALLY FAILS. The renderer is canvas-2D and has no
+       WebGL to lose, but a mount can still throw on a detached area or an exotic
+       canvas policy — and when it does the classic canvas must come back rather than
+       leave a hidden `#c` under nothing. Reported, not swallowed. */
     try {
       live.mount(area);
     } catch (e) {
-      try {
-        console.warn('[colony-live] the WebGL renderer failed to mount, falling back to the '
-                   + 'classic projection: ' + ((e && e.message) || e));
-      } catch (e2) { }
-      // Remove whatever the failed mount attached before replacing it. A partial
-      // mount leaves a full-bleed opaque div, which is the black rectangle above.
+      try { console.warn('[colony-live] the renderer failed to mount, keeping the classic canvas: ' + ((e && e.message) || e)); } catch (e2) { }
       try { live.destroy(); } catch (e3) { }
-      live = ColonyLive.createClassic();
-      live.renderer = 'canvas2d';
-      live.mount(area);
+      live = null; topo = null;
+      return false;
     }
 
-    var options = {
+    live.setOptions({
       motion: pref('colonyMotion', 'normal'),
       labels: pref('colonyLabels', 'normal'),
       trails: pref('colonyPheromones', 'on') !== 'off'
-    };
-    live.setOptions(options);
+    });
 
-    // The HUD is optional: a missing asset must cost the operator the chrome,
-    // never the view. It is created BEFORE the first scene so no scene is lost.
-    if (window.ColonyHud) {
-      hud = ColonyHud.create({
-        mount: area, live: live, topo: topo,
-        motion: options.motion, labels: options.labels, trails: options.trails,
-        onResident: openAgentInspector,
-        onMoundStop: moundStop,
-        /* v0.3.8.117: the HUD renders its control bar into the console's own viewbar rather
-           than floating a second one bottom-right. Passed rather than looked up inside the HUD,
-           because the HUD is not allowed to know the console's DOM — wiring is this file's job. */
-        barMount: document.getElementById('colony-viewbar')
-      });
-    }
-
-    // The topology publishes to both, and to nothing else. While the HUD is
-    // showing a reconstructed frame it keeps feeding the renderer that frame —
-    // which is why the renderer's scene is set by the HUD in history mode and
-    // by this subscription in live mode, never by both at once.
+    // The topology publishes to the renderer and to whoever asked (the live bar reads counts
+    // from the same scene rather than polling anything).
     topo.onScene(function (s) {
-      if (hud) { hud.setScene(s); if (hud.mode() === 'history') return; }
       if (live) live.setTopology(s);
+      sceneListeners.forEach(function (fn) { try { fn(s); } catch (e) { } });
     });
 
-    /* An ant opens the HUD's ant inspector — the trail, the workers, the status —
-       and ALSO the console's existing Agent Inspector, which is where routing and
-       telemetry for that role already live. Two panels, neither duplicating the
-       other: this one is about the ant in the colony, that one about its wiring. */
-    live.on('resident', function (h) {
-      var r = h && h.data;
-      if (hud && r) hud.selectAnt(r);
-      openAgentInspector((r && r.roleId) || '');
-    });
-
-    // A record grain resolves to the record it stands for.
-    live.on('record', function (h) {
-      if (hud && h && h.data) hud.selectRecord(h.data);
-    });
-
-    // The level changed, so the breadcrumb and BACK have to follow the camera.
-    live.on('depth', function () { if (hud) hud.onDepth(); });
-
-    // A chamber click opens the sector inspector; the HUD owns every panel so
-    // there is one place that decides what an inspector shows.
-    live.on('sector', function (h) {
-      if (hud && h && h.sectorId) hud.selectSector(h.sectorId);
-    });
-
+    /* A resident is a real registry role or worker, so opening one opens the EXISTING Agent
+       Inspector for it rather than a second inspector of our own. */
+    live.on('resident', function (h) { openAgentInspector((h && h.resident && (h.resident.parent || h.resident.roleId)) || ''); });
     live.on('layout', saveLayout);
 
-    // Hydrate BEFORE the stream matters. Until the snapshot lands the reducer
-    // buffers events rather than guessing which sector an ant belongs to — the
-    // guess is what used to file unknown roles under the Queen.
+    liveListeners.forEach(function (fn) { try { fn(live); } catch (e) { } });
     hydrate();
+    return true;
   }
 
-  /* A resident is a real registry role, so opening one opens the EXISTING Agent
-     Inspector for it rather than a second inspector of our own. */
   function openAgentInspector(roleId) {
     var who = String(roleId || '').toLowerCase();
-    if (!who || typeof nodes === 'undefined') return;
+    if (!who || typeof nodes === 'undefined' || typeof showInspector !== 'function') return;
     var n = nodes.find(function (x) { return x.ant === who || x.worker === who || x.id === who; });
-    if (n && typeof showInspector === 'function') showInspector(n);
+    if (n) showInspector(n);
   }
 
   function disable() {
-    if (hud) hud.destroy();
     if (live) live.destroy();
-    live = null; topo = null; hud = null;
+    live = null; topo = null;
+    liveListeners.forEach(function (fn) { try { fn(null); } catch (e) { } });
   }
 
   function toggle(want) {
@@ -156,30 +92,21 @@
       on = false;
     }
 
-    if (on && !live) enable(area, classic);
+    // The 2D chrome belongs to the 2D canvas; the stylesheet folds it away under this class. It is
+    // set BEFORE the renderer is created or torn down, so chrome notified by onLive reads the new
+    // state rather than the old one.
+    document.body.classList.toggle('colony-live-on', !!on);
+    if (on && !live) { if (!enable(area, classic)) on = false; }
     else if (!on && live) disable();
 
     classic.style.display = on ? 'none' : '';
-
-    /* THE 2D CHROME BELONGS TO THE 2D CANVAS. v0.3.8.115 fix: `toggle` hid `#c` and
-       nothing else, so the caste legend, the learning-signals panel, the partial-
-       history notice and the "+/- to zoom · drag canvas to pan · drag ant to move"
-       hint all stayed painted over the WebGL scene — describing gestures that view
-       does not have, on top of a picture they do not describe. The viewbar itself
-       STAYS: it owns the Live 3D toggle, and hiding it would strand the operator in
-       a view with no way back. */
-    document.body.classList.toggle('colony-live-3d', !!on);
-
+    document.body.classList.toggle('colony-live-on', !!on);
     document.querySelectorAll('#colony-viewbar [data-colonyact="live3d"]')
       .forEach(function (b) { b.classList.toggle('on', !!on); });
     try { localStorage.setItem(VIEW_KEY, on ? '1' : '0'); } catch (e) { }
   }
 
-  /* ── The read model. Two bounded reads on enable, then nothing. ───────────
-     The live picture comes from the /events/stream subscription this page
-     already holds; adding a poll here would be the second fetch the feature is
-     not allowed to have. Failure is reported and non-fatal — a colony that
-     cannot serve the snapshot still draws its structure from /graph. */
+  /* ── The read model. Two bounded reads on enable, then nothing. ─────────── */
   function hydrate() {
     if (typeof api !== 'function') return;
 
@@ -196,73 +123,38 @@
       try { console.warn('[colony-live] read model unavailable: ' + (e && e.message)); } catch (e2) { }
     });
 
-    /* §15. The fleet listing, once, on enable — not polled.
-       A colony built without the Micromound module does not map this route, so a
-       404 here is the ORDINARY case and must be silent about capability the
-       colony does not have: no mound is ingested, the mound chamber is never
-       built, and the descent control is never offered. The one thing this must
-       never do is invent a device so the view has something to descend into. */
+    /* §15. The fleet listing, once, on enable — not polled. A colony without the Micromound
+       module does not map this route, so a 404 is the ORDINARY case: no mound is ingested and
+       the mound chamber is never built. Nothing here invents a device to have something to draw. */
     api('/micromound/mounds').then(function (fleet) {
       if (topo) topo.ingestMound((fleet && fleet.data) || fleet);
     }).catch(function () { /* no module, or no permission: there is no mound. */ });
   }
 
-  /* ── The one mutation this feature performs ───────────────────────────────
-     PER-MOUND STOP AND RESUME, and it lives here because this is the only file
-     in the feature allowed to reach the network — the same boundary that keeps
-     the HUD from acting on the colony behind the host's back.
-
-     Three things it deliberately does NOT do:
-
-       · It does not decide the new state. It posts, then re-reads the fleet, so
-         the panel shows the COLONY's answer. A view that flipped its own flag on
-         a 200 would disagree with the device the first time a stop was accepted
-         and then superseded.
-       · It does not touch the global stop. That is a file on disk precisely so
-         no API flow can clear it (SAFETY.md), and neither this nor micromound.js
-         offers a control that appears to.
-       · It does not claim delivery. The colony never dials a mound; a stop order
-         sits in the downlink queue until the device's next beat collects it, and
-         both this and the panel say so in those words.
-
-     A failure is reported and rethrown, so the HUD's pending state clears and
-     the operator learns the order did not land rather than watching a button
-     settle back as though it had. */
+  /* ── The one mutation: per-mound stop / resume. Posts, then RE-READS the fleet so the view
+     shows the colony's answer; never flips its own flag on a 200, never touches the global stop
+     (a file on disk, by design), never claims delivery — the order waits for the device's beat. */
   function moundStop(moundId, stopped) {
     if (typeof api !== 'function' || !moundId) return Promise.resolve(false);
     var path = stopped ? '/micromound/stop' : '/micromound/stop/resume';
     return api(path, 'POST', { mound_id: moundId })
       .then(function () { return api('/micromound/mounds'); })
-      .then(function (fleet) {
-        if (topo) topo.ingestMound((fleet && fleet.data) || fleet);
-        return true;
-      })
+      .then(function (fleet) { if (topo) topo.ingestMound((fleet && fleet.data) || fleet); return true; })
       .catch(function (e) {
-        try {
-          console.warn('[colony-live] mound ' + (stopped ? 'stop' : 'resume')
-                     + ' failed for ' + moundId + ': ' + ((e && e.message) || e));
-        } catch (e2) { }
-        // Re-read anyway: the post may have landed and the follow-up read failed,
-        // and a stale panel is worse than a slow one.
-        if (typeof api === 'function') {
-          api('/micromound/mounds')
-            .then(function (fleet) { if (topo) topo.ingestMound((fleet && fleet.data) || fleet); })
-            .catch(function () { });
-        }
+        try { console.warn('[colony-live] mound ' + (stopped ? 'stop' : 'resume') + ' failed for ' + moundId + ': ' + ((e && e.message) || e)); } catch (e2) { }
+        if (typeof api === 'function') api('/micromound/mounds').then(function (fleet) { if (topo) topo.ingestMound((fleet && fleet.data) || fleet); }).catch(function () { });
         throw e;
       });
   }
 
-  /* Layout persists through /ui/state, not localStorage alone: a layout an
-     operator arranged on one machine should follow their account. Debounced,
-     because a drag emits continuously and every save is a write. */
+  /* Layout persists through /ui/state: an arrangement (and any chamber renames) made on one
+     machine follows the operator's account. Debounced — a drag emits continuously. */
   function saveLayout(layout) {
     if (typeof api !== 'function' || !layout) return;
     clearTimeout(layoutTimer);
     layoutTimer = setTimeout(function () {
       api('/ui/state').then(function (cur) {
         var body = Object.assign({}, (cur && cur.data) || cur || {}, { colony_live_layout: layout });
-        // api(path, method, body) — positional, and it serializes the body itself.
         return api('/ui/state', 'PUT', body);
       }).catch(function (e) {
         try { console.warn('[colony-live] layout not saved: ' + (e && e.message)); } catch (e2) { }
@@ -271,20 +163,12 @@
   }
 
   // One subscription for the page's life; toggling must not stack listeners.
-  // The reducer decides what an event MEANS — including whether it created a
-  // durable record, which the server answers on the wire so there is exactly
-  // one implementation of that rule.
   if (typeof onColonyEvent === 'function') {
     onColonyEvent(function (ev) { if (topo) topo.ingestEvent(ev); });
   }
 
-  /* v0.3.8.117: COLONY LIVE 3D IS THE DEFAULT VIEW. It was opt-in, remembered per browser, so
-     the colony page opened on the canvas projection and an operator had to know the Live 3D button
-     existed to see the thing the last two releases were about.
-
-     Default ON, and only an explicit '0' — an operator who has actually turned it off — keeps the
-     canvas. A machine with no WebGL still lands on the canvas, because `createHost()` falls back on
-     its own and `enable()` guards the mount; the default decides intent, not capability. */
+  /* COLONY LIVE IS THE DEFAULT VIEW (`.117`). Only an explicit '0' — an operator who turned it
+     off — keeps the classic canvas; a mount that fails falls back on its own. */
   document.addEventListener('DOMContentLoaded', function () {
     var want = true;
     try { want = localStorage.getItem(VIEW_KEY) !== '0'; } catch (e) { }
@@ -293,20 +177,21 @@
 
   window.ColonyHost = {
     toggle: toggle,
-    /** For app.js's graph poll — the host owns the feed, app.js owns the fetch. */
+    /** For app.js's polls — the host owns the feed, app.js owns the fetch. */
     ingestGraph: function (g) { if (topo) topo.ingestGraph(g); },
     ingestApprovals: function (a) { if (topo) topo.ingestApprovals(a); },
     ingestMound: function (m) { if (topo) topo.ingestMound(m); },
     setOptions: function (o) { if (live) live.setOptions(o); },
-    /* One reset for both renderers — see the `reset-all` handler in app.js. Camera first, then
-       layout, so the chambers are back home before the camera frames them. */
-    resetAll: function () {
-      if (!live) return;
-      if (typeof live.resetView === 'function') live.resetView();
-      if (typeof live.resetLayout === 'function') live.resetLayout();
-    },
-    zoom: function (f) { if (live && typeof live.zoom === 'function') live.zoom(f); },
+    resetAll: function () { if (live) live.resetAll(); },
+    zoom: function (f) { if (live) live.zoom(f); },
     active: function () { return !!live; },
-    renderer: function () { return live ? live.renderer : null; }
+    live: function () { return live; },
+    topology: function () { return topo; },
+    /** The page chrome subscribes here — the same scene the renderer gets, no second feed. */
+    onScene: function (fn) { if (typeof fn === 'function') sceneListeners.push(fn); },
+    /** Fires with the renderer on enable and with null on disable, so chrome can (re)hook it. */
+    onLive: function (fn) { if (typeof fn === 'function') { liveListeners.push(fn); if (live) fn(live); } },
+    moundStop: moundStop,
+    renderer: function () { return live ? 'canvas2d' : null; }
   };
 })();
