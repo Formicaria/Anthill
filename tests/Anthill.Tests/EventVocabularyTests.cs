@@ -40,6 +40,32 @@ public class EventVocabularyTests
     private static readonly Regex LoggedLiteral =
         new(@"LogEvent\(\s*[^,()]+,\s*""(?<name>[a-z][a-z0-9_]*)""");
 
+    /// <summary>
+    /// THE SECOND EMISSION CHANNEL — `Publish(new ColonyEvent { EventType = "name" })`. v0.3.8.114.
+    ///
+    /// This codebase emits through two channels and every sweep before this one read only the
+    /// first. Thirty-two sites use this shape, and fifteen names lived nowhere else, so nothing
+    /// could filter on them. The asymmetry was visible in this very class:
+    /// <see cref="EveryDeclaredEvent_IsPublishedBySomething"/> has always counted the bus as
+    /// publication, while the emitted-is-declared direction read only `LogEvent`. One direction
+    /// knew about the bus and the other did not.
+    ///
+    /// The trailing lookahead excludes a CONCATENATION — `EventType = "homelab_" + evt.EventType`
+    /// composes its name at runtime, and matching the prefix would report `homelab_` as an
+    /// undeclared event, which is a false finding rather than a real one. Those sites are pinned by
+    /// <see cref="TheComposedEventNames_AreAKnownAndBoundedSet"/> instead, because a name no static
+    /// reader can resolve needs a different answer than a wider regex.
+    /// </summary>
+    private static readonly Regex BusLiteral =
+        new(@"EventType\s*=\s*""(?<name>[a-z][a-z0-9_]*)""\s*(?![+])");
+
+    /// <summary>Event names this codebase composes at runtime, with the reason each one has to.</summary>
+    private static readonly Dictionary<string, string> ComposedAtRuntime = new(StringComparer.Ordinal)
+    {
+        ["homelab_"] = "HomelabRepository re-publishes a repository event under a homelab_ prefix",
+        ["automation_"] = "AutomationEngine names the rule outcome it just evaluated",
+    };
+
     /// <summary>Every `public const string X = "y";` in the vocabulary, as name → value.</summary>
     private static Dictionary<string, string> Declared() =>
         typeof(EventTypes)
@@ -91,6 +117,14 @@ public class EventVocabularyTests
             // Argument 1 (zero-based) of `LogEvent(missionId, eventType, …)`, literal or constant.
             foreach (var name in SourceText.CallArgument(code, "LogEvent", 1, declared))
                 if (!values.Contains(name)) undeclared.TryAdd(name, Path.GetFileName(file));
+
+            // v0.3.8.114 — and the bus, which is the other half of how this colony speaks.
+            foreach (Match m in BusLiteral.Matches(code))
+            {
+                var name = m.Groups["name"].Value;
+                if (ComposedAtRuntime.ContainsKey(name)) continue;
+                if (!values.Contains(name)) undeclared.TryAdd(name, Path.GetFileName(file));
+            }
         }
 
         Assert.True(undeclared.Count == 0,
@@ -112,6 +146,49 @@ public class EventVocabularyTests
     /// `LogEvent` at all — an earlier draft of this sweep called it a phantom for exactly that
     /// reason, which is the adjacent-question defect committed while hunting one.
     /// </summary>
+    /// <summary>
+    /// A NAME COMPOSED AT RUNTIME CANNOT BE SWEPT, AND SAYING SO IS THE HONEST ANSWER. v0.3.8.114.
+    ///
+    /// `EventType = "homelab_" + evt.EventType` produces a name no static reader can resolve, so
+    /// widening a regex does not help: there is no literal to find. Pretending otherwise would give
+    /// the vocabulary sweep a coverage claim it cannot support — the shape this repository calls a
+    /// check answering an adjacent question.
+    ///
+    /// So the composed sites are an explicit, bounded ledger. A third one appearing fails this test
+    /// and has to be a decision somebody made, which is the same discipline the
+    /// deliberately-undocumented config ledger used before v0.3.8.114 generated it away.
+    ///
+    /// The real fix is for those prefixes to become declared constants and for the composition to
+    /// happen against the vocabulary rather than against a string. That is not done here because it
+    /// changes what the homelab publishes, and this release is not the place to change what a
+    /// subscriber sees.
+    /// </summary>
+    [Fact]
+    public void TheComposedEventNames_AreAKnownAndBoundedSet()
+    {
+        var found = new SortedDictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var file in SourceFiles())
+            foreach (Match m in Regex.Matches(SourceText.CodeOnly(File.ReadAllText(file)),
+                         @"EventType\s*=\s*""(?<name>[a-z][a-z0-9_]*)""\s*\+"))
+                found.TryAdd(m.Groups["name"].Value, Path.GetFileName(file));
+
+        var unexpected = found.Keys.Where(k => !ComposedAtRuntime.ContainsKey(k)).ToList();
+
+        Assert.True(unexpected.Count == 0,
+            "these event names are composed at runtime and are not on the ledger, so the vocabulary "
+          + "sweep silently does not cover them: "
+          + string.Join(", ", unexpected.Select(k => $"{k} ({found[k]})"))
+          + ". Add the prefix to ComposedAtRuntime with the reason, or — better — declare it and "
+          + "compose against the vocabulary instead of against a string.");
+
+        var stale = ComposedAtRuntime.Keys.Where(k => !found.ContainsKey(k)).ToList();
+
+        Assert.True(stale.Count == 0,
+            "the composed-name ledger names prefixes nothing composes any more: "
+          + string.Join(", ", stale));
+    }
+
     [Fact]
     public void EveryDeclaredEvent_IsPublishedBySomething()
     {

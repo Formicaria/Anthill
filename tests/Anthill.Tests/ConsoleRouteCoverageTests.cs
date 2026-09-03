@@ -85,6 +85,22 @@ public class ConsoleRouteCoverageTests
         ["/micromound/stop"] = "UI GAP — per-mound stop control belongs on the fleet card; the global stop is a file by design",
         ["/micromound/stop/resume"] = "UI GAP — as /micromound/stop; resume is an explicit operator act",
 
+        // --- MICROMOUND v0.3.8.114: the command path shipped and its console did NOT. -------------
+        //
+        // This is the deferral recorded where it can be checked rather than only asserted in prose.
+        // The integration brief's acceptance experience — an operator adding a mound, authoring its
+        // configuration, issuing a charter and watching evidence arrive, all from the console — is
+        // NOT delivered by `.114`, by an explicit scope decision. Every route below is reachable
+        // over the API and nothing renders it.
+        //
+        // These entries are meant to LEAVE this ledger, the way the v0.3.8.46 block above did.
+        ["/micromound/charters"] = "UI GAP — charter issuance has no console surface; the command path shipped ahead of its UI at .114",
+        ["/micromound/config"] = "UI GAP — manifest authoring (hardware bindings, device limits, workers) awaits its console form",
+        ["/micromound/missions"] = "UI GAP — physical mission dispatch; approvals DO surface, through the existing approvals queue",
+        ["/micromound/missions/*"] = "UI GAP — per-mission evidence summary; the mission_status widget payload is the intended reader",
+        ["/micromound/resolve"] = "UI GAP — the capability resolver answers a question and issues nothing; no console asks it yet",
+        ["/micromound/unlink"] = "UI GAP — retiring a device belongs on the fleet card, beside the token mint",
+
         // The v0.3.8.48 schedule entries left this ledger the same release they joined it: the
         // project workspace's Schedules tab reaches all of them.
 

@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Micromound.Protocol;
 
 namespace Anthill.Modules.Micromound;
 
@@ -12,8 +13,13 @@ public static class MicromoundPermissions
     public const string Manage = "manage_micromound";
 
     /// <summary>
-    /// Issue charters, stop, resume. Not used in M1 — the command path does not exist yet — but
-    /// declared here so the tiering is settled before anything can be tempted to skip it.
+    /// Issue charters, dispatch physical missions, stop, resume. `.60` declared this with nothing
+    /// using it "so the tiering is settled before anything can be tempted to skip it"; v0.3.8.114
+    /// is when it started governing something.
+    ///
+    /// Configuration is deliberately NOT here — it is <see cref="Manage"/>. A manifest is the
+    /// hardware map an operator authors and it grants nothing; it can only narrow what a charter
+    /// may later spend.
     /// </summary>
     public const string Approve = "approve_micromound_actions";
 }
@@ -29,9 +35,13 @@ public static class MicromoundWidgetKinds
 }
 
 /// <summary>
-/// A device the colony knows about. Note what is absent: no private key, ever (SAFETY.md
-/// prohibits any endpoint or record that reads one back), and no charter — M1 has no command
-/// path, so the colony can see mounds and cannot direct them.
+/// A device the colony knows about. Note what is absent: no private key, ever — SAFETY.md
+/// prohibits any endpoint or record that reads one back, and that absence is deliberate rather
+/// than an oversight to fill in later.
+///
+/// v0.3.8.114 added the authority fields below. The charter id here is the colony's record of what
+/// it GRANTED, not of what the mound accepted: the device validates a charter against its own
+/// firmware and may refuse, and that refusal arrives as an uplink ack rather than being inferred.
 /// </summary>
 public sealed class MoundRecord
 {
@@ -53,6 +63,48 @@ public sealed class MoundRecord
     /// <summary>Per-mound stop, held in the record as MICROMOUND.md requires.</summary>
     [JsonPropertyName("stopped")] public bool Stopped { get; set; }
     [JsonPropertyName("protocol_version")] public int ProtocolVersion { get; set; }
+
+    // ---- Authority. v0.3.8.114 — the fields M1 had no command path to fill. -------------------
+
+    /// <summary>The charter currently in force, or empty for none — which means observe only.</summary>
+    [JsonPropertyName("charter_id")] public string CharterId { get; set; } = "";
+
+    /// <summary>
+    /// The charter's hard expiry. Distinct from the lease: a lease renews on every acknowledged
+    /// beat, this does not renew at all, and when it passes the mound needs a NEW charter rather
+    /// than another beat.
+    /// </summary>
+    [JsonPropertyName("charter_expires_at")] public string CharterExpiresAt { get; set; } = "";
+
+    /// <summary>
+    /// Absolute lease expiry, as the colony last extended it. PROTOCOL.md §5: acknowledging a sync
+    /// beat is the ONLY renewal path, and nothing on the device can extend it — so this is the
+    /// colony's own record of what it granted, not a report of what the mound believes.
+    /// </summary>
+    [JsonPropertyName("lease_expires_at")] public string LeaseExpiresAt { get; set; } = "";
+
+    /// <summary>
+    /// Reported by the mound after a lease lapse (PROTOCOL.md §5). Reconnection resumes nothing:
+    /// a quiesced mound waits for fresh authority, and renewal is not resumption.
+    /// </summary>
+    [JsonPropertyName("quiesced")] public bool Quiesced { get; set; }
+
+    /// <summary>
+    /// What this mound will accept, and from whom — §17. Defaults to the enum's zero value,
+    /// `ManualOnly`, so a record written before this field existed reads as the most conservative
+    /// state rather than the most convenient one.
+    /// </summary>
+    [JsonPropertyName("autonomy_policy")] public AutonomyPolicy AutonomyPolicy { get; set; }
+
+    /// <summary>The manifest this colony last AUTHORED for the mound. Not proof it accepted one.</summary>
+    [JsonPropertyName("manifest_id")] public string ManifestId { get; set; } = "";
+
+    /// <summary>
+    /// When that manifest was issued. Named "revision" rather than "version" because it orders
+    /// configurations without claiming any of them is running — the mound validates against its own
+    /// drivers and may refuse, so what is in force is a fact only the sync path can report.
+    /// </summary>
+    [JsonPropertyName("configuration_revision")] public string ConfigurationRevision { get; set; } = "";
 }
 
 public static class MoundTiers
@@ -81,7 +133,7 @@ public sealed class EnrollmentToken
     public bool IsBurned => !string.IsNullOrEmpty(BurnedAt);
 }
 
-/// <summary>What one sync beat told the colony. Read-only telemetry: no command travels back.</summary>
+/// <summary>What one sync beat told the colony, and what the colony did about it.</summary>
 public sealed class MoundBeat
 {
     [JsonPropertyName("mound_id")] public string MoundId { get; set; } = "";
@@ -104,6 +156,31 @@ public sealed record SyncOutcome(
     string AnchorDigest,
     bool StopInEffect)
 {
+    /// <summary>
+    /// The signed envelopes that travel back in the HTTP response, in the order they should be
+    /// handled. v0.3.8.114 — M1 had none, and named a KIND instead ("a stop order, or nothing"),
+    /// which was honest about a colony that could not sign anything and is not what a controller
+    /// does.
+    ///
+    /// EMPTY ON A REFUSAL, and that is the load-bearing part: an ack for a batch nobody accepted
+    /// would tell the device to discard records the colony does not hold.
+    /// </summary>
+    public IReadOnlyList<Envelope> Downlink { get; init; } = [];
+
+    /// <summary>
+    /// The mound reported that its lease lapsed and it entered `safe_state` (PROTOCOL.md §5). Not a
+    /// kind of offline — it is beating normally and holding no authority, so the remedy is a
+    /// charter rather than a network cable.
+    /// </summary>
+    public bool Quiesced { get; init; }
+
+    /// <summary>
+    /// This batch had already been acknowledged and was answered with the same ack, processing
+    /// nothing. Normal, not an error: the ack rides the sync RESPONSE, so a lost response means the
+    /// device re-sends exactly this.
+    /// </summary>
+    public bool Duplicate { get; init; }
+
     public static SyncOutcome Refused(IReadOnlyList<string> refusals, string anchorDigest, bool stop) =>
         new(false, refusals, -1, anchorDigest, stop);
 }

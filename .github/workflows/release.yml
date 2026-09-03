@@ -29,7 +29,7 @@ permissions:
 # ProjectReference, pinned in one place. Keep this value in step with ci.yml's — a release must
 # be built against the same contract CI proved green.
 env:
-  MICROMOUND_REF: v0.1.0
+  MICROMOUND_REF: v0.9.10
 
 jobs:
   verify-version:

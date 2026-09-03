@@ -14,17 +14,17 @@ public class SyncTests
 {
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-08-15T09:00:00Z");
 
-    private sealed record Harness(
-        InMemoryMoundStore Store,
-        RecordingEventBus Bus,
-        MicromoundSync Sync,
-        SimMound Device);
+    private sealed record Harness(Colony Colony, SimMound Device)
+    {
+        public InMemoryMoundStore Store => Colony.Store;
+        public RecordingEventBus Bus => Colony.Bus;
+        public MicromoundSync Sync => Colony.Sync;
+    }
 
     private static Harness Enrolled(string moundId = "mm-1", string tier = MoundTiers.EdgeQueen)
     {
-        var store = new InMemoryMoundStore();
-        var bus = new RecordingEventBus();
-        var enrollment = new MicromoundEnrollment(store, bus);
+        var colony = Colony.Build();
+        var enrollment = new MicromoundEnrollment(colony.Store, colony.Bus);
         var device = new SimMound(moundId, tier);
 
         var minted = enrollment.MintToken(moundId, moundId, tier, "tyler", Now);
@@ -33,7 +33,7 @@ public class SyncTests
             "raspberry-pi-5", ["sense.temp", "act.relay_1"], ProtocolVersion.Current), Now);
 
         Assert.True(result.Accepted, result.Reason);
-        return new Harness(store, bus, new MicromoundSync(store, bus), device);
+        return new Harness(colony, device);
     }
 
     private static IReadOnlyList<Envelope> Beats(SimMound device, int count, DateTimeOffset from)
@@ -75,19 +75,62 @@ public class SyncTests
         Assert.Equal(4, second.AcceptedThroughSeq);
     }
 
+    /// <summary>
+    /// A REPLAYED BATCH IS ANSWERED WITH THE SAME ACK AND PROCESSED BY NOTHING. v0.3.8.114 —
+    /// this test used to assert a refusal, and the refusal was a deadlock.
+    ///
+    /// The ack rides the sync RESPONSE. A response lost in transit means the device re-sends the
+    /// identical batch, forever, against a colony refusing it forever — and the device's own loop
+    /// does exactly that: `if (_queue.Depth >= depthBefore) break;` keeps the records queued and
+    /// tries again next beat. The security property that actually matters is that nothing is
+    /// believed twice, and that is what is asserted here.
+    /// </summary>
     [Fact]
-    public void A_replayed_batch_is_refused_because_the_sequence_does_not_resume()
+    public void A_replayed_batch_is_re_acknowledged_and_processed_once()
     {
         using var workspace = new TempWorkspace();
         var h = Enrolled();
 
         var batch = Beats(h.Device, 3, Now);
-        Assert.True(h.Sync.AcceptUplink("mm-1", batch, Now).Accepted);
+        var first = h.Sync.AcceptUplink("mm-1", batch, Now);
+        Assert.True(first.Accepted);
+
+        var beatsAfterFirst = h.Store.RecentBeats("mm-1", 20).Count;
 
         var replay = h.Sync.AcceptUplink("mm-1", batch, Now.AddSeconds(30));
 
-        Assert.False(replay.Accepted);
-        Assert.Contains(replay.Refusals, r => r.Contains("seq does not resume"));
+        Assert.True(replay.Accepted);
+        Assert.True(replay.Duplicate);
+
+        // Same ack, and the window did not move.
+        Assert.Equal(first.AcceptedThroughSeq, replay.AcceptedThroughSeq);
+        Assert.Equal(first.AnchorDigest, replay.AnchorDigest);
+        Assert.Equal([EnvelopeKinds.Ack], MicromoundSync.DownlinkKindsFor(replay));
+
+        // And nothing was recorded a second time.
+        Assert.Equal(beatsAfterFirst, h.Store.RecentBeats("mm-1", 20).Count);
+    }
+
+    /// <summary>
+    /// An envelope with a sequence the colony has NOT seen still has to chain from the anchor. A
+    /// re-delivery is forgiven; a gap is not, and the two are told apart by sequence rather than by
+    /// how the batch happened to be assembled.
+    /// </summary>
+    [Fact]
+    public void A_batch_that_skips_a_sequence_is_still_refused()
+    {
+        using var workspace = new TempWorkspace();
+        var h = Enrolled();
+
+        Assert.True(h.Sync.AcceptUplink("mm-1", Beats(h.Device, 2, Now), Now).Accepted);
+
+        // Drop the envelope that would have continued the chain.
+        var next = Beats(h.Device, 2, Now.AddMinutes(1)).Skip(1).ToList();
+
+        var outcome = h.Sync.AcceptUplink("mm-1", next, Now.AddMinutes(1));
+
+        Assert.False(outcome.Accepted);
+        Assert.Empty(outcome.Downlink);   // a refused batch is never acknowledged
     }
 
     [Fact]
@@ -145,7 +188,7 @@ public class SyncTests
         var bus = new RecordingEventBus();
         new MicromoundEnrollment(store, bus).MintToken("mm-1", "Shed Pi", MoundTiers.EdgeQueen, "tyler", Now);
 
-        var outcome = new MicromoundSync(store, bus)
+        var outcome = Colony.Build(store, bus).Sync
             .AcceptUplink("mm-1", Beats(new SimMound("mm-1"), 2, Now), Now);
 
         Assert.False(outcome.Accepted);
@@ -159,7 +202,7 @@ public class SyncTests
         var store = new InMemoryMoundStore();
         var bus = new RecordingEventBus();
 
-        var outcome = new MicromoundSync(store, bus)
+        var outcome = Colony.Build(store, bus).Sync
             .AcceptUplink("mm-ghost", Beats(new SimMound("mm-ghost"), 1, Now), Now);
 
         Assert.False(outcome.Accepted);

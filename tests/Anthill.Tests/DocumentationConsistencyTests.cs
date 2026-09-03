@@ -162,7 +162,8 @@ public class DocumentationConsistencyTests
     public void TheUniversalWorkflowProgram_IsExactlyTheRangeItDeclares()
     {
         var heading = Regex.Match(Plan(),
-            @"^##\s*2b\..*?v\d+\.\d+\.\d+\.(?<from>\d+)\s*(?:→|->)\s*v\d+\.\d+\.\d+\.(?<to>\d+)\s*$",
+            @"^##\s*2b\..*?v\d+\.\d+\.\d+\.(?<from>\d+)\s*(?:→|->)\s*v\d+\.\d+\.\d+\.(?<to>\d+)"
+          + @"(?<closed>\s*·\s*✅\s*CLOSED at v\d+\.\d+\.\d+\.(?<at>\d+))?\s*$",
             RegexOptions.Multiline);
 
         Assert.True(heading.Success,
@@ -172,11 +173,46 @@ public class DocumentationConsistencyTests
 
         var from = int.Parse(heading.Groups["from"].Value);
         var to = int.Parse(heading.Groups["to"].Value);
+        var shipped = int.Parse(AnthillRuntime.Version.Split('.').Last());
+
+        var ids = Regex.Matches(Plan(), @"^\|\s*\*\*\.(?<n>\d{2,3})\*\*\s*\|", RegexOptions.Multiline)
+            .Select(m => int.Parse(m.Groups["n"].Value))
+            .ToList();
+
+        // v0.3.8.114 — A FINISHED PROGRAM, which is the state this check could not express.
+        //
+        // `.113` widened it to admit `to == from`, the LAST release. It said nothing about the
+        // release AFTER the last one, when the final row has shipped and left and the table is
+        // empty — and then `from == shipped` fails forever, because the program cannot begin at a
+        // version that will never come. That is the repository's own meta-rule arriving for the
+        // fourth time: a guard that cannot express success is not a guard, it is a deadline.
+        //
+        // A closed program declares itself closed in the heading, and what is checked flips
+        // accordingly: the range must now describe the PAST, and the table must be empty. Both are
+        // still assertions — a section claiming closure while listing rows is refused, and so is
+        // one claiming closure at a release that has not shipped.
+        if (heading.Groups["closed"].Success)
+        {
+            var closedAt = int.Parse(heading.Groups["at"].Value);
+
+            Assert.True(closedAt == to,
+                $"§2b says it closed at .{closedAt} and declares its range ending at .{to}. A "
+              + "program closes at its last release or the heading is describing two programs.");
+
+            Assert.True(to <= shipped,
+                $"§2b claims to have CLOSED at .{to}, which has not shipped (.{shipped} is "
+              + "current). A program cannot be finished by a release that has not happened.");
+
+            Assert.True(ids.Count == 0,
+                $"§2b declares itself CLOSED and still lists {ids.Count} release row(s). A closed "
+              + "program has nothing remaining; a row that outlives the program is work nobody is "
+              + "doing and nobody has written down.");
+            return;
+        }
 
         // It begins at the release being built: a program whose first entry has already shipped is
         // a plan describing the past, and a shipped row that lingers is one whose unmet items can
         // be dropped without anyone noticing they were unmet.
-        var shipped = int.Parse(AnthillRuntime.Version.Split('.').Last());
         Assert.True(from == shipped,
             $"§2b declares the program as beginning at .{from} while the shipping release is "
           + $".{shipped}. When a release ships, its row leaves the table and anything it did not "
@@ -195,10 +231,6 @@ public class DocumentationConsistencyTests
         // which is the drift this whole check exists to catch.
         Assert.True(to >= from,
             $"§2b declares the range .{from} → .{to}, which ends before it begins.");
-
-        var ids = Regex.Matches(Plan(), @"^\|\s*\*\*\.(?<n>\d{2,3})\*\*\s*\|", RegexOptions.Multiline)
-            .Select(m => int.Parse(m.Groups["n"].Value))
-            .ToList();
 
         Assert.Equal(Enumerable.Range(from, to - from + 1).ToList(), ids);
 

@@ -15,7 +15,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "0.3.8.113";
+    public const string Version = "0.3.8.114";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -1276,76 +1276,22 @@ public static class AnthillRuntime
     // Keys the dashboard is allowed to write. Hard security gates (auth, host binding,
     // token env) are deliberately NOT here — those stay file/profile-controlled so the UI
     // can never weaken the boundary it is served behind.
-    private static readonly HashSet<string> EditableConfigKeys = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "use_ollama", "ollama_host", "ollama_model", "model_routes",
-        // v3.8.1: the priority model every ant tries first. Editable for the same reason the routes
-        // are — a model that has gone missing is an operational emergency, and the remedy must not
-        // require editing a file and restarting the colony.
-        "model_priority_provider", "model_priority_model",
-        "web_search_enabled", "patch_application_enabled", "file_writing_enabled",
-        // v0.3.8.96 — found live: the flag existed, the file key existed, and the settings surface
-        // could not write it, so enabling acting mode took a manual file edit plus a restart. A
-        // gate the operator is meant to turn on belongs on the surface operators turn things on.
-        "acting_coder_enabled",
-        // v0.3.8.97 — the same finding, twice more, from the same qualification day. Declaring a
-        // workspace check took a file edit and a restart per attempt (three restarts to land one
-        // check id); the resolver's validation and the snapshot's problem reporting already make
-        // live editing safe — ApplySettingsUpdate re-projects, Resolve refuses bad entries loudly,
-        // and the snapshot shows what took. And the deliverable evaluation layer could not be
-        // switched on without the same file-and-restart dance, which is why every qualification
-        // record read "deliverable: not_checked".
-        "workspace_checks", "objective_verification_enabled",
-        "shell_tool_enabled", "file_tools_enabled", "agent_workspace_dir", "parallel_execution_enabled",
-        "max_parallel_workers", "max_web_searches_per_mission", "max_sources_per_mission",
-        "max_context_packet_chars", "max_agent_message_content_chars",
-        "answer_synthesis_enabled",
-        "spec_ingestion_enabled", "long_input_threshold", "max_section_chars", "max_section_tasks",
-        "max_db_backups", "event_retention_days",
-        "autonomy_enabled", "autonomy_poll_seconds", "autonomy_max_missions_per_hour",
-        "autonomy_max_missions_per_day", "autonomy_max_consecutive_failures",
-        "autonomy_dedupe_similarity", "autonomy_max_followups_per_run", "autonomy_max_objective_depth",
-        "autonomy_max_backlog", "autonomy_concurrency", "autonomy_aging_minutes",
-        "autonomy_learning_enabled", "autonomy_priority_bias_max", "autonomy_score_ema_alpha",
-        "autonomy_retire_min_runs", "autonomy_retire_score_threshold", "autonomy_loop_window",
-        "autonomy_oneshot_completion",
-        "operator_shell_enabled", "operator_shell_dir",
-        // v3.7.2: operator-defined tools and their host allow-list.
-        //
-        // Omitted since v3.4.1, which made the whole subsystem reachable only by hand-editing
-        // config.json and restarting — the console could list definitions and refuse them, and
-        // offered no way to turn the feature on. That is the same "shipped but unreachable" defect
-        // as the endpoints themselves, one layer further down.
-        //
-        // Safe to expose under manage_settings, which already governs shell_tool_enabled,
-        // file_writing_enabled and patch_application_enabled. A defined HTTP tool restricted to an
-        // explicit host allow-list is strictly less dangerous than any of those, so adding these is
-        // consistency rather than a loosening. ResetConfig still clears both, because a reset builds
-        // a fresh config and neither field survives it.
-        "user_tools_enabled", "user_tool_allowed_hosts",
-        "homelab_enabled", "homelab_scheduler_enabled", "homelab_mock_providers_enabled",
-        "homelab_max_concurrent_checks",
-        "homelab_health_interval_seconds", "homelab_health_timeout_ms",
-        "homelab_notifications_enabled", "homelab_slack_webhook", "homelab_discord_webhook",
-        "homelab_generic_webhook",
-        "homelab_proxmox_enabled", "homelab_proxmox_host", "homelab_proxmox_port",
-        "homelab_proxmox_credential_id", "homelab_proxmox_insecure_tls", "homelab_proxmox_protocol",
-        "homelab_proxmox_sync_interval_seconds",
-        "homelab_esxi_enabled", "homelab_esxi_host", "homelab_esxi_port",
-        "homelab_esxi_credential_id", "homelab_esxi_insecure_tls", "homelab_esxi_sync_interval_seconds",
-        "homelab_docker_enabled", "homelab_docker_host", "homelab_docker_port",
-        "homelab_docker_credential_id", "homelab_docker_insecure_tls", "homelab_docker_sync_interval_seconds",
-        "homelab_hyperv_enabled", "homelab_hyperv_host", "homelab_hyperv_port",
-        "homelab_hyperv_credential_id", "homelab_hyperv_insecure_tls", "homelab_hyperv_sync_interval_seconds",
-        "homelab_risk_interval_seconds", "homelab_incident_sweep_seconds",
-        "autonomy_autoapply_enabled", "autonomy_autoapply_paths", "autonomy_autoapply_max_lines",
-        "autonomy_autoapply_verify_cmd", "autonomy_autoapply_verify_timeout", "autonomy_autoapply_git_commit",
-        "autonomy_autoapply_git_push", "autonomy_autoapply_git_remote", "autonomy_autoapply_git_username",
-        "autonomy_autoapply_git_ssh_key_path",
-        "autonomy_autoapply_keep_without_verify",
-    };
-
-    public static IReadOnlyCollection<string> EditableSettingKeys => EditableConfigKeys;
+    /// <summary>
+    /// THE EDITABLE SET IS A PROJECTION NOW, NOT A LIST. v0.3.8.114 — R0's fourth exit-gate clause.
+    ///
+    /// This was a hand-kept HashSet of ~100 key names sitting a thousand lines away from the
+    /// properties it described, which made "is this setting live-editable?" a fact stored twice:
+    /// once here and once in the operator's expectation. The failure mode is not a crash — it is a
+    /// switch an operator is told to flip that the surface silently declines to write, which is
+    /// exactly what v0.3.8.96 and v0.3.8.97 each found live, a release apart, on
+    /// `acting_coder_enabled` and then on `workspace_checks` and `objective_verification_enabled`.
+    ///
+    /// The answer now lives on the property, as `[ConfigKey(Exposure = ConfigExposure.Editable)]`,
+    /// and this reads it. Adding an editable setting is one attribute rather than two edits a
+    /// reviewer has to know are both required — and the reasons those three keys became editable
+    /// are recorded on the properties themselves, where somebody changing one will see them.
+    /// </summary>
+    public static IReadOnlyCollection<string> EditableSettingKeys => ConfigCatalog.EditableKeys;
 
     /// <summary>
     /// Applies a partial settings update from the web console: only whitelisted keys are honoured,
@@ -1361,7 +1307,7 @@ public static class AnthillRuntime
             var applied = new List<string>();
             foreach (var (key, value) in updates)
             {
-                if (!EditableConfigKeys.Contains(key)) continue;
+                if (!ConfigCatalog.IsEditable(key)) continue;
                 dict[key] = value;
                 applied.Add(key);
             }
@@ -1582,6 +1528,6 @@ public static class AnthillRuntime
         ["api_port"] = ApiPort,
         ["api_auth_enabled"] = EnableApiAuth,
         ["agent_workspace_dir"] = AllowedWorkspaceRoot,
-        ["editable_keys"] = EditableConfigKeys.ToList(),
+        ["editable_keys"] = ConfigCatalog.EditableKeys.ToList(),
     };
 }

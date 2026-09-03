@@ -55,14 +55,17 @@ public sealed class MicromoundModule : IAnthillModule
         context.Events.Publish(new ColonyEvent
         {
             EventType = EventTypes.ModuleRegistered,
-            Message = "Micromound available: mound registry, enrollment, telemetry sync. Read-only — " +
-                      "no command path until M2.",
+            // v0.3.8.114 — this said "read-only, no command path until M2" for three releases
+            // after the command path arrived. The registration event is the first thing an operator
+            // sees about this module, and it was the wrong sentence.
+            Message = "Micromound available: mound registry, enrollment, the two-way sync beat, and " +
+                      "the command path — charters, configuration and physical missions, the last " +
+                      "of them behind ANTHILL's own approval queue.",
             Metadata = new Dictionary<string, object?>
             {
                 ["module"] = Name,
                 ["version"] = Version,
-                ["phase"] = "M1",
-                ["command_path"] = false,
+                ["command_path"] = true,
                 ["protocol_version"] = global::Micromound.Protocol.ProtocolVersion.Current,
                 ["encrypted_tokens"] = _cipher?.Enabled ?? false,
                 ["stop_file"] = MicromoundStop.PathFor(_options),

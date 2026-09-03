@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.113**.
+Shipping release: **v0.3.8.114**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -237,7 +237,7 @@ see `DocumentationConsistencyTests`.
 
 ---
 
-## 2b. The universal-workflow program — v0.3.8.113 → v0.3.8.113
+## 2b. The universal-workflow program — v0.3.8.98 → v0.3.8.113 · ✅ CLOSED at v0.3.8.113
 
 **This is the current forward sequence.** It supersedes the earlier framing in which R4–R10 were
 the next thing to run; those items are not deleted, and each release below names the R-items it
@@ -265,11 +265,14 @@ range and `DocumentationConsistencyTests` checks that the rows are exactly that 
 the shipping version — a program whose first entry has already shipped is a plan describing the
 past.
 
-| Release | Operator-visible capability | Exit gate |
-|---|---|---|
-| **.113** | Typed database rows — the first slice, and a ratchet for the rest | §2c below |
+**THE TABLE IS EMPTY, AND THAT IS WHAT FINISHED LOOKS LIKE.** `.113` was the last row; it shipped,
+and by this section's own rule it left. Five mission classes — `system_audit`, `troubleshooting`,
+`system_action`, `external_action`, `research` — work end to end on the shared spine, each with an
+integrity gate that runs whatever the operator switch says. What the program did not finish is
+carried in §2c under the release that inherited it, not left here as a row nobody is working on.
 
-Rules binding every release in this program:
+Rules that bound every release in this program, kept because they still bind the work that inherited
+its unfinished items:
 
 - Extend the **existing** consumption ledger, artifact store, evidence store, qualification matrix
   and outcome vocabulary. No parallel ledger, no second matrix, no duplicate schema.
@@ -282,71 +285,76 @@ Rules binding every release in this program:
   became API-editable with no control rendering it, so an operator following the changelog looked
   for a switch that did not exist.
 
-### 2c. v0.3.8.113 — typed database rows, and the end of the program
+### 2c. v0.3.8.114 — the colony can direct a mound, and R0 closes
 
-**THIS IS THE PROGRAM'S LAST RELEASE.** §2b began at `.98` with one claim: that a mission class could
-work end to end on a shared spine, with a deterministic gate for its own promise. Five classes now
-do — `system_audit`, `troubleshooting`, `system_action`, `external_action`, `research` — each with an
-integrity gate that runs whatever the operator switch says. That is what the program was for, and it
-is done.
+**Delivers:** R0's last item, and the MICROMOUND controller — the half of the link `.60` deliberately
+did not build.
 
-**Delivers:** the first typed-row slice, and a ratchet that makes the rest mechanical.
+**R0 CLOSES.** The generated configuration schema is above, under R0 itself. `.112`'s entry called
+its own work "R0's LAST ITEM"; that was wrong when written and two releases shipped past it. The
+correction is recorded, never by editing the tagged entry.
 
-**WHY A SLICE AND NOT THE MIGRATION.** `Dictionary<string, object?>` is on fifty public methods of
-the store and read by a hundred consumer files. PLAN has said "one slice at a time, each slice green
-before the next" since the item was written, which is an admission that it spans releases — and a
-plan that says that and enforces nothing describes an intention rather than the tree.
-`TypedRowMigrationTests.TheUntypedStoreSurface_OnlyShrinks` pins the count at **45**, measured after
-this slice took it from 50. A release that types a slice lowers the number in the same commit; one
-that adds an untyped reader fails and has to say why.
+**THE COMMAND PATH EXISTS.** `.60` shipped the uplink and said what it had not built: "M1 has no
+command path, so the colony can see mounds and cannot direct them." This release builds the other
+half — a signing identity, charter issuance, configuration authoring, physical mission dispatch,
+structured evidence, and the capability resolver — and every one of them signs an envelope into a
+downlink queue, because the colony never dials a mound.
 
-**THE SIGNATURE IS THE SYMPTOM. THIS IS THE DISEASE.** The approvals slice found it immediately:
-`GetApprovalRequest` unprotected `decision_note` and `GetApprovalForTarget` did not, so the same
-column came back as plaintext through one reader and as ciphertext through the other. Four readers of
-one table, the field cipher applied in exactly one of them. With a row-shaped API there is nowhere
-for "how a row becomes an approval" to live, so each reader answers it again — defect class 5, in the
-layer everything else reads. `TheDecisionNote_IsDecryptedByEveryReader` is that bug as a test.
+**AND THE BEAT NOW ANSWERS, which is what made any of it work.** Three protocol obligations were
+unmet, and each breaks a fleet on its own:
 
-**THE STORE ALREADY TOOK A TYPED RECORD ON THE WAY IN.** `SaveApprovalRequest(ApprovalRequest)` has
-existed as long as approvals have; only the read side handed back a dictionary. The asymmetry was the
-whole of it, and closing it turned nine `Str(row, "status") != ApprovalStatus.X.Value()` comparisons
-into enum comparisons — string equality against a spelling, one typo from refusing every approved
-patch, in the lane that decides whether work may happen.
+- **The ack.** PROTOCOL.md §6's retention rule is written in terms of one message: until an ack
+  covers a sequence number, the device's uplink queue must retain the envelope and its evidence
+  store must retain the proof. We sent none, so no mound could ever release anything.
+- **The lease.** §5 — an acknowledged `mound_sync` renews it, and nothing on-device can. The device
+  renews when it sees an ack covering its beat's sequence. A colony that sends no ack does not
+  merely fail to renew: every chartered mound runs its lease down and enters `safe_state` on
+  schedule, beating perfectly, reported online, silently refusing every actuation from then on.
+- **The downlink.** §1 — the response carries any pending downlink. A charter signed and queued is
+  not delivered by being queued.
 
-**THE SECOND COPY HAD ALREADY APPEARED.** `.110` gave `MissionRehydration` private `Str`/`Int`/`Utc`
-helpers to turn rows into objects, and the approvals slice needed the same six three releases later.
-`Memory.RowValues` is the one reader now, and `MissionRehydration` uses it — the defect class this
-release is about, arriving in the middle of the release about it.
+**THE DEVICE-FACING WIRE SHAPE WAS INVENTED RATHER THAN READ.** M1's two endpoints were written from
+the protocol document instead of from the client that calls them, and a real MicroMound could not
+have used either: `/v0/enroll` required a `mound_id` the device does not send, read the key from
+`public_key` where the device writes `device_public_key`, and returned no `controller_public_key` —
+so even a device that got past the first two could never verify a downlink envelope. `/v0/sync`
+expected `{mound_id, envelopes[]}` and answered an object, where the device POSTs one raw envelope
+and parses the whole response body as `List<Envelope>`. Nothing caught it because both ends of every
+test were ours.
 
-**THE MODULE BOUNDARY HELD, and cost a translation.** `ApprovableProjections.FromPatchApproval` lives
-in `Anthill.Modules.Homelab`, which may reference the SDK and nothing else of ours, so the core's
-typed record cannot cross into it. The API host projects a row at the composition edge — which is
-where a boundary translation belongs — and `TheHomelabApprovalProjection_CarriesEveryKeyTheModuleReads`
-pins the correspondence, because the module reads a missing key as `""` and would render blank cards
-rather than fail.
+**THE UI IS NOT IN THIS RELEASE, AND §31 IS NOT MET.** The integration brief's acceptance experience
+— an operator adding a mound, authoring its configuration, issuing a charter and watching evidence
+arrive, all from the console — is **not** delivered and must not be described as delivered. The
+operator instruction that set this scope was explicit ("lets leave ui/frontend work out of this
+release, just everything else"). Everything here is reachable over the API and nothing here renders.
+Recording that is §37's requirement, and the reason it is written in the plan rather than only in a
+commit message is that a deferral nobody wrote down becomes a capability somebody assumes.
 
-**AND THE PROGRAM GUARD LEARNED HOW A PROGRAM ENDS.**
-`TheUniversalWorkflowProgram_IsExactlyTheRangeItDeclares` asserted `to > from`, which is right for
-every release from `.98` onward and cannot hold for the last one: a single remaining release makes
-the range `.n → .n`. `open-items.md` carried it as a known future failure from `.107`. The
-relaxation is exactly one release wide — `to < from` is still refused, and the equal case is admitted
-only when the table really holds one row.
+**Exit gate** — named tests, and the first is the one that matters:
 
-**Exit gate** — named tests in `TypedRowMigrationTests`:
+- `SimulatedPeerTests.TheLeaseSurvivesFarPastItsTtl_BecauseEveryBeatIsAcknowledged` — an hour of
+  beats against a fifteen-minute lease, asserted from the DEVICE's side, with a positive control
+  proving the lease does lapse when the beats stop;
+- `SimulatedPeerTests.ADeviceIsEnrolled_Chartered_AndCarriesOutWorkTheColonySent` — enrol, charter,
+  dispatch, execute, report, through the real device runtime and a JSON round trip;
+- `DeviceWireContractTests` — the enrolment and sync shapes read out of the pinned checkout's own
+  HTTP clients;
+- `ConfigCatalogTests` — byte-for-byte regeneration of the example file and the reference doc;
+- `StorePersistenceTests.EveryPerMoundTable_IsSweptOnRemoveMound` — derived from the schema, not
+  from a hand-maintained list.
 
-- `TheUntypedStoreSurface_OnlyShrinks` (the ratchet, with its own vacuity floor);
-- `AnApproval_RoundTripsAsARecord` (through the store, so it proves the round trip and not the
-  declaration);
-- `TheDecisionNote_IsDecryptedByEveryReader` (the bug the slice actually fixed, asserted through the
-  reader that used to get it wrong);
-- `TheHomelabApprovalProjection_CarriesEveryKeyTheModuleReads`.
-
-**What happens to the remaining 45.** They leave §2b with the program and continue as standing R0
-hygiene, one slice per release, each lowering the ratchet. That is not a deferral dressed up: the
-count is enforced, so the work cannot quietly stop, and it cannot quietly reverse either.
+**WHAT `.114` DID NOT DO, said plainly.** This release is large and none of it is hygiene: the
+standing R0 items below are all untouched, and the typed-row ratchet did not move. That is a missed
+beat rather than a rule broken — `TheUntypedStoreSurface_OnlyShrinks` requires the count to be **≤
+45**, not to fall every release — and it is recorded because a release that quietly skips its slice
+twice is how "one slice per release" becomes a sentence nobody is keeping.
 
 **Carried out of the program, unchanged and still named:**
 
+- **The remaining 45 untyped store readers** — one slice per release, each lowering the ratchet in
+  the same commit. Still at **45**: `.114` spent itself on R0's last item and the Micromound
+  controller, and typed nothing. The ratchet is enforced, so the work cannot quietly reverse; only
+  this note stops it quietly stopping.
 - **`AnalysisMode` beyond the SDK default** — needs its own census, because with warnings-as-errors on
   every CA diagnostic becomes a build failure.
 - **Central package management** — the real fix for version drift; its failure mode is "nothing
@@ -680,9 +688,18 @@ under it.
   roster flags as `false` that the migration forces `true`, with the two real controls undocumented;
   and `LastConfigMigration`, which its own doc comment claimed two endpoints surfaced and neither did.
   `ConfigurationSurfaceTests` pins both directions against an explicit undocumented-on-purpose ledger.
-  ◻ **The GENERATED schema is not built** — one declaration per key carrying type, default, env
-  override, range, security class, aliases and UI exposure, with the example file and the docs
-  generated from it. That is the end state; this release stopped the drift getting worse.
+  ✅ **The GENERATED schema** *(v0.3.8.114)* — `ConfigCatalog` is one declaration per key, carrying
+  exposure, security class, env override, range, aliases and section, with the CLR type and the
+  DEFAULT VALUE derived by reflection from `AnthillConfig` rather than restated (a declared default
+  that disagrees with the property's initializer is the same defect one layer up). `--emit-config`
+  regenerates `config.example.json` and `docs/CONFIGURATION.md`, and `ConfigCatalogTests` compares
+  the committed files byte for byte against a fresh render, so drift is a failing build rather than
+  a discovery. `AnthillRuntime.EditableConfigKeys` — a seventy-line hand-maintained HashSet — is now
+  a projection of the catalog. **What the example file taught:** it is NOT a dump of the defaults;
+  it is a curated example whose illustrative values differ from them on purpose, which is why the
+  first render deleted 148 lines. `ExampleJson` carries those, and a `Secret` blanks BEFORE the
+  example is consulted, guarded by `NoSafetyGate_IsIllustratedAsEnabled` after four safety gates
+  were found shown enabled against shipped defaults of `false`.
 - ✅ **The evidence and artifact vocabulary mismatches** *(v0.3.8.94)*. `AntEvidenceKinds` is the
   closed vocabulary for what an ant reports (disjoint from the store's `EvidenceKinds`, on purpose);
   the kind-"tool" filter both `FailureContext.Tool` and `TaskResult.Tool` waited on for six releases
@@ -711,9 +728,19 @@ under it.
   4,000-character window whose marker sat 27 characters inside it on Linux and outside it on a CRLF
   checkout, and main went red on a property that had not changed.
 
-> **Exit gate.** Every write to the operator's tree passes one gate; every externally visible
-> mutation is recoverable after a crash; no security decision reads prose or falls back to a broader
-> source when its authoritative input is missing; and the configuration surface has one authority.
+> **Exit gate — ✅ CLOSED at v0.3.8.114.** Every write to the operator's tree passes one gate; every
+> externally visible mutation is recoverable after a crash; no security decision reads prose or falls
+> back to a broader source when its authoritative input is missing; and the configuration surface has
+> one authority.
+>
+> **The fourth clause is what `.114` closed, and `.112` should not have implied otherwise.** That
+> release's changelog opens "R0's LAST ITEM" — it was not; the generated schema was still open, and
+> `.112` and `.113` both shipped without it. A tagged entry is frozen, so the correction is recorded
+> here and in `.114`'s own entry rather than by editing `.112`'s.
+>
+> **Standing R0 hygiene continues past the gate** and is not folded into it: the typed-row ratchet,
+> central package management, `AnalysisMode`, and the four remaining literal-only guards. A closed
+> gate means the four conditions hold, not that there is nothing left to tidy.
 
 ---
 

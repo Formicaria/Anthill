@@ -335,6 +335,55 @@ public class PathContainmentTests : IDisposable
     }
 
     /// <summary>
+    /// The detector, named so it can be exercised directly. v0.3.8.114.
+    ///
+    /// It was `\.StartsWith\([^;]*?[Rr]oot`, and `[^;]` crosses newlines — so it ran from a
+    /// `StartsWith` on one line, past the end of that statement, into whatever mentioned a root
+    /// next. `EmitConfigCommand` tripped it with a CLI flag check whose FALLBACK on the following
+    /// line called `FindRepositoryRoot()`; nothing there compares a path to anything.
+    ///
+    /// Bounding it to one physical line would have been the other error — `docs/GUARDS.md` names a
+    /// source scan sliced by a line or a character budget as its own defect, and three guards were
+    /// widened at `.112` for exactly that. So it is bounded by the CALL instead: the match may enter
+    /// a nested `(` (so `StartsWith(Path.Combine(root, …))` is still seen) but never crosses `)` or
+    /// `;`, which is where the argument list actually ends.
+    /// </summary>
+    private const string RootPrefixComparison = @"\.StartsWith\((?:[^();]|\()*?[Rr]oot";
+
+    /// <summary>
+    /// THE DETECTOR STILL DETECTS. A narrowed reader that stops matching reports zero offenders and
+    /// passes forever, which is the failure this suite has caught in six separate forms — so the
+    /// shapes it must catch, and the ones it must not, are asserted rather than assumed.
+    /// </summary>
+    [Fact]
+    public void TheRootPrefixDetector_SeesTheShapeAndNotItsNeighbours()
+    {
+        var caught = new[]
+        {
+            "full.StartsWith(sandbox.Root, StringComparison.Ordinal)",
+            "resolved.StartsWith(root)",
+            "target.StartsWith(Path.Combine(root, \"x\"))",
+            "src.StartsWith(workspaceRoot, StringComparison.OrdinalIgnoreCase)",
+        };
+
+        foreach (var offender in caught)
+            Assert.True(System.Text.RegularExpressions.Regex.IsMatch(offender, RootPrefixComparison),
+                $"the detector no longer sees a root prefix comparison: {offender}");
+
+        var ignored = new[]
+        {
+            // A flag check whose next statement happens to mention a root. The false positive.
+            "a.StartsWith(\"--\", StringComparison.Ordinal))\n    ?? FindRepositoryRoot();",
+            "name.StartsWith(\"_comment\", StringComparison.Ordinal)",
+            "line.StartsWith(\"///\", StringComparison.Ordinal);\n        var x = RepoRoot();",
+        };
+
+        foreach (var innocent in ignored)
+            Assert.False(System.Text.RegularExpressions.Regex.IsMatch(innocent, RootPrefixComparison),
+                $"the detector reports a comparison that is not one: {innocent}");
+    }
+
+    /// <summary>
     /// And there is exactly ONE implementation of the rule. The Files pane and the workspace guard
     /// disagreeing is how this shipped: the guard had the separator and the pane did not, and nothing
     /// compared them. A second copy is not a bug today and is the same bug again later.
@@ -362,7 +411,7 @@ public class PathContainmentTests : IDisposable
             // `src` or `full` against `sandbox.Root`. A detector written around the examples in hand
             // finds the examples in hand. Keying on the ROOT side is what the rule is actually about.
             foreach (System.Text.RegularExpressions.Match match in
-                     System.Text.RegularExpressions.Regex.Matches(code, @"\.StartsWith\([^;]*?[Rr]oot"))
+                     System.Text.RegularExpressions.Regex.Matches(code, RootPrefixComparison))
             {
                 // A comparison that already demands a separator is the correct rule written out by
                 // hand. It is still a second copy, but it is not THIS bug, so it is not reported

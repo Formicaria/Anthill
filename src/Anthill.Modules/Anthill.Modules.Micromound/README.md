@@ -1,4 +1,4 @@
-# Anthill.Modules.Micromound — M1, read-only, OPTIONAL
+# Anthill.Modules.Micromound — the controller half, OPTIONAL
 
 MICROMOUND is an optional integration, twice over. Its projects live outside `Anthill.sln`: a
 checkout without the sibling `micromound` repository builds a complete colony with **no micromound
@@ -8,14 +8,20 @@ opts in explicitly: `micromound_enabled` defaults to off. CI checks the contract
 micromound tag) and runs `Anthill.Tests.Micromound` as its own lane, so the integration is always
 exercised where it costs nothing to carry.
 
-MICROMOUND extends the colony into physical devices. This module is the ANTHILL side of that
-link, at its first phase: **the colony can see mounds and cannot direct them.**
+MICROMOUND extends the colony into physical devices. This module is the ANTHILL side of that link.
+
+**v0.3.8.114 — the colony can now direct mounds, and the beat is two-way.** `.60` shipped the
+uplink and said plainly what it had not built: "M1 has no command path, so the colony can see
+mounds and cannot direct them." That half is now here — a signing identity, charters, configuration
+authoring, physical missions, structured evidence, the capability resolver, and a sync beat that
+acknowledges, renews the lease, and delivers the downlink queue. Physical missions that policy says
+need a person's answer go into **ANTHILL's own approval queue**, not a second one.
 
 The device side, the wire protocol, and the safety model live in the `micromound` repository.
 `docs/PROTOCOL.md` there is normative for everything on the wire; `docs/SAFETY.md` wins over every
 other document including this one.
 
-## What M1 contains
+## What this module contains
 
 | Piece | File | Notes |
 |---|---|---|
@@ -23,18 +29,31 @@ other document including this one.
 | Configuration | `MicromoundOptions.cs`, `MicromoundRuntime.cs` | Handed over, never read from the core |
 | Mound registry | `Micromound/MicromoundModels.cs`, `MoundStore.cs` | `IMoundStore` + an in-memory reference implementation |
 | Enrollment | `Micromound/MicromoundEnrollment.cs` | Operator mints a one-time token; device sends its public key; token burns |
-| Sync beat | `Micromound/MicromoundSync.cs` | Verifies signatures and the hash chain, records telemetry |
+| Sync beat | `Micromound/MicromoundSync.cs` | Verifies signatures and the hash chain, ingests what arrived, renews the lease, drains the downlink queue, and answers with a signed `ack` |
+| Signing identity | `Micromound/MicromoundIdentity.cs` | The colony's Ed25519 key, minted once, never readable back |
+| Charters | `Micromound/MicromoundCharters.cs` | Issuance and the single lease-renewal path |
+| Configuration | `Micromound/MicromoundConfiguration.cs` | Manifest authoring — hardware bindings, workers, device limits |
+| Autonomy policy | `Micromound/MicromoundAutonomy.cs` | Who may spend a charter, evaluated for the asking origin |
+| Missions | `Micromound/MicromoundMissions.cs` | One dispatcher, every origin; approval-required missions queue nothing |
+| Evidence | `Micromound/MicromoundEvidence.cs` | The colony re-runs the gate; a verdict only ever goes down |
+| Resolver | `Micromound/MicromoundResolver.cs` | Which mounds can satisfy a capability — answers, issues nothing |
 | Kill switch | `Micromound/MicromoundStop.cs` | `.anthill/MICROMOUND_STOP`, plus per-mound stop in the record |
 | Widget payloads | `Micromound/MicromoundWidgets.cs` | `mound_fleet`, `mission_status`, `evidence_feed` |
 
-## What M1 deliberately does not contain
+## What this module deliberately does not contain
 
-No charter issuance, no mission assignment, no actuation, and no code path that can raise an
-action ceiling. The only downlink the colony can produce is a stop order — and a stop is a command
-to *stop* acting, which is why it is allowed to exist before the approval pipeline does.
+**No UI.** `.114`'s scope was set to the backend, and the console surfaces for charters, missions
+and evidence are deferred to a later release. Everything here is reachable over the API and nothing
+here renders.
 
-`MicromoundPermissions.Approve` (`approve_micromound_actions`) is declared and unused. That is
-intentional: the tiering is settled before there is anything to be tempted to skip it for.
+**No second approval system.** A mission that policy says needs a person's answer becomes an
+ordinary ANTHILL `ApprovalRequest` (`ActionType = physical_action`), decided through the existing
+`/approve/{id}` and `/reject/{id}`, and carried out by the same dispatcher with `ApprovalGranted`
+set. There is no `ManualMicromoundController` and no `AutonomousMicromoundController`: origin is
+data on the request, and everything after the policy check is identical whoever asked.
+
+**No way to raise a ceiling.** `hazardous` is never a legal charter ceiling; a manifest can only
+narrow; and the mound re-checks everything and wins.
 
 ## Two decisions worth reviewing
 
@@ -93,15 +112,15 @@ None of this is in the module by design — composition happens in `Anthill.Api`
    | `/micromound/stop` | POST | `approve_micromound_actions` |
    | `/micromound/stop/resume` | POST | `approve_micromound_actions` |
 
-   `/micromound/missions` and `/micromound/charters` are **not** M1 endpoints — they are the
-   command path, and they arrive with M2 and M4 respectively. The device pair (`/v0/enroll`,
+   `/micromound/missions` and `/micromound/charters` are the command path, and as of `.114` they
+   exist, behind `approve_micromound_actions`. The device pair (`/v0/enroll`,
    `/v0/sync`) carries no session gate on purpose: the one-time token and the Ed25519 signature
    ARE the authentication. `/micromound/stop` is per-mound only — the global stop stays a file
    (`.anthill/MICROMOUND_STOP`) precisely so no API flow can clear it.
 4. **Composition.** `MicromoundOptions` is built from the live runtime and handed the same
    `FieldCipher.CreateDefault()` the homelab gets; `MicromoundModule` loads alongside
    `HomelabModule`. Permissions: `read_micromound` and `manage_micromound` ship enabled;
-   `approve_micromound_actions` also ships enabled because the only thing it can authorize in M1
+   `approve_micromound_actions` also ships enabled because the only thing it could authorize in M1
    is stopping hardware, and a stop an operator cannot reach is the unsafe default. The homelab
    operator role gains read + approve (view and halt), never manage — minting an enrollment
    token creates a device identity, which is an admin act like credential writes.

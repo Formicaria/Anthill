@@ -26,7 +26,20 @@ public enum PatchStatus { Proposed, Approved, Rejected, Applied, Failed, Superse
 
 public enum ApprovalStatus { Pending, Approved, Rejected, Expired, Consumed }
 
-public enum ApprovalActionType { PatchProposal, FileWrite, ShellCommand, ToolUse }
+/// <summary>
+/// What an operator is being asked to authorize.
+///
+/// v0.3.8.114 adds `PhysicalAction`: a Micromound mission that policy says needs a person's answer
+/// before anything moves. It is a member of THIS enum rather than the start of a second approval
+/// framework because the integration brief §19 is explicit — "reuse ANTHILL's existing approval
+/// system; do not build 'Micromound Approvals' as an unrelated second approval framework" — and
+/// because the colony's own rule has said the same thing since v1.14: one approval system, one
+/// pending queue, one audit trail.
+///
+/// Appending is safe: the wire form is a STRING (`Value()` / `ParseApprovalActionType`), never an
+/// ordinal, so no stored row's meaning depends on a member's position.
+/// </summary>
+public enum ApprovalActionType { PatchProposal, FileWrite, ShellCommand, ToolUse, PhysicalAction }
 
 /// <summary>Lifecycle of an autonomous objective in the Director backlog (Phase 0+).</summary>
 // v2.26.0: Suggested = a model-proposed objective awaiting operator approval. NOT executable —
@@ -70,7 +83,8 @@ public static class EnumExtensions
     public static string Value(this ApprovalActionType s) => s switch
     {
         ApprovalActionType.PatchProposal => "patch_proposal", ApprovalActionType.FileWrite => "file_write",
-        ApprovalActionType.ShellCommand => "shell_command", ApprovalActionType.ToolUse => "tool_use", _ => "tool_use",
+        ApprovalActionType.ShellCommand => "shell_command", ApprovalActionType.ToolUse => "tool_use",
+        ApprovalActionType.PhysicalAction => "physical_action", _ => "tool_use",
     };
 
     public static string Value(this ObjectiveStatus s) => s switch
@@ -106,6 +120,7 @@ public static class EnumExtensions
     {
         "patch_proposal" => ApprovalActionType.PatchProposal, "file_write" => ApprovalActionType.FileWrite,
         "shell_command" => ApprovalActionType.ShellCommand, "tool_use" => ApprovalActionType.ToolUse,
+        "physical_action" => ApprovalActionType.PhysicalAction,
         _ => ApprovalActionType.ToolUse,
     };
 

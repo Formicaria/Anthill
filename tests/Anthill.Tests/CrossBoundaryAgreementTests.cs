@@ -302,6 +302,19 @@ public class CrossBoundaryAgreementTests
 
         foreach (var objective in Enum.GetValues<ObjectiveStatus>())
             Assert.Equal(objective, EnumExtensions.ParseObjectiveStatus(objective.Value()));
+
+        // v0.3.8.114 — THE TWO THIS GUARD DID NOT COVER, and the gap was load-bearing. Both
+        // approval enums have custom wire forms, both are written to and read from
+        // `approval_requests`, and both parsers end in a `_ =>` fallback: a member added with a
+        // `Value()` spelling and no matching `Parse` arm does not fail to compile and does not fail
+        // here either — it silently reads back as something else, in the table that decides whether
+        // work an operator authorized is allowed to happen. `.114` adds `PhysicalAction` and this
+        // is what makes adding it safe.
+        foreach (var action in Enum.GetValues<ApprovalActionType>())
+            Assert.Equal(action, EnumExtensions.ParseApprovalActionType(action.Value()));
+
+        foreach (var status in Enum.GetValues<ApprovalStatus>())
+            Assert.Equal(status, EnumExtensions.ParseApprovalStatus(status.Value()));
     }
 
     /// <summary>

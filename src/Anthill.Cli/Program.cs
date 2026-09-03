@@ -97,6 +97,16 @@ switch (command)
         // one out of the operator's own colony.
         return Anthill.Cli.LiveQualificationCommand.Run(rest);
 
+    case "--emit-config":
+        // v0.3.8.114 — regenerate the two artifacts ConfigCatalog owns.
+        //
+        // A developer command, not an operator one: it writes into the REPOSITORY (config.example.json
+        // and docs/CONFIGURATION.md), never into a colony's own .anthill/config.json, which is why it
+        // takes the repository root as an argument rather than guessing from the working directory.
+        // `ConfigCatalogTests` regenerates and compares, so forgetting to run this fails the build
+        // rather than shipping a stale surface.
+        return Anthill.Cli.EmitConfigCommand.Run(rest);
+
     case "--status":
     {
         using var queen = NewQueen();
