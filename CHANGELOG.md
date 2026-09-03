@@ -1,3 +1,30 @@
+## Unreleased
+
+**THE COLONY PAGE, TUNED BY HAND AND MADE CUSTOMIZABLE.** From an operator's pass over `.119`:
+
+- **Symmetric chambers.** Records used to sit inside their cluster at a hashed direction, which
+  read as lopsided clumps once one cluster dominated. The cloud is now a fixed Fibonacci lattice
+  of 96 slots on the sphere — evenly spread by construction — and a record takes the slot its id
+  hashes to, at a radius its durability decides. Stable per record, symmetric per chamber; the
+  ordered strata on focus are unchanged. Every seat lies inside `.92R`, and the **chamber glow now
+  encompasses its contents** (an envelope to `1.2R`) instead of a nucleus the outer grains escaped.
+- **Ants are not grains.** A resident is a soft halo, a bright core and a ring; a record is a flat
+  disc. Working ants pulse. **Clicking an ant opens its inspector:** status, trail, workers, the
+  registry id — and a display name and colour the operator may set, persisted with the layout
+  (the registry's id and name do not change; this is how the ant is shown here).
+- **Chambers are stylable.** The focused chamber's panel takes a colour, a glow size and a
+  brightness, persisted with the layout; reset returns the projection's own.
+- **Conduits.** A touch brighter by default, and the View menu takes particles (less / normal /
+  more), brightness and a colour (or each conduit's own). Intra-chamber linkage is almost
+  transparent. `Void` is solid black.
+- **Labels: All / Focused only / None.**
+- **Mounds** is greyed until the fleet has one, and a **+ Mound** door beside it opens the
+  Micromound console where enrollment tokens are minted — no device is invented to have something
+  to approach.
+- **Light mode.** `Sky: Light` is paper — a cool off-white page, no stars, the chambers' palette
+  darkened and every label in dark ink — and `Auto` (the default) follows the console theme, so
+  Settings › Theme → Light turns the whole page, live bar and composer included.
+
 ## v0.3.8.119 - the colony page, on the backend that was approved
 
 **THE COLONY LIVE UI, RE-PORTED ONTO THE APPROVED BACKEND.** `.115`–`.117` shipped two things together:
