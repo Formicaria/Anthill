@@ -128,6 +128,22 @@ directory. `anthill --config` prints the active path.
 | `autonomy_autoapply_verify_cmd` | string | `""` | yes | — | **changes what the colony may do** |
 | `autonomy_autoapply_verify_timeout` | int | `900` | yes | — | **changes what the colony may do** |
 | `autonomy_autoapply_git_commit` | bool | `false` | yes | — | **changes what the colony may do** |
+| `mission_replay_enabled` | bool | `false` | no | `ANTHILL_MISSION_REPLAY_ENABLED` | **changes what the colony may do** |
+| `mission_replay_vault_path` | string | `""` | no | `ANTHILL_MISSION_REPLAY_VAULT_PATH` |  |
+| `mission_replay_tag` | string | `"anthill/replay"` | no | `ANTHILL_MISSION_REPLAY_TAG` |  |
+| `mission_replay_learning_enabled` | bool | `false` | no | `ANTHILL_MISSION_REPLAY_LEARNING_ENABLED` | **changes what the colony may do** |
+| `knowledge_enabled` | bool | `false` | no | `ANTHILL_KNOWLEDGE_ENABLED` | **changes what the colony may do** |
+| `knowledge_forager_endpoint` | string | `"http://127.0.0.1:8790"` | no | `ANTHILL_KNOWLEDGE_FORAGER_ENDPOINT` |  |
+| `knowledge_forager_token` | string | _(secret)_ | no | `ANTHILL_KNOWLEDGE_FORAGER_TOKEN` |  |
+| `knowledge_forager_allow_remote` | bool | `false` | no | `ANTHILL_KNOWLEDGE_ALLOW_REMOTE` | **changes what the colony may do** |
+| `knowledge_probe_timeout_ms` | int | `2000` | no | `ANTHILL_KNOWLEDGE_PROBE_TIMEOUT_MS` | range 250–60000 |
+| `knowledge_retrieval_timeout_ms` | int | `5000` | no | `ANTHILL_KNOWLEDGE_RETRIEVAL_TIMEOUT_MS` | range 500–120000 |
+| `knowledge_ingestion_timeout_ms` | int | `10000` | no | `ANTHILL_KNOWLEDGE_INGESTION_TIMEOUT_MS` | range 500–300000 |
+| `knowledge_default_top_k` | int | `8` | no | `ANTHILL_KNOWLEDGE_TOP_K` | range 1–50 |
+| `knowledge_max_context_chars` | int | `12000` | no | `ANTHILL_KNOWLEDGE_MAX_CONTEXT_CHARS` | range 1000–200000 |
+| `knowledge_cache_seconds` | int | `30` | no | `ANTHILL_KNOWLEDGE_CACHE_SECONDS` | range 0–3600 |
+| `knowledge_project_map` | object | `{}` | no | — | **changes what the colony may do** |
+| `knowledge_default_project` | string | `""` | no | `ANTHILL_KNOWLEDGE_DEFAULT_PROJECT` |  |
 
 ## Deliberately absent from `config.example.json`
 

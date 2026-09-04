@@ -90,7 +90,7 @@ public static class AnthillRuntime
         ["manage_settings"] = true, ["read_ui_state"] = true, ["manage_ui_state"] = true, ["prune_pheromones"] = true,
         // Operator account management (admin-only at the role layer).
         ["manage_users"] = true,
-        // Model provider connections (API keys for OpenAI/Anthropic/Perplexity/OpenRouter/...).
+        // Model provider connections (API keys for OpenAI/Anthropic/Perplexity/OpenRouter/..).
         // Keys are never readable back through the API regardless of this gate; it only controls
         // who may add/update/remove/test a connection and who may see the secret-free status list.
         ["read_providers"] = true, ["manage_providers"] = true,
@@ -113,6 +113,16 @@ public static class AnthillRuntime
         // its own capability gate.
         ["read_micromound"] = true, ["manage_micromound"] = true,
         ["approve_micromound_actions"] = true,
+        // Knowledge (FORAGER). Reading organizational knowledge ships ENABLED, because the whole
+        // capability is inert until knowledge_enabled is set — the outer gate is already closed, and
+        // a permission that has to be discovered and switched on as well would only produce the
+        // manage_models bug again (an absent key answers false for everyone, admin included).
+        //
+        // manage_knowledge is SEPARATE and covers ingestion and review: registering sources, starting
+        // and cancelling jobs, and acting on a review proposal. Reading what the organization knows
+        // and changing what it believes are different acts, and an analyst should be able to have the
+        // first without the second.
+        ["read_knowledge"] = true, ["manage_knowledge"] = true,
     };
 
     // ---- SSRF / rate-limit constants -------------------------------------
@@ -541,7 +551,7 @@ public static class AnthillRuntime
     /// <summary>Cadence of the incident sweep (candidate events → deduped incidents; repo-only).</summary>
     public static int HomelabIncidentSweepSeconds = 300;
     // ---- Phase 2: Strategist (self-generated missions) --------------------
-    /// <summary>Keyword-overlap ratio (0..1) above which a generated goal is rejected as a near-duplicate of recent work.</summary>
+    /// <summary>Keyword-overlap ratio (0.1) above which a generated goal is rejected as a near-duplicate of recent work.</summary>
     public static double AutonomyDedupeSimilarity = 0.8;
     /// <summary>Hard cap on follow-up objectives the Strategist may enqueue per mission, to bound backlog growth.</summary>
     public static int AutonomyMaxFollowupsPerRun = 1;
@@ -938,6 +948,32 @@ public static class AnthillRuntime
     public static string ConfigLoadError { get; private set; } = "";
 
     /// <summary>
+    /// MISSION REPLAY SETTINGS, AS ONE IMMUTABLE VALUE.
+    ///
+    /// Deliberately not four more mutable statics. This group gates a capability that will
+    /// eventually execute missions, so it is replaced wholesale by <see cref="ProjectConfig"/> and
+    /// cannot be edited field-by-field after validation has run. Callers ask
+    /// <c>AnthillRuntime.MissionReplay.IsOperable</c>, never <c>Enabled</c> alone.
+    ///
+    /// Holds the safe state until a configuration is projected, so nothing can observe a window in
+    /// which replay looks enabled because a config had not loaded yet.
+    /// </summary>
+    public static MissionReplayOptions MissionReplay { get; private set; } = MissionReplayOptions.Off;
+
+    /// <summary>
+    /// KNOWLEDGE SETTINGS, AS ONE IMMUTABLE VALUE — the FORAGER integration.
+    ///
+    /// Same discipline as <see cref="MissionReplay"/> above, and for a sharper reason: this group
+    /// names the service the colony treats as its source of organizational fact, and carries the
+    /// project map that decides which knowledge a mission may read. Field-by-field mutation of
+    /// either would be a way to widen a tenant boundary after validation had already passed.
+    ///
+    /// Holds <see cref="KnowledgeSettings.Off"/> until a configuration is projected, so nothing can
+    /// observe a window in which knowledge looks configured because the config had not loaded.
+    /// </summary>
+    public static KnowledgeSettings Knowledge { get; private set; } = KnowledgeSettings.Off;
+
+    /// <summary>
     /// An environment variable, or null when it is unset OR blank. v0.3.8.91.
     ///
     /// The distinction `??` could not make. A variable set to the empty string is how every compose
@@ -1270,7 +1306,66 @@ public static class AnthillRuntime
         RequireSetupToken = string.IsNullOrWhiteSpace(forceSetupToken)
             ? config.SetupTokenRequired
             : forceSetupToken.Trim() is "1" or "true" or "TRUE" or "True";
+
+        // Mission Replay — settings only; nothing downstream acts on them yet.
+        // `Env` treats a blank variable as unset, so `ANTHILL_MISSION_REPLAY_ENABLED=` in a compose
+        // file leaves the configured value alone rather than reading as "false".
+        MissionReplay = new MissionReplayOptions
+        {
+            Enabled = Flag(Env("ANTHILL_MISSION_REPLAY_ENABLED"), config.MissionReplayEnabled),
+            VaultPath = Env("ANTHILL_MISSION_REPLAY_VAULT_PATH") ?? config.MissionReplayVaultPath,
+            ReplayTag = Env("ANTHILL_MISSION_REPLAY_TAG") ?? config.MissionReplayTag,
+            LearningEnabled = Flag(Env("ANTHILL_MISSION_REPLAY_LEARNING_ENABLED"), config.MissionReplayLearningEnabled),
+        };
+
+        // Knowledge (FORAGER). Projected wholesale, same as replay above. The project map is copied
+        // into a case-insensitive dictionary here rather than trusted from JSON: project ids are
+        // compared case-insensitively everywhere else in the colony, and a map that matched
+        // case-sensitively would silently leave a mission unscoped — which fails closed, but for a
+        // reason nobody would be able to find.
+        Knowledge = new KnowledgeSettings
+        {
+            Enabled = Flag(Env("ANTHILL_KNOWLEDGE_ENABLED"), config.KnowledgeEnabled),
+            Endpoint = Env("ANTHILL_KNOWLEDGE_FORAGER_ENDPOINT") ?? config.KnowledgeForagerEndpoint,
+            Token = Env("ANTHILL_KNOWLEDGE_FORAGER_TOKEN") ?? config.KnowledgeForagerToken,
+            AllowRemote = Flag(Env("ANTHILL_KNOWLEDGE_ALLOW_REMOTE"), config.KnowledgeForagerAllowRemote),
+            ProbeTimeoutMs = Whole(Env("ANTHILL_KNOWLEDGE_PROBE_TIMEOUT_MS"), config.KnowledgeProbeTimeoutMs, 250, 60000),
+            RetrievalTimeoutMs = Whole(Env("ANTHILL_KNOWLEDGE_RETRIEVAL_TIMEOUT_MS"), config.KnowledgeRetrievalTimeoutMs, 500, 120000),
+            IngestionTimeoutMs = Whole(Env("ANTHILL_KNOWLEDGE_INGESTION_TIMEOUT_MS"), config.KnowledgeIngestionTimeoutMs, 500, 300000),
+            DefaultTopK = Whole(Env("ANTHILL_KNOWLEDGE_TOP_K"), config.KnowledgeDefaultTopK, 1, 50),
+            MaxContextChars = Whole(Env("ANTHILL_KNOWLEDGE_MAX_CONTEXT_CHARS"), config.KnowledgeMaxContextChars, 1000, 200000),
+            CacheSeconds = Whole(Env("ANTHILL_KNOWLEDGE_CACHE_SECONDS"), config.KnowledgeCacheSeconds, 0, 3600),
+            ProjectMap = new Dictionary<string, string>(
+                config.KnowledgeProjectMap ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase),
+            DefaultProject = Env("ANTHILL_KNOWLEDGE_DEFAULT_PROJECT") ?? config.KnowledgeDefaultProject,
+        };
     }
+
+    /// <summary>
+    /// An environment variable read as a bounded integer, falling back to the configured value.
+    ///
+    /// The integer counterpart of <see cref="Flag"/>. An unparseable value takes the configured
+    /// answer rather than throwing — a typo'd timeout in a compose file should not stop a colony
+    /// booting — and the result is clamped, so a hostile or absurd value cannot disable a timeout
+    /// by making it enormous.
+    /// </summary>
+    private static int Whole(string? value, int configured, int low, int high)
+    {
+        var chosen = value is not null && int.TryParse(value, out var parsed) ? parsed : configured;
+        return chosen < low ? low : chosen > high ? high : chosen;
+    }
+
+    /// <summary>
+    /// An environment variable read as a boolean, falling back to the configured value.
+    ///
+    /// A variable the operator did not set (absent or blank — <see cref="Env"/> collapses those)
+    /// leaves the file's answer alone. A variable set to anything other than a recognised truth
+    /// spelling is FALSE rather than an error, which matches the existing ANTHILL_REQUIRE_SETUP_TOKEN
+    /// read; for a pair of safety gates, an unrecognised value resolving to "off" is the safe way to
+    /// be wrong.
+    /// </summary>
+    private static bool Flag(string? value, bool configured) =>
+        value is null ? configured : value is "1" or "true" or "TRUE" or "True";
 
     // ---- Live settings editing (web console) ------------------------------
     // Keys the dashboard is allowed to write. Hard security gates (auth, host binding,
