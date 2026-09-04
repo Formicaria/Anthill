@@ -1,3 +1,88 @@
+## v0.3.8.121 - what the organization knows
+
+**ORGANIZATIONAL KNOWLEDGE, AND THE BOUNDARY THAT KEEPS IT HONEST.** The colony can now ask what
+the organization knows and get statements back with the source text behind them. The knowledge
+itself lives in [FORAGER](https://github.com/Formicaria/Forager) — a separate local application
+that turns documents into canonical, traceable records — and this release is the seam, not a second
+copy of it. ANTHILL parses no documents, stores no knowledge, resolves no conflicts and ranks
+nothing. It asks, and it presents what comes back without degrading it.
+
+- **Retrieval is evidence-first, which is not what RAG usually means.** The ordinary shape is
+  embed, take the nearest chunks, paste them into a prompt — and what the model receives is text
+  with no accountability, judged only by plausibility. Here the pipeline ranks CANDIDATES, then
+  fetches what supports each one, then attaches the disagreements, and hands the reasoning layer a
+  block in which every statement carries its support level and its provenance. Evidence is fetched
+  before assembly because an item whose evidence cannot be resolved has to be LABELLED rather than
+  dropped, and you cannot label what you have already flattened.
+- **Four support levels, mapped and never upgraded.** `DIRECT FACT`, `SUPPORTED INFERENCE`,
+  `UNCERTAIN INFERENCE`, `UNVERIFIED CLAIM`. A level this build does not recognise renders as
+  `UNKNOWN SUPPORT` — the honest outcome when FORAGER is newer than the colony, rather than a
+  statement silently promoted because that was the first enum member.
+- **Conflicts are printed before the facts.** When two sources disagree the context leads with the
+  disagreement, both sides, and FORAGER's suggested resolution marked `NOT APPLIED`. A model that
+  meets the statements first has already formed an answer. The retrieval layer does not get a vote
+  on which side is right, and there is deliberately no option to hide a conflict — an option to
+  hide them is a way to hide them.
+- **Every fact carries evidence, or says it does not.** `KnowledgeContext.FactsWithoutProvenance()`
+  must return empty; a non-empty result is a defect in the assembler, and the tests assert it stays
+  empty for the deliberately broken fixtures too. Truncation drops whole facts from the tail and
+  declares itself, because a half-quoted excerpt is a misquotation and this pipeline's whole claim
+  is that the quotes are real.
+- **Scope is ambient, and that is a security decision rather than a convenience.** `ITool.Run`
+  receives arguments and nothing else, so a knowledge tool learns its scope from an argument or
+  from ambient state — and tool arguments are chosen by a MODEL. A `project_id` parameter would
+  make the reach of a knowledge query something the model selects, and the no-cross-project rule
+  would then be enforced by its discretion, which is not enforcement. `KnowledgeScopeContext` is
+  entered by the core at intake, only ever narrows, and defaults to a scope that retrieves nothing.
+  `NoKnowledgeTool_TakesAProjectArgument` is what stops a parameter being added by helpfulness.
+- **The cross-project guard checks the RESPONSE, because the upstream is not scoped.** Verified
+  against a running instance: `GET /api/knowledge/{id}` takes no project and returns another
+  project's row with HTTP 200. So the provider compares `project_id` on what came back and answers
+  `NotFound` — not a denial, because confirming that an id exists in a project the caller cannot
+  see is itself a disclosure. The cache is partitioned the same way, since a shared cache is the
+  classic way an isolation rule breaks by accident.
+- **Unavailable is not empty.** "The knowledge base was searched and had nothing" and "there is no
+  knowledge base" are different facts, and a model that confuses them answers confidently from its
+  priors. Every failure is typed, and the refusal text ends by telling the model not to substitute
+  recalled or assumed facts for what it did not get. That sentence is safety design, not politeness.
+- **Off by default, and it adds NO tables.** `knowledge_enabled` ships false; an existing
+  `anthill.json` that has never heard of it loads unchanged. The database is untouched in both
+  directions, so enabling and disabling are equally safe, and rolling back is deleting a config
+  section. The tools register unconditionally and refuse at call time — "registered and refusing"
+  is a different fact from "declared and absent", and only the second makes a role unqualified.
+- **A Knowledge area in the console.** Search, the evidence behind any statement in one click, the
+  conflicts with both sides, entity resolution, the registered sources, and ingestion progress read
+  from FORAGER's persisted stage rows — never a bar advanced by a timer. It also shows the rendered
+  context verbatim: the exact text a model is given, which is the difference between a knowledge
+  feature you can audit and one you have to trust.
+- **Mission Replay configuration.** The typed, validated settings contract for future Obsidian
+  replay — `mission_replay_{enabled,vault_path,tag,learning_enabled}`, environment overrides, and
+  `MissionReplayOptions.Validate` returning findings rather than throwing, because a half-configured
+  feature needs a running console that explains the problem. Configuration only: nothing reads a
+  vault, parses Markdown, generates a mission or moves a pheromone. Both switches default to false.
+- **Guards that earned their keep.** The knowledge tools were first written to register NOTHING
+  when the feature was off, on the reasoning that six always-failing tools waste context every turn.
+  Three guards refused it in one run — a role contract may not name an unregistered tool, so
+  shipping knowledge off (the default) would have shipped a researcher that could never pass
+  readiness. `ToolInventory` already said why. The tools now register and refuse, and the comment
+  records which guard corrected the design.
+
+**FORAGER, in its own repository:** two defects found by running the integration against a live
+instance. Directory import was open by default — the containment check read
+`if (roots.length && ...)`, so the shipped empty `FORAGER_ALLOWED_INPUT_ROOTS` skipped it entirely
+and any absolute path could be scanned through an API with no authentication of its own; it is now
+default-deny, checked on the resolved real path. And FTS5 joins terms with AND, so one absent word
+returned nothing: `launch date` found two statements and `why did the launch date change` found
+none, while the unranked fallback had BETTER recall than the ranked backend. Stopwords are now
+shared and a query matching nothing strictly is retried with OR, on both backends.
+
+**Not done, on purpose.** No vector search — FORAGER's `SearchBackend` seam is where it belongs and
+it does not exist there yet; the ANTHILL-facing API is unchanged when it lands. No agent-authored
+knowledge: agents propose review actions and an operator decides. No cross-project retrieval, which
+is not expressible in the scope type at all. And the two applications have not yet been run together
+end to end — the retrieval pipeline was verified against a live FORAGER and the C# against the
+suite, but no environment in this work had both.
+
 ## v0.3.8.120 - the colony page, tuned by hand
 
 **THE COLONY PAGE, TUNED BY HAND AND MADE CUSTOMIZABLE.** From an operator's pass over `.119`:
