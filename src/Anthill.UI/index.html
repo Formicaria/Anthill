@@ -2880,6 +2880,82 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         #page-homelab .hl-node{transition:none;}
       }
       </style>
+      <div class="page page-scroll" id="page-knowledge">
+        <style id="kn-theme">
+          /* Scoped to this page. Every colour is a token — the console has four themes and a
+             hard-coded hex is a bug in three of them. Magenta marks things you can act on; cyan
+             marks metadata; support levels borrow the semantic status colours so a direct fact and
+             an unverified claim are distinguishable at a glance and not only by reading. */
+          #page-knowledge .kn-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:10px}
+          #page-knowledge h3{font-size:12px;margin:0 0 4px}
+          #page-knowledge .kn-lede{font-size:10px;color:var(--dim);margin:0 0 8px;line-height:1.5}
+          #page-knowledge .kn-sub{font-size:8px;color:var(--dim);font-family:var(--mono)}
+          #page-knowledge .kn-searchrow{display:flex;gap:6px;flex-wrap:wrap}
+          #page-knowledge .kn-input{flex:1 1 260px;background:var(--inner);border:1px solid var(--border);border-radius:var(--r);color:var(--text);padding:6px 8px;font-size:11px;font-family:var(--font)}
+          #page-knowledge .kn-input:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+          #page-knowledge .kn-btn{background:var(--inner);border:1px solid var(--border);border-radius:var(--r);color:var(--text);padding:5px 10px;font-size:10px;cursor:pointer;transition:border-color var(--t)}
+          #page-knowledge .kn-btn:hover{border-color:var(--queen)}
+          #page-knowledge .kn-btn:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+          #page-knowledge .kn-primary{border-color:var(--queen);color:var(--cream)}
+          #page-knowledge .kn-sm{font-size:9px;padding:3px 7px;margin-top:6px;margin-right:4px}
+          #page-knowledge .kn-controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:8px}
+          #page-knowledge .kn-lbl{font-size:9px;color:var(--muted);display:flex;gap:4px;align-items:center}
+          #page-knowledge .kn-select{background:var(--inner);border:1px solid var(--border);color:var(--text);border-radius:var(--r);font-size:10px;padding:3px 6px}
+          #page-knowledge .kn-say{font-size:10px;margin:8px 0 0;min-height:14px}
+          #page-knowledge .kn-ok{color:var(--green)} #page-knowledge .kn-bad{color:var(--red)}
+          #page-knowledge .kn-cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin-bottom:10px}
+          @media (max-width:900px){#page-knowledge .kn-cols{grid-template-columns:minmax(0,1fr)}}
+          #page-knowledge .kn-results,#page-knowledge .kn-detail{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px 14px;min-height:120px;overflow-x:auto}
+          #page-knowledge .kn-hit{border-bottom:1px solid var(--border);padding:8px 0}
+          #page-knowledge .kn-hit:last-child{border-bottom:0}
+          #page-knowledge .kn-stmt{font-size:11px;color:var(--text);line-height:1.5}
+          #page-knowledge .kn-big{font-size:13px;color:var(--cream);margin-bottom:6px}
+          #page-knowledge .kn-meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px}
+          #page-knowledge .kn-why{font-size:9px;color:var(--blue);margin-top:3px;font-family:var(--mono)}
+          #page-knowledge .kn-pill{font-size:8px;text-transform:uppercase;letter-spacing:.08em;padding:2px 6px;border-radius:10px;border:1px solid var(--border);color:var(--muted)}
+          /* Support: strongest reads calm, weakest reads loud. An unverified claim should catch
+             the eye — it is the one a reader is most likely to over-trust. */
+          #page-knowledge .kn-s-direct{border-color:var(--green);color:var(--green)}
+          #page-knowledge .kn-s-supported{border-color:var(--blue);color:var(--blue)}
+          #page-knowledge .kn-s-uncertain{border-color:var(--amber);color:var(--amber)}
+          #page-knowledge .kn-s-unverified{border-color:var(--orange);color:var(--orange)}
+          #page-knowledge .kn-s-unknown{border-color:var(--dim);color:var(--dim)}
+          #page-knowledge .kn-st-Disputed,#page-knowledge .kn-st-disputed,#page-knowledge .kn-st-failed{border-color:var(--red);color:var(--red)}
+          #page-knowledge .kn-st-Unresolved,#page-knowledge .kn-st-unresolved{border-color:var(--orange);color:var(--orange)}
+          #page-knowledge .kn-st-Superseded,#page-knowledge .kn-st-superseded{border-color:var(--dim);color:var(--dim)}
+          #page-knowledge .kn-st-Active,#page-knowledge .kn-st-completed{border-color:var(--green);color:var(--green)}
+          #page-knowledge .kn-st-running,#page-knowledge .kn-st-queued{border-color:var(--blue);color:var(--blue)}
+          #page-knowledge .kn-dhead{font-size:8px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);margin:10px 0 6px;border-bottom:1px solid var(--border);padding-bottom:3px}
+          #page-knowledge .kn-dhead:first-child{margin-top:0}
+          #page-knowledge .kn-facts{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:9px;margin:6px 0}
+          #page-knowledge .kn-facts dt{color:var(--dim);font-family:var(--mono)}
+          #page-knowledge .kn-facts dd{margin:0;color:var(--text);word-break:break-word}
+          #page-knowledge .kn-ev{border-left:2px solid var(--blue);padding:4px 0 4px 8px;margin:8px 0}
+          #page-knowledge .kn-evsrc{font-size:10px;color:var(--text)}
+          #page-knowledge .kn-quote{margin:4px 0;padding:6px 8px;background:var(--inner);border-radius:var(--r);font-size:10px;color:var(--cream);font-style:italic;line-height:1.5}
+          #page-knowledge .kn-warn{font-size:9px;color:var(--amber);background:var(--inner);border-left:2px solid var(--amber);padding:5px 8px;margin:6px 0;border-radius:0 var(--r) var(--r) 0;line-height:1.5}
+          #page-knowledge .kn-empty{font-size:10px;color:var(--dim);line-height:1.5;padding:6px 0}
+          #page-knowledge .kn-conflict{border:1px solid var(--red);border-radius:var(--r);padding:8px 10px;margin-bottom:8px;background:var(--inner)}
+          #page-knowledge .kn-cft{font-size:10px;color:var(--text);margin-bottom:3px}
+          #page-knowledge .kn-cflinks{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+          #page-knowledge .kn-job{border-bottom:1px solid var(--border);padding:8px 0}
+          #page-knowledge .kn-job:last-child{border-bottom:0}
+          #page-knowledge .kn-jobhead{display:flex;gap:8px;align-items:center;font-size:10px;flex-wrap:wrap}
+          #page-knowledge .kn-bar{height:3px;background:var(--inner);border-radius:2px;margin:6px 0;overflow:hidden}
+          #page-knowledge .kn-barfill{height:100%;background:var(--queen);transition:width var(--t)}
+          #page-knowledge .kn-stages{display:flex;gap:3px;flex-wrap:wrap}
+          #page-knowledge .kn-stage{font-size:7px;padding:2px 5px;border-radius:8px;border:1px solid var(--border);color:var(--dim)}
+          #page-knowledge .kn-stage-completed{border-color:var(--green);color:var(--green)}
+          #page-knowledge .kn-stage-running{border-color:var(--blue);color:var(--blue)}
+          #page-knowledge .kn-stage-failed{border-color:var(--red);color:var(--red)}
+          #page-knowledge .kn-pre{background:var(--inner);border:1px solid var(--border);border-radius:var(--r);padding:8px;font-size:9px;font-family:var(--mono);color:var(--text);white-space:pre-wrap;word-break:break-word;max-height:520px;overflow:auto;line-height:1.55}
+        </style>
+        <div class="page-head">
+          <h2>Knowledge</h2>
+          <p class="page-sub">What the organization knows, where it learned it, and where its sources disagree.</p>
+        </div>
+        <div id="kn-body"><div class="hud-state">Loading…</div></div>
+      </div>
       <div class="page page-scroll" id="page-micromound">
         <style id="mm-theme">
           #page-micromound .mm-card{border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:12px;background:rgba(255,255,255,.012);}
@@ -4394,5 +4470,6 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 <script src="/ui/homelab.js" defer></script>
 <!-- v0.3.8.115: the Micromound console. AFTER app.js — its PAGE_ENTER registration runs at load. -->
 <script src="/ui/micromound.js" defer></script>
+<script src="/ui/knowledge.js" defer></script>
 </body>
 </html>

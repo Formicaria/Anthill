@@ -4,6 +4,7 @@ using Anthill.Core.Modules;
 using Anthill.Core.Orchestration;
 using Anthill.Core.Memory;
 using Anthill.Core.Security;
+using Anthill.Modules.Knowledge;
 using Anthill.Modules.Tools;
 using Anthill.SDK.Events;
 using Xunit;
@@ -91,6 +92,13 @@ public class AcceptanceGatesOneAndTwoTests : IDisposable
         using var memory = new SqliteMemory(Path.Combine(dir, "gates.db"));
         var host = new ModuleHost(memory, NullEventBus.Instance);
         host.Load(new ToolsModule(new WorkspacePathGuard()));
+        // v0.3.8.121 — the knowledge module, composed for the same reason the send lane is below:
+        // gate 1 measures the colony PRODUCTION composes, and ApiHost loads this one. Handed the
+        // SHIPPED DEFAULT (knowledge disabled) deliberately — readiness is about whether a role's
+        // declared tools are REGISTERED, not about what an operator has configured them to reach.
+        // The module registers and refuses rather than registering nothing, which is what lets a
+        // colony with no FORAGER still report a ready researcher.
+        host.Load(new KnowledgeModule(() => new KnowledgeOptions()));
 
         var queen = new Queen(memory);
         queen.AdoptModuleTools(host.ContributedTools);

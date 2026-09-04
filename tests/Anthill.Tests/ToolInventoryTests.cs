@@ -128,6 +128,24 @@ public class ToolInventoryTests
         registeredNames.Add(Anthill.SDK.Contracts.ExternalActionToolNames.Propose);
         registeredNames.Add(Anthill.SDK.Contracts.ExternalActionToolNames.Execute);
 
+        // v0.3.8.121 — a FIFTH composition site. The knowledge tools are registered by
+        // Anthill.Modules.Knowledge, whose module file this regex does not scan (it reads Queen.cs
+        // and ToolsModule.cs by name, deliberately, so a `new XTool(` in a test satisfies nothing).
+        // Their Name properties forward SDK constants for the usual reason — the module may not
+        // name Core — so the literal lookup cannot read them either.
+        //
+        // Unlike every block above, this one is CONDITIONAL, and the condition is the point:
+        // KnowledgeModule.Register returns without registering anything when knowledge is disabled,
+        // which is how Rule 15 holds. So the guard asserts the registration site exists and admits
+        // the declared vocabulary, rather than asserting six tools are live in a build that ships
+        // with the feature off.
+        var knowledgeModuleBody = File.ReadAllText(Path.Combine(
+            Root(), "src", "Anthill.Modules", "Anthill.Modules.Knowledge", "KnowledgeModule.cs"));
+        Assert.Contains("Offer(new KnowledgeSearchTool(", knowledgeModuleBody);
+        Assert.Contains("Offer(new KnowledgeReviewTool(", knowledgeModuleBody);
+        foreach (var name in Anthill.SDK.Knowledge.KnowledgeToolNames.All)
+            registeredNames.Add(name);
+
         var missing = registeredNames.Except(ToolInventory.Implemented, StringComparer.OrdinalIgnoreCase).ToList();
         var phantom = ToolInventory.Implemented.Except(registeredNames, StringComparer.OrdinalIgnoreCase).ToList();
 

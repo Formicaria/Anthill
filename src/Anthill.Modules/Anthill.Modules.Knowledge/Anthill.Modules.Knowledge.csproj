@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Anthill.Modules.Knowledge</RootNamespace>
+    <AssemblyName>Anthill.Modules.Knowledge</AssemblyName>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!--
+    THE SDK, AND NOTHING ELSE OF OURS. Same rule as Anthill.Modules.Tools and
+    Anthill.Modules.Homelab: no Anthill.Core reference, no reference to another module.
+    ModuleBoundaryTests discovers this project from disk and enforces it, including for references
+    that are present but unused.
+
+    This module talks HTTP to FORAGER, which is a separate process in a different language — see
+    docs/FORAGER_INTEGRATION.md §3.1 for why embedding was not an option. System.Net.Http is in the
+    framework, so that costs no package reference; note that the SDK itself may NOT name it (the
+    guard forbids it there, because everything references the SDK and its dependencies are inherited
+    colony-wide). That is why the knowledge CONTRACTS carry no HTTP concepts and this project does.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\Anthill.SDK\Anthill.SDK.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Anthill.Tests" />
+  </ItemGroup>
+
+</Project>

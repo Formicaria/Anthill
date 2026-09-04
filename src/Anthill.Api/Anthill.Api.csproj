@@ -16,6 +16,7 @@
     <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Reasoning\Anthill.Modules.Reasoning.csproj" />
     <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Homelab\Anthill.Modules.Homelab.csproj" />
     <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Tools\Anthill.Modules.Tools.csproj" />
+    <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Knowledge\Anthill.Modules.Knowledge.csproj" />
   </ItemGroup>
 
   <!-- Let the test suite exercise internal helpers (e.g. the mission-report formatter). -->
@@ -67,6 +68,9 @@
     <EmbeddedResource Include="..\Anthill.UI\colony-host.js" LogicalName="Anthill.Api.Ui.colony-host.js" Condition="'$(AnthillNoUi)' != 'true'" />
     <EmbeddedResource Include="..\Anthill.UI\colony-home.js" LogicalName="Anthill.Api.Ui.colony-home.js" Condition="'$(AnthillNoUi)' != 'true'" />
     <EmbeddedResource Include="..\Anthill.UI\micromound.js" LogicalName="Anthill.Api.Ui.micromound.js" Condition="'$(AnthillNoUi)' != 'true'" />
+    <!-- v0.3.8.121: the Knowledge area. Its own file rather than app.js, which
+         ConsoleAssetSplitTests caps at 10,000 lines and which is already at 9,955. -->
+    <EmbeddedResource Include="..\Anthill.UI\knowledge.js" LogicalName="Anthill.Api.Ui.knowledge.js" Condition="'$(AnthillNoUi)' != 'true'" />
   </ItemGroup>
 
   <!--

@@ -572,6 +572,12 @@ docs/                     Architecture, operations, and roadmap documentation
 - [`docs/ANT_EXECUTION.md`](docs/ANT_EXECUTION.md) â€” canonical colony roles and execution gates
 - [`docs/APPROVALS.md`](docs/APPROVALS.md) â€” patch and approval lifecycle
 - [`docs/AUTONOMY.md`](docs/AUTONOMY.md) â€” Director, objectives, budgets, and stop controls
+- [`docs/MISSION_REPLAY.md`](docs/MISSION_REPLAY.md) — Mission Replay configuration (settings only; no replay engine yet)
+- [`docs/FORAGER_INTEGRATION.md`](docs/FORAGER_INTEGRATION.md) — organizational knowledge from FORAGER: the boundary and the integration decision
+- [`docs/KNOWLEDGE_ARCHITECTURE.md`](docs/KNOWLEDGE_ARCHITECTURE.md) — layers, types, scope and configuration
+- [`docs/RAG.md`](docs/RAG.md) — evidence-first retrieval, and why it is not similarity search
+- [`docs/KNOWLEDGE_API.md`](docs/KNOWLEDGE_API.md) — the `/knowledge/*` routes and the agent tools
+- [`docs/KNOWLEDGE_SECURITY.md`](docs/KNOWLEDGE_SECURITY.md) — tenant isolation, the ingestion fence, and what it deliberately cannot do
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) â€” detailed deployment and service setup
 - [`CHANGELOG.md`](CHANGELOG.md) â€” complete release history
 
