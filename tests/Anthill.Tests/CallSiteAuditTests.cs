@@ -196,6 +196,11 @@ public class CallSiteAuditTests
             // about which construction satisfied which tool.
             Path.Combine(RepoRoot(), "src", "Anthill.Modules", "Anthill.Modules.Tools",
                 "ExternalActionTools.cs"),
+            // v0.3.8.121 — a FIFTH, same rule again. The knowledge tools are constructed in
+            // KnowledgeModule.Register, gated on knowledge being configured, so the construction
+            // expressions live there and that is the named file.
+            Path.Combine(RepoRoot(), "src", "Anthill.Modules", "Anthill.Modules.Knowledge",
+                "KnowledgeModule.cs"),
         };
 
         foreach (var root in roots)
@@ -207,6 +212,15 @@ public class CallSiteAuditTests
 
         var implementedBy = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
+            // v0.3.8.121 — the knowledge lane. Named here as well as in the inventory because, as
+            // the comment on this map says, that is deliberate friction: a new tool must be
+            // admitted in two places by someone who meant to add it.
+            ["knowledge_search"] = "KnowledgeSearchTool",
+            ["knowledge_retrieve"] = "KnowledgeRetrieveTool",
+            ["knowledge_get"] = "KnowledgeGetTool",
+            ["knowledge_evidence"] = "KnowledgeEvidenceTool",
+            ["knowledge_entity"] = "KnowledgeEntityTool",
+            ["knowledge_review"] = "KnowledgeReviewTool",
             ["system_info"] = "SystemInfoTool",
             ["run_allowlisted_check"] = "RunAllowlistedCheckTool",
             ["list_directory"] = "DirectoryListTool",
