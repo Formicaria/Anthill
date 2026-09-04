@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\src\Anthill.Modules\Anthill.Modules.Homelab\Anthill.Modules.Homelab.csproj" />
     <!-- The tool implementations moved out of the core in v3.8.16; their tests follow them. -->
     <ProjectReference Include="..\..\src\Anthill.Modules\Anthill.Modules.Tools\Anthill.Modules.Tools.csproj" />
+    <ProjectReference Include="..\..\src\Anthill.Modules\Anthill.Modules.Knowledge\Anthill.Modules.Knowledge.csproj" />
     <!--
       Scenario 17 needs a process it can really kill. Referenced (rather than located by path) so
       `dotnet test` builds it and copies it beside the tests — a helper the suite cannot find is a

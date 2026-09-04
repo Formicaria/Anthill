@@ -89,6 +89,30 @@ public static class ToolEvidence
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "web_search", "open_public_source", "read_public_source", "compare_sources",
+            // v0.3.8.121 — organizational knowledge, retrieved from FORAGER.
+            //
+            // THIS LANE AND NOT `ObservationTools`, and the choice is worth arguing because it looks
+            // wrong at first: knowledge is the operator's OWN material, and the inspection lane is
+            // where reads of the operator's own things live. But the distinction the two lanes
+            // actually draw is not ownership, it is what the row licenses. `AssessmentObjective`
+            // requires `inspection` rows before an audit's conclusions are believed, and the whole
+            // point of that requirement is that the colony LOOKED AT THE TREE. A knowledge query
+            // reads a curated statement about the tree, possibly extracted months ago from a
+            // document — so admitting it to the inspection lane would let an audit of what is in the
+            // repository be satisfied without reading the repository. Same error as web_search,
+            // different disguise.
+            //
+            // The retrieval lane is the honest fit: reached outside this process, bound to no tree,
+            // non-deterministic, and — unlike a web result — arriving with real provenance, which is
+            // what makes it citable rather than merely recorded.
+            //
+            // `knowledge_review` is deliberately absent: it proposes, it retrieves nothing, and a
+            // proposal is not evidence of anything except that an agent had an opinion.
+            Anthill.SDK.Knowledge.KnowledgeToolNames.Search,
+            Anthill.SDK.Knowledge.KnowledgeToolNames.Retrieve,
+            Anthill.SDK.Knowledge.KnowledgeToolNames.Get,
+            Anthill.SDK.Knowledge.KnowledgeToolNames.Evidence,
+            Anthill.SDK.Knowledge.KnowledgeToolNames.Entity,
         };
 
     /// <summary>True when this tool's outcome is a reproducible VERDICT — the promotion lane.</summary>

@@ -34,5 +34,42 @@ services:
       # - /path/on/host/to/your/project:/workspace
     restart: unless-stopped
 
+  # ── FORAGER — organizational knowledge (optional) ──────────────────────────────────────────
+  #
+  # Behind a PROFILE, so `docker compose up` is byte-for-byte what it was before this service
+  # existed. You get FORAGER only by asking for it:
+  #
+  #     docker compose --profile knowledge up
+  #
+  # A second container is warranted here rather than preferred: FORAGER is a Node application
+  # with its own SQLite database and its own ingestion pipeline, so there is no in-process
+  # boundary to share with a .NET colony. See docs/FORAGER_INTEGRATION.md §3.1.
+  #
+  # Build context is a sibling checkout of https://github.com/Formicaria/Forager. Adjust the
+  # path if yours lives elsewhere; there is no published image to pull.
+  forager:
+    profiles: ["knowledge"]
+    build: ../forager
+    image: forager:latest
+    container_name: forager
+    network_mode: "host"
+    environment:
+      - FORAGER_PORT=8790
+      # LOOPBACK ONLY. FORAGER has no authentication of its own — it is designed to own its
+      # local interface. Binding it to 0.0.0.0 publishes an unauthenticated knowledge base to
+      # your network. Put a reverse proxy with auth in front before you change this.
+      - FORAGER_HOST=127.0.0.1
+      - FORAGER_DATA_DIR=/data
+      # Directory import is refused unless this names the folders FORAGER may scan. Leaving it
+      # empty is safe and means "uploads only" — it is not a missing setting.
+      # - FORAGER_ALLOWED_INPUT_ROOTS=/corpus
+    volumes:
+      - forager-data:/data
+      # Mount a corpus read-only and name it in FORAGER_ALLOWED_INPUT_ROOTS above to let the
+      # colony index it. Read-only on purpose: ingestion never needs to write to its sources.
+      # - /path/on/host/to/documents:/corpus:ro
+    restart: unless-stopped
+
 volumes:
   anthill-data:
+  forager-data:

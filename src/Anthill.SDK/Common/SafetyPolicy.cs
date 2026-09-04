@@ -196,6 +196,17 @@ public static class SafetyPolicy
                 // and a definition shadowing either would be impersonating the approval pipeline.
                 Contracts.SystemActionToolNames.Propose,
                 Contracts.SystemActionToolNames.Execute,
+                // v0.3.8.121 — the knowledge lane. Mirrored for the same reason as every name
+                // above, and read from the SDK's own constants (KnowledgeToolNames) so the module
+                // that registers them, the core's inventory and this fallback cannot disagree about
+                // the spelling. An operator-defined tool taking `knowledge_retrieve` would be
+                // impersonating the colony's source of organizational fact.
+                Knowledge.KnowledgeToolNames.Search,
+                Knowledge.KnowledgeToolNames.Retrieve,
+                Knowledge.KnowledgeToolNames.Get,
+                Knowledge.KnowledgeToolNames.Evidence,
+                Knowledge.KnowledgeToolNames.Entity,
+                Knowledge.KnowledgeToolNames.Review,
                 // v0.3.8.106 — cross-mission artifact reads. Mirrored for the same reason as every
                 // name above: an operator-defined tool must not be able to take a built-in's name,
                 // and this one gates what later work may be built on. The SDK cannot name Core, so
