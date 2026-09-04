@@ -61,6 +61,10 @@ public static class RuntimeConfigValidator
                 "Auto-apply is enabled but patch_application_enabled/file_writing_enabled are off — "
                 + "nothing will ever be applied.");
 
+        // Mission Replay's own findings, which the options type owns because the rules are about
+        // one feature's four keys rather than a combination across features.
+        findings.AddRange(AnthillRuntime.MissionReplay.Validate());
+
         // Sandbox execution needs a usable workspace root.
         if (AnthillRuntime.EnableSandboxExecution
             && (string.IsNullOrWhiteSpace(AnthillRuntime.AllowedWorkspaceRoot)
