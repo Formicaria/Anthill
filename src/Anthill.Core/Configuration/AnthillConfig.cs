@@ -618,6 +618,103 @@ public sealed class AnthillConfig
         UndocumentedBecause = "break-glass; documented in AUTONOMY.md, ")]
     [JsonPropertyName("autonomy_autoapply_keep_without_verify")] public bool AutonomyAutoApplyKeepWithoutVerify { get; set; } = false;
 
+    // ---- Mission Replay (configuration contract only; see MissionReplayOptions) ----------------
+    // Declared here so the generated example file, the configuration reference and the
+    // environment overrides all come from the one authority, and so the feature that follows is
+    // built against settings that already exist, are validated, and default to off.
+    //
+    // FileOnly on purpose. The settings surface may not flip these live: mission_replay_enabled is
+    // the gate on a capability that will eventually EXECUTE missions, and widening what the console
+    // can write is a security decision (see TheEditableSurface_IsExactlyWhatItWasBeforeItBecameAProjection,
+    // which pins that count). The release that ships the replay engine can make that decision on
+    // purpose; a release that only declares the keys should not make it as a side effect.
+    [ConfigKey(Security = ConfigSecurity.Safety, EnvOverride = "ANTHILL_MISSION_REPLAY_ENABLED",
+        Section = "mission_replay", SectionNote = """Mission Replay will eventually let the colony rerun selected historical tasks described in an external source such as an Obsidian vault. THIS RELEASE IS CONFIGURATION ONLY: nothing reads the vault, parses Markdown, generates a mission or schedules work yet. Configuring a vault does NOT import it into ANTHILL's memory and does NOT modify pheromones - pointing mission_replay_vault_path at a directory causes no missions to run, no files to be read or written, no model calls and no background indexing. When the feature is built, learning will reach the existing pheromone system only along one path: an approved note becomes a replay mission, that mission executes and is verified like any other, and only the verified result is eligible - a note never reinforces anything by existing. Both switches default to false, and mission_replay_learning_enabled has no effect while mission_replay_enabled is false.""")]
+    [JsonPropertyName("mission_replay_enabled")] public bool MissionReplayEnabled { get; set; } = false;
+    [ConfigKey(Security = ConfigSecurity.Environment, EnvOverride = "ANTHILL_MISSION_REPLAY_VAULT_PATH",
+        ExampleJson = "\"/path/to/your/Obsidian/Vault\"")]
+    [JsonPropertyName("mission_replay_vault_path")] public string MissionReplayVaultPath { get; set; } = "";
+    [ConfigKey(EnvOverride = "ANTHILL_MISSION_REPLAY_TAG")]
+    [JsonPropertyName("mission_replay_tag")] public string MissionReplayTag { get; set; } = MissionReplayOptions.DefaultReplayTag;
+    [ConfigKey(Security = ConfigSecurity.Safety, EnvOverride = "ANTHILL_MISSION_REPLAY_LEARNING_ENABLED")]
+    [JsonPropertyName("mission_replay_learning_enabled")] public bool MissionReplayLearningEnabled { get; set; } = false;
+
+    // ---- Knowledge (FORAGER integration) -------------------------------------------------------
+    // The colony's organizational knowledge comes from FORAGER, a separate local application. See
+    // docs/FORAGER_INTEGRATION.md for the boundary and docs/KNOWLEDGE_API.md for the surface.
+    //
+    // EVERY KEY HERE IS FileOnly, and that is two decisions rather than an omission.
+    //
+    // First, security: knowledge_forager_endpoint decides which service the colony trusts as the
+    // source of organizational fact, and knowledge_project_map decides which knowledge a mission may
+    // read. Making either writable from the console would let a console compromise redirect the
+    // colony's beliefs, or widen a project's scope, without touching a config file.
+    //
+    // Second, and more prosaically: TheEditableSurface_IsExactlyWhatItWasBeforeItBecameAProjection
+    // pins the editable key count. Widening that surface is a decision a release should make on
+    // purpose, not one a new feature makes as a side effect.
+    [ConfigKey(Security = ConfigSecurity.Safety, EnvOverride = "ANTHILL_KNOWLEDGE_ENABLED",
+        Section = "knowledge", SectionNote = """Organizational knowledge, retrieved from FORAGER (https://github.com/Formicaria/Forager) -- a separate local application that turns documents into canonical, evidence-backed knowledge. OFF BY DEFAULT: with knowledge_enabled false the module registers no tools, the console reports the feature as unconfigured, and nothing about an existing colony changes. ANTHILL never parses documents, never stores knowledge and never resolves conflicts -- it asks FORAGER, and presents what comes back with its support level and its provenance intact. This integration adds NO tables to ANTHILL's database, so enabling and disabling it are both safe. Retrieval is scoped: knowledge_project_map decides which FORAGER project a mission's ANTHILL project may read, and a mission whose project is unmapped retrieves nothing rather than falling back to a default.""")]
+    [JsonPropertyName("knowledge_enabled")] public bool KnowledgeEnabled { get; set; } = false;
+
+    [ConfigKey(Security = ConfigSecurity.Environment, EnvOverride = "ANTHILL_KNOWLEDGE_FORAGER_ENDPOINT",
+        ExampleJson = "\"http://127.0.0.1:8790\"")]
+    [JsonPropertyName("knowledge_forager_endpoint")] public string KnowledgeForagerEndpoint { get; set; } = "http://127.0.0.1:8790";
+
+    /// <summary>
+    /// Bearer token for a FORAGER behind an authenticating proxy. FORAGER has no authentication of
+    /// its own — empty is the normal case for a loopback install and is not a misconfiguration.
+    /// </summary>
+    [ConfigKey(Security = ConfigSecurity.Secret, EnvOverride = "ANTHILL_KNOWLEDGE_FORAGER_TOKEN")]
+    [JsonPropertyName("knowledge_forager_token")] public string KnowledgeForagerToken { get; set; } = "";
+
+    /// <summary>
+    /// Permit a non-loopback FORAGER endpoint. Off by default: FORAGER has no auth, so reaching one
+    /// across a network is a decision with a real blast radius and should be made deliberately
+    /// rather than inherited from a copied config.
+    /// </summary>
+    [ConfigKey(Security = ConfigSecurity.Safety, EnvOverride = "ANTHILL_KNOWLEDGE_ALLOW_REMOTE")]
+    [JsonPropertyName("knowledge_forager_allow_remote")] public bool KnowledgeForagerAllowRemote { get; set; } = false;
+
+    [ConfigKey(Min = 250, Max = 60000, EnvOverride = "ANTHILL_KNOWLEDGE_PROBE_TIMEOUT_MS")]
+    [JsonPropertyName("knowledge_probe_timeout_ms")] public int KnowledgeProbeTimeoutMs { get; set; } = 2000;
+
+    [ConfigKey(Min = 500, Max = 120000, EnvOverride = "ANTHILL_KNOWLEDGE_RETRIEVAL_TIMEOUT_MS")]
+    [JsonPropertyName("knowledge_retrieval_timeout_ms")] public int KnowledgeRetrievalTimeoutMs { get; set; } = 5000;
+
+    [ConfigKey(Min = 500, Max = 300000, EnvOverride = "ANTHILL_KNOWLEDGE_INGESTION_TIMEOUT_MS")]
+    [JsonPropertyName("knowledge_ingestion_timeout_ms")] public int KnowledgeIngestionTimeoutMs { get; set; } = 10000;
+
+    [ConfigKey(Min = 1, Max = 50, EnvOverride = "ANTHILL_KNOWLEDGE_TOP_K")]
+    [JsonPropertyName("knowledge_default_top_k")] public int KnowledgeDefaultTopK { get; set; } = 8;
+
+    [ConfigKey(Min = 1000, Max = 200000, EnvOverride = "ANTHILL_KNOWLEDGE_MAX_CONTEXT_CHARS")]
+    [JsonPropertyName("knowledge_max_context_chars")] public int KnowledgeMaxContextChars { get; set; } = 12000;
+
+    /// <summary>
+    /// Seconds a retrieval result may be reused. Short on purpose — this exists to stop a console
+    /// poll and an agent's iterative retrieval from asking the same question repeatedly, not to be a
+    /// read model. Cache keys include the resolved scope, so an entry can never be served across a
+    /// project boundary. 0 disables caching.
+    /// </summary>
+    [ConfigKey(Min = 0, Max = 3600, EnvOverride = "ANTHILL_KNOWLEDGE_CACHE_SECONDS")]
+    [JsonPropertyName("knowledge_cache_seconds")] public int KnowledgeCacheSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// ANTHILL project id to FORAGER project id. THIS MAP IS THE SCOPE BOUNDARY. A mission whose
+    /// project has no entry resolves to no scope and retrieves nothing — deliberately, because a
+    /// mission that silently borrowed a default scope would be reading another tenant's knowledge.
+    /// </summary>
+    [ConfigKey(Security = ConfigSecurity.Safety, ExampleJson = "{}")]
+    [JsonPropertyName("knowledge_project_map")] public Dictionary<string, string> KnowledgeProjectMap { get; set; } = new();
+
+    /// <summary>
+    /// The FORAGER project used by callers that have no ANTHILL project — a direct console query or
+    /// the CLI. NOT a fallback for an unmapped mission; see the note on the map above.
+    /// </summary>
+    [ConfigKey(EnvOverride = "ANTHILL_KNOWLEDGE_DEFAULT_PROJECT")]
+    [JsonPropertyName("knowledge_default_project")] public string KnowledgeDefaultProject { get; set; } = "";
+
     /// <summary>
     /// Safety-profile overrides applied before the user's on-disk config is merged on top.
     /// Mirrors <c>_safety_profile_overrides</c> in the Python runtime: every shipped profile
