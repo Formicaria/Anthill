@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.120**.
+Shipping release: **v0.3.8.121**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -438,6 +438,55 @@ enforced at ≤ 45, so the work cannot reverse; only this note stops it quietly 
 worth more the second time it has to be written.
 
 ---
+
+### 2k. v0.3.8.121 — what the organization knows
+
+**Delivers:** the colony can ask what the organization knows and get statements back with the source
+text behind them. The knowledge lives in FORAGER — a separate local application that turns documents
+into canonical, traceable records — and this release is the seam, not a second copy of it. ANTHILL
+parses no documents, stores no knowledge, resolves no conflicts and ranks nothing; it asks, and
+presents what comes back without degrading it. The boundary is HTTP because it had to be: FORAGER is
+TypeScript on Node and there is no in-process edge to share, so the MICROMOUND `ProjectReference`
+pattern has no analogue here.
+
+**Retrieval is evidence-first, which is not what RAG usually means.** The ordinary shape — embed,
+take the nearest chunks, paste them in — hands a model text with no accountability, judged only by
+plausibility. This ranks CANDIDATES, then fetches what supports each one, then attaches the
+disagreements. Evidence is fetched before assembly because an item whose evidence cannot be resolved
+has to be LABELLED rather than dropped, and you cannot label what you have already flattened.
+Conflicts are printed BEFORE the facts, with FORAGER's suggestion marked `NOT APPLIED`: a model that
+meets the statements first has already formed an answer. There is deliberately no option to hide a
+conflict, because an option to hide them is a way to hide them.
+
+**Scope is ambient, and that is a security decision.** `ITool.Run` receives arguments and nothing
+else, so a knowledge tool learns its scope from an argument or from ambient state — and tool
+arguments are chosen by a MODEL. A `project_id` parameter would make the reach of a query something
+the model selects, and the no-cross-project rule would then be enforced by its discretion.
+`KnowledgeScopeContext` is entered by the core at intake, only ever narrows, and defaults to a scope
+that retrieves nothing. Verified against a running FORAGER: `GET /api/knowledge/{id}` is NOT
+project-scoped upstream and returns another project's row with HTTP 200, so the provider checks
+`project_id` on the RESPONSE and answers `NotFound` — not a denial, because confirming an id exists
+in a project the caller cannot see is itself a disclosure.
+
+**Off by default, and it adds no tables.** `knowledge_enabled` ships false; an existing config loads
+unchanged and the database is untouched in both directions, so enabling and disabling are equally
+safe. The tools register unconditionally and refuse at call time — "registered and refusing" is a
+different fact from "declared and absent", and only the second makes a role unqualified. That was
+learned the hard way: the first implementation registered nothing when the feature was off, and
+three guards refused it in one run because a researcher would never have passed readiness.
+
+**Also lands:** the Mission Replay configuration contract — typed, validated settings for future
+Obsidian replay, with no parser, no indexing and no execution. And in FORAGER's own repository, two
+defects found by running the integration: directory import was open by default (the containment
+check skipped entirely when no roots were configured, on an API with no authentication), and FTS5's
+AND-joined terms meant a natural-language question returned nothing while the unranked fallback had
+better recall than the ranked backend.
+
+**Not done, on purpose:** no vector search (FORAGER's `SearchBackend` seam is where it belongs and
+does not exist there yet), no agent-authored knowledge, no cross-project retrieval — which is not
+expressible in the scope type at all. The two applications have not yet been run together end to
+end; the retrieval pipeline was verified against a live FORAGER and the C# against the suite, but no
+environment in this work had both.
 
 ### 2j. v0.3.8.120 — the colony page, tuned by hand
 
