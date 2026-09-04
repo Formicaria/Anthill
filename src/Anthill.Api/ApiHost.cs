@@ -74,6 +74,7 @@ public static partial class ApiHost
     private static string UiColonyHostJs = "";
     private static string UiColonyHomeJs = "";
     private static string UiMicromoundJs = "";
+    private static string UiKnowledgeJs = "";
     private static string UiGridCss = "";
     // One shared client for the host's own internal probes (Ollama reachability, model list).
     // A per-request `new HttpClient` leaks sockets under the header's periodic polling; this
@@ -200,7 +201,16 @@ public static partial class ApiHost
             // inside the module because it reads the current mission's workspace through an ambient
             // scope, and missions are core. Same root the Queen builds hers from.
             new ToolsModule(new WorkspacePathGuard(AnthillRuntime.AllowedWorkspaceRoot, ToolRuntime.Live),
-                ToolRuntime.Live, SsrfRuntime.Live));
+                ToolRuntime.Live, SsrfRuntime.Live),
+            // v0.3.8.121: organizational knowledge, from FORAGER. Configuration-only at
+            // registration, for the sharpest version of the homelab's reason — FORAGER is a separate
+            // process over HTTP, and probing it here would make an unreachable knowledge base into a
+            // colony that will not boot. Availability is discovered on first use.
+            //
+            // Constructed by InitKnowledge() rather than inline so ApiHost.Knowledge.cs's routes and
+            // the tools registered here share ONE module, and therefore one HTTP client. With
+            // knowledge_enabled false it registers no tools at all and this line costs nothing.
+            InitKnowledge());
 
         Host = RuntimeHost.Create(memory);
         Queen = Host.Queen;
@@ -274,6 +284,7 @@ public static partial class ApiHost
         UiColonyHostJs = LoadUiAsset("colony-host.js");
         UiColonyHomeJs = LoadUiAsset("colony-home.js");
         UiMicromoundJs = LoadUiAsset("micromound.js");
+        UiKnowledgeJs = LoadUiAsset("knowledge.js");
         UiGridCss = LoadUiAsset("dashboard-grid.css");
         InitHomelab(); // v1.9.0 homelab foundation (read-only; see Homelab/ApiHost.Homelab.cs)
 
@@ -403,6 +414,7 @@ public static partial class ApiHost
 #if MICROMOUND
         if (AnthillRuntime.EnableMicromound) MapMicromoundEndpoints(app);
 #endif
+        MapKnowledgeEndpoints(app);     // v0.3.8.121: FORAGER knowledge — see Knowledge/
         MapEventStreamEndpoints(app);   // v3.8.3: SSE — see ApiHost.EventStream.cs
         MapColonyLiveEndpoints(app);    // v0.3.8.115: the Colony Live read model — see ColonyLive/
         AssertNoDuplicateRoutes(app);

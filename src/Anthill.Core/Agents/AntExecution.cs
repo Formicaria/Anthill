@@ -309,8 +309,34 @@ public static class AntExecutionCatalog
             // the rule v3.8.30 stated when search was added, applied again. It is granted to the
             // ROLE and used by one WORKER: the runtime researcher, which is what `inspect_runtime_state`
             // means, while the repository researcher never asks for it.
+            // v0.3.8.121: the knowledge tools join, and they are dispatched in the same release —
+            // the rule v3.8.30 stated when search was added, applied a third time. The researcher
+            // runs through `ToolCallingLoop`, which projects every allowed tool's schema to the
+            // model, so this grant is reach the role can genuinely use rather than a declaration.
+            //
+            // ONLY THIS ROLE, and the restraint is the point. The obvious next candidates are the
+            // verifier (to check a claim against evidence) and the archivist (to avoid re-learning
+            // what the organization already knows), and BOTH were left out on purpose: `verifier`
+            // declares `AllowedTools: S()` and `archivist` declares `AllowsModelCalls: false`, so
+            // neither handler can dispatch anything today. Granting them knowledge would produce
+            // exactly the drift this file warns about above — a role whose declared surface stops
+            // matching its real one — and it would look like a working feature while being inert.
+            // When a handler is written that dispatches these, the grant is that change's to make.
+            //
+            // `web` is excluded for a different reason: its lane is the public internet, and keeping
+            // "what the world says" separate from "what the organization knows" is the same
+            // distinction ToolEvidence draws between its retrieval and inspection lanes.
+            //
+            // knowledge_review is absent from every role. Proposing a change to canonical knowledge
+            // is a mutation lane (Rule 8) and it is gated by the operator's approval pipeline, not
+            // handed to a research role by default.
             AllowedTools: S("system_info", "list_directory", "search_workspace", "repository_index", "colony_state",
-                            Tools.ReadArtifactTool.ToolName),
+                            Tools.ReadArtifactTool.ToolName,
+                            Anthill.SDK.Knowledge.KnowledgeToolNames.Search,
+                            Anthill.SDK.Knowledge.KnowledgeToolNames.Retrieve,
+                            Anthill.SDK.Knowledge.KnowledgeToolNames.Get,
+                            Anthill.SDK.Knowledge.KnowledgeToolNames.Evidence,
+                            Anthill.SDK.Knowledge.KnowledgeToolNames.Entity),
             ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
             ProducedArtifactTypes: S("text"),
             AllowedHandoffRoles: S("web", "file", "ui_cartographer", "coder", "builder"),

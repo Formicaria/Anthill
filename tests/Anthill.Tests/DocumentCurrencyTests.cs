@@ -55,6 +55,22 @@ public class DocumentCurrencyTests
         // compares it, so it cannot describe a setting the runtime does not have. It is the one
         // document in this list that could not go stale without failing the build.
         "CONFIGURATION.md",
+        // The Mission Replay configuration contract. CURRENT: it describes settings that exist now
+        // and states what they do and do not do today, which is a standing description rather than a
+        // report on one moment. It says plainly that the engine is not built, so it does not go stale
+        // when that changes - it gets edited, and the guard above keeps its version claims honest.
+        "MISSION_REPLAY.md",
+        // v0.3.8.121 — the FORAGER knowledge integration. All five are CURRENT: they describe a
+        // boundary, a retrieval pipeline, an API and a security model that exist now, and each is
+        // a standing description rather than a report on one moment. FORAGER_INTEGRATION.md names
+        // the versions it was audited against, which is a historical REFERENCE inside a current
+        // document — the construction NoCurrentDocument_PresentsASupersededReleaseAsTheStateOfThings
+        // deliberately keeps legal.
+        "FORAGER_INTEGRATION.md",
+        "KNOWLEDGE_ARCHITECTURE.md",
+        "KNOWLEDGE_API.md",
+        "KNOWLEDGE_SECURITY.md",
+        "RAG.md",
     };
 
     /// <summary>

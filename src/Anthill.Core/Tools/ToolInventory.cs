@@ -76,6 +76,21 @@ public static class ToolInventory
         // verified records has no way for work to build on work. Gated on the producing mission's
         // persisted grade, so it can register unconditionally and refuse honestly.
         ReadArtifactTool.ToolName,
+        // v0.3.8.121: organizational knowledge, from FORAGER. Registered by
+        // Anthill.Modules.Knowledge and ONLY when knowledge_enabled is set — unlike most module
+        // tools, these are not registered-and-refusing when the feature is off. A colony with no
+        // knowledge base has no knowledge to offer, and six tools that can only ever fail would cost
+        // context on every turn while inviting a model to keep trying.
+        //
+        // The names live in Anthill.SDK.Knowledge.KnowledgeToolNames because the module may not name
+        // Core and Core must not guess at the module's spelling — the same argument
+        // SystemActionToolNames and ExternalActionToolNames already make.
+        Anthill.SDK.Knowledge.KnowledgeToolNames.Search,
+        Anthill.SDK.Knowledge.KnowledgeToolNames.Retrieve,
+        Anthill.SDK.Knowledge.KnowledgeToolNames.Get,
+        Anthill.SDK.Knowledge.KnowledgeToolNames.Evidence,
+        Anthill.SDK.Knowledge.KnowledgeToolNames.Entity,
+        Anthill.SDK.Knowledge.KnowledgeToolNames.Review,
     };
 
     /// <summary>

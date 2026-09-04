@@ -56,6 +56,17 @@ public class FullRosterQualificationTests
             // `colony_state`. Same reason it is here: the contract declares it, so a fixture that
             // omitted it would fail qualification for a tool the colony genuinely registers.
             Anthill.Core.Tools.ReadArtifactTool.ToolName,
+            // v0.3.8.121 — the knowledge lane. Registered unconditionally by
+            // Anthill.Modules.Knowledge (they refuse at call time when FORAGER is not configured),
+            // so a fully-equipped colony has all six and the researcher's contract can declare five
+            // of them. `knowledge_review` is declared by no role today and is still listed: this set
+            // describes what the colony REGISTERS, not what any contract happens to reach for.
+            Anthill.SDK.Knowledge.KnowledgeToolNames.Search,
+            Anthill.SDK.Knowledge.KnowledgeToolNames.Retrieve,
+            Anthill.SDK.Knowledge.KnowledgeToolNames.Get,
+            Anthill.SDK.Knowledge.KnowledgeToolNames.Evidence,
+            Anthill.SDK.Knowledge.KnowledgeToolNames.Entity,
+            Anthill.SDK.Knowledge.KnowledgeToolNames.Review,
         };
 
     /// <summary>

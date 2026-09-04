@@ -458,7 +458,8 @@ const PAGE_TITLES = {
   activity:'Activity', pheromones:'Memory & Signals', homelab:'Infrastructure', antconfig:'Roles',
   autonomy:'Automation', security:'Security', shell:'Terminal', settings:'Settings', users:'Users',
   chat:'Chat', projects:'Projects', toolsview:'Tools',
-  readiness:'Readiness', projectview:'Project', integrations:'Integrations'
+  readiness:'Readiness', projectview:'Project', integrations:'Integrations',
+  knowledge:'Knowledge'
 };
 const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
 PAGE_ENTER['overview']=()=>{
@@ -556,6 +557,12 @@ const IA = [
     // the integrations do. Admin-only because every mutation behind it — mint, charter, manifest,
     // dispatch, stop, unlink — is gated on a Micromound permission a reader does not hold.
     { label:'Micromound', route:'/tools/micromound', page:'micromound', vis:'admin' },
+    // v0.3.8.121: organizational knowledge, from FORAGER. A section under Tools rather than a
+    // sixth top-level destination — navigation.test.js pins the top level at exactly five, and
+    // knowledge is a capability the colony consumes, which is what this domain is for.
+    // vis:'all' because READING knowledge needs only read_knowledge; every mutation behind it
+    // (ingest, cancel, retry) is separately gated on manage_knowledge at the route.
+    { label:'Knowledge', route:'/tools/knowledge', page:'knowledge', vis:'all' },
   ]},
   { type:'domain', id:'settings', label:'Settings', vis:'admin', sections:[
     { label:'General', route:'/settings/general', page:'settings', vis:'admin' },
@@ -603,7 +610,8 @@ Object.assign(PAGE_HOME,{
   antconfig:'/colony/inspector', antobs:'/colony/inspector',
   autonomy:'/projects', security:'/settings/security',
   shell:'/settings/terminal', settings:'/settings/general', users:'/settings/users',
-  integrations:'/tools/integrations', projectview:'/projects', readiness:'/settings/readiness'
+  integrations:'/tools/integrations', projectview:'/projects', readiness:'/settings/readiness',
+  knowledge:'/tools/knowledge'
 });
 // Homelab in-page sub-nav (data-sub) → the canonical route that owns that sub-page, so the
 // existing #hl-subnav buttons drive breadcrumbs / sidebar / URL through the router (v2.6 Phase 2).
