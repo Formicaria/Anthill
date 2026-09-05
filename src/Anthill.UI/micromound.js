@@ -183,6 +183,7 @@ function mmSelect(id) {
   mmSelected = id;
   document.querySelectorAll('[data-mm-target]').forEach(el => { el.textContent = id || '(none)'; });
   mmRenderFleet();
+  mmSetupLoad();
   mmSay('Forms now act on ' + id + '.', true);
 }
 
@@ -488,4 +489,278 @@ function mmChamber() {
   };
 }
 
-PAGE_ENTER['micromound'] = () => { loadMicromound(); mmChamber(); };
+/* ═══ THE SET-UP CARD — v0.3.8.123 ═══════════════════════════════════════════
+   Everything below the Advanced fold on this page is the contract itself, and every field in it is
+   real: a capability id, an action-class enum, a lease TTL in seconds, a `device_limits` map keyed
+   by capability, evidence expressed as glob patterns. None of them is a question a person can
+   answer, which is what the operator meant by "less of a json file communicated as settings".
+
+   ── WHERE THE TRANSLATION LIVES, AND WHY IT IS NOT HERE ─────────────────────
+   `MicromoundAuthoring` on the server compiles the answers below into exactly the `CharterRequest`
+   and `ConfigurationRequest` the two existing services already take. This file renders the
+   questions and posts them; it computes no ceiling, derives no limit and decides no policy. That
+   division is the same one the fleet listing lives under — the console renders what the colony
+   decided — and it exists so a second, browser-side idea of what a charter means cannot drift from
+   the server's, which is how the sector map broke and had to be moved server-side at `.115`.
+
+   ── ONLY WHAT THE DEVICE REPORTED IS OFFERED ────────────────────────────────
+   The capability picker is populated from `reported`, which is `MoundRecord.Capabilities` — what
+   the mound said at enrolment that it physically has. A form built here therefore cannot ask for
+   something the charter issuer would refuse, so the operator finds out at the moment they would
+   have made the mistake rather than after a round trip.
+
+   ── THE PREVIEW IS THE POINT ────────────────────────────────────────────────
+   Every edit posts to `/micromound/authoring/preview`, which compiles and issues NOTHING, and the
+   answer comes back as refusals, warnings and the two documents the save would write. So the
+   operator sees the JSON they used to have to author — as an outcome they can check, not as a
+   thing they have to produce. Nothing is hidden; what changed is who writes it.
+
+   ── A SAVE FROM HERE NEVER DELETES ADVANCED WORK ────────────────────────────
+   A manifest and a charter are complete replacements, so saving a simple form writes the WHOLE
+   document and anything the form does not know about would be gone. The projection hands back an
+   `advanced` block holding exactly those parts — manifest-declared workers, a reasoning mode,
+   grants with no device row — this file posts it straight back untouched, and `unrepresented` names
+   every one of them on screen. Carrying something silently and losing it silently are one bug
+   apart, so it is carried AND said. */
+
+let mmSetup = null;        // the last form the server projected, as it will be posted back
+let mmSetupMeta = null;    // catalog, roster, reported capabilities, vocabularies
+let mmPreviewTimer = 0;
+
+const MM_CONTROL_LABEL = {
+  manual_only: 'Manual only — a person asks, every time',
+  ask_first: 'Ask first — anything may propose, a person answers',
+  within_limits: 'On its own, within the limits below',
+};
+const MM_LEVEL_LABEL = {
+  watch_only: 'Watch only — it reads and reports, nothing moves',
+  reversible: 'Small reversible things — a light, a fan',
+  physical: 'Real physical action, inside the limits below',
+};
+
+async function mmSetupLoad() {
+  const box = document.getElementById('mm-setup-body');
+  if (!box) return;
+  if (!mmSelected) { mmSetup = null; box.innerHTML = '<div class="mm-empty">Choose a mound above to set it up.</div>'; return; }
+  box.innerHTML = '<div class="mm-empty">Reading this mound…</div>';
+  try {
+    const r = await api('/micromound/authoring/' + encodeURIComponent(mmSelected));
+    const d = (r && r.data) || r;
+    mmSetup = d.form || null;
+    mmSetupMeta = d;
+    mmSetupRender();
+  } catch (e) {
+    mmSetup = null;
+    box.innerHTML = '<div class="mm-empty">This mound could not be read: ' + escapeHtml((e && e.message) || 'unknown error') + '</div>';
+  }
+}
+
+/** A capability id as a sentence, from the server's catalog. Unknown ids still read. */
+function mmCap(id) {
+  const rows = (mmSetupMeta && mmSetupMeta.catalog) || [];
+  return rows.find(c => c.id === id) || { id: id, label: id, kind: 'sensor', unit: '', verifiable: false };
+}
+function mmActs(id) { return mmCap(id).kind === 'actuator'; }
+
+function mmSetupRender() {
+  const box = document.getElementById('mm-setup-body');
+  if (!box || !mmSetup) return;
+  const meta = mmSetupMeta || {};
+  const reported = meta.reported || [];
+  const ants = meta.ants || [];
+  const devices = mmSetup.devices || [];
+  const used = devices.map(d => d.capability);
+  const spare = reported.filter(c => used.indexOf(c) < 0);
+
+  const opt = (list, chosen, label) => list.map(v =>
+    '<option value="' + escapeHtml(v) + '"' + (v === chosen ? ' selected' : '') + '>'
+    + escapeHtml(label ? label(v) : v) + '</option>').join('');
+
+  let html = '';
+
+  if (meta.enrolled === false)
+    html += '<div class="mm-refuse">This mound has not enrolled yet, so nothing can be signed for it. '
+      + 'Mint a token above and let the device present it first.</div>';
+  if (meta.stopped)
+    html += '<div class="mm-refuse">A stop is in force for this mound. Configuration and charters are '
+      + 'both things a stop takes precedence over, so a save will be refused until it is cleared.</div>';
+
+  html += '<div class="mm-grid">'
+    + '<div class="mm-f mm-wide"><label for="mm-su-purpose">What is this mound for?</label>'
+    + '<input id="mm-su-purpose" data-mm-form="purpose" placeholder="Greenhouse bench 2" value="' + escapeHtml(mmSetup.purpose || '') + '"></div>'
+    + '<div class="mm-f"><label for="mm-su-control">Who decides when it acts?</label><select id="mm-su-control" data-mm-form="control_mode">'
+    + opt(meta.control_modes || ['manual_only'], mmSetup.control_mode, v => MM_CONTROL_LABEL[v] || v) + '</select></div>'
+    + '<div class="mm-f"><label for="mm-su-level">How far may it go?</label><select id="mm-su-level" data-mm-form="action_level">'
+    + opt(meta.action_levels || ['watch_only'], mmSetup.action_level, v => MM_LEVEL_LABEL[v] || v) + '</select></div>'
+    // The one question that replaced "what should it do offline?" — see MicromoundAuthoring's
+    // fourth decision. This has a mechanism behind it; that one had nowhere to go.
+    + '<div class="mm-f"><label for="mm-su-checkin">Must check in every (minutes)</label>'
+    + '<input id="mm-su-checkin" data-mm-form="check_in_minutes" type="number" min="1" max="1440" value="' + escapeHtml(String(mmSetup.check_in_minutes || 15)) + '">'
+    + '<span class="mm-sub">Out of contact for longer and it goes to its safe state on its own.</span></div>'
+    + '<div class="mm-f"><label for="mm-su-days">Re-authorise after (days)</label>'
+    + '<input id="mm-su-days" data-mm-form="authority_days" type="number" min="1" max="365" value="' + escapeHtml(String(mmSetup.authority_days || 7)) + '"></div>'
+    + '<div class="mm-f"><label for="mm-su-proof">Proof no more often than (seconds)</label>'
+    + '<input id="mm-su-proof" data-mm-form="proof_interval_s" type="number" min="1" value="' + escapeHtml(String(mmSetup.proof_interval_s || 60)) + '"></div>'
+    + '<div class="mm-f"><label for="mm-su-safe">Safe state</label>'
+    + '<input id="mm-su-safe" data-mm-form="safe_state" value="' + escapeHtml(mmSetup.safe_state || 'all_actuators_off') + '">'
+    + '<span class="mm-sub">What it de-energises into. Every charter must be compatible with it.</span></div>'
+    + '</div>';
+
+  html += '<h4 style="margin:14px 0 4px">What it is wired to</h4>';
+  if (!reported.length)
+    html += '<div class="mm-empty">This mound has not reported any capabilities, so there is nothing to '
+      + 'assign yet. A device reports what it physically has when it enrols.</div>';
+
+  devices.forEach((d, i) => {
+    const c = mmCap(d.capability);
+    const unit = c.unit ? ' (' + c.unit + ')' : '';
+    html += '<div class="mm-dev" data-mm-dev="' + i + '">'
+      + '<div class="mm-dev-hd"><strong>' + escapeHtml(c.label) + '</strong>'
+      + '<span class="mm-kind">' + escapeHtml(c.kind) + '</span>'
+      + '<code class="mm-sub">' + escapeHtml(d.capability) + '</code>'
+      + '<button class="btn btn-sm" data-mm-drop="' + i + '" style="margin-left:auto">Remove</button></div>'
+      + '<div class="mm-grid">'
+      + '<div class="mm-f"><label>What it does here</label><input data-mm-row="' + i + '" data-mm-field="purpose" placeholder="bench 2 soil probe" value="' + escapeHtml(d.purpose || '') + '"></div>'
+      + '<div class="mm-f"><label>Which ant holds it</label><select data-mm-row="' + i + '" data-mm-field="assigned_ant">'
+      + opt(ants, d.assigned_ant) + '</select></div>';
+
+    // Only an actuator gets bounds, because only an actuator has anything for a bound to apply to —
+    // the server refuses a run time on a thermometer, and offering one here would invite that.
+    if (mmActs(d.capability)) {
+      html += '<div class="mm-f"><label>Never below' + escapeHtml(unit) + '</label><input data-mm-row="' + i + '" data-mm-field="safe_min" type="number" step="any" value="' + escapeHtml(d.safe_min == null ? '' : String(d.safe_min)) + '"></div>'
+        + '<div class="mm-f"><label>Never above' + escapeHtml(unit) + '</label><input data-mm-row="' + i + '" data-mm-field="safe_max" type="number" step="any" value="' + escapeHtml(d.safe_max == null ? '' : String(d.safe_max)) + '"></div>'
+        + '<div class="mm-f"><label>Longest single run (s)</label><input data-mm-row="' + i + '" data-mm-field="max_run_s" type="number" step="any" value="' + escapeHtml(d.max_run_s == null ? '' : String(d.max_run_s)) + '"></div>'
+        + '<div class="mm-f"><label>Rest between runs (s)</label><input data-mm-row="' + i + '" data-mm-field="min_rest_s" type="number" step="any" value="' + escapeHtml(d.min_rest_s == null ? '' : String(d.min_rest_s)) + '"></div>'
+        + '<div class="mm-f"><label>At most, per hour</label><input data-mm-row="' + i + '" data-mm-field="max_per_hour" type="number" step="any" value="' + escapeHtml(d.max_per_hour == null ? '' : String(d.max_per_hour)) + '"></div>';
+      if (c.verifiable) {
+        const sensors = devices.filter(x => !mmActs(x.capability)).map(x => x.capability);
+        html += '<div class="mm-f"><label>How do we confirm it acted?</label><select data-mm-row="' + i + '" data-mm-field="verified_by">'
+          + '<option value="">Nothing checks it</option>'
+          + sensors.map(sv => '<option value="' + escapeHtml(sv) + '"' + (sv === d.verified_by ? ' selected' : '') + '>' + escapeHtml(mmCap(sv).label) + '</option>').join('')
+          + '</select></div>';
+      }
+    } else {
+      html += '<div class="mm-f mm-wide"><span class="mm-sub">This one only reads, so it has no limits to set '
+        + 'and nothing to confirm.</span></div>';
+    }
+    html += '</div></div>';
+  });
+
+  if (spare.length)
+    html += '<div class="mm-f" style="margin-top:8px"><label for="mm-su-add">Add something the device reported</label>'
+      + '<select id="mm-su-add"><option value="">Choose…</option>'
+      + spare.map(sv => '<option value="' + escapeHtml(sv) + '">' + escapeHtml(mmCap(sv).label) + ' — ' + escapeHtml(sv) + '</option>').join('')
+      + '</select></div>';
+  else if (reported.length)
+    html += '<div class="mm-sub" style="margin-top:8px">Everything this mound reported is assigned.</div>';
+
+  (meta.unrepresented || []).forEach(u => {
+    html += '<div class="mm-carry">Kept as it is, and not editable here: ' + escapeHtml(u)
+      + '. Saving from this card does not remove it.</div>';
+  });
+
+  html += '<div id="mm-su-preview"></div>'
+    + '<button class="mm-btn" id="mm-su-save">Save and issue</button>'
+    + '<span class="mm-sub" style="margin-left:8px">Writes the hardware map first, then the authority. '
+    + 'Both wait in the downlink queue until the device beats — the colony never dials a mound.</span>';
+
+  box.innerHTML = html;
+  mmSetupBind();
+  mmSetupPreview();
+}
+
+/** Every control on the card, wired without an inline handler. CSP has no exceptions here. */
+function mmSetupBind() {
+  const box = document.getElementById('mm-setup-body');
+  if (!box) return;
+
+  box.querySelectorAll('[data-mm-form]').forEach(el => {
+    el.addEventListener('change', () => {
+      const key = el.dataset.mmForm;
+      mmSetup[key] = el.type === 'number' ? Number(el.value) : el.value;
+      mmSetupPreview();
+    });
+  });
+
+  box.querySelectorAll('[data-mm-row]').forEach(el => {
+    el.addEventListener('change', () => {
+      const row = mmSetup.devices[Number(el.dataset.mmRow)];
+      if (!row) return;
+      const field = el.dataset.mmField;
+      // A blank number is ABSENT, not zero. Zero is a legitimate bound — "never above 0" means
+      // something — so the two have to stay distinguishable all the way to the server.
+      row[field] = el.type === 'number' ? (el.value.trim() === '' ? null : Number(el.value)) : el.value;
+      mmSetupPreview();
+    });
+  });
+
+  box.querySelectorAll('[data-mm-drop]').forEach(el => {
+    el.addEventListener('click', () => {
+      mmSetup.devices.splice(Number(el.dataset.mmDrop), 1);
+      mmSetupRender();
+    });
+  });
+
+  const add = document.getElementById('mm-su-add');
+  if (add) add.addEventListener('change', () => {
+    const id = add.value;
+    if (!id) return;
+    mmSetup.devices = mmSetup.devices || [];
+    // `device` and `driver` are left blank on purpose: the server derives both, and the derived
+    // device name is what lets the projection pair the binding back to its capability on reload.
+    // `default_ant` likewise comes from the catalog rather than being decided here: which of the
+    // seven holds a capability is ANTS.md's division, and this file does not get a copy of it.
+    mmSetup.devices.push({ capability: id, device: '', driver: '', purpose: '',
+      assigned_ant: mmCap(id).default_ant || (mmSetupMeta && mmSetupMeta.ants || [''])[0],
+      safe_min: null, safe_max: null, max_run_s: null, min_rest_s: null, max_per_hour: null,
+      verified_by: '', settings: null });
+    mmSetupRender();
+  });
+
+  const save = document.getElementById('mm-su-save');
+  if (save) save.addEventListener('click', mmSetupSave);
+}
+
+/** Compile without issuing, debounced, and show what the save would write. */
+function mmSetupPreview() {
+  if (mmPreviewTimer) clearTimeout(mmPreviewTimer);
+  mmPreviewTimer = setTimeout(async () => {
+    const out = document.getElementById('mm-su-preview');
+    if (!out || !mmSetup) return;
+    try {
+      const r = await api('/micromound/authoring/preview', 'POST', mmSetup);
+      mmSetupShowPlan((r && r.data) || r, out);
+    } catch (e) {
+      out.innerHTML = '<div class="mm-refuse">' + escapeHtml((e && e.message) || 'This could not be checked.') + '</div>';
+    }
+  }, 260);
+}
+
+function mmSetupShowPlan(plan, out) {
+  if (!plan) { out.innerHTML = ''; return; }
+  let html = '';
+  (plan.refusals || []).forEach(x => { html += '<div class="mm-refuse">' + escapeHtml(x) + '</div>'; });
+  (plan.warnings || []).forEach(x => { html += '<div class="mm-warn">' + escapeHtml(x) + '</div>'; });
+  // The compiled documents, shown rather than hidden. The operator no longer has to WRITE this —
+  // that is the whole change — but they are still entitled to see exactly what will be signed.
+  if (plan.compiled)
+    html += '<details style="margin-top:8px"><summary class="mm-sub">What this will actually issue</summary>'
+      + '<pre class="mm-pre">' + escapeHtml(JSON.stringify(plan.compiled, null, 2)) + '</pre></details>';
+  out.innerHTML = html;
+}
+
+async function mmSetupSave() {
+  if (!mmSetup) return;
+  const d = await mmPost('/micromound/authoring', mmSetup, 'Set-up');
+  if (!d) return;
+  const out = document.getElementById('mm-su-preview');
+  if (out) mmSetupShowPlan(d, out);
+  mmSay('Saved. Manifest ' + (d.manifest_id || '—').slice(0, 8) + ' and charter '
+    + (d.charter_id || '—').slice(0, 8) + ' are awaiting collection ('
+    + (d.awaiting_collection || 0) + ' queued). The mound validates both against its own drivers '
+    + 'and may still refuse — that answer arrives as an ack, never inferred.', true);
+  loadMicromound();
+  mmSetupLoad();
+}
+
+PAGE_ENTER['micromound'] = () => { loadMicromound(); mmChamber(); mmSetupLoad(); };

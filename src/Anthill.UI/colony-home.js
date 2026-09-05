@@ -135,7 +135,7 @@
     if (typeof setColonyPref === 'function') { if (mo) setColonyPref('motion', mo.value); if (tr) setColonyPref('pheromones', tr.value === 'off' ? 'off' : 'all'); }
     var conduits = { density: cd ? cd.value : 'normal', bright: cb ? Number(cb.value) : 1, color: (!conduitAuto && cc) ? cc.value : null };
     var links = { opacity: la ? Number(la.value) : .125 };
-    if (live) live.setOptions({ labels: lb ? lb.value : 'zoom', conduits: conduits, links: links });
+    if (live) live.setOptions({ labels: lb ? lb.value : 'all', conduits: conduits, links: links });
     var ab = document.querySelector('[data-homeact="conduitauto"]'); if (ab) ab.classList.toggle('on', conduitAuto);
     try { localStorage.setItem('anthill.colony.view', JSON.stringify({ motion: mo && mo.value, labels: lb && lb.value, trails: tr && tr.value, conduits: conduits, links: links })); } catch (e) { }
   }
@@ -144,9 +144,10 @@
     if (!v) { applyView(); return; }
     var mo = $('clb-motion'), lb = $('clb-labels'), tr = $('clb-trails'), cd = $('clb-cdens'), cb = $('clb-cbright'), cc = $('clb-ccolor'), la = $('clb-linkalpha');
     if (mo && v.motion) mo.value = v.motion; if (tr && v.trails) tr.value = v.trails;
-    // `normal` was the old name for "chamber names always" and is now `fixed`; a browser that
-    // remembers it heals rather than falling back to a default the operator never chose.
-    if (lb && v.labels) lb.value = (v.labels === 'normal' ? 'fixed' : v.labels);
+    // `normal` (.121), `fixed` and `zoom` (.122) all folded into `all` at .123 — one setting for
+    // "show everything", earned by zoom. A browser remembering any of the three heals to it rather
+    // than assigning a value the <select> no longer offers, which would leave the control blank.
+    if (lb && v.labels) lb.value = /^(normal|fixed|zoom)$/.test(v.labels) ? 'all' : v.labels;
     if (la && v.links && isFinite(v.links.opacity)) la.value = v.links.opacity;
     if (v.conduits) { if (cd && v.conduits.density) cd.value = v.conduits.density; if (cb && v.conduits.bright) cb.value = v.conduits.bright; if (v.conduits.color) { conduitAuto = false; if (cc) cc.value = v.conduits.color; } else conduitAuto = true; }
     applyView();
@@ -170,16 +171,21 @@
     }
     var list = live.listMounds();
     if (!list.length) {
-      box.innerHTML = '<div class="muted">No mound chambers yet. Use <strong>+ Mound</strong> on Colony › Live to add one.</div>';
+      box.innerHTML = '<div class="muted">No mound chambers. Use <strong>+ Mound</strong> on Colony › Live to add one.</div>';
       return;
     }
     box.innerHTML = list.map(function (m) {
+      // A chamber the server declared — INFRASTRUCTURE, the fleet chamber — is listed like any
+      // other mound and says so instead of offering a Delete the renderer would refuse.
       return '<div class="mound-row" data-mound="' + escapeHtml(m.id) + '">'
         + '<span class="mound-dot" style="background:' + escapeHtml(m.color) + '"></span>'
         + '<span class="mound-name">' + escapeHtml(m.label) + '</span>'
-        + '<span class="muted mound-facts">' + m.residents + ' ant' + (m.residents === 1 ? '' : 's') + ' · label only</span>'
+        + '<span class="muted mound-facts">' + m.residents + ' ant' + (m.residents === 1 ? '' : 's')
+        + (m.removable ? ' · label only' : ' · built in') + '</span>'
         + '<button class="btn btn-sm" data-homeact="moundopen" data-mound-id="' + escapeHtml(m.id) + '">Settings</button>'
-        + '<button class="btn btn-sm clb-danger" data-homeact="moundremove" data-mound-id="' + escapeHtml(m.id) + '">Delete chamber</button>'
+        + (m.removable
+          ? '<button class="btn btn-sm clb-danger" data-homeact="moundremove" data-mound-id="' + escapeHtml(m.id) + '">Delete chamber</button>'
+          : '<span class="muted mound-facts">not yours to delete</span>')
         + '</div>';
     }).join('');
   }
@@ -206,13 +212,14 @@
     if (facts) facts.textContent = (c.records ? c.records + ' record' + (c.records === 1 ? '' : 's') : 'no records') + (c.verified ? ' (' + c.verified + ' verified)' : '') + ' · ' + (c.residents || 0) + ' resident' + (c.residents === 1 ? '' : 's') + (c.running ? ' · ' + c.running + ' running' : '');
     var live = liveApi(), st = live && live.getSectorStyle(s.id);
     if (st) { var col = $('clb-sec-color'), gl = $('clb-sec-glow'), br = $('clb-sec-bright'); if (col) col.value = st.color || st.defaultColor; if (gl) gl.value = st.glow; if (br) br.value = st.bright; if (dot) dot.style.background = st.color || st.defaultColor; }
-    // A mound chamber gets two extra doors; an operator-added one gets both, a registry chamber
-    // neither. Delete is offered ONLY for what the operator created — the renderer refuses the rest
-    // regardless, and a button that exists to be refused is worse than no button.
-    var isMound = live && live.isMound && live.isMound(s.id), added = live && live.isAddedMound && live.isAddedMound(s.id);
+    // Every mound chamber gets both doors as of v0.3.8.123: its own settings, and the registry that
+    // lists the whole fleet. The registry link used to be offered only for operator-added chambers,
+    // which meant the one chamber most operators meet first — INFRASTRUCTURE — had no way through
+    // to the page that now lists it. Neither button deletes anything, so neither can be refused.
+    var isMound = live && live.isMound && live.isMound(s.id);
     var bS = $('clb-mound-settings'), bD = $('clb-mound-registry');
     if (bS) bS.style.display = isMound ? '' : 'none';
-    if (bD) bD.style.display = added ? '' : 'none';
+    if (bD) bD.style.display = isMound ? '' : 'none';
   }
   var recordAnt = null;
   function showResident(h) {
@@ -342,9 +349,11 @@
     syncToggle();
     if (!live) { showSector(null); showRecord(null); return; }
     live.on('sector', function (s) { showSector(s); showRecord(null); markView(null); });
-    // v0.3.8.122 — a mound chamber's second click is its settings page. The renderer decides WHICH
-    // chambers are doors (it owns the sector table); this file owns navigation, so it does the go().
-    live.on('moundsettings', function () { go('/tools/micromound'); });
+    // A mound chamber's second click is ITS settings page — the one for that mound, not the fleet's.
+    // The renderer decides which chambers are doors (it owns the sector table) and hands over the
+    // chamber it was; this file owns navigation, so it does the go() and carries the id along.
+    // v0.3.8.123: the id used to be dropped here, which is why every mound opened the same page.
+    live.on('moundsettings', function (s) { openMoundSettings(s && s.id); });
     live.on('deselect', function () { showSector(null); showRecord(null); });
     live.on('record', function (r) { showRecord(r); });
     live.on('resident', function (h) { showResident(h); });
@@ -386,6 +395,15 @@
   function init() {
     var page = $('page-colony'); if (!page) return;
     page.addEventListener('click', onAct);
+    /* THE REGISTRY IS A DIFFERENT PAGE ELEMENT, AND THAT IS WHY DELETE DID NOTHING. v0.3.8.123.
+
+       `onAct` was bound to `#page-colony` alone. The mound registry lives in `#page-mounds`, so its
+       Settings and Delete buttons emitted clicks that reached no handler at all — the operator's
+       report was simply "the delete micromound button doesnt work in the mound directory", and it
+       never could have: the listener was on a different subtree. Bound here rather than moved to
+       `document`, because a document-level handler would start answering for every `data-homeact`
+       anywhere in the console, which is a much larger claim than this file should make. */
+    var mpage = $('page-mounds'); if (mpage) mpage.addEventListener('click', onAct);
     var input = $('ccp-input');
     if (input) {
       input.addEventListener('input', autosize);
