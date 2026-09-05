@@ -65,7 +65,7 @@ public static partial class ApiHost
     // v0.3.8.52: the app.js split — one field per domain asset.
     private static string UiHomelabJs = "";
     // v0.3.8.55: two more split assets — inspector routing and themes (the app.js size guard).
-    private static string UiInspectorRoutingJs = "";
+    private static string UiRoutingControlsJs = "";
     private static string UiThemesJs = "";
     private static string UiConsoleExtrasJs = "";
     // Colony Live (design doc §17, stage 3) — projection layer + 3D renderer, split assets like the rest.
@@ -276,7 +276,7 @@ public static partial class ApiHost
         UiMissionThreadJs = LoadUiAsset("mission-thread.js");
         UiGridJs = LoadUiAsset("dashboard-grid.js");
         UiHomelabJs = LoadUiAsset("homelab.js");
-        UiInspectorRoutingJs = LoadUiAsset("inspector-routing.js");
+        UiRoutingControlsJs = LoadUiAsset("routing-controls.js");
         UiThemesJs = LoadUiAsset("themes.js");
         UiConsoleExtrasJs = LoadUiAsset("console-extras.js");
         UiColonyTopologyJs = LoadUiAsset("colony-topology.js");

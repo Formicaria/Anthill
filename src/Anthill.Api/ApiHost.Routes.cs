@@ -84,12 +84,14 @@ public static partial class ApiHost
             return Results.Content(UiHomelabJs, "text/javascript; charset=utf-8");
         });
 
-        // v0.3.8.55: inspector routing + themes, split out of app.js under the size guard.
+        // v0.3.8.55: routing controls + themes, split out of app.js under the size guard.
+        // Renamed from inspector-routing.js at v0.3.8.124, when the Ant Inspector page it was named
+        // for was retired and routing moved into projects.
         // Same-origin, same no-store policy — the CSP stays script-src 'self'.
-        app.MapGet("/ui/inspector-routing.js", (HttpContext ctx) =>
+        app.MapGet("/ui/routing-controls.js", (HttpContext ctx) =>
         {
             ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
-            return Results.Content(UiInspectorRoutingJs, "text/javascript; charset=utf-8");
+            return Results.Content(UiRoutingControlsJs, "text/javascript; charset=utf-8");
         });
         app.MapGet("/ui/themes.js", (HttpContext ctx) =>
         {

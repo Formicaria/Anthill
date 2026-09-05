@@ -99,6 +99,7 @@ public class ConsoleRouteCoverageTests
         // The v0.3.8.48 schedule entries left this ledger the same release they joined it: the
         // project workspace's Schedules tab reaches all of them.
 
+
         // --- The UI GAPS section emptied at v0.3.8.46. Every entry left by gaining a surface: ----
         // "/readiness/json", "/readiness/certification" and "/readiness/qualification-report" —
         //   the Readiness page (Administration → Readiness): snapshot with attestation, the

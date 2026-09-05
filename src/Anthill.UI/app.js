@@ -4319,6 +4319,30 @@ document.getElementById('obj-seed-improve')?.addEventListener('click',()=>{
 });
 
 // -- Per-ant telemetry (v1.8.23 as the Observatory; the ant tab in Colony Live since .124) -----
+
+/**
+ * One ant's lifetime counters, for whoever is drawing that ant. v0.3.8.124.
+ *
+ * LIVES HERE RATHER THAN IN colony-home.js FOR A RULE, not for tidiness. `ColonyLiveGuardTests`
+ * holds that colony-host.js is the ONLY file in the Colony Live feature that reaches the network —
+ * the host hydrates, the reducer and the renderer consume, and the page chrome resolves a project
+ * for its composer and nothing more. The ant tab needs telemetry, so the fetch belongs outside that
+ * boundary: app.js already owns `/ants/stats` (this is what `loadAntObs` read), and colony-home.js
+ * reaches it the same way it already reaches `onAntRecentToggle`.
+ *
+ * CACHED FOR FIFTEEN SECONDS because `/ants/stats` is a COLONY-WIDE read — every ant's counters in
+ * one payload — and an operator clicking through six residents in a row should cost one request,
+ * not six. Short enough that a mission finishing mid-inspection shows up.
+ */
+let antTelemetryCache=null, antTelemetryAt=0;
+async function antTelemetry(){
+  const now=Date.now();
+  if(antTelemetryCache && now-antTelemetryAt<15000) return antTelemetryCache;
+  const r=await api('/ants/stats');
+  if(!r||!r.success) throw new Error((r&&r.message)||'telemetry unavailable');
+  antTelemetryCache=r.data||{}; antTelemetryAt=now;
+  return antTelemetryCache;
+}
 /* v0.3.8.124 — `PAGE_ENTER['antobs']`, `loadAntObs` and `loadAntObsDirectory` WERE HERE.
 
    The Ant Inspector was two things stapled together, and each half had a better home:

@@ -272,16 +272,18 @@
      was clicked. This is what the Ant Inspector page was for; the page is gone and the question it
      answered is now asked by clicking the thing you are asking about.
 
-     ONE FETCH, CACHED BY app.js's own `api` LAYER. `/ants/stats` is a colony-wide read — every
-     ant's counters in one payload — so clicking through six ants in a row costs one request, not
-     six. Recent activity stays behind a disclosure because it is a SECOND request per ant, and an
-     operator scanning residents wants the counters, not twelve event rows each time.
+     THE FETCH IS NOT HERE, AND THAT IS A RULE RATHER THAN A PREFERENCE. `ColonyLiveGuardTests`
+     holds that colony-host.js is the only file in this feature that reaches the network: the host
+     hydrates, the reducer and the renderer consume, and this file resolves a project for its
+     composer and nothing more. So the ant tab borrows `antTelemetry` from app.js, exactly as it
+     borrows `onAntRecentToggle` for the activity list. Recent activity stays behind a disclosure
+     because it is a SECOND request per ant, and an operator scanning residents wants the counters,
+     not twelve event rows each time.
 
      A WORKER HAS NO COUNTERS OF ITS OWN, and this says so rather than showing zeros. `/ants/stats`
      is keyed by ROLE; a worker's work is counted against its parent, so showing an empty card for
      `backend_coder` would read as "this worker has never run" when the truth is "the colony counts
      this under coder". */
-  var antStatsCache = null, antStatsAt = 0;
   async function showAntStats(res) {
     var host = $('clb-ant-stats'); if (!host) return;
     var roleId = String(res.roleId || '');
@@ -296,13 +298,11 @@
 
     host.innerHTML = '<div class="clb-ant-note">Reading telemetry…</div>';
     try {
-      var now = Date.now();
-      if (!antStatsCache || now - antStatsAt > 15000) {
-        var r = await api('/ants/stats');
-        if (!r || !r.success) throw new Error((r && r.message) || 'unavailable');
-        antStatsCache = r.data || {}; antStatsAt = now;
-      }
-      var s = (antStatsCache.ants || {})[roleId];
+      // `antTelemetry` lives in app.js, not here. colony-host.js is the only file in this feature
+      // that may reach the network — the host hydrates, the view consumes — so the ant tab borrows
+      // app.js's reader the same way it borrows `onAntRecentToggle`.
+      var data = (typeof antTelemetry === 'function') ? await antTelemetry() : null;
+      var s = data && (data.ants || {})[roleId];
       if (!s) {
         host.innerHTML = '<div class="clb-ant-note">No tasks recorded for this ant yet.</div>';
         return;
