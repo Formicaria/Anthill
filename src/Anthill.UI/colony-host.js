@@ -12,7 +12,7 @@
    The reducer (colony-topology.js) decides what an event means. The renderer
    (colony-live.js) draws the scene it publishes. This file toggles, hydrates,
    persists the operator's layout, and relays the renderer's events to the page
-   (colony-home.js) and to the console's existing Agent Inspector. It does not
+   (colony-home.js) and to the console's existing Ant Inspector. It does not
    decide, and it does not draw.
    ───────────────────────────────────────────────────────────────────────────── */
 (function () {
@@ -137,6 +137,12 @@
        the mound chamber is never built. Nothing here invents a device to have something to draw. */
     api('/micromound/mounds').then(function (fleet) {
       if (topo) topo.ingestMound((fleet && fleet.data) || fleet);
+      // v0.3.8.122 — the roster a `+ Mound` chamber is drawn with. Served by the micromound API
+      // (the only place that may read it), fetched here because this is the only file that fetches.
+      // A refusal is not a failure: the colony simply has no defaults to draw with yet.
+      if (typeof api === 'function') api('/micromound/roster/defaults')
+        .then(function (r) { var d = (r && r.data) || r; if (live && live.setMoundDefaults && d && d.ants) live.setMoundDefaults(d.ants); })
+        .catch(function () { });
     }).catch(function () { /* no module, or no permission: there is no mound. */ });
   }
 

@@ -451,4 +451,41 @@ async function mmEvidence(moundId) {
   } catch (e) { box.textContent = 'The evidence feed is not readable.'; }
 }
 
-PAGE_ENTER['micromound'] = () => loadMicromound();
+/* THE COLONY CHAMBER PANEL — v0.3.8.122.
+
+   Colony Live can hold many mound chambers, so "the micromound settings" stopped naming one thing.
+   Colony › Live and Colony › Mounds both hand the id over in `window.micromoundPendingId`, this page
+   reads it once and shows THAT chamber, and deleting here removes it from the live colony
+   immediately — the operator does not delete something and then find it still drawn.
+
+   WHAT A DELETE HERE DOES AND DOES NOT DO. It removes a chamber: a label in this operator's colony
+   view, with its name, its colour and its ants' names. It does not retire a device, revoke a token
+   or stop anything. An enrolled mound keeps answering under the identity its one-time token gave
+   it, which is the whole reason the labelling layer was safe to add. The panel says so in words,
+   because a Delete button next to "micromound" reads as the other thing. */
+function mmChamber() {
+  const box = document.getElementById('mm-chamber');
+  if (!box) return;
+  const id = (typeof window !== 'undefined' && window.micromoundPendingId) || null;
+  const live = (window.ColonyHost && ColonyHost.live && ColonyHost.live()) || null;
+  const chamber = (id && live && live.listMounds) ? live.listMounds().find(m => m.id === id) : null;
+  if (!chamber) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = '';
+  box.innerHTML =
+    '<h3>Colony chamber · ' + escapeHtml(chamber.label) + '</h3>'
+    + '<div class="mm-lede">This is how this mound appears in <strong>your</strong> colony view — its name, its '
+    + 'colour and its ' + chamber.residents + ' ant names. None of it reaches a device: an enrolled mound keeps '
+    + 'answering under the identity its enrollment token gave it, whatever you call it here.</div>'
+    + '<button class="btn btn-sm" id="mm-chamber-del">Delete chamber</button>'
+    + '<span class="mm-sub" style="margin-left:8px">Removes the chamber from the colony view only. No device is retired.</span>';
+  const del = document.getElementById('mm-chamber-del');
+  if (del) del.onclick = () => {
+    if (live && live.removeMound && live.removeMound(chamber.id)) {
+      try { window.micromoundPendingId = null; } catch (e) { }
+      mmChamber();
+      if (typeof toast === 'function') toast('Chamber removed from the colony view. No device was touched.');
+    }
+  };
+}
+
+PAGE_ENTER['micromound'] = () => { loadMicromound(); mmChamber(); };

@@ -41,12 +41,22 @@ jobs:
       # The ref is pinned at the workflow level (env.MICROMOUND_REF), not here. This step said
       # "pinned to a tag" while the code said `ref: main`; it now points at a real tag.
       #
-      # This also requires Formicaria/micromound to be READABLE BY THE RUNNER. The default
-      # GITHUB_TOKEN is scoped to this repository alone, so while micromound was private this
-      # step failed with "remote: Repository not found" — byte-identical to the error GitHub
-      # returns for a repository that does not exist, which is what made it hard to read. Both
-      # repositories are public. If micromound is ever taken private again, this step needs a
-      # `token:` (PAT or GitHub App) or an `ssh-key:` deploy key; nothing else here changes.
+      # THIS STEP DEPENDS ON Formicaria/micromound BEING PUBLIC, and that dependency is invisible
+      # from inside this repository. The default GITHUB_TOKEN is scoped to Anthill alone, so a
+      # private micromound fails here with "remote: Repository not found" — byte-identical to what
+      # GitHub returns for a repository that does not exist.
+      #
+      # v0.3.8.122 — micromound WAS private for a stretch, and this is what it cost. Every .NET job
+      # died right here on exit 128 and the error string sent every reader at MICROMOUND_REF, which
+      # was never wrong: v0.9.10 has been on the remote throughout. THE FIRST QUESTION WHEN THIS
+      # STEP FAILS IS NOT THE PIN. It is:
+      #
+      #     gh api repos/Formicaria/micromound --jq .private
+      #
+      # If that says true, either make it public again or give both checkout steps here — and the
+      # two in release.yml — a `token:` (a fine-grained PAT with Contents:Read on micromound,
+      # nothing else) or an `ssh-key:` deploy key. Note that a `token:` whose secret does not
+      # exist resolves to an empty string and fails IDENTICALLY, so add the secret first.
       - name: Check out the MICROMOUND wire contract
         uses: actions/checkout@v4
         with:

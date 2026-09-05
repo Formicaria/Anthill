@@ -1744,6 +1744,15 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
     .clb-mini{height:20px;padding:0 7px;font-size:9.5px;}
     .clb-mini-lbl{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:9px;color:var(--dim);}
     .clb-addmound{border:1px dashed rgba(255,255,255,.18);}
+    /* Removing a chamber is the one control in this bar that destroys something the operator made,
+       so it reads as such. It removes a LABEL, never a device — the title says so. */
+    .mound-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line,rgba(255,255,255,.08));}
+    .mound-row:last-child{border-bottom:0;}
+    .mound-dot{width:10px;height:10px;border-radius:50%;flex:0 0 auto;}
+    .mound-name{font-weight:600;min-width:150px;}
+    .mound-facts{flex:1 1 auto;font-size:11px;}
+    .clb-danger{color:#e2778f;border-color:rgba(226,119,143,.35);}
+    .clb-danger:hover{background:rgba(226,31,123,.14);}
     .clb-ant-edit{display:flex;align-items:center;gap:6px;margin:4px 0 6px;}
     .clb-ant-name{flex:1;height:24px;padding:0 7px;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--cream);font:inherit;font-size:11px;}
     /* the light theme: the live chrome becomes paper, like the rest of the console */
@@ -2269,7 +2278,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <button class="clb-btn" data-homeact="mission" title="Approach the Queen's core">Mission</button>
               <button class="clb-btn" data-homeact="memory" title="Approach Memory">Memory</button>
               <button class="clb-btn" data-homeact="mounds" title="Approach the Micromound">Mounds</button>
-              <button class="clb-btn clb-addmound" data-homeact="addmound" id="clb-addmound" title="Adopt a Micromound — opens the Micromound console (Tools › Micromound) where enrollment tokens are minted" style="display:none">+ Mound</button>
+              <button class="clb-btn clb-addmound" data-homeact="addmound" id="clb-addmound" title="Add a Micromound chamber to the colony — a label for your own fleet; it changes nothing on the device">+ Mound</button>
               <button class="clb-btn" data-homeact="follow" title="Ride the active mission circuit">Follow</button>
               <button class="clb-btn" data-homeact="resetview" title="Reset orbit and zoom">Reset view</button>
               <span class="clb-sep"></span>
@@ -2280,12 +2289,14 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                     <select class="clb-sel" id="clb-env" aria-label="Environment">
                       <option value="auto">Auto (theme)</option>
                       <option value="space">Galaxy</option><option value="light">Light</option><option value="strata">Strata</option>
-                      <option value="plane">Plane</option><option value="nebula">Nebula</option><option value="void">Void</option>
+                      <option value="nebula">Nebula</option><option value="void">Void</option>
                     </select></label>
                   <label class="clb-row"><span>Motion</span>
                     <select class="clb-sel" id="clb-motion" aria-label="Motion"><option value="off">Off</option><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option></select></label>
                   <label class="clb-row"><span>Labels</span>
-                    <select class="clb-sel" id="clb-labels" aria-label="Labels"><option value="normal" selected>All</option><option value="min">Focused only</option><option value="none">None</option></select></label>
+                    <select class="clb-sel" id="clb-labels" aria-label="Labels"><option value="zoom" selected>All (on zoom)</option><option value="fixed">All (always)</option><option value="min">Focused only</option><option value="none">None</option></select></label>
+                  <label class="clb-row"><span>Linkage</span>
+                    <input class="clb-range" id="clb-linkalpha" type="range" min="0" max="1" step="0.025" value="0.125" aria-label="Linkage opacity"></label>
                   <label class="clb-row"><span>Pheromone trails</span>
                     <select class="clb-sel" id="clb-trails" aria-label="Pheromone trails"><option value="on" selected>On</option><option value="off">Off</option></select></label>
                   <div class="clb-pop-hd">Conduits</div>
@@ -2311,10 +2322,14 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <label class="clb-mini-lbl" title="Glow size">glow <input type="range" class="clb-range clb-range-s" id="clb-sec-glow" min="0.5" max="2.5" step="0.1" value="1" aria-label="Glow size"></label>
             <label class="clb-mini-lbl" title="Brightness">bright <input type="range" class="clb-range clb-range-s" id="clb-sec-bright" min="0.3" max="2.5" step="0.1" value="1" aria-label="Brightness"></label>
             <button class="clb-btn clb-mini" data-homeact="secstylereset" title="Back to this chamber's own colour, glow and brightness">reset</button>
+            <!-- Only ever shown for a chamber the OPERATOR added (+ Mound). A registry chamber is
+                 not theirs to delete, and the renderer refuses it even if this button were shown. -->
+            <button class="clb-btn clb-mini" data-homeact="moundsettings" id="clb-mound-settings" style="display:none" title="Open this mound's settings in Tools &#8250; Micromound">settings &#8594;</button>
+            <button class="clb-btn clb-mini" data-homeact="moundregistry" id="clb-mound-registry" style="display:none" title="All your mound chambers, and where one is deleted">registry &#8594;</button>
             <button class="clb-btn" data-homeact="survey" title="Back to the whole colony (Esc)">← Survey</button>
           </div>
           <!-- a selected record: event-derived facts, read-only (the §19 record index does not exist
-               yet, and this card does not pretend it does). "Open ant" goes to the Agent Inspector. -->
+               yet, and this card does not pretend it does). "Open ant" goes to the Ant Inspector. -->
           <div id="clb-record" class="clb-record" style="display:none">
             <div class="clb-record-title" id="clb-record-title"></div>
             <div class="clb-ant-edit" id="clb-ant-edit" style="display:none">
@@ -2428,7 +2443,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 
           <div class="card" id="card-inspector">
             <div class="card-head">
-              Agent Inspector
+              Ant Inspector
               <button class="collapse-btn" data-card="card-inspector" title="Collapse">▾</button>
             </div>
             <div class="card-body">
@@ -3012,6 +3027,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <p class="mm-lede">Every mound this colony knows, with the status IT computed. The colony
             never dials a mound &mdash; a device behind NAT dials in &mdash; so everything issued
             below waits in a downlink queue until the device beats.</p>
+          <!-- v0.3.8.122 — the COLONY CHAMBER this page was opened for, when it was opened from one.
+               A chamber is a label in the operator's colony view; a mound is a device enrolled by
+               token. They are different things and this panel says so, because a Delete button
+               beside the word "micromound" invites exactly the wrong reading. -->
+          <div id="mm-chamber" class="mm-card" style="display:none"></div>
           <div id="mm-fleet"></div>
           <div class="mm-say" id="mm-say"></div>
         </div>
@@ -3628,6 +3648,19 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <!-- --------------------------------------------------------------------
            PAGE: ANT INSPECTOR + PERFORMANCE OBSERVATORY (v1.8.23, UI Phase 8)
       --------------------------------------------------------------------- -->
+      <!-- v0.3.8.122 — the mound registry. Rendered by colony-home.js, which owns the colony's
+           chambers; this file provides the container and nothing else. -->
+      <div class="page page-scroll" id="page-mounds">
+        <div class="card">
+          <div class="card-hd"><span>Micromound registry</span></div>
+          <div class="card-bd">
+            <p class="muted" style="margin:0 0 10px">Every mound chamber in your colony. Names and colours here are
+              yours — they label your fleet and never reach a device, which stays enrolled under its own identity.</p>
+            <div id="mounds-list"></div>
+          </div>
+        </div>
+      </div>
+
       <div class="page page-scroll" id="page-antobs">
         <div class="page-hdr">
           <div><h1>Ant Inspector</h1><div class="sub">One box per role: model route, capability gates, lifetime performance, name &amp; colour. Colony-wide routing sits above the roles.</div></div>

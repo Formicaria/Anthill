@@ -59,14 +59,21 @@ public sealed class KnowledgeModule : IAnthillModule, IDisposable
     {
         ArgumentNullException.ThrowIfNull(options);
         _options = options;
-        _propose = propose ?? (_ => { });
+        // v0.3.8.122 — the default REFUSES rather than discarding. It was `_ => { }`: a module
+        // composed without a sink accepted every proposal, dropped it, and let the tool report
+        // success. A worker cannot tell a silent discard from a filing, so the default has to be the
+        // one that cannot be mistaken for either — the tool catches this and says the proposal could
+        // not be recorded, which is the truth.
+        _propose = propose ?? (_ => throw new InvalidOperationException(
+            "This knowledge module was composed without a proposal sink, so a review proposal has "
+          + "nowhere to be recorded."));
         _client = new ForagerClient(options, handler);
         _forager = new ForagerKnowledgeProvider(options, _client, _cache);
     }
 
     public string Name => "knowledge";
 
-    public string Version => "0.3.8.121";
+    public string Version => "0.3.8.122";
 
     /// <summary>
     /// The retrieval face, for the console's API surface.

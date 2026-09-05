@@ -294,6 +294,39 @@ public static partial class ApiHost
     private static void MapMicromoundEndpoints(WebApplication app)
     {
         // ---- Fleet: what the colony can see -------------------------------------------------
+        /* THE SEVEN DEFAULT MOUND ANTS, SO THE COLONY CAN DRAW A MOUND IT HAS NOT MET YET.
+           v0.3.8.122.
+
+           `+ Mound` adds a chamber to Colony Live immediately, populated with the roster every
+           mound runs. Those names have to come from somewhere, and there is exactly one honest
+           source: `MicromoundRoster`, itself a CHECKED projection of the device runtime's
+           `DefaultAnts` (`RosterProjectionTests` compares them by compiled reference, so a rename
+           upstream stops compiling rather than silently matching nothing).
+
+           SERVED FROM HERE RATHER THAN FROM /colony/live/snapshot, deliberately. This file already
+           lives inside `#if MICROMOUND`; the colony endpoint does not, and putting the roster there
+           would push conditional compilation into a file that has none and make its payload differ
+           between builds. `colony-host.js` already fetches `/micromound/mounds`, so this rides a
+           path that exists.
+
+           WHAT THE OPERATOR THEN DOES WITH THESE NAMES NEVER LEAVES THE COLONY. A renamed or
+           recoloured ant is a label in the operator's saved layout, not a command: the mound is
+           enrolled by one-time token and keeps taking orders under its own identity whatever the
+           colony calls it. That separation is the entire point of the feature — an operator can
+           label their fleet for their own use case without touching what the devices are. */
+        app.MapGet("/micromound/roster/defaults", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, MicromoundPermissions.Read); if (auth is not null) return auth;
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["ants"] = MicromoundRoster.Names.Select(n => new Dictionary<string, object?>
+                {
+                    ["name"] = n,
+                    ["role"] = MicromoundRoster.Roles.GetValueOrDefault(n, ""),
+                }).ToList(),
+            });
+        });
+
         app.MapGet("/micromound/mounds", (HttpContext ctx) =>
         {
             var auth = RequireAuth(ctx, MicromoundPermissions.Read); if (auth is not null) return auth;

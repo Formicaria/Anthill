@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.121**.
+Shipping release: **v0.3.8.122**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -670,7 +670,7 @@ either honour it or delete it rather than let it decay into a sentence nobody ap
 
 ---
 
-## 2e. What comes next — the shape of v0.3.8.119 and after
+## 2e. What comes next — the shape of v0.3.8.123 and after
 
 The universal-workflow program closed at `.113` and R0 closed at `.114`. There is no successor
 program: what remains is R-numbered work, standing hygiene, and a small number of findings the last
@@ -678,7 +678,50 @@ several releases surfaced and deliberately did not chase. This section exists be
 was being reconstructed from three documents every release, and the reconstruction kept losing the
 same items.
 
-### The orchestration slice — `.118` opened it, and items 3–8 are the rest of it
+### The orchestration slice — `.118` opened it, `.122` closed two findings, and the rest waits on one row
+
+**WHAT `.122` CLOSED, and why it could be closed without the execution record.** Two of the three ▲
+findings below turned out to be about a decision that was MADE and then not recorded anywhere a later
+stage could read — which needs a join or an event, not a new table:
+
+- **The closure reconciliation was TRIED AND WITHDRAWN, and that is the more useful result.**
+  `mission.Status` and `VerificationStatus` still do not meet. The join failed on a fact the map did
+  not have: `Verification.Failed` does not mean "a check said no" — `IsSatisfied` needs the
+  verifier's own verdict to be a PASS, and `VerifierAnt` downgrades a model-authored pass to
+  `Unknown` with no deterministic evidence behind it, so `failed` spans "the check said no" and
+  "nothing could satisfy the check". Demoting on it reclassified a legitimately complete mission.
+  **Do not begin the next attempt by making the status line read `VerificationStatus`.** Splitting
+  those two meanings IS closure enforcement, and it needs the execution record below.
+- **The planner's substitutions.** All five now reach the event log as `mission_plan_substituted`
+  with stable reason codes, so a fallback plan stops being indistinguishable from a requested one.
+  The `goal.Length > 6000` gate is UNMOVED: it should route on whether a `RequestedWorkflow` was
+  supplied, and trading a known-bad heuristic for an unmeasurable one before the execution records
+  exist would be a worse trade than leaving it.
+
+**WHAT STILL WAITS.** Items 3–8 — authoritative execution records, artifact and evidence handoff,
+verification that reads execution rather than a narrative, closure ENFORCEMENT (a mission may not
+close complete when its plan declared a check that never produced a deterministic pass), and
+unsourced-claim rejection — all consume the same missing row, and `.122` did not add it. The shape
+the map argues for: one record per task attempt, written where the scheduler already writes the
+terminal state, carrying the facts `Domain.Task` marks transient and therefore drops on restart
+(`WorkerBasis`, `DeliverableIds`, `RequiredCapability`, `GenerationDegraded`, the produced and ran
+revision ids) plus the plan row the task came from. Note the ratchet: it must be a TYPED accessor,
+not another `Dictionary<string, object?>` reader, or it lands on the wrong side of
+`TheUntypedStoreSurface_OnlyShrinks`.
+
+Two structural facts a session starting that work needs, and neither is in the brief:
+
+- **`DispatchPlan.Tasks` is validated, logged, and then discarded.** `Queen` calls the planner, emits
+  `mission_dispatch_planned`, and then calls `PlanningService.CreatePlan`, which plans again from
+  scratch. So "what was decided" and "what was scheduled" are two independently produced artifacts
+  with no code path enforcing that they agree. The execution record is where they should be joined.
+- **`IEvidenceStore.HasDeterministicPass` is implemented and called only from tests.** Before giving
+  it a production call site, check whether `EvidenceVerdict.For` already answers the same question —
+  two implementations of one rule is this repository's defect #5, and adding a caller to close a
+  "declared and reaching nobody" finding would be exactly the adjacent-question mistake if so.
+
+`docs/ORCHESTRATION-FINDINGS.md` remains the evidence, measured against `fcf12a7`; the ▲ items below
+are kept because their reasoning is what redirects the work, not because they are all still open.
 
 `.118` shipped the input contract (`RequestedWorkflow`) and the pre-dispatch stage
 (`DispatchPlanner` / `DispatchPlan`) and claimed nothing beyond them. The remainder of the brief —

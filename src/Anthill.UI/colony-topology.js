@@ -20,8 +20,11 @@
       not name resolved to null, and the records path read
       `sectorOfAnt(ant) || 'queen'`: every role added after the map was last
       edited, and every plugin-contributed role, was silently filed under the
-      QUEEN. Now: sectors arrive from /colony/live/snapshot, and an unknown role
-      lands in `unassigned`, visibly.
+      QUEEN. Now: sectors arrive from /colony/live/snapshot, and the SERVER
+      declares where an unresolvable one goes (`fallback_sector`). v0.3.8.122
+      removed the `unassigned` chamber that used to receive them: the server's
+      colony map is total over the registry and a guard proves it, so no role
+      and no worker reaches the fallback at all.
 
    2. Routes built by filtering a hard-coded `SECTOR_SEQUENCE`. That is a
       picture of how work is SUPPOSED to flow, drawn as though it were what
@@ -94,7 +97,7 @@
     var listeners = [];
     var st = {
       // From /colony/live/snapshot — the authority for sector membership.
-      sectors: [], roleSector: {}, unassignedId: 'unassigned', runtime: null,
+      sectors: [], roleSector: {}, fallbackId: '', runtime: null,
       snapshotAt: null, watermark: null, hydrated: false,
 
       // Buffered while hydrating, so an event that lands between "ask for the
@@ -139,12 +142,16 @@
       return w.parentRoleId || w.ParentRoleId || '';
     }
 
-    /** The sector a role id belongs to. Unknown → `unassigned`, NEVER queen, never guessed. */
+    /* The sector a role id belongs to. Unknown → the SERVER'S declared fallback, never a value
+       this file picked. v0.3.8.122: that fallback is queen-shaped again, and the distinction from
+       the original bug matters — `sectorOfAnt(ant) || 'queen'` was a browser guessing about an open
+       set it could not see; this is the server stating where it files what it cannot place, with a
+       guard proving no role or worker ever gets there. */
     function sectorOfRole(roleId) {
-      if (!roleId) return st.unassignedId;
+      if (!roleId) return st.fallbackId;
       var key = String(roleId).toLowerCase();
       return Object.prototype.hasOwnProperty.call(st.roleSector, key)
-        ? st.roleSector[key] : st.unassignedId;
+        ? st.roleSector[key] : st.fallbackId;
     }
 
     /* ── Hydration ─────────────────────────────────────────────────────────── */
@@ -153,7 +160,13 @@
       st.sectors = Array.isArray(snap.sectors) ? snap.sectors : [];
       st.runtime = snap.runtime || null;
       st.snapshotAt = snap.snapshot_at || null;
-      st.unassignedId = snap.unassigned_sector || 'unassigned';
+      // NO LITERAL, NOT EVEN AS A DEFAULT. `snap.fallback_sector || 'queen'` was the first
+      // version of this line and `ColonyLiveGuardTests` failed it immediately, correctly: a
+      // defensive client-side default IS the client picking a sector, which is the `.111` defect
+      // this reducer exists to make impossible. If the server does not name a fallback there is no
+      // fallback — a record with no sector matches no chamber and is visibly absent, which is the
+      // honest failure and not a quiet misattribution to the colony's highest authority.
+      st.fallbackId = typeof snap.fallback_sector === 'string' ? snap.fallback_sector : '';
       st.watermark = (snap.watermark && snap.watermark.event_id) || null;
 
       st.roleSector = Object.create(null);
@@ -164,12 +177,12 @@
           if (id) st.roleSector[String(id).toLowerCase()] = sid;
           // Workers too: an event names whichever unit ran, and most executable units
           // are workers rather than roles. Without these every worker-authored record
-          // resolved to `unassigned`.
+          // resolved to the fallback.
           //
           // Indexed on the WORKER ID, never the display name. `ant_name` on an event is
           // `constraint.scope_guard`; "ScopeGuard" is what an operator reads. Keying the
           // lookup on the readable one would file every worker-authored record under
-          // `unassigned` again, for the opposite reason.
+          // the fallback again, for the opposite reason.
           (r.workers || r.Workers || []).forEach(function (w) {
             var wid = workerId(w);
             if (wid) st.roleSector[wid.toLowerCase()] = sid;
@@ -604,7 +617,7 @@
           if (!id || st.recordIds[id]) return;
           st.recordIds[id] = true;
           st.records.push({
-            recordId: id, sector: it.sector || st.unassignedId, recordType: it.record_type || '',
+            recordId: id, sector: it.sector || st.fallbackId, recordType: it.record_type || '',
             title: it.title || '', ant: it.ant || '', missionId: it.mission_id || '',
             taskId: it.task_id || '', createdAt: it.created_at || '', place: placement(id),
             // The colony's own grouping, and the evidence table's verdict. Both from the
