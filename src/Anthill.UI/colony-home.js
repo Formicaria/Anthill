@@ -70,8 +70,10 @@
     var running = !!(sc && (sc.sectors || []).some(function (x) { return (x.runningTasks || []).length; }));
     var b;
     if ((b = document.querySelector('[data-homeact="mounds"]'))) { b.disabled = !mound; b.title = mound ? 'Approach the Micromound' : 'No mound in the fleet — nothing to approach'; }
-    // no mound → offer the door to adopting one (the Micromound console mints enrollment tokens)
-    if ((b = $('clb-addmound'))) b.style.display = mound ? 'none' : '';
+    // ALWAYS OFFERED (v0.3.8.122). It used to appear only when the fleet was empty, because it was
+    // the door to enrolment; it now adds a chamber to the operator's own view and a fleet of six is
+    // exactly when you want six of them.
+    if ((b = $('clb-addmound'))) b.style.display = '';
     if ((b = document.querySelector('[data-homeact="follow"]'))) { b.disabled = !running; b.title = running ? 'Ride the active mission circuit' : 'No task is running — nothing to follow'; }
   }
   function refreshBar() {
@@ -113,7 +115,14 @@
     var sel = $('clb-env'); if (sel && sel.value !== v) sel.value = v;
     try { localStorage.setItem(ENV_KEY, v); } catch (e) { }
   }
-  function initialEnv() { var v = null; try { v = localStorage.getItem(ENV_KEY); } catch (e) { } return /^(auto|strata|plane|space|light|nebula|void)$/.test(v || '') ? v : 'auto'; }
+  // `plane` was removed with the ground plane (v0.3.8.122) and maps to `void`: the same black field
+  // without the floor. A stored value is rewritten on read so the select, the renderer and
+  // localStorage agree from the first frame instead of drifting until the operator touches the menu.
+  function initialEnv() {
+    var v = null; try { v = localStorage.getItem(ENV_KEY); } catch (e) { }
+    if (v === 'plane') { v = 'void'; try { localStorage.setItem(ENV_KEY, v); } catch (e) { } }
+    return /^(auto|strata|space|light|nebula|void)$/.test(v || '') ? v : 'auto';
+  }
   // Auto follows the console theme live: switching Settings › Theme to light turns the page to paper.
   if (window.MutationObserver) new window.MutationObserver(function () { if (initialEnv() === 'auto') applyEnv('auto'); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
@@ -121,22 +130,69 @@
   function popShow(on) { var p = $('clb-viewpop'), b = $('clb-viewbtn'); if (!p) return; p.style.display = on ? '' : 'none'; if (b) b.setAttribute('aria-expanded', on ? 'true' : 'false'); }
   var conduitAuto = true;
   function applyView() {
-    var live = liveApi(), mo = $('clb-motion'), lb = $('clb-labels'), tr = $('clb-trails'), cd = $('clb-cdens'), cb = $('clb-cbright'), cc = $('clb-ccolor');
+    var live = liveApi(), mo = $('clb-motion'), lb = $('clb-labels'), tr = $('clb-trails'), cd = $('clb-cdens'), cb = $('clb-cbright'), cc = $('clb-ccolor'), la = $('clb-linkalpha');
     // motion + trails go through app.js's validated preference path (it also feeds the classic canvas)
     if (typeof setColonyPref === 'function') { if (mo) setColonyPref('motion', mo.value); if (tr) setColonyPref('pheromones', tr.value === 'off' ? 'off' : 'all'); }
     var conduits = { density: cd ? cd.value : 'normal', bright: cb ? Number(cb.value) : 1, color: (!conduitAuto && cc) ? cc.value : null };
-    if (live) live.setOptions({ labels: lb ? lb.value : 'normal', conduits: conduits });
+    var links = { opacity: la ? Number(la.value) : .125 };
+    if (live) live.setOptions({ labels: lb ? lb.value : 'zoom', conduits: conduits, links: links });
     var ab = document.querySelector('[data-homeact="conduitauto"]'); if (ab) ab.classList.toggle('on', conduitAuto);
-    try { localStorage.setItem('anthill.colony.view', JSON.stringify({ motion: mo && mo.value, labels: lb && lb.value, trails: tr && tr.value, conduits: conduits })); } catch (e) { }
+    try { localStorage.setItem('anthill.colony.view', JSON.stringify({ motion: mo && mo.value, labels: lb && lb.value, trails: tr && tr.value, conduits: conduits, links: links })); } catch (e) { }
   }
   function restoreView() {
     var v = null; try { v = JSON.parse(localStorage.getItem('anthill.colony.view') || 'null'); } catch (e) { }
     if (!v) { applyView(); return; }
-    var mo = $('clb-motion'), lb = $('clb-labels'), tr = $('clb-trails'), cd = $('clb-cdens'), cb = $('clb-cbright'), cc = $('clb-ccolor');
-    if (mo && v.motion) mo.value = v.motion; if (lb && v.labels) lb.value = v.labels; if (tr && v.trails) tr.value = v.trails;
+    var mo = $('clb-motion'), lb = $('clb-labels'), tr = $('clb-trails'), cd = $('clb-cdens'), cb = $('clb-cbright'), cc = $('clb-ccolor'), la = $('clb-linkalpha');
+    if (mo && v.motion) mo.value = v.motion; if (tr && v.trails) tr.value = v.trails;
+    // `normal` was the old name for "chamber names always" and is now `fixed`; a browser that
+    // remembers it heals rather than falling back to a default the operator never chose.
+    if (lb && v.labels) lb.value = (v.labels === 'normal' ? 'fixed' : v.labels);
+    if (la && v.links && isFinite(v.links.opacity)) la.value = v.links.opacity;
     if (v.conduits) { if (cd && v.conduits.density) cd.value = v.conduits.density; if (cb && v.conduits.bright) cb.value = v.conduits.bright; if (v.conduits.color) { conduitAuto = false; if (cc) cc.value = v.conduits.color; } else conduitAuto = true; }
     applyView();
   }
+  /* ---- the mound registry (page-mounds) ------------------------------------------------------
+     WHY THIS EXISTS RATHER THAN A SETTINGS PAGE PER MOUND. `+ Mound` adds as many chambers as an
+     operator wants, so "open the micromound settings" stopped naming a destination — there is no
+     single mound to settle. Clicking INTO a chamber opens that one's settings; this is the fleet,
+     and deleting a chamber is a fleet-level act that belongs here rather than buried in one
+     chamber's panel where you have to already be inside the thing you want to remove.
+
+     Everything shown is a LABEL. Deleting a row removes the operator's chamber from their own view;
+     an enrolled device is untouched and keeps answering under the identity its one-time token gave
+     it. The row says so, because a delete button beside the word "mound" invites the other reading. */
+  function renderMounds() {
+    var box = $('mounds-list'); if (!box) return;
+    var live = liveApi();
+    if (!live || !live.listMounds) {
+      box.innerHTML = '<div class="muted">The colony view has not loaded yet — open Colony › Live once, then come back.</div>';
+      return;
+    }
+    var list = live.listMounds();
+    if (!list.length) {
+      box.innerHTML = '<div class="muted">No mound chambers yet. Use <strong>+ Mound</strong> on Colony › Live to add one.</div>';
+      return;
+    }
+    box.innerHTML = list.map(function (m) {
+      return '<div class="mound-row" data-mound="' + escapeHtml(m.id) + '">'
+        + '<span class="mound-dot" style="background:' + escapeHtml(m.color) + '"></span>'
+        + '<span class="mound-name">' + escapeHtml(m.label) + '</span>'
+        + '<span class="muted mound-facts">' + m.residents + ' ant' + (m.residents === 1 ? '' : 's') + ' · label only</span>'
+        + '<button class="btn btn-sm" data-homeact="moundopen" data-mound-id="' + escapeHtml(m.id) + '">Settings</button>'
+        + '<button class="btn btn-sm clb-danger" data-homeact="moundremove" data-mound-id="' + escapeHtml(m.id) + '">Delete chamber</button>'
+        + '</div>';
+    }).join('');
+  }
+
+  /* ONE MOUND'S SETTINGS, NOT "THE" MOUND SETTINGS. There can be many, so the destination has to
+     carry WHICH — the console's established way of doing that is a pending id set before `go()`,
+     the same shape `chatPendingProjectId` and `projectViewId` use. The Micromound console reads it
+     on entry and selects that mound; absent one it opens on the fleet, which is what it always did. */
+  function openMoundSettings(id) {
+    try { window.micromoundPendingId = id || null; } catch (e) { }
+    go('/tools/micromound');
+  }
+
   var sectorId = null;
   function showSector(s) {
     var box = $('clb-sector'); if (!box) return;
@@ -150,6 +206,13 @@
     if (facts) facts.textContent = (c.records ? c.records + ' record' + (c.records === 1 ? '' : 's') : 'no records') + (c.verified ? ' (' + c.verified + ' verified)' : '') + ' · ' + (c.residents || 0) + ' resident' + (c.residents === 1 ? '' : 's') + (c.running ? ' · ' + c.running + ' running' : '');
     var live = liveApi(), st = live && live.getSectorStyle(s.id);
     if (st) { var col = $('clb-sec-color'), gl = $('clb-sec-glow'), br = $('clb-sec-bright'); if (col) col.value = st.color || st.defaultColor; if (gl) gl.value = st.glow; if (br) br.value = st.bright; if (dot) dot.style.background = st.color || st.defaultColor; }
+    // A mound chamber gets two extra doors; an operator-added one gets both, a registry chamber
+    // neither. Delete is offered ONLY for what the operator created — the renderer refuses the rest
+    // regardless, and a button that exists to be refused is worse than no button.
+    var isMound = live && live.isMound && live.isMound(s.id), added = live && live.isAddedMound && live.isAddedMound(s.id);
+    var bS = $('clb-mound-settings'), bD = $('clb-mound-registry');
+    if (bS) bS.style.display = isMound ? '' : 'none';
+    if (bD) bD.style.display = added ? '' : 'none';
   }
   var recordAnt = null;
   function showResident(h) {
@@ -279,6 +342,9 @@
     syncToggle();
     if (!live) { showSector(null); showRecord(null); return; }
     live.on('sector', function (s) { showSector(s); showRecord(null); markView(null); });
+    // v0.3.8.122 — a mound chamber's second click is its settings page. The renderer decides WHICH
+    // chambers are doors (it owns the sector table); this file owns navigation, so it does the go().
+    live.on('moundsettings', function () { go('/tools/micromound'); });
     live.on('deselect', function () { showSector(null); showRecord(null); });
     live.on('record', function (r) { showRecord(r); });
     live.on('resident', function (h) { showResident(h); });
@@ -295,9 +361,23 @@
     else if (act === 'openant') { if (recordAnt && typeof nodes !== 'undefined' && typeof showInspector === 'function') { var n = nodes.find(function (x) { return x.ant === recordAnt || x.worker === recordAnt || x.id === recordAnt; }); if (n) { setFocus(false); showInspector(n); } } }
     else if (act === 'resetlayout') { var lv = liveApi(); if (lv) lv.resetLayout(); popShow(false); }
     else if (act === 'conduitauto') { conduitAuto = !conduitAuto; applyView(); }
+    else if (act === 'moundregistry') { go('/colony/mounds'); }
+    else if (act === 'moundremove') {
+      var ld = liveApi(), rid = b.dataset.moundId || null;
+      if (ld && rid && ld.removeMound && ld.removeMound(rid)) { if (sectorId === rid) showSector(null); renderMounds(); }
+    }
+    else if (act === 'moundopen') { openMoundSettings(b.dataset.moundId || null); }
+    else if (act === 'moundsettings') { openMoundSettings(sectorId); }
     else if (act === 'secstylereset') { var l2 = liveApi(); if (l2 && sectorId) { l2.setSectorStyle(sectorId, { color: null, glow: 1, bright: 1 }); showSector(l2.sectorInfo(sectorId) && Object.assign({}, l2.sectorInfo(sectorId), { records: [] })); } }
     else if (act === 'antstylereset') { var l3 = liveApi(); if (l3 && antId) { l3.setAntStyle(antId, { name: null, color: null }); var nm2 = $('clb-ant-name'); if (nm2) nm2.value = ''; var t2 = $('clb-record-title'); if (t2 && lastResident) t2.textContent = lastResident.registryName || antId; } }
-    else if (act === 'addmound') { go('/tools/micromound'); }
+    else if (act === 'addmound') {
+      // v0.3.8.122 — ADDS A CHAMBER, it no longer navigates away. The old behaviour sent an
+      // operator to the Micromound console to mint a token, which is the enrolment story and not
+      // this button's job: this one is the colony's own labelling layer. The chamber's name, its
+      // colour and its ants' names are presentation and reach no device — a mound is enrolled by
+      // one-time token and answers under its own identity whatever the colony calls it.
+      var lm = liveApi(); if (lm && lm.addMound) lm.addMound();
+    }
     else if (act === 'toggle3d') { if (window.ColonyHost) ColonyHost.toggle(); syncToggle(); }
     else if (act === 'ask') send('chat');
     else if (act === 'run') send('mission');
@@ -317,7 +397,7 @@
     }
     var sel = $('ccp-scope'); if (sel) sel.addEventListener('change', scopeChanged);
     var env = $('clb-env'); if (env) { env.value = initialEnv(); env.addEventListener('change', function () { applyEnv(env.value); }); }
-    ['clb-motion', 'clb-labels', 'clb-trails', 'clb-cdens', 'clb-cbright'].forEach(function (id) { var el = $(id); if (el) el.addEventListener(id === 'clb-cbright' ? 'input' : 'change', applyView); });
+    ['clb-motion', 'clb-labels', 'clb-trails', 'clb-cdens', 'clb-cbright', 'clb-linkalpha'].forEach(function (id) { var el = $(id); if (el) el.addEventListener((id === 'clb-cbright' || id === 'clb-linkalpha') ? 'input' : 'change', applyView); });
     var cc = $('clb-ccolor'); if (cc) cc.addEventListener('input', function () { conduitAuto = false; applyView(); });
     ['clb-sec-color', 'clb-sec-glow', 'clb-sec-bright'].forEach(function (id) { var el = $(id); if (el) el.addEventListener('input', applySectorStyle); });
     var an = $('clb-ant-name'); if (an) { an.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); applyAntStyle(); an.blur(); } if (e.key === 'Escape') e.stopPropagation(); }); an.addEventListener('blur', function () { if (antId) applyAntStyle(); }); }
@@ -342,6 +422,9 @@
     }
     // The header's mission line and the approvals badge are written by app.js's own pollers; the
     // bar re-reads them on every scene the reducer publishes (graph, approvals, events all publish).
+    // The registry renders on entry rather than on a timer: it is a list of the operator's own
+    // chambers, and it changes only when they change it.
+    if (typeof PAGE_ENTER !== 'undefined') PAGE_ENTER['mounds'] = renderMounds;
     if (window.ColonyHost) { ColonyHost.onLive(hookLive); ColonyHost.onScene(function (sc) { lastScene = sc; if (page.classList.contains('active')) refreshBar(); }); }
     refreshBar(); syncToggle();
   }

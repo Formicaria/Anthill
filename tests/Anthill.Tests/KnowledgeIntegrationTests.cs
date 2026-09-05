@@ -635,6 +635,39 @@ public class KnowledgeIntegrationTests
         Assert.Single(recorded);
         // It PROPOSES. The output must not let a model believe the base changed.
         Assert.Contains("has NOT changed", good.Output, StringComparison.Ordinal);
+        // v0.3.8.122 — and it must not describe a pipeline that does not exist. This said the
+        // proposal was "queued for an operator to approve or decline"; there is no queue and no
+        // approval surface consuming these, and a model told its change is pending will plan the
+        // next step as though it were.
+        Assert.DoesNotContain("queued", good.Output, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// A SINK THAT CANNOT RECORD MUST NOT READ AS SUCCESS — v0.3.8.122.
+    ///
+    /// The composition default was `_ => { }`: a module built without a proposal sink accepted every
+    /// proposal, dropped it, and let the tool report that it had been recorded. Nothing downstream
+    /// could tell that apart from a filing, which is the worst shape a failure can take — it is
+    /// invisible at the only moment anyone could act on it. The default now throws, and this is the
+    /// behaviour that makes throwing the right answer: the tool already had an honest failure branch
+    /// and never had a reason to reach it.
+    /// </summary>
+    [Fact]
+    public void AProposalThatCannotBeRecorded_FailsRatherThanReportingSuccess()
+    {
+        var tool = new KnowledgeReviewTool(
+            _ => throw new InvalidOperationException("no proposal sink is composed"));
+
+        using var _ = KnowledgeScopeContext.Enter(ScopeA);
+
+        var result = tool.Run(new Dictionary<string, object?>
+        {
+            ["knowledge_id"] = "ki_1", ["action"] = "reject",
+            ["rationale"] = "The cited source was superseded by the March change log.",
+        });
+
+        Assert.False(result.Success);
+        Assert.Contains("could not be recorded", result.Error ?? "", StringComparison.Ordinal);
     }
 
     // ---- module registration ------------------------------------------------------------------

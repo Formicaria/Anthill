@@ -94,10 +94,15 @@ public sealed record ColonyTrail(double Strength, int Successes, int Failures, i
 /// after the map was last edited, and every role a plugin contributes, was silently attributed to
 /// the QUEEN. Not dropped, where somebody might notice: filed under the colony's highest authority.
 ///
-/// So the mapping is `Colony` → sector, declared once, here, and anything unrecognised lands in
-/// <see cref="Unassigned"/> where it is VISIBLE. That is the rule the console cannot express on its
-/// own: an extensible registry means the set of colonies is open, and a client-side map of an open
-/// set is a map that is wrong as soon as somebody extends it.
+/// So the mapping is `Colony` → sector, declared once, here. That is the rule the console cannot
+/// express on its own: an extensible registry means the set of colonies is open, and a client-side
+/// map of an open set is a map that is wrong as soon as somebody extends it.
+///
+/// v0.3.8.122 — anything unrecognised used to land in a visible `unassigned` chamber. It no longer
+/// does, because the map is now TOTAL over the registry and a guard proves it against the live
+/// roster: the visibility that chamber provided is provided earlier and louder, by a failing test
+/// at the moment a colony is added rather than by an odd-looking sphere an operator has to notice.
+/// See <see cref="ColonySectors.Fallback"/>.
 /// </summary>
 public static class ColonySectors
 {
@@ -111,13 +116,26 @@ public static class ColonySectors
     public const string Micromound = "mound";
 
     /// <summary>
-    /// Where a role goes when the colony it declares is not one this presentation knows.
+    /// Where anything this presentation cannot place goes. v0.3.8.122.
     ///
-    /// NOT Queen, and not a guess from the role's name. A neutral group is the honest answer to "we
-    /// do not know where this belongs", and it is the one that gets noticed and fixed; attributing
+    /// THIS USED TO BE A NINTH CHAMBER CALLED `unassigned`, and the argument for it was good: a
+    /// neutral group is the honest answer to "we do not know where this belongs", and attributing
     /// it to an authority sector produces a picture that looks complete and is wrong.
+    ///
+    /// What changed is that the answer stopped being needed. <see cref="ByColony"/> now covers every
+    /// one of the sixteen `Colony` values the registry declares, and a guard asserts that totality
+    /// against the live registry rather than against this comment — so no ROLE and no WORKER can
+    /// reach this fallback, and the chamber it existed to fill was permanently empty of residents.
+    /// An empty chamber labelled UNASSIGNED does not report a gap; it just occupies a seat in the
+    /// colony and invites the reader to wonder what is wrong.
+    ///
+    /// What CAN still reach it is an event whose `ant_name` resolves to nothing — a renamed worker,
+    /// a system-authored row. Those belong with mission control, which is where mission-level events
+    /// already live, and that is a placement rather than a shrug. **If a future role declares a new
+    /// colony, the guard fails before this fallback is ever exercised**, which is the property that
+    /// makes pointing it at a real sector safe: the fallback is a backstop, not a bucket.
     /// </summary>
-    public const string Unassigned = "unassigned";
+    public const string Fallback = Queen;
 
     /// <summary>
     /// Registry `Colony` → sector. The ONE place this is decided.
@@ -164,25 +182,33 @@ public static class ColonySectors
         [Validation] = "VALIDATION",
         [Memory] = "MEMORY",
         [Output] = "OUTPUT",
-        [Homelab] = "HOMELAB",
+        // v0.3.8.122 — INFRASTRUCTURE, not HOMELAB. The sector id stays `homelab` because it is the
+        // registry colony's name and an operator's saved layout is keyed on it; only the label an
+        // operator reads changes. The roles in it are unchanged: this is the chamber's name, not a
+        // re-placement of anything.
+        [Homelab] = "INFRASTRUCTURE",
         [Micromound] = "MICROMOUND",
-        [Unassigned] = "UNASSIGNED",
     };
 
     /// <summary>Presentation order. Micromound sits last: it is infrastructure beneath the colony.</summary>
     public static readonly IReadOnlyList<string> Order =
-        [Queen, Intelligence, Forge, Validation, Memory, Output, Homelab, Unassigned, Micromound];
+        [Queen, Intelligence, Forge, Validation, Memory, Output, Homelab, Micromound];
 
     public static string Label(string sectorId) => Labels.GetValueOrDefault(sectorId, sectorId);
 
     /// <summary>
-    /// The sector a registry colony presents in, or <see cref="Unassigned"/>.
+    /// The sector a registry colony presents in.
     ///
-    /// Never throws and never guesses. An unknown colony — which is exactly what a contributed role
-    /// declaring its own produces — is a neutral placement, not an error and not an assumption.
+    /// Never throws. The map is TOTAL over the registry and a guard proves it, so for every role
+    /// the colony actually has this is a lookup and the fallback is dead code — which is the only
+    /// condition under which a fallback may point at a real sector rather than a neutral one. A new
+    /// colony value fails the guard; it does not quietly land somewhere plausible.
     /// </summary>
     public static string ForColony(string? colony) =>
-        string.IsNullOrWhiteSpace(colony) ? Unassigned : ByColony.GetValueOrDefault(colony, Unassigned);
+        string.IsNullOrWhiteSpace(colony) ? Fallback : ByColony.GetValueOrDefault(colony, Fallback);
+
+    /// <summary>Every colony this map places, for the guard that checks it against the registry.</summary>
+    public static IReadOnlyCollection<string> MappedColonies => ByColony.Keys;
 }
 
 /// <summary>

@@ -1387,6 +1387,27 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
             ["stop_reason"] = evaluation.StopReason,
             ["evaluator_version"] = evaluation.EvaluatorVersion,
         });
+        // v0.3.8.122 — WHY THE STRUCTURAL STATUS STILL DOES NOT CONSULT THE VERDICT.
+        //
+        // `mission.Status` is computed ~80 lines above from task terminal states alone, and
+        // `evaluation.VerificationStatus` is computed here from the evidence. They do not meet, so
+        // `complete` can still be persisted beside `verification_status: failed`. This release TRIED
+        // to join them and the attempt was wrong in a way worth leaving written down.
+        //
+        // `Verification.Failed` does not mean "a check said no". `MissionVerification.IsSatisfied`
+        // requires the verifier's own verdict to be a PASS, and `VerifierAnt` downgrades a
+        // model-authored pass to `Unknown` whenever the evidence store has nothing deterministic to
+        // back it (Ants.cs, the `modelWroteIt && IsPass(fromProse)` branch). So a mission with a
+        // verifier, a passing narrative and no tester grades `Failed` — meaning NOT PASSED, not
+        // "actively failed". Demoting on it reclassified a legitimately complete scripted mission,
+        // which `ScriptedProviderTests` caught immediately.
+        //
+        // The three-way the evaluator exposes is `not_run` / `passed` / `failed`, and `failed`
+        // silently spans "the check said no" and "nothing could satisfy the check". Closure
+        // enforcement needs those separated, and separating them needs the per-task execution
+        // record — `docs/PLAN.md` §2e. This comment is here so the next attempt starts from what the
+        // code means rather than from what the finding assumed it meant.
+
         if (evaluation.DeliverableStatus == Outcomes.MissionEvaluation.Deliverable.NotSatisfied)
             Memory.LogEvent(mission.Id, "objective_verification_failed",
                 // v0.3.8.110 — the SAME string the grade was computed from. The evaluator reads

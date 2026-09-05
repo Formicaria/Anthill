@@ -74,8 +74,10 @@ public static partial class ApiHost
                 ["runtime"] = ColonyLiveProjection.Runtime(),
                 // Stated rather than left for the client to infer from an empty sector list: a
                 // console that cannot tell "no roles here" from "the projection failed" will show
-                // the same empty chamber for both.
-                ["unassigned_sector"] = ColonySectors.Unassigned,
+                // the same empty chamber for both. v0.3.8.122 — this was `unassigned_sector` and
+                // named a ninth chamber; the chamber is gone and the key names where an
+                // unresolvable record goes instead, so the client still never has to guess.
+                ["fallback_sector"] = ColonySectors.Fallback,
             });
         });
 
@@ -155,11 +157,16 @@ public static partial class ApiHost
 
                 var ant = row.GetValueOrDefault("ant_name")?.ToString() ?? "";
 
-                // An event whose ant this colony does not recognise is UNASSIGNED, never Queen.
-                // That was the client bug this endpoint exists to make impossible.
+                // An event whose ant this colony does not recognise goes to the SERVER'S declared
+                // fallback — never to a sector the client picked. The bug this endpoint exists to
+                // make impossible was `sectorOfAnt(ant) || 'queen'` in the browser: a client-side
+                // map of an open set, silently attributing every unmapped role to the authority
+                // sector. The fallback being queen-shaped again is not that bug returning; the
+                // difference is that the SERVER decides it, says so in the snapshot, and a guard
+                // proves no role or worker can reach it. v0.3.8.122.
                 var recordSector = string.IsNullOrEmpty(ant)
-                    ? ColonySectors.Unassigned
-                    : sectorOfRole.GetValueOrDefault(ant, ColonySectors.Unassigned);
+                    ? ColonySectors.Fallback
+                    : sectorOfRole.GetValueOrDefault(ant, ColonySectors.Fallback);
 
                 if (!string.IsNullOrEmpty(sector) && !string.Equals(sector, recordSector, StringComparison.Ordinal))
                     continue;
