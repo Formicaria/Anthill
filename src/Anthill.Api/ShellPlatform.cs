@@ -12,8 +12,13 @@ namespace Anthill.Api;
 ///
 /// The set is chosen by the OS the API process is running on, discovered here rather than guessed in
 /// the browser — the host knows what it is, the client does not. Each action carries the exact
-/// command for THAT platform, so "Restart service" runs <c>systemctl restart anthill</c> on Linux
-/// and <c>Restart-Service Anthill</c> on Windows, and the button means the same thing on both.
+/// command for THAT platform, so restarting runs <c>systemctl restart anthill</c> on Linux and
+/// relaunches the <c>AnthillDesktop</c> process on Windows, and the button means the same thing on
+/// both even though the thing being restarted is not the same kind of thing.
+///
+/// v0.3.8.124 — THE WINDOWS SET WAS AIMED AT A SERVICE THAT DOES NOT EXIST, which is the failure
+/// described in the paragraph above, committed by the file that describes it. See
+/// <c>WindowsProcess</c> below.
 ///
 /// Deliberately data, not behaviour: the API returns the list, the console renders whatever it is
 /// given, and adding a platform (or a per-environment action for LXC vs. bare metal later) is a new
@@ -38,10 +43,26 @@ public static class ShellPlatform
         return "unknown";
     }
 
-    // The service name differs per platform convention: lowercase unit on Linux, PascalCase service
-    // on Windows. Kept in one place so a rename is a single edit.
     private const string LinuxUnit = "anthill";
-    private const string WindowsService = "Anthill";
+
+    /* WINDOWS RUNS THE DESKTOP APP, NOT A SERVICE. v0.3.8.124.
+       This file offered three Windows actions against a Windows service called `Anthill`:
+       `Get-Service Anthill`, `Get-EventLog -Source Anthill`, `Restart-Service Anthill`. No such
+       service exists. Nothing in this repository registers one — `docs/DEPLOYMENT.md` still lists
+       the Windows install script as unbuilt — and on Windows an operator runs `AnthillDesktop.exe`,
+       which the installer puts on the Start menu. So all three actions failed, and they failed in
+       the way this file's own header says it exists to prevent: "an action is only shown when the
+       environment it targets can actually run it."
+
+       The name was never verified. It was written as a plausible convention (lowercase unit on
+       Linux, PascalCase service on Windows) beside a Linux set that was real, and it read as
+       symmetric rather than as a guess — which is what kept it there for seventy-five releases.
+
+       So the Windows actions now target the PROCESS. `Restart` stops `AnthillDesktop` and starts it
+       again from the path the running process reports, which is the only way to relaunch something
+       whose install location this file does not get to assume. `Status` reports whether the process
+       is up rather than asking a service manager about a name it has never heard of. */
+    private const string WindowsProcess = "AnthillDesktop";
 
     private static readonly IReadOnlyList<QuickAction> Linux = new List<QuickAction>
     {
@@ -53,12 +74,24 @@ public static class ShellPlatform
 
     private static readonly IReadOnlyList<QuickAction> Windows = new List<QuickAction>
     {
-        // Windows service control + inspection via PowerShell, which cmd /c can invoke. These are the
-        // Windows-native equivalents of the Linux set, not Linux commands aimed at a Windows box.
-        new("service_status", "Service status", $"powershell -NoProfile -Command \"Get-Service {WindowsService} | Format-List Name,Status,StartType\""),
-        new("recent_logs",    "Recent logs",    $"powershell -NoProfile -Command \"Get-EventLog -LogName Application -Source {WindowsService} -Newest 40 -ErrorAction SilentlyContinue | Format-Table TimeGenerated,EntryType,Message -AutoSize\""),
+        // PowerShell, which cmd /c can invoke. The ids stay platform-independent — "restart_service"
+        // is the same INTENT on every platform even where the thing restarted is a process — because
+        // the console keys its confirm-before-running behaviour on them.
+        new("service_status", "App status", $"powershell -NoProfile -Command \"$p = Get-Process {WindowsProcess} -ErrorAction SilentlyContinue; if ($p) {{ $p | Format-List Id,ProcessName,StartTime,Path }} else {{ 'AnthillDesktop is not running.' }}\""),
+
+        // The desktop app writes its own log rather than to the Application event log, which is
+        // where `Get-EventLog -Source Anthill` was looking and finding nothing. DesktopLog puts it
+        // under LOCALAPPDATA; a missing file is reported as such instead of as an empty log.
+        new("recent_logs",    "Recent logs",    "powershell -NoProfile -Command \"$f = Join-Path $env:LOCALAPPDATA 'Anthill\\desktop.log'; if (Test-Path $f) { Get-Content $f -Tail 40 } else { \\\"No desktop log at $f yet.\\\" }\""),
+
         new("host_health",    "Host health",    "powershell -NoProfile -Command \"Get-PSDrive -PSProvider FileSystem | Format-Table Name,Used,Free; systeminfo | findstr /C:'Total Physical Memory' /C:'Available Physical Memory' /C:'System Boot Time'\""),
-        new("restart_service","Restart service",$"powershell -NoProfile -Command \"Restart-Service {WindowsService}\"", Danger: true),
+
+        // RELAUNCHED FROM THE RUNNING PROCESS'S OWN PATH. Where AnthillDesktop.exe is installed is
+        // the installer's business and this file must not assume it — reading `MainModule.FileName`
+        // off the live process is the one way to start the same binary that is already running. A
+        // process that is not running cannot report a path, so that case says so rather than
+        // starting nothing and reporting success.
+        new("restart_service","Restart app",    $"powershell -NoProfile -Command \"$p = Get-Process {WindowsProcess} -ErrorAction SilentlyContinue; if (-not $p) {{ '{WindowsProcess} is not running — start it from the Start menu.'; exit }} $exe = $p[0].Path; $p | Stop-Process -Force; Start-Sleep -Seconds 2; Start-Process $exe; \\\"Restarted $exe\\\"\"", Danger: true),
     };
 
     private static readonly IReadOnlyList<QuickAction> MacOs = new List<QuickAction>

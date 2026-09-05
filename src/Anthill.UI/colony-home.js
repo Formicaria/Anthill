@@ -52,24 +52,38 @@
   }
   function view(act) {
     var btn = document.querySelector('[data-homeact="' + act + '"]'); if (btn && btn.disabled) return;
+    // Mounds is NAVIGATION, not a camera move, so it is answered before the renderer is consulted —
+    // the registry opens whether or not the colony view has finished loading. v0.3.8.124.
+    if (act === 'mounds') { go('/colony/mounds'); return; }
     var live = liveApi();
     if (!live) { if (act === 'resetview' && typeof colonyResetView === 'function') colonyResetView(); return; }
     if (act === 'survey') live.survey();
     else if (act === 'mission') live.focus('queen');
     else if (act === 'memory') live.focus('memory');
-    else if (act === 'mounds') live.focus('mound');
     else if (act === 'follow') live.followMission();
     else if (act === 'resetview') { live.resetView(); act = 'survey'; }
     markView(act);
   }
   var lastScene = null;
   function syncViewButtons() {
-    // A view that has nowhere to go is disabled rather than silently doing nothing: Mounds needs a
-    // mound in the fleet, Follow needs a running task to ride with.
-    var sc = lastScene, mound = !!(sc && sc.mound && sc.mound.present);
+    // A view that has nowhere to go is disabled rather than silently doing nothing — which since
+    // v0.3.8.124 leaves only Follow, since it is the one that still needs a running task to ride.
+    var sc = lastScene;
     var running = !!(sc && (sc.sectors || []).some(function (x) { return (x.runningTasks || []).length; }));
     var b;
-    if ((b = document.querySelector('[data-homeact="mounds"]'))) { b.disabled = !mound; b.title = mound ? 'Approach the Micromound' : 'No mound in the fleet — nothing to approach'; }
+    /* MOUNDS IS ALWAYS AVAILABLE, BECAUSE IT NOW OPENS THE REGISTRY. v0.3.8.124.
+       It used to focus the `mound` sector — the built-in fleet chamber — and was disabled whenever
+       no DEVICE had enrolled. So the button beside `+ Mound` sat greyed out on a colony that already
+       had mound chambers in it, which reads as broken rather than as "no device yet": the operator
+       can see the chambers, and the control next to the one that made them is dead.
+
+       The registry is the right destination anyway. It lists every mound including INFRASTRUCTURE,
+       it is where settings and deletion live, and it is a page rather than a camera move — so it
+       has somewhere to go whether or not a device has ever beaten. */
+    if ((b = document.querySelector('[data-homeact="mounds"]'))) {
+      b.disabled = false;
+      b.title = 'The mound registry — every mound chamber, its settings, and where one is deleted';
+    }
     // ALWAYS OFFERED (v0.3.8.122). It used to appear only when the fleet was empty, because it was
     // the door to enrolment; it now adds a chamber to the operator's own view and a fleet of six is
     // exactly when you want six of them.
@@ -175,14 +189,25 @@
       return;
     }
     box.innerHTML = list.map(function (m) {
-      // A chamber the server declared — INFRASTRUCTURE, the fleet chamber — is listed like any
-      // other mound and says so instead of offering a Delete the renderer would refuse.
+      /* NOT EVERY MOUND'S SETTINGS ARE MICROMOUND SETTINGS. v0.3.8.124.
+
+         INFRASTRUCTURE is a mound in every way this registry cares about — it is drawn as one, it
+         is conduited to the Queen like one, and it belongs on the page that lists them. What it is
+         NOT is a micromound: it has no device, no enrolment token and no charter, so the micromound
+         console had nothing to show for it and would have offered an operator a form for hardware
+         that does not exist. Its settings are the Infrastructure page, which is where its eight
+         real roles have always been configured.
+
+         So the destination is per-row rather than per-page. `settings` names where this row goes,
+         the renderer decides it, and a mound that is a device goes to the device console. */
+      var infra = m.id === 'homelab';
       return '<div class="mound-row" data-mound="' + escapeHtml(m.id) + '">'
         + '<span class="mound-dot" style="background:' + escapeHtml(m.color) + '"></span>'
         + '<span class="mound-name">' + escapeHtml(m.label) + '</span>'
         + '<span class="muted mound-facts">' + m.residents + ' ant' + (m.residents === 1 ? '' : 's')
-        + (m.removable ? ' · label only' : ' · built in') + '</span>'
-        + '<button class="btn btn-sm" data-homeact="moundopen" data-mound-id="' + escapeHtml(m.id) + '">Settings</button>'
+        + (infra ? ' · built in, no device' : m.removable ? ' · label only' : ' · built in') + '</span>'
+        + '<button class="btn btn-sm" data-homeact="' + (infra ? 'infraopen' : 'moundopen') + '"'
+        + ' data-mound-id="' + escapeHtml(m.id) + '">Settings</button>'
         + (m.removable
           ? '<button class="btn btn-sm clb-danger" data-homeact="moundremove" data-mound-id="' + escapeHtml(m.id) + '">Delete chamber</button>'
           : '<span class="muted mound-facts">not yours to delete</span>')
@@ -212,13 +237,12 @@
     if (facts) facts.textContent = (c.records ? c.records + ' record' + (c.records === 1 ? '' : 's') : 'no records') + (c.verified ? ' (' + c.verified + ' verified)' : '') + ' · ' + (c.residents || 0) + ' resident' + (c.residents === 1 ? '' : 's') + (c.running ? ' · ' + c.running + ' running' : '');
     var live = liveApi(), st = live && live.getSectorStyle(s.id);
     if (st) { var col = $('clb-sec-color'), gl = $('clb-sec-glow'), br = $('clb-sec-bright'); if (col) col.value = st.color || st.defaultColor; if (gl) gl.value = st.glow; if (br) br.value = st.bright; if (dot) dot.style.background = st.color || st.defaultColor; }
-    // Every mound chamber gets both doors as of v0.3.8.123: its own settings, and the registry that
-    // lists the whole fleet. The registry link used to be offered only for operator-added chambers,
-    // which meant the one chamber most operators meet first — INFRASTRUCTURE — had no way through
-    // to the page that now lists it. Neither button deletes anything, so neither can be refused.
+    // ONE DOOR, NOT TWO. v0.3.8.124 — the panel offered `settings →` beside `registry →`, which
+    // meant two routes to a mound's configuration and a mound chamber that behaved unlike every
+    // other chamber. Settings live in the registry now, for every mound including INFRASTRUCTURE,
+    // and this offers the way there and nothing else.
     var isMound = live && live.isMound && live.isMound(s.id);
-    var bS = $('clb-mound-settings'), bD = $('clb-mound-registry');
-    if (bS) bS.style.display = isMound ? '' : 'none';
+    var bD = $('clb-mound-registry');
     if (bD) bD.style.display = isMound ? '' : 'none';
   }
   var recordAnt = null;
@@ -236,20 +260,97 @@
     var tr = res.trail && isFinite(res.trail.strength) ? res.trail : null;
     $('clb-record-meta').textContent = [res.worker ? 'worker of ' + res.parent : 'role', res.roleId, res.status, tr ? ('trail ' + Number(tr.strength).toFixed(2) + ' · ' + (tr.successes || 0) + '✓ ' + (tr.failures || 0) + '✗') : 'no trail recorded', res.workers ? res.workers + ' worker' + (res.workers === 1 ? '' : 's') : ''].filter(Boolean).join(' · ');
     var tag = $('clb-record-verif'); tag.textContent = res.status || 'idle'; tag.className = 'clb-record-tag' + (res.status === 'working' ? ' ok' : res.status === 'disabled' ? ' bad' : '');
-    var open = $('clb-record-open'); if (open) open.style.display = '';
     box.style.display = '';
+    // THE INSPECTOR IS HERE NOW. v0.3.8.124 — this panel used to end with "Open ant →", which
+    // navigated to a page holding a card for every one of twenty-five ants so the operator could
+    // find the one they had just clicked. Its telemetry loads into the panel instead.
+    showAntStats(res);
+  }
+
+  /* ── The ant's own telemetry, in the panel that named it ────────────────────────────────────
+     Lifetime task counts, success rate, average duration and recent activity, for whichever ant
+     was clicked. This is what the Ant Inspector page was for; the page is gone and the question it
+     answered is now asked by clicking the thing you are asking about.
+
+     ONE FETCH, CACHED BY app.js's own `api` LAYER. `/ants/stats` is a colony-wide read — every
+     ant's counters in one payload — so clicking through six ants in a row costs one request, not
+     six. Recent activity stays behind a disclosure because it is a SECOND request per ant, and an
+     operator scanning residents wants the counters, not twelve event rows each time.
+
+     A WORKER HAS NO COUNTERS OF ITS OWN, and this says so rather than showing zeros. `/ants/stats`
+     is keyed by ROLE; a worker's work is counted against its parent, so showing an empty card for
+     `backend_coder` would read as "this worker has never run" when the truth is "the colony counts
+     this under coder". */
+  var antStatsCache = null, antStatsAt = 0;
+  async function showAntStats(res) {
+    var host = $('clb-ant-stats'); if (!host) return;
+    var roleId = String(res.roleId || '');
+    if (!roleId) { host.style.display = 'none'; return; }
+    host.style.display = '';
+
+    if (res.worker) {
+      host.innerHTML = '<div class="clb-ant-note">Counted under <b>' + escapeHtml(String(res.parent || '—')) + '</b> — '
+        + 'the colony records tasks against the role, not each worker.</div>';
+      return;
+    }
+
+    host.innerHTML = '<div class="clb-ant-note">Reading telemetry…</div>';
+    try {
+      var now = Date.now();
+      if (!antStatsCache || now - antStatsAt > 15000) {
+        var r = await api('/ants/stats');
+        if (!r || !r.success) throw new Error((r && r.message) || 'unavailable');
+        antStatsCache = r.data || {}; antStatsAt = now;
+      }
+      var s = (antStatsCache.ants || {})[roleId];
+      if (!s) {
+        host.innerHTML = '<div class="clb-ant-note">No tasks recorded for this ant yet.</div>';
+        return;
+      }
+      var total = s.total || 0, ok = s.complete || 0, fail = s.failed || 0, skip = s.skipped || 0;
+      var rate = total ? Math.round(ok / total * 100) : null;
+      var rateColor = rate == null ? 'var(--dim)' : rate >= 70 ? 'var(--green)' : rate >= 40 ? 'var(--queen)' : 'var(--red)';
+      // The verifier's "failed" is a REJECTION, not a fault — it did its job and the answer was no.
+      // The inspector drew that distinction and it survives the move.
+      var failLabel = roleId === 'verifier' ? 'Reject' : 'Failed';
+
+      host.innerHTML =
+        '<div class="ac-stats">'
+        + '<div class="ac-stat"><div class="n" style="color:var(--text)">' + total + '</div><div class="l">Tasks</div></div>'
+        + '<div class="ac-stat"><div class="n" style="color:var(--green)">' + ok + '</div><div class="l">Done</div></div>'
+        + '<div class="ac-stat"><div class="n" style="color:' + (fail ? 'var(--red)' : 'var(--dim)') + '">' + fail + '</div><div class="l">' + failLabel + '</div></div>'
+        + '<div class="ac-stat"><div class="n" style="color:' + rateColor + '">' + (rate == null ? '—' : rate + '%') + '</div><div class="l">Success</div></div>'
+        + '</div>'
+        + '<div class="ac-bar">'
+        + '<i style="width:' + (total ? ok / total * 100 : 0) + '%;background:var(--green)"></i>'
+        + '<i style="width:' + (total ? fail / total * 100 : 0) + '%;background:var(--red)"></i>'
+        + '<i style="width:' + (total ? skip / total * 100 : 0) + '%;background:var(--dim)"></i>'
+        + '</div>'
+        + '<div class="ac-sub">avg ' + (s.avg_seconds ? Number(s.avg_seconds).toFixed(1) + 's' : '—') + '/task'
+        + (skip ? ' · ' + skip + ' skipped' : '') + (s.running ? ' · ' + s.running + ' running' : '') + '</div>'
+        + '<details class="clb-ant-recent" data-ant="' + escapeHtml(roleId) + '"><summary>recent activity</summary>'
+        + '<div class="ac-recent"><div style="color:var(--dim)">Expand to load…</div></div></details>';
+
+      var det = host.querySelector('.clb-ant-recent');
+      // The loader app.js already owns — one implementation of "the last twelve events for this
+      // ant", rather than a second copy here that would drift from it.
+      if (det && typeof onAntRecentToggle === 'function')
+        det.addEventListener('toggle', function () { onAntRecentToggle(det); });
+    } catch (e) {
+      host.innerHTML = '<div class="clb-ant-note">Telemetry unavailable: ' + escapeHtml((e && e.message) || 'unknown error') + '</div>';
+    }
   }
   function showRecord(r) {
     var box = $('clb-record'); if (!box) return;
     if (!r) { box.style.display = 'none'; recordAnt = null; return; }
     var rec = r.record || {}; recordAnt = String(rec.ant || '').toLowerCase(); antId = null;
     var edit = $('clb-ant-edit'); if (edit) edit.style.display = 'none';
+    var stats = $('clb-ant-stats'); if (stats) { stats.style.display = 'none'; stats.innerHTML = ''; }
     $('clb-record-title').textContent = rec.title || rec.type || 'record';
     $('clb-record-meta').textContent = [rec.type, rec.ant, rec.mission && ('mission ' + String(rec.mission).slice(0, 8)), rec.taskId && ('task ' + String(rec.taskId).slice(0, 8)), rec.time].filter(Boolean).join(' · ');
     var v = rec.verif || 'not_scanned', tag = $('clb-record-verif');
     tag.textContent = v.replace(/_/g, ' ');
     tag.className = 'clb-record-tag' + (v === 'verified' ? ' ok' : v === 'refused' ? ' bad' : '');
-    var open = $('clb-record-open'); if (open) open.style.display = recordAnt && recordAnt !== '—' ? '' : 'none';
     box.style.display = '';
   }
   function applySectorStyle() {
@@ -349,11 +450,9 @@
     syncToggle();
     if (!live) { showSector(null); showRecord(null); return; }
     live.on('sector', function (s) { showSector(s); showRecord(null); markView(null); });
-    // A mound chamber's second click is ITS settings page — the one for that mound, not the fleet's.
-    // The renderer decides which chambers are doors (it owns the sector table) and hands over the
-    // chamber it was; this file owns navigation, so it does the go() and carries the id along.
-    // v0.3.8.123: the id used to be dropped here, which is why every mound opened the same page.
-    live.on('moundsettings', function (s) { openMoundSettings(s && s.id); });
+    // v0.3.8.124 — there is no `moundsettings` event any more. A mound chamber's second click used
+    // to open its settings page and now does nothing special: a chamber is a chamber, and settings
+    // are reached from the registry, which is the one place that lists every mound.
     live.on('deselect', function () { showSector(null); showRecord(null); });
     live.on('record', function (r) { showRecord(r); });
     live.on('resident', function (h) { showResident(h); });
@@ -367,7 +466,6 @@
     if (act === 'focus') setFocus(!focusOn());
     else if (act === 'needs') go('/chat');
     else if (act === 'viewmenu') { var p = $('clb-viewpop'); popShow(p && p.style.display === 'none'); }
-    else if (act === 'openant') { if (recordAnt && typeof nodes !== 'undefined' && typeof showInspector === 'function') { var n = nodes.find(function (x) { return x.ant === recordAnt || x.worker === recordAnt || x.id === recordAnt; }); if (n) { setFocus(false); showInspector(n); } } }
     else if (act === 'resetlayout') { var lv = liveApi(); if (lv) lv.resetLayout(); popShow(false); }
     else if (act === 'conduitauto') { conduitAuto = !conduitAuto; applyView(); }
     else if (act === 'moundregistry') { go('/colony/mounds'); }
@@ -376,7 +474,9 @@
       if (ld && rid && ld.removeMound && ld.removeMound(rid)) { if (sectorId === rid) showSector(null); renderMounds(); }
     }
     else if (act === 'moundopen') { openMoundSettings(b.dataset.moundId || null); }
-    else if (act === 'moundsettings') { openMoundSettings(sectorId); }
+    // INFRASTRUCTURE's settings are the Infrastructure page, not a micromound form for a device it
+    // does not have. v0.3.8.124 — see the comment in renderMounds.
+    else if (act === 'infraopen') { go('/tools/infrastructure'); }
     else if (act === 'secstylereset') { var l2 = liveApi(); if (l2 && sectorId) { l2.setSectorStyle(sectorId, { color: null, glow: 1, bright: 1 }); showSector(l2.sectorInfo(sectorId) && Object.assign({}, l2.sectorInfo(sectorId), { records: [] })); } }
     else if (act === 'antstylereset') { var l3 = liveApi(); if (l3 && antId) { l3.setAntStyle(antId, { name: null, color: null }); var nm2 = $('clb-ant-name'); if (nm2) nm2.value = ''; var t2 = $('clb-record-title'); if (t2 && lastResident) t2.textContent = lastResident.registryName || antId; } }
     else if (act === 'addmound') {

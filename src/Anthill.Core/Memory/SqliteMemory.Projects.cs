@@ -47,6 +47,67 @@ public sealed partial class SqliteMemory
         Query("SELECT * FROM conversations WHERE project_id=@pid ORDER BY pinned DESC, updated_at DESC",
             ("@pid", projectId ?? "")).Select(ReadConversation).ToList();
 
+    /* ---- Per-project model routes. v0.3.8.124 -------------------------------------------------
+       The per-ROLE half of a project's routing. Its priority model is two columns on `projects`
+       above; a role override needs a row, and absence of a row means the role inherits the colony's
+       route rather than having none. See `ProjectRoutingScope` for the precedence this feeds. */
+
+    /// <summary>Every role this project overrides, role → (provider, model). Empty is the norm.</summary>
+    public IReadOnlyDictionary<string, (string Provider, string Model)> LoadProjectRoutes(string projectId)
+    {
+        var routes = new Dictionary<string, (string, string)>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(projectId)) return routes;
+
+        foreach (var row in Query("SELECT role, provider, model FROM project_model_routes WHERE project_id=@pid",
+                     ("@pid", projectId)))
+        {
+            var role = row.GetValueOrDefault("role")?.ToString() ?? "";
+            var provider = row.GetValueOrDefault("provider")?.ToString() ?? "";
+            var model = row.GetValueOrDefault("model")?.ToString() ?? "";
+
+            // A half-written row is not a route. Both halves or the role inherits — the same rule
+            // `HasModelPriority` applies colony-wide, applied where the row is read so a row that
+            // somehow lost one half cannot route an ant to an empty model.
+            if (role.Length == 0 || provider.Length == 0 || model.Length == 0) continue;
+            routes[role] = (provider, model);
+        }
+
+        return routes;
+    }
+
+    /// <summary>Set one role's route for one project. Replaces; there is one route per role.</summary>
+    public void SaveProjectRoute(string projectId, string role, string provider, string model, string by)
+    {
+        if (string.IsNullOrWhiteSpace(projectId) || string.IsNullOrWhiteSpace(role)) return;
+        if (string.IsNullOrWhiteSpace(provider) || string.IsNullOrWhiteSpace(model)) return;
+
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            NonQuery(conn, null,
+                @"INSERT INTO project_model_routes (project_id, role, provider, model, updated_by, updated_at)
+                  VALUES (@pid, @role, @prov, @model, @by, @at)
+                  ON CONFLICT(project_id, role) DO UPDATE SET
+                    provider=@prov, model=@model, updated_by=@by, updated_at=@at",
+                ("@pid", projectId), ("@role", role), ("@prov", provider), ("@model", model),
+                ("@by", by ?? ""), ("@at", AnthillTime.NowUtc().ToIso()));
+        }
+    }
+
+    /// <summary>Clear one role's override, so it inherits the colony's route again.</summary>
+    public void DeleteProjectRoute(string projectId, string role)
+    {
+        if (string.IsNullOrWhiteSpace(projectId) || string.IsNullOrWhiteSpace(role)) return;
+
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            NonQuery(conn, null,
+                "DELETE FROM project_model_routes WHERE project_id=@pid AND role=@role",
+                ("@pid", projectId), ("@role", role));
+        }
+    }
+
     private static Project ReadProject(Dictionary<string, object?> row) => new()
     {
         Id = row.GetValueOrDefault("id")?.ToString() ?? "",

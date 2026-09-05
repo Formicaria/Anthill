@@ -94,10 +94,32 @@ public sealed class ModelRouter
     /// window, a tool-calling model for an ant that needs one — survives the priority being switched
     /// on and returns intact when it is switched off.
     /// </summary>
-    public (string Provider, string Model) GetRoute(string role) =>
-        AnthillRuntime.HasModelPriority
+    /// v0.3.8.124 — AND THE PROJECT'S PRIORITY OUTRANKS THE COLONY'S. Routing became a per-project
+    /// decision: an operator running one project against a local model and another against Claude
+    /// had no way to say so, because every change was to the whole colony. The chain is the same
+    /// shape one layer deeper — project priority, then the project's own route for this role, then
+    /// the colony's priority, then the colony's route — so nothing about the colony-wide behaviour
+    /// changes for a flow that belongs to no project, which is most of them.
+    public (string Provider, string Model) GetRoute(string role)
+    {
+        if (Projects.ProjectRoutingScope.Priority is { } projectPriority) return projectPriority;
+
+        return AnthillRuntime.HasModelPriority
             ? (AnthillRuntime.ModelPriorityProvider, AnthillRuntime.ModelPriorityModel)
             : RoleRoute(role);
+    }
+
+    /// <summary>
+    /// Is ANY priority route in force — the project's or the colony's? v0.3.8.124.
+    ///
+    /// Read by <see cref="ResolveRoute"/>, whose failover target depends on it: with a priority
+    /// active the role's OWN route is what a failing priority falls back to, and without one the
+    /// colony's `fallback` role is. Named once rather than spelled out at each site, because the two
+    /// halves of that condition drifting apart is precisely how a project's route would become
+    /// unreachable while still being displayed.
+    /// </summary>
+    private static bool HasAnyPriority =>
+        Projects.ProjectRoutingScope.Priority is not null || AnthillRuntime.HasModelPriority;
 
     /// <summary>
     /// A route with its model actually resolved, or the reason it could not be. v0.3.8.41.
@@ -111,9 +133,18 @@ public sealed class ModelRouter
         public static ResolvedRoute Ok(string provider, string model) => new(provider, model, true, "");
     }
 
-    /// <summary>The route configured for this role specifically, ignoring any priority override.</summary>
+    /// <summary>
+    /// The route configured for this role specifically, ignoring any priority override.
+    ///
+    /// v0.3.8.124 — the PROJECT's override for this role comes first when one is in scope. A role
+    /// the project does not name falls through to the colony's route rather than to nothing, which
+    /// is what makes a project a set of overrides an operator fills in as they care to rather than a
+    /// fourteen-row form they must complete before anything can run.
+    /// </summary>
     public (string Provider, string Model) RoleRoute(string role)
     {
+        if (Projects.ProjectRoutingScope.RouteFor(role) is { } projectRoute) return projectRoute;
+
         var route = AnthillRuntime.ModelRouting.GetValueOrDefault(role)
                     ?? AnthillRuntime.ModelRouting.GetValueOrDefault("fallback")
                     ?? new Dictionary<string, string> { ["provider"] = AnthillRuntime.DefaultModelProvider, ["model"] = AnthillRuntime.OllamaModel };
@@ -380,8 +411,16 @@ public sealed class ModelRouter
     {
         if (_memory is null) return primary;
 
-        if (!Pheromones.RouteGuidedSelection.IsLearnable(
-                AnthillRuntime.ModelRouting.ContainsKey(role), AnthillRuntime.HasModelPriority))
+        // v0.3.8.124 — BOTH BOUNDS COUNT THE PROJECT'S CHOICES TOO. `IsLearnable` refuses to reorder
+        // a route an operator chose deliberately, and a project route is exactly that: chosen, and
+        // scoped more narrowly than a colony one. Reading only the colony's two facts would have let
+        // pheromone learning quietly override the route a project was created to pin, which is the
+        // one thing this gate exists to prevent — and it would have done it invisibly, because a
+        // learned route is not shown as an override anywhere.
+        var explicitRoute = AnthillRuntime.ModelRouting.ContainsKey(role)
+                         || Projects.ProjectRoutingScope.RouteFor(role) is not null;
+
+        if (!Pheromones.RouteGuidedSelection.IsLearnable(explicitRoute, HasAnyPriority))
             return primary;
 
         try
@@ -436,7 +475,11 @@ public sealed class ModelRouter
         // fallback. That ordering is the whole reason the priority is a preference rather than a
         // replacement: when the promoted model is unhealthy, work should land on the model this ant
         // was deliberately given, not on whatever everything else defaults to.
-        var fallback = AnthillRuntime.HasModelPriority ? RoleRoute(role) : RoleRoute("fallback");
+        // v0.3.8.124 — a PROJECT priority fails over the same way a colony one does, which is why
+        // this reads `HasAnyPriority` rather than the colony flag alone. Left as the colony flag,
+        // a project-wide priority would have failed over to the colony's `fallback` role and
+        // stepped straight out of the project the operator had scoped their work to.
+        var fallback = HasAnyPriority ? RoleRoute(role) : RoleRoute("fallback");
         if (fallback.Provider == primary.Provider && fallback.Model == primary.Model)
             return (primary.Provider, primary.Model, null); // nothing distinct to fail over to
 

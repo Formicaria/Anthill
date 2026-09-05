@@ -755,6 +755,98 @@ public static partial class ApiHost
             }, $"The colony may now reach {full} for this project.");
         });
 
+        /* ---- PER-PROJECT MODEL ROUTING. v0.3.8.124 -----------------------------------------------
+           The Ant Inspector page is gone and routing is a project decision now. A project's PRIORITY
+           model rides on `PATCH /projects/{id}` (`default_provider` / `default_model` — persisted
+           since .48, read by nothing until .124); these two routes carry the per-ROLE half.
+
+           EVERY ROUTE THE PAGE OFFERS COMES BACK FROM HERE, including the colony's own, because the
+           console must be able to show what a role would use when the project says nothing about it.
+           A page that showed only the overrides would leave an operator unable to tell "inherits the
+           colony's llama3.3" from "unrouted", which are very different states. */
+        app.MapGet("/projects/{id}/routes", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_models"); if (auth is not null) return auth;
+            if (Queen.Memory.LoadProject(id) is not { } project)
+                return ApiJson.Error($"No project '{id}'.", "not_found");
+
+            var overrides = Queen.Memory.LoadProjectRoutes(id);
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["project_id"] = project.Id,
+                // The project's own priority — the "use this everywhere in this project" decision.
+                ["priority_provider"] = project.DefaultProvider ?? "",
+                ["priority_model"] = project.DefaultModel ?? "",
+                ["priority_active"] = !string.IsNullOrWhiteSpace(project.DefaultProvider)
+                                   && !string.IsNullOrWhiteSpace(project.DefaultModel),
+                ["roles"] = AnthillRuntime.RoutableRoles.Select(role =>
+                {
+                    var over = overrides.TryGetValue(role, out var r) ? r : default;
+                    var inherited = Queen.Router?.RoleRoute(role) ?? ("", "");
+                    return new Dictionary<string, object?>
+                    {
+                        ["role"] = role,
+                        ["overridden"] = overrides.ContainsKey(role),
+                        ["provider"] = over.Provider ?? "",
+                        ["model"] = over.Model ?? "",
+                        // What this role uses when the project stays silent. Shown so "inherits" is
+                        // a legible state rather than a blank the operator has to interpret.
+                        ["colony_provider"] = inherited.Provider,
+                        ["colony_model"] = inherited.Model,
+                    };
+                }).ToList(),
+                ["colony_priority_active"] = AnthillRuntime.HasModelPriority,
+            });
+        });
+
+        app.MapPost("/projects/{id}/routes", async (HttpContext ctx, string id) =>
+        {
+            // `manage_models` — the same permission `POST /routes/{role}` takes for the colony-wide
+            // equivalent. A narrower scope is not a lesser act: this decides which model does the
+            // work for everything in the project.
+            var auth = RequireAuth(ctx, "manage_models"); if (auth is not null) return auth;
+            if (Queen.Memory.LoadProject(id) is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+
+            Dictionary<string, string?>? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<Dictionary<string, string?>>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+
+            var role = (body?.GetValueOrDefault("role") ?? "").Trim();
+            if (role.Length == 0) return ApiJson.Error("A role is required.", "bad_request");
+            if (!AnthillRuntime.RoutableRoles.Contains(role, StringComparer.OrdinalIgnoreCase))
+                return ApiJson.Error(
+                    $"'{role}' is not a routable role. Known: {string.Join(", ", AnthillRuntime.RoutableRoles)}.",
+                    "bad_request");
+
+            var provider = (body?.GetValueOrDefault("provider") ?? "").Trim();
+            var model = (body?.GetValueOrDefault("model") ?? "").Trim();
+            var who = CurrentUsername(ctx) ?? "operator";
+
+            // CLEARING IS AN EMPTY PROVIDER, and it means "inherit the colony's route" rather than
+            // "this role has no model". Those are different states and only one of them is
+            // expressible: a project cannot un-route a role, only decline to override it.
+            if (provider.Length == 0 && model.Length == 0)
+            {
+                Queen.Memory.DeleteProjectRoute(id, role);
+                return ApiJson.Ok(new Dictionary<string, object?> { ["role"] = role, ["overridden"] = false },
+                    $"'{role}' follows the colony's route again in this project.");
+            }
+
+            // Both halves or neither — the rule `HasModelPriority` applies colony-wide, applied here
+            // so a half-filled form cannot route an ant at a provider with no model.
+            if (provider.Length == 0 || model.Length == 0)
+                return ApiJson.Error(
+                    "A route needs both a provider and a model. Clear both to inherit the colony's route.",
+                    "bad_request");
+
+            Queen.Memory.SaveProjectRoute(id, role, provider, model, who);
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["role"] = role, ["overridden"] = true, ["provider"] = provider, ["model"] = model,
+            }, $"In this project, '{role}' now runs on {provider}:{model}.");
+        });
+
         app.MapDelete("/projects/{id}/grants/{grantId}", (HttpContext ctx, string id, string grantId) =>
         {
             var auth = RequireAuth(ctx, "manage_settings"); if (auth is not null) return auth;
