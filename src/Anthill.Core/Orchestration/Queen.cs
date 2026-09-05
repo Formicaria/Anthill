@@ -1373,9 +1373,29 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
               + $"{decisionError.Message} — grading as though none were outstanding.");
         }
 
+        // v0.3.8.123 — and a way to read a PRIOR mission's artifacts, so a claim citing
+        // `mission:<id>` can be traced past the recall to whatever that mission itself consulted.
+        //
+        // A LOOKUP, not a fifth eager read, and the difference matters at both ends. Eagerly
+        // fetching every recalled mission's store would read history no citation names on the great
+        // majority of missions; deferring it means the walk pays only for the ids an answer actually
+        // cited, and the evaluator stays a pure function of what it was handed. Read failure returns
+        // null — the citation then does not resolve, which is the same answer as a mission with no
+        // record, and the honest one: an untraceable claim is unresolved, never assumed good.
+        IReadOnlyList<Anthill.SDK.Artifacts.Artifact>? RecalledArtifacts(string priorMissionId)
+        {
+            try { return ((Anthill.SDK.Artifacts.IArtifactStore)Memory).ForMission(priorMissionId); }
+            catch (Exception recallError)
+            {
+                Console.Error.WriteLine(
+                    $"[finalize] could not read artifacts for recalled mission {priorMissionId}: {recallError.Message}");
+                return null;
+            }
+        }
+
         var evaluation = _evaluator.Evaluate(
             mission, context, stopReason, Memory.CountPatchProposalsForMission(mission.Id), missionEvidence,
-            missionConsumptions, missionArtifacts, pendingDecisions);
+            missionConsumptions, missionArtifacts, pendingDecisions, RecalledArtifacts);
         // NB: persisted by RunMission AFTER the final SaveMission (INSERT OR REPLACE would erase
         // it here) and before anything publishes completion. In-process consumers below use this
         // same object, so they cannot disagree with what gets persisted.

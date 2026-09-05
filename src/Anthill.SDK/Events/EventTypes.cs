@@ -54,7 +54,10 @@ public static class EventTypes
     /// <summary>v0.3.8.122 — the planner could not use the plan it was asked for and substituted a
     /// static one. This was five `Console.Error.WriteLine` calls and nothing else: the substitution
     /// happened, nothing recorded it, and an operator saw a colony that had ignored their goal with a
-    /// green run behind it. `reason` carries one of `PlanSubstitutions`' five codes.
+    /// green run behind it. `reason` carries one of `PlanSubstitutions`' codes — the five original
+    /// substitutions, plus v0.3.8.123's `grounded_inspection_required`, which is not a substitution
+    /// of that kind: nothing is abandoned there and a step is guaranteed, and it travels through
+    /// this event because the question a reader brings to the row is the same one.
     ///
     /// Only ever logged for a mission that EXISTS. `Queen.PlanPreview` plans over a transient mission
     /// that is never persisted, and an event row for it would violate the events→missions foreign

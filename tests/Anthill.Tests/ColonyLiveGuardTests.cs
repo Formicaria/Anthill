@@ -285,6 +285,15 @@ public class ColonyLiveGuardTests
     /// An event whose ant the colony does not recognise goes to the server's declared fallback —
     /// stated in the snapshot, so the browser never has to choose. The forbidden thing was never
     /// "the queen"; it was a client picking a default for an open set.
+    ///
+    /// v0.3.8.123 — AND THE FALLBACK IS MEMORY NOW, WHICH IS NOT AN ARBITRARY SWAP. `.122` sent
+    /// these rows to mission control on the argument that mission-level events already live there.
+    /// The trouble is what that CLAIMS: the Queen's Core is an authority chamber, so filing a row
+    /// there says the colony's command layer produced it — an attribution we have no basis for
+    /// about a row whose author is precisely what could not be resolved, and one that makes the
+    /// authority chamber look busier than the colony's authority actually was. Memory claims
+    /// nothing about who did the work; it says only that the colony stored a row, which is the one
+    /// thing about an unattributable record that is definitely true.
     /// </summary>
     [Fact]
     public void TheRecordsEndpoint_FilesAnUnknownAnt_AtTheServersDeclaredFallback()
@@ -295,6 +304,53 @@ public class ColonyLiveGuardTests
         Assert.Contains("sectorOfRole.GetValueOrDefault(ant, ColonySectors.Fallback)", api);
         // The snapshot tells the client where that is, so it is never inferred.
         Assert.Contains("[\"fallback_sector\"] = ColonySectors.Fallback", api);
+
+        Assert.Equal(ColonySectors.Memory, ColonySectors.Fallback);
+        Assert.NotEqual(ColonySectors.Queen, ColonySectors.Fallback);
+    }
+
+    /// <summary>
+    /// A ROW THE COLONY STORED BELONGS TO MEMORY, WHOEVER WROTE IT. v0.3.8.123.
+    ///
+    /// Every record used to be filed by its author, and that is right for most of them: a
+    /// verification is validation's, a mission outcome is mission control's, and reading them
+    /// anywhere else would hide which part of the colony did the work. It is wrong for the rows
+    /// where the record IS the colony committing something to memory. Those were scattered across
+    /// six chambers by author while MEMORY — the chamber whose whole subject is what the colony
+    /// keeps — sat almost empty, because exactly one registry colony maps to it. The operator
+    /// noticed and was right: "memory should eventually be one of the most populated chambers."
+    ///
+    /// Nothing is invented to achieve that. The event type already carries the fact; this reads it
+    /// instead of ignoring it. `_recorded` is deliberately excluded — that is the colony noting
+    /// that something happened, which stays with whoever it happened to — and the exclusion is
+    /// asserted, because a rule that swallowed everything would fill Memory by emptying the rest.
+    /// </summary>
+    [Fact]
+    public void ARecordTheColonyStored_IsFiledInMemory_WhoeverWroteIt()
+    {
+        Assert.Equal(ColonySectors.Memory, ColonySectors.ForRecordType("artifact_stored"));
+        Assert.Equal(ColonySectors.Memory, ColonySectors.ForRecordType("summary_written"));
+        Assert.Equal(ColonySectors.Memory, ColonySectors.ForRecordType("memory_candidate"));
+        Assert.Equal(ColonySectors.Memory, ColonySectors.ForRecordType("pheromone_scored"));
+
+        // Noting that something happened is not storing it. These keep their author.
+        Assert.Null(ColonySectors.ForRecordType("mission_evaluated"));
+        Assert.Null(ColonySectors.ForRecordType("verification_bound_to_evidence"));
+        Assert.Null(ColonySectors.ForRecordType("patch_recorded"));
+        Assert.Null(ColonySectors.ForRecordType(""));
+        Assert.Null(ColonySectors.ForRecordType(null));
+
+        // VACUITY FLOOR: every type this rule claims is one the read model actually files as a
+        // record. A rule over event types nobody records would be a rule over nothing.
+        foreach (var type in new[] { "artifact_stored", "summary_written", "memory_candidate", "pheromone_scored" })
+            Assert.True(ColonyLiveProjection.CreatesDurableRecord(type),
+                $"'{type}' is routed to Memory but is not a durable record, so the routing is unreachable.");
+
+        // And the endpoint consults the rule BEFORE the author, which is the ordering the whole
+        // change rests on: what a record is beats who wrote it, where the type settles the question.
+        var api = SourceText.CodeOnly(File.ReadAllText(Path.Combine(
+            SourceText.RepoRoot(), "src", "Anthill.Api", "ColonyLive", "ApiHost.ColonyLive.cs")));
+        Assert.Contains("ColonySectors.ForRecordType(eventType)", api);
     }
 
     /// <summary>
@@ -842,7 +898,7 @@ public class ColonyLiveGuardTests
     }
 
     /// <summary>
-    /// A MOUND CHAMBER IS A LABEL, AND A LABEL REACHES NO DEVICE — v0.3.8.122.
+    /// A MOUND CHAMBER IS A LABEL, AND A LABEL REACHES NO DEVICE — v0.3.8.122, revised .123.
     ///
     /// `+ Mound` adds a chamber to the operator's colony immediately, drawn with the roster every
     /// mound runs. The whole feature rests on one separation: the chamber's name, its colour, and
@@ -851,11 +907,17 @@ public class ColonyLiveGuardTests
     /// whatever the colony calls it — which is what lets an operator label a fleet for their own use
     /// case without touching what the devices are.
     ///
-    /// So the guard is about where the roster comes from and where the labels stop. The names come
-    /// from `MicromoundRoster` — itself a checked projection of the device runtime's `DefaultAnts` —
-    /// served over the micromound API, because that file already lives inside `#if MICROMOUND` and
-    /// the colony endpoint does not. Hand-copying seven strings into the browser would have been the
-    /// second store of one fact that `MicromoundRoster`'s own header argues against at length.
+    /// WHERE THE ROSTER COMES FROM CHANGED AT .123, AND THAT IS THE POINT OF THIS REVISION. `.122`
+    /// served it from `/micromound/roster/defaults`, inside `#if MICROMOUND`, behind
+    /// `read_micromound`, fetched from inside the fleet listing's own `.then`. Four conditions had
+    /// to hold before seven presentation labels appeared, and when any of them did not the operator
+    /// got a mound chamber with nothing in it — which is exactly what they reported. None of those
+    /// conditions is about authority, so the roster moved to `Anthill.SDK.Modules.MoundRoster`,
+    /// served at `/colony/mound-roster`, always mapped and guarded like the rest of the picture.
+    ///
+    /// What did NOT change is that there is one store. `MicromoundRoster` forwards to the SDK list
+    /// rather than declaring its own, so `RosterProjectionTests` still checks the whole chain
+    /// against the device runtime by compiled inspection.
     /// </summary>
     [Fact]
     public void AnOperatorAddedMound_IsDrawnFromTheServersRoster_AndItsLabelsGoNowhere()
@@ -875,10 +937,13 @@ public class ColonyLiveGuardTests
             foreach (var asset in ColonyAssets)
                 Assert.False(Code(asset).Contains(ant, StringComparison.Ordinal),
                     $"{asset} names the mound ant \"{ant}\" in code. That roster has one source — "
-                  + "MicromoundRoster, served at /micromound/roster/defaults — and a copy here is the "
-                  + "second store of one fact that its own header warns about.");
+                  + "Anthill.SDK.Modules.MoundRoster, served at /colony/mound-roster — and a copy "
+                  + "here is the second store of one fact that its own header warns about.");
 
-        Assert.Contains("api('/micromound/roster/defaults')", host);
+        // ITS OWN FETCH, NOT THE FLEET'S PASSENGER. Nested inside `/micromound/mounds` the roster
+        // arrived only when a device listing already had; that is the bug this line pins closed.
+        Assert.Contains("api('/colony/mound-roster')", host);
+        Assert.DoesNotContain("/micromound/roster/defaults", host);
         Assert.Contains("setMoundDefaults", live);
         Assert.Contains("moundDefaults", live);
 
@@ -889,9 +954,13 @@ public class ColonyLiveGuardTests
 
         // Only the operator's own chambers can be deleted. A registry sector is refused in the
         // renderer, not merely hidden in the page: a button that exists to be refused is worse than
-        // no button, and hiding is not enforcing.
+        // no button, and hiding is not enforcing. The registry now LISTS every mound (.123 —
+        // infrastructure belongs on the page that lists mounds), so `removable` is what the row
+        // renders and `added` is still what the renderer enforces.
         Assert.Contains("if (!s2 || !s2.added) return false;", live);
-        Assert.Contains("live.isAddedMound(s.id)", home);
+        Assert.Contains("removable: !!x.added", live);
+        Assert.Contains("m.removable", home);
+        Assert.Contains("return SEC.filter(function (x) { return x.mound; })", live);
 
         // DELETING BELONGS TO THE FLEET VIEW, NOT TO ONE CHAMBER'S PANEL. `+ Mound` makes as many
         // chambers as an operator wants, so there is no single mound for a settings page to mean —
@@ -902,10 +971,18 @@ public class ColonyLiveGuardTests
         Assert.Contains("PAGE_ENTER['mounds'] = renderMounds", home);
         Assert.Contains("id=\"page-mounds\"", Raw("index.html"));
 
+        // AND THE REGISTRY'S BUTTONS HAVE TO REACH A HANDLER. v0.3.8.123: `onAct` was bound to
+        // `#page-colony` alone while the registry lives in `#page-mounds`, so Delete emitted a click
+        // that reached nothing at all — not a broken delete, an unlistened one. This is the line
+        // whose absence made a whole page inert, which is why it is guarded rather than assumed.
+        Assert.Contains("mpage.addEventListener('click', onAct)", home);
+
         // And one mound's settings carry WHICH mound. A destination that cannot say which is the
         // reason this was rebuilt: `window.micromoundPendingId` is the console's established shape
-        // for that, the same one the project pickers use.
+        // for that, the same one the project pickers use. `.123` — the renderer hands the chamber
+        // over and this passes its id on, which the `.122` handler dropped on the floor.
         Assert.Contains("window.micromoundPendingId = id", home);
+        Assert.Contains("openMoundSettings(s && s.id)", home);
 
         // BOTH DESTINATIONS DELETE, AND A DELETE ANYWHERE TAKES THE CHAMBER OUT OF THE COLONY AT
         // ONCE. An operator who removes a mound and then finds it still drawn has been told a lie
@@ -926,45 +1003,60 @@ public class ColonyLiveGuardTests
     }
 
     /// <summary>
-    /// THE COLONY READS ITSELF AT THE ZOOM YOU ARE AT — v0.3.8.122.
+    /// THE COLONY READS ITSELF AT THE ZOOM YOU ARE AT — v0.3.8.122, and ONE SETTING AT .123.
     ///
     /// Every chamber name was drawn at every distance, so the survey was a wall of text nobody was
-    /// reading and the detail an operator actually wanted — which ants, which linked records — was
-    /// never shown at all. `zoom` is now the default and earns text in tiers: nothing far out, the
-    /// chamber name as it fills the frame, then EVERY ant including the workers hanging off each
-    /// role, then the labels on the record points the links join.
+    /// reading and the detail an operator actually wanted — which ants, which records — was never
+    /// shown at all. `.122` answered that with a zoom-driven mode and kept the old always-on
+    /// behaviour beside it as `fixed`, offering both.
     ///
-    /// The thresholds are multiples of the chamber's OWN radius rather than absolute distances,
-    /// which is the part worth guarding: a fixed distance makes a small chamber surrender its name
-    /// while a large one is still silent, and the two look like a bug rather than a rule.
+    /// THE CHOICE WAS THE PROBLEM. The operator's reply was direct: "i dont want a 'all on zoom'
+    /// option, i just want it that when all is selected, when you zoom into a chamber, allll the
+    /// little dots that can be clicked on, show some sort of label on them." So `All` IS the zoom
+    /// behaviour now, there is no separate setting for it, and tier 3 labels EVERY point
+    /// `pickPoint` would accept rather than only the ones a link happens to join — a dot you can
+    /// click is a dot you should be able to read.
     ///
-    /// The old behaviour survives as `fixed`, because an operator who reads the colony at a glance
-    /// already knows it. A browser remembering the old name `normal` heals to it at both ends.
+    /// Two properties are worth guarding beyond the mapping. The thresholds are multiples of the
+    /// chamber's OWN radius rather than absolute distances: a fixed distance makes a small chamber
+    /// surrender its name while a large one is still silent, and the two look like a bug rather
+    /// than a rule. And tier 3 sits inside `pickPoint`'s own 7.5R reach, which is what makes
+    /// "labelled" and "clickable" the same set instead of two sets that nearly agree.
     /// </summary>
     [Fact]
-    public void LabelsAreEarnedByZoom_AndTheOldBehaviourIsStillAnOption()
+    public void EveryClickableDot_NamesItself_OnceYouHaveZoomedIn()
     {
         var live = Code("colony-live.js");
 
         Assert.Contains("function labelTier(s, isFocused)", live);
-        Assert.Contains("cam.dist < s.R * 2.6 && isFocused) return 3", live);
+        Assert.Contains("cam.dist < s.R * 3 && isFocused) return 3", live);
         Assert.Contains("cam.dist < s.R * 5.5 && isFocused) return 2", live);
         Assert.Contains("cam.dist < s.R * 9.5) return 1", live);
 
-        // Workers are labelled too, and ONLY in the zoom mode — that is the whole ask.
-        Assert.Contains("opts.labels === 'zoom' || !res.worker", live);
-        // Tier 3 labels link endpoints, not every grain.
-        Assert.Contains("tier >= 3 && p.linked", live);
-        Assert.Contains("pts[lk[0]].linked = true", live);
+        // Tier 3 no longer filters by whether a link touched the point. That filter WAS the
+        // complaint, so its absence is the assertion.
+        Assert.Contains("tier >= 3 && p.rec && p.rec.title", live);
+        Assert.DoesNotContain("tier >= 3 && p.linked", live);
 
-        // Both migrations, so a remembered `normal` cannot leave the select and the renderer
-        // disagreeing about what the operator chose.
-        Assert.Contains("if (o.labels === 'normal') o.labels = 'fixed';", live);
-        Assert.Contains("v.labels === 'normal' ? 'fixed'", Code("colony-home.js"));
+        // Every labelled dot is inside the distance at which a dot can be clicked. If either
+        // constant moves without the other, the view starts labelling things nothing will select.
+        Assert.Contains("cam.dist > s.R * 7.5) return null;", live);
+
+        // Workers are labelled at tier 2 with no mode left to condition it on.
+        Assert.Contains("if (res && tier >= 2 && m > .25)", live);
+        Assert.DoesNotContain("opts.labels === 'zoom' || !res.worker", live);
+
+        // Every retired spelling heals, at BOTH ends, so a remembered value cannot leave the select
+        // and the renderer disagreeing about what the operator chose — or leave the select blank,
+        // which is what assigning a value it no longer offers would do.
+        Assert.Contains("if (o.labels === 'normal' || o.labels === 'fixed' || o.labels === 'zoom') o.labels = 'all';", live);
+        Assert.Contains("/^(normal|fixed|zoom)$/.test(v.labels) ? 'all'", Code("colony-home.js"));
+        Assert.Contains("labels: 'all'", live);
 
         var html = Raw("index.html").Replace("\r\n", "\n");
-        Assert.Contains("value=\"zoom\" selected", html);
-        Assert.Contains("value=\"fixed\"", html);
+        Assert.Contains("value=\"all\" selected", html);
+        Assert.DoesNotContain("value=\"zoom\"", html);
+        Assert.DoesNotContain("value=\"fixed\"", html);
 
         // VACUITY FLOOR: the tier is consulted where labels are actually drawn.
         Assert.Contains("var tier = labelTier(s, isFocused);", live);
@@ -1112,5 +1204,215 @@ public class ColonyLiveGuardTests
         // VACUITY FLOOR: the drag handler and the projection this guard reasons about are both here.
         Assert.Contains("function onMove(e)", live);
         Assert.Contains("function proj(p)", live);
+    }
+
+    /// <summary>
+    /// EVERY MOUND HANGS OFF THE QUEEN, AND WHICH MOUNDS EXIST CHANGES AT RUNTIME. v0.3.8.123.
+    ///
+    /// `.122` had exactly one authority strand and it was hard-coded `queen → mound`.
+    /// INFRASTRUCTURE had none and an operator-added chamber had none — so the two kinds of mound
+    /// an operator actually ends up with floated unattached while the one built-in placeholder was
+    /// wired. That is not cosmetic. A conduit in this view is the statement that a chamber answers
+    /// to the Queen, and a mound that takes charters from her and shows no strand is the console
+    /// contradicting what the colony does.
+    ///
+    /// The fix is that the strands are DERIVED from the sector table rather than listed, which is
+    /// what this guards: adding a mound wires it, removing one drops its strand, and nothing has to
+    /// remember to keep a second list in step. A hard-coded pair reappearing here is the bug coming
+    /// back, so its absence is asserted rather than assumed.
+    /// </summary>
+    [Fact]
+    public void EveryMoundHangsOffTheQueen_IncludingTheOnesAnOperatorAdds()
+    {
+        var live = Code("colony-live.js");
+
+        // Derived from the table, not a list. `s.mound` is the flag every kind of mound carries:
+        // infrastructure, the fleet chamber, and each one an operator added.
+        Assert.Contains("function rebuildAuthorities()", live);
+        Assert.Contains("if (!s.mound) return;", live);
+        Assert.Contains("authorities[s.id] = mkRoot('queen', s.id, 1, 20)", live);
+
+        // The single hard-coded strand is gone, at both ends — the root and its particle stream.
+        Assert.DoesNotContain("mkRoot('queen', 'mound', 1, 20)", live);
+        Assert.DoesNotContain("if (bySec.mound.present) authority.strands", live);
+
+        // Removing a mound drops its conduit rather than leaving a strand to a chamber that is not
+        // there, and a NEW strand gets particles in the same breath: a line with nothing moving on
+        // it reads as dead, which is the opposite of what a conduit is for.
+        Assert.Contains("if (!want[id]) { delete authorities[id]; changed = true; }", live);
+        Assert.Contains("if (ch) buildStreams();", live);
+
+        // Drawn only for a chamber that is on screen.
+        Assert.Contains("if (!bySec[id] || !bySec[id].present) return;", live);
+
+        // The device ring marks every mound too, not just the built-in one — it is the mark that
+        // says "this one is hardware", and that claim is the same for all three kinds.
+        Assert.Contains("if (s.mound) {", live);
+        // The STOPPED suffix moved with it. `else if (s.id === 'mound')` still exists one function
+        // away — that one reads the SERVER'S fleet chamber out of the snapshot, which is a different
+        // question from "is this hardware" — so the assertion is on what the label now says rather
+        // than on the absence of a substring that legitimately survives elsewhere.
+        Assert.Contains("s.label + (s.mound && s.stopped ? ' \u00b7 STOPPED' : '')", live);
+
+        // VACUITY FLOOR: the draw loop this guard reasons about is here and does consult them.
+        Assert.Contains("function eachAuthority(fn)", live);
+        Assert.Contains("eachAuthority(function (a, id) {", live);
+    }
+
+    /// <summary>
+    /// THE COLONY IS ARRANGED, NOT SCATTERED — v0.3.8.123.
+    ///
+    /// Two pieces of deliberate noise had been sitting in the seat layout since the renderer was
+    /// written: a phase offset and a `sin(ri * 2.4)` vertical wobble on the role orbs, and an
+    /// alternating zigzag on the workers. Both existed to stop orbs overlapping and both worked, at
+    /// the cost of a chamber that reads as a handful of ants dropped in rather than a colony
+    /// arranged in one. Records had the same problem from the other direction: the LATTICE they sit
+    /// on is perfectly even, and a per-record continuous radius was the one thing scattering it.
+    /// The operator's word for the result was "method and symmetry and less madness".
+    ///
+    /// THE QUEEN IS THE EXCEPTION, AND SHE IS THE EXCEPTION EVERYWHERE ELSE TOO. Her chamber is the
+    /// authority chamber and she is not a peer of the six around her; drawing her as one seat among
+    /// them on the same ring said otherwise. She sits at the centre at nearly double size and the
+    /// ring closes around her.
+    ///
+    /// What must NOT change is that a record keeps its seat as the chamber fills up around it —
+    /// that is why the shells are chosen by the record's own durability and the slot by its own id,
+    /// rather than by its position in whatever order the page happened to receive.
+    /// </summary>
+    [Fact]
+    public void ChambersAreArrangedWithMethod_AndTheQueenSitsAtTheCentreOfHers()
+    {
+        var live = Code("colony-live.js");
+
+        // The Queen: centred, larger, and identified by the registry id rather than by her position
+        // in the resident list — an ordering the server owns and this file must not depend on.
+        Assert.Contains("String(r.roleId || '').toLowerCase() === 'queen'", live);
+        Assert.Contains("base = queenSeat ? [0, 0, 0]", live);
+        Assert.Contains("sz: queenSeat ? 4.4 : 2.4", live);
+        // The ring is counted WITHOUT her, so six around a centre is an even six and not a gap.
+        Assert.Contains("resList.filter(function (r) { return !isQueenSeat(r); }).length", live);
+
+        // The jitter is gone: an even ring from a fixed start, and no vertical wobble.
+        Assert.Contains("-Math.PI / 2 + (queenSeat ? 0 : (ringI / ringN) * TAU)", live);
+        Assert.DoesNotContain("Math.sin(ri * 2.4)", live);
+        Assert.DoesNotContain("(wi % 2 ? .08 : -.08)", live);
+
+        // Workers fan around their own parent, spread so one role's arc cannot reach its
+        // neighbour's however many workers it has.
+        Assert.Contains("var pitch = TAU / ringN", live);
+
+        // Records sit in shells rather than at a continuous radius, and which shell is still
+        // decided by the record's own durability — so its seat is as stable as it ever was.
+        Assert.Contains("var shell = verified ? 0 : durable > .34 ? 1 : 2;", live);
+        Assert.Contains("s.R * [.34, .62, .84][shell]", live);
+        Assert.Contains("unit(id, 'slot')", live);
+
+        // VACUITY FLOOR: this is the function that actually seats a chamber's contents.
+        Assert.Contains("function rebuildSector(s, sec)", live);
+        Assert.Contains("LATTICE.push(", live);
+    }
+
+    /// <summary>
+    /// LIGHT MODE IS NOT THE DARK ONE WITH A WHITE SKY — v0.3.8.123.
+    ///
+    /// The console's light theme is paper, and `.122` already knew that for the chamber envelopes:
+    /// a pale halo that reads as depth against black reads as a smudge on white, so the light
+    /// envelope was rebuilt as a tint with a rim. Two highlights were missed. An ant's core and a
+    /// sphere's key-light bloom were both near-white in BOTH environments, which is right against
+    /// the galaxy and an eye sore against the page — the operator's words were that the inside of
+    /// the ants being "hued with white or lighter shade" is "kind of an eye sore with how bright it
+    /// is."
+    ///
+    /// A core exists to make an ant read as lit from within rather than as a flat disc, and on a
+    /// light ground the way to say "lit from within" is CONTRAST, not more white. So both invert
+    /// with the environment. The shape reads the same in either; only one of them reads at all on
+    /// paper.
+    /// </summary>
+    [Fact]
+    public void LightModeInvertsItsHighlights_InsteadOfPilingWhiteOnWhite()
+    {
+        var live = Code("colony-live.js");
+
+        // The ant core, and the specular bloom on a chamber.
+        Assert.Contains("isLight() ? 'rgba(20,28,42,'", live);
+        Assert.Contains("hc = isLight() ? '44,58,78' : '235,240,250'", live);
+
+        // Neither is unconditionally pale any more. These were the two literals that were.
+        Assert.DoesNotContain("isLight() ? 'rgba(255,255,255,' + (alpha * .9)", live);
+        Assert.DoesNotContain("hg.addColorStop(0, 'rgba(235,240,250,'", live);
+
+        // The mound's device ring darkens on paper for the same reason.
+        Assert.Contains("isLight() ? 'rgba(64,78,98,'", live);
+
+        // VACUITY FLOOR: the environment predicate exists and the light page is still a real one.
+        Assert.Contains("function isLight() { return opts.env === 'light'; }", live);
+        Assert.Contains("value=\"light\"", Raw("index.html"));
+    }
+
+    /// <summary>
+    /// A SIMPLE PAGE OVER A COMPLETE-REPLACEMENT DOCUMENT MUST NOT DELETE WHAT IT CANNOT SHOW.
+    /// v0.3.8.123 — the console half of `MicromoundAuthoring`.
+    ///
+    /// The Micromound console asked an operator to type a charter: capability ids, an action-class
+    /// enum, a lease TTL in seconds, a `device_limits` map keyed by capability, evidence globs.
+    /// Every one is real and none is a question a person can answer, which is what the operator
+    /// meant by "less of a json file communicated as settings."
+    ///
+    /// Three properties make the friendly page safe rather than merely nicer, and all three are
+    /// guarded here. It TRANSLATES rather than deciding — no ceiling, limit or policy is derived in
+    /// the browser, because a second browser-side idea of what a charter means is how the sector map
+    /// drifted and had to be moved server-side at `.115`. It offers only what the DEVICE reported,
+    /// so a form that saves is a form the mound can accept. And it CARRIES what it cannot author,
+    /// because a manifest and a charter are complete replacements and a save from the simple page
+    /// writes the whole document.
+    /// </summary>
+    [Fact]
+    public void TheFriendlySetUpPage_TranslatesRatherThanDeciding_AndNeverDeletesWhatItCannotShow()
+    {
+        var mm = Code("micromound.js");
+        var html = Raw("index.html");
+
+        // It reads and posts; it does not compute. If the browser ever starts naming an action
+        // class or building a limits map, the translation has grown a second home.
+        Assert.Contains("api('/micromound/authoring/' + encodeURIComponent(mmSelected))", mm);
+        Assert.Contains("api('/micromound/authoring/preview', 'POST', mmSetup)", mm);
+        Assert.Contains("mmPost('/micromound/authoring', mmSetup, 'Set-up')", mm);
+
+        // THE FORM IS POSTED VERBATIM. `mmSetup` is whatever the server projected, edited in place
+        // and sent back whole — there is no assembly step in between, which is the property that
+        // stops the browser growing a second opinion about what a charter means. Reshaping it here
+        // would be the drift that put the sector map on the server at `.115`.
+        Assert.Contains("mmSetup[key] = el.type === 'number' ? Number(el.value) : el.value;", mm);
+        Assert.Contains("row[field] = el.type === 'number'", mm);
+        // A blank number is ABSENT, not zero: "never above 0" is a real bound, so the two have to
+        // stay distinguishable all the way to the compile.
+        Assert.Contains("el.value.trim() === '' ? null : Number(el.value)", mm);
+
+        // Only what the device reported is offered.
+        Assert.Contains("const reported = meta.reported || [];", mm);
+        Assert.Contains("reported.filter(c => used.indexOf(c) < 0)", mm);
+
+        // Carried untouched, and named on screen. Carrying something silently and losing it
+        // silently are one bug apart, so the page does both.
+        Assert.Contains("(meta.unrepresented || []).forEach", mm);
+        Assert.Contains("mmSetup = d.form || null;", mm);
+
+        // The compiled documents are SHOWN rather than hidden. Nothing about this feature is about
+        // keeping the contract from the operator — what changed is who writes it.
+        Assert.Contains("What this will actually issue", mm);
+
+        // The raw forms are still reachable, folded rather than deleted, for everything the simple
+        // vocabulary cannot say.
+        Assert.Contains("mm-adv", html);
+        Assert.Contains("Advanced &mdash; the raw charter and manifest", html);
+        Assert.Contains("id=\"mm-setup\"", html);
+
+        // Which of the seven holds a capability comes from the server, not from a copy here.
+        Assert.Contains("mmCap(id).default_ant", mm);
+
+        // VACUITY FLOOR: the card actually renders and binds.
+        Assert.Contains("function mmSetupRender()", mm);
+        Assert.Contains("function mmSetupBind()", mm);
+        Assert.Contains("mmSetupLoad();", mm);
     }
 }

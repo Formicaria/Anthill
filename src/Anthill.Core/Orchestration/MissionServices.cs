@@ -50,11 +50,15 @@ public interface IMissionCoordinator
 /// </summary>
 public interface IMissionEvaluator
 {
+    /// <param name="recalledArtifacts">v0.3.8.123 — a prior mission's artifacts by id, so a claim
+    /// citing `mission:&lt;id&gt;` can be traced past the recall. A lookup, so this interface still
+    /// describes a grader that is a pure function of what it is handed.</param>
     MissionEvaluation Evaluate(Mission mission, MissionContext context, string? stopReason, int patchProposalCount,
         IReadOnlyList<Anthill.SDK.Artifacts.Evidence>? evidence = null,
         IReadOnlyList<Anthill.SDK.Artifacts.ArtifactConsumption>? consumptions = null,
         IReadOnlyList<Anthill.SDK.Artifacts.Artifact>? artifacts = null,
-        IReadOnlyList<string>? pendingOperatorDecisions = null);
+        IReadOnlyList<string>? pendingOperatorDecisions = null,
+        Func<string, IReadOnlyList<Anthill.SDK.Artifacts.Artifact>?>? recalledArtifacts = null);
 }
 
 /// <summary>
@@ -67,10 +71,11 @@ public sealed class CanonicalMissionEvaluator : IMissionEvaluator
         int patchProposalCount, IReadOnlyList<Anthill.SDK.Artifacts.Evidence>? evidence = null,
         IReadOnlyList<Anthill.SDK.Artifacts.ArtifactConsumption>? consumptions = null,
         IReadOnlyList<Anthill.SDK.Artifacts.Artifact>? artifacts = null,
-        IReadOnlyList<string>? pendingOperatorDecisions = null) =>
+        IReadOnlyList<string>? pendingOperatorDecisions = null,
+        Func<string, IReadOnlyList<Anthill.SDK.Artifacts.Artifact>?>? recalledArtifacts = null) =>
         MissionEvaluator.Evaluate(mission, stopReason, patchProposalCount,
             context.Constraints, context.Profile.Verification.ObjectiveVerification, evidence,
             // From the CONTEXT, resolved once at intake — the same object the planner and the
             // worker resolver read. A second parse here would be a ninth reading of the goal.
-            context.Specification, consumptions, artifacts, pendingOperatorDecisions);
+            context.Specification, consumptions, artifacts, pendingOperatorDecisions, recalledArtifacts);
 }

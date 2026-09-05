@@ -157,16 +157,21 @@ public static partial class ApiHost
 
                 var ant = row.GetValueOrDefault("ant_name")?.ToString() ?? "";
 
+                // WHAT A RECORD IS BEATS WHO WROTE IT, where the type settles the question.
+                // v0.3.8.123: a row the colony STORED belongs to Memory whoever produced it, so
+                // the chamber whose subject is what the colony keeps actually holds it. Everything
+                // else is filed by its author, which is what says which part of the colony worked.
+                //
                 // An event whose ant this colony does not recognise goes to the SERVER'S declared
                 // fallback — never to a sector the client picked. The bug this endpoint exists to
                 // make impossible was `sectorOfAnt(ant) || 'queen'` in the browser: a client-side
                 // map of an open set, silently attributing every unmapped role to the authority
-                // sector. The fallback being queen-shaped again is not that bug returning; the
-                // difference is that the SERVER decides it, says so in the snapshot, and a guard
-                // proves no role or worker can reach it. v0.3.8.122.
-                var recordSector = string.IsNullOrEmpty(ant)
-                    ? ColonySectors.Fallback
-                    : sectorOfRole.GetValueOrDefault(ant, ColonySectors.Fallback);
+                // sector. The difference is that the SERVER decides it, says so in the snapshot,
+                // and a guard proves no role or worker can reach it. v0.3.8.122.
+                var recordSector = ColonySectors.ForRecordType(eventType)
+                    ?? (string.IsNullOrEmpty(ant)
+                        ? ColonySectors.Fallback
+                        : sectorOfRole.GetValueOrDefault(ant, ColonySectors.Fallback));
 
                 if (!string.IsNullOrEmpty(sector) && !string.Equals(sector, recordSector, StringComparison.Ordinal))
                     continue;
@@ -214,6 +219,34 @@ public static partial class ApiHost
                 // partial-history indicator exists to prevent.
                 ["scan_truncated"] = truncated,
                 ["scan_limit"] = ColonyLiveRecordScan,
+            });
+        });
+
+        /* ---- The roster a mound chamber is drawn with. v0.3.8.123 ------------------------------
+           WHY THIS IS HERE AND NOT IN THE MICROMOUND MODULE. `.122` served it from
+           `/micromound/roster/defaults`, inside `#if MICROMOUND`, behind `read_micromound`, and the
+           console fetched it nested inside the fleet listing's `.then`. Four conditions had to hold
+           for seven presentation labels to appear, and when any of them did not the operator got a
+           mound chamber with no ants in it — which is exactly what they reported.
+
+           None of those conditions is about authority. `+ Mound` adds a chamber to the operator's
+           own colony view; no device is contacted to draw it, and nothing about the names it shows
+           is ever sent anywhere. So it is guarded like the rest of the colony picture (`read_graph`,
+           the same permission the snapshot uses) and it is always mapped. A colony with no
+           micromound integration compiled in still has an operator who wants to label their fleet.
+
+           `MoundRoster` is the one store; `MicromoundRoster` forwards to it, and the module's
+           projection test still checks it against the device runtime by compiled inspection. */
+        app.MapGet("/colony/mound-roster", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_graph"); if (auth is not null) return auth;
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["ants"] = Anthill.SDK.Modules.MoundRoster.Names.Select(n => new Dictionary<string, object?>
+                {
+                    ["name"] = n,
+                    ["role"] = Anthill.SDK.Modules.MoundRoster.Roles.GetValueOrDefault(n, ""),
+                }).ToList(),
             });
         });
     }

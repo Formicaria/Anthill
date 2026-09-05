@@ -105,13 +105,22 @@ public static class MissionEvaluator
     /// PURE function of its arguments, which is what makes "graded once, and reproducibly from the
     /// record" a checkable claim. Null or empty is the state every mission before this release was
     /// in, so nothing changes for them.</param>
+    /// <param name="recalledArtifacts">v0.3.8.123: a PRIOR mission's artifacts, by mission id, so a
+    /// claim citing `mission:&lt;id&gt;` can be traced past the recall to whatever that mission
+    /// itself rested on. A lookup rather than a store reference, and for this type's founding
+    /// reason: the evaluator stays a pure function of its arguments, so a grade is still
+    /// reproducible from the record — and a test can hand it a two-mission history without a
+    /// database, which is the only way the cycle case is exercisable. Null traces nothing, which
+    /// leaves an internal citation unresolved; every caller before this release passed nothing and
+    /// no mission before it cited another mission's narrative through this gate.</param>
     public static MissionEvaluation Evaluate(Mission mission, string? stopReason, int patchProposalCount,
         MissionConstraints constraints, bool objectiveVerificationEnabled,
         IReadOnlyList<Anthill.SDK.Artifacts.Evidence>? evidence = null,
         Missions.MissionSpecification? specification = null,
         IReadOnlyList<Anthill.SDK.Artifacts.ArtifactConsumption>? consumptions = null,
         IReadOnlyList<Anthill.SDK.Artifacts.Artifact>? artifacts = null,
-        IReadOnlyList<string>? pendingOperatorDecisions = null)
+        IReadOnlyList<string>? pendingOperatorDecisions = null,
+        Func<string, IReadOnlyList<Anthill.SDK.Artifacts.Artifact>?>? recalledArtifacts = null)
     {
         // v0.3.8.105 — A MISSION WAITING ON A PERSON HAS NOT FINISHED, WHATEVER ITS TASKS SAY.
         //
@@ -163,8 +172,11 @@ public static class MissionEvaluator
         // makes a research mission that searched NOTHING catchable — an empty store contradicts no
         // citation, so the retrieval trigger alone reads it as "nothing to check", which is exactly
         // how a mission could be admitted to answer from the world and answer from itself instead.
+        // v0.3.8.123 — AND A CITATION TO ANOTHER MISSION MUST TRACE PAST THAT MISSION. `recall_set`
+        // rows make "we concluded this before" a resolvable citation; the lookup is what lets that
+        // layer ask whether the recalled mission itself ever consulted anything.
         var citations = CitationIntegrity.Applies(specification, artifacts)
-            ? CitationIntegrity.Evaluate(specification, artifacts)
+            ? CitationIntegrity.Evaluate(specification, artifacts, recalledArtifacts)
             : null;
 
         // v0.3.8.100 — AND A CREATED DELIVERABLE MUST EXIST. The failure this catches is specific
@@ -222,7 +234,7 @@ public static class MissionEvaluator
         // two accounts of itself — the artifacts it cites and the retrievals its evidence records —
         // do not agree, or whose plan named a step for a question and that step consulted nothing.
         var research = ResearchIntegrity.Applies(specification)
-            ? ResearchIntegrity.Evaluate(specification!, artifacts, evidence, assembled)
+            ? ResearchIntegrity.Evaluate(specification!, artifacts, evidence, assembled, recalledArtifacts)
             : null;
 
         // v0.3.8.104 — A RECOGNIZED CLASS IS VERIFIED WHATEVER THE SWITCH SAYS.

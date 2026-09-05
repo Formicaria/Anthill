@@ -130,12 +130,46 @@ public static class ColonySectors
     /// colony and invites the reader to wonder what is wrong.
     ///
     /// What CAN still reach it is an event whose `ant_name` resolves to nothing — a renamed worker,
-    /// a system-authored row. Those belong with mission control, which is where mission-level events
-    /// already live, and that is a placement rather than a shrug. **If a future role declares a new
-    /// colony, the guard fails before this fallback is ever exercised**, which is the property that
-    /// makes pointing it at a real sector safe: the fallback is a backstop, not a bucket.
+    /// a system-authored row. **If a future role declares a new colony, the guard fails before this
+    /// fallback is ever exercised**, which is the property that makes pointing it at a real sector
+    /// safe: the fallback is a backstop, not a bucket.
+    ///
+    /// v0.3.8.123 — IT POINTS AT MEMORY NOW, NOT AT THE QUEEN, and the operator's objection is the
+    /// reason. `.122` sent these rows to mission control on the argument that mission-level events
+    /// already live there. The trouble with that argument is what it CLAIMS: the Queen's Core is an
+    /// authority chamber, and filing a row there says the colony's command layer produced it. For a
+    /// row whose author is precisely what we could not resolve, that is an attribution we have no
+    /// basis for — it makes the authority chamber look busier than the colony's authority actually
+    /// was. Memory claims nothing about who did the work. It says only that the colony stored a row,
+    /// which is the one thing about an unattributable record that is definitely true.
     /// </summary>
-    public const string Fallback = Queen;
+    public const string Fallback = Memory;
+
+    /// <summary>
+    /// The chamber a record belongs to BY WHAT IT IS, or null when only its author can say.
+    /// v0.3.8.123.
+    ///
+    /// EVERY RECORD USED TO BE FILED BY WHOEVER WROTE IT, and that is right for most of them: a
+    /// verification is validation's, a mission outcome is mission control's, and reading them
+    /// anywhere else would hide which part of the colony did the work. But it is wrong for the rows
+    /// where the record IS the colony committing something to memory. Those were scattered across
+    /// six chambers by author while MEMORY — the chamber whose whole subject is what the colony
+    /// keeps — sat almost empty, because exactly one registry colony maps to it. The operator
+    /// noticed and was right: "memory should eventually be one of the most populated chambers."
+    ///
+    /// So a `_stored` or `_written` row, a memory candidate, and a scored pheromone trail are
+    /// MEMORY records regardless of which ant produced them. This invents nothing — the event type
+    /// already carries the fact, and this reads it instead of ignoring it. `_recorded` is
+    /// deliberately NOT here: it is the colony noting that something happened, which stays with
+    /// whoever it happened to.
+    /// </summary>
+    public static string? ForRecordType(string? eventType) =>
+        string.IsNullOrWhiteSpace(eventType) ? null
+        : eventType.EndsWith("_stored", StringComparison.Ordinal)
+          || eventType.EndsWith("_written", StringComparison.Ordinal)
+          || eventType is "memory_candidate" or "pheromone_scored"
+            ? Memory
+            : null;
 
     /// <summary>
     /// Registry `Colony` → sector. The ONE place this is decided.
