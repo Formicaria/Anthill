@@ -125,11 +125,15 @@ Full table in [`CONFIGURATION.md`](CONFIGURATION.md). The load-bearing ones:
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `knowledge_enabled` | `false` | Master switch. Off means no tools are registered at all. |
-| `knowledge_forager_endpoint` | `http://127.0.0.1:8790` | Where FORAGER is. |
-| `knowledge_forager_allow_remote` | `false` | Permit a non-loopback endpoint. |
-| `knowledge_project_map` | `{}` | ANTHILL project id → FORAGER project id. **The scope boundary.** |
-| `knowledge_default_project` | `""` | For callers with no project. Never a mission fallback. |
+| `knowledge_enabled` | `false` | Master switch. Off means no tools are registered at all. **The one key here the console can write** — Tools › Knowledge toggles it (v0.3.8.124). |
+| `knowledge_forager_endpoint` | `http://127.0.0.1:8790` | Where FORAGER is. File-only. |
+| `knowledge_forager_allow_remote` | `false` | Permit a non-loopback endpoint. File-only, deliberately: FORAGER has no auth of its own. |
+| `knowledge_project_map` | `{}` | ANTHILL project id → FORAGER project id. **The scope boundary.** File-only. |
+| `knowledge_default_project` | `""` | For callers with no project. Never a mission fallback. File-only. |
+
+The line between those two groups is the one that matters: the switch decides whether the colony
+**uses** what the file configured, and the rest decide **who it trusts** and **what a mission may
+read**. Only the first is safe to hand a browser.
 
 Settings are read **live, per call** through a delegate — never captured — so disabling knowledge
 takes effect on the next request rather than the next restart.

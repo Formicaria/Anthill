@@ -68,6 +68,40 @@ as a plausible convention beside a Linux set that was real, and it read as symme
 a guess. Restart now stops the process and relaunches it from the path the running process reports,
 which is the only way to start the same binary without assuming an install location.
 
+**TOOLS › KNOWLEDGE EXPLAINED THE FEATURE AND THEN TOLD YOU TO GO AND EDIT JSON.** The FORAGER
+integration has shipped since `.121` with a console section that describes it, names its three
+states precisely, and offers no way to turn it on. `knowledge_enabled` was declared FileOnly — not
+because anyone measured it and decided it needed to be, but because it inherited a section rule
+written for the endpoint and the scope map. There is now a toggle.
+
+**Exactly one key crossed the line, and the four that matter did not.**
+`knowledge_forager_endpoint` decides which service the colony trusts as the source of organizational
+fact. `knowledge_forager_token` is its credential. `knowledge_project_map` decides which knowledge a
+mission may read. `knowledge_forager_allow_remote` permits sending the colony's queries to a service
+that has **no authentication of its own**, across a network. Each of those either redirects what the
+colony believes or widens who may read what, and a console compromise must not be able to do either
+without touching a file. `knowledge_enabled` does neither: it decides whether the module talks to
+the endpoint the file already names, under the token already there, within the scopes the map
+already grants — the client re-reads and independently refuses on all four every call. Its blast
+radius is "the thing the operator configured now runs", which is what a toggle is for. The editable
+surface goes 98 → 99 and the guard that pins it says why.
+
+Where a file-only key is what is actually in the way, the page **names it**. A non-loopback endpoint
+with `allow_remote` off fails at the client with "refusing a non-loopback knowledge request" — after
+you have enabled knowledge and are staring at an unreachable base — so the Enable button says so
+first, and says why that one is a decision to make in the file. And a colony that exports
+`ANTHILL_KNOWLEDGE_ENABLED` gets no toggle at all: the runtime projects that gate env-over-file, so
+a write would persist to `config.json`, lose to the variable on re-projection, and leave the page
+looking exactly as it did. `/knowledge/status` reports the pin and the console names the variable
+instead of shipping a button that appears to do nothing — which is the defect `.96` and `.97` each
+found live, a release apart, on three other switches. The new guard drives the real settings path
+and reads the live runtime gate on the other side rather than asserting that an attribute is
+present.
+
+Toggling takes effect on the **next request**, not the next restart: `KnowledgeModule` re-reads its
+options per call and always has. The message says so, because the homelab gate beside it does need a
+restart.
+
 **Also:** shell scripts check out LF through a new `.gitattributes`, so `scripts/release.sh` — the
 path the tag guard's own error message points operators at — can run on Windows at all.
 

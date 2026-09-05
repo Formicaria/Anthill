@@ -60,7 +60,8 @@ public class MissionReplayCatalogTests
     /// `mission_replay_enabled` gates a capability that will eventually execute missions; widening
     /// what the console can write is a decision for the release that ships the engine, not a side
     /// effect of the release that declares the keys. `TheEditableSurface_IsExactlyWhatItWasBefore..`
-    /// pins the count at 98, and this says why these four are not among them.
+    /// pins the count (98 at v0.3.8.114, 99 since v0.3.8.124 admitted `knowledge_enabled`), and this
+    /// says why these four are not among them.
     /// </summary>
     [Fact]
     public void NoKey_IsLiveWritableByTheSettingsSurface()

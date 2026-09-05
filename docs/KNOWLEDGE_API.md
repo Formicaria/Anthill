@@ -34,6 +34,13 @@ that an id exists somewhere they cannot see is itself a disclosure.
 Both default to granted at the permission layer; the capability gate is `knowledge_enabled`, which
 ships **off**. Two gates, and the outer one is closed.
 
+Since v0.3.8.124 that outer gate can be opened from Tools › Knowledge, which posts
+`{"knowledge_enabled": true}` to `POST /settings` under `manage_settings`. It is the **only**
+knowledge key the settings surface will write. The endpoint, the token, `knowledge_forager_allow_remote`
+and `knowledge_project_map` stay file-only: they decide which service the colony trusts and which
+knowledge a mission may read, and a console compromise must not be able to change either. The
+switch only starts using what the file already says.
+
 ## Scope
 
 Every route accepts `?project=<anthill-project-id>`, translated to a FORAGER project through
@@ -57,10 +64,25 @@ configured*, *unreachable* and *working*, and a 404 collapses all three into a b
   "model_provider": "none (deterministic mode)",
   "endpoint": "http://127.0.0.1:8790",
   "reason": null,
-  "projects": ["falcon"] }
+  "projects": ["falcon"],
+  "configured_endpoint": "http://127.0.0.1:8790",
+  "allow_remote": false,
+  "gate_env_var": "ANTHILL_KNOWLEDGE_ENABLED",
+  "gate_env_pinned": false }
 ```
 
 `endpoint` is reported; the token never is.
+
+The last four are what the console's on/off control needs to tell the truth (v0.3.8.124).
+`endpoint` is the endpoint that was **probed**, and a disabled provider probes nothing — so with
+knowledge off it is empty and the page could not say what it was about to point at;
+`configured_endpoint` is the configured value either way. `allow_remote` is reported because
+enabling knowledge against a non-loopback endpoint with it `false` fails at the client, and an
+operator shown an *Enable* button should know that before pressing it. `gate_env_pinned` is true
+when `gate_env_var` is set in the process environment: the runtime projects that gate as
+env-over-file, so a settings write would persist and then lose to the variable. The console
+withholds the control in that case and names the variable instead of shipping a button that appears
+to do nothing.
 
 ### `GET /knowledge/search?q=&limit=&include_historical=`
 
