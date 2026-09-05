@@ -1,0 +1,25 @@
+# SHELL SCRIPTS ARE ALWAYS LF, ON EVERY CHECKOUT. v0.3.8.124.
+#
+# WHAT HAPPENED. `scripts/release.sh` — the release path the tag guard's own error message points
+# operators at — could not run on Windows at all. Git's `core.autocrlf` converts text files to CRLF
+# on checkout, bash reads the trailing `\r` as part of each command, and the failure is unreadable:
+#
+#     : invalid option nameine 17: set: pipefail
+#     scripts/release.sh: line 19: $'\r': command not found
+#
+# That is not a Windows problem or a developer's misconfiguration. A `.sh` file is executed by bash
+# wherever it lives — Git Bash, WSL, CI, an LXC container — and CRLF is never correct for one. The
+# repository is the right place to say so, because `core.autocrlf` is a per-machine setting and a
+# rule that depends on every clone being configured the same way is not a rule.
+#
+# DELIBERATELY NARROW. There is no `* text=auto` here. Adding one would renormalize every tracked
+# file in the repository on the next checkout — a diff touching thousands of lines, mixed into
+# whatever release happened to carry it, for a problem that only ever affected five files. The five
+# are named by extension so a sixth added tomorrow is covered without anybody remembering.
+*.sh text eol=lf
+
+# The same reasoning inverted, and worth stating rather than leaving to `text=auto`'s guess: a
+# `.cmd` or `.bat` is read by the Windows command interpreter, which requires CRLF on the lines it
+# parses. These are the one case where the conversion is the correct behaviour.
+*.cmd text eol=crlf
+*.bat text eol=crlf

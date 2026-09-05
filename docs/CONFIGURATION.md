@@ -132,7 +132,7 @@ directory. `anthill --config` prints the active path.
 | `mission_replay_vault_path` | string | `""` | no | `ANTHILL_MISSION_REPLAY_VAULT_PATH` |  |
 | `mission_replay_tag` | string | `"anthill/replay"` | no | `ANTHILL_MISSION_REPLAY_TAG` |  |
 | `mission_replay_learning_enabled` | bool | `false` | no | `ANTHILL_MISSION_REPLAY_LEARNING_ENABLED` | **changes what the colony may do** |
-| `knowledge_enabled` | bool | `false` | no | `ANTHILL_KNOWLEDGE_ENABLED` | **changes what the colony may do** |
+| `knowledge_enabled` | bool | `false` | yes | `ANTHILL_KNOWLEDGE_ENABLED` | **changes what the colony may do** |
 | `knowledge_forager_endpoint` | string | `"http://127.0.0.1:8790"` | no | `ANTHILL_KNOWLEDGE_FORAGER_ENDPOINT` |  |
 | `knowledge_forager_token` | string | _(secret)_ | no | `ANTHILL_KNOWLEDGE_FORAGER_TOKEN` |  |
 | `knowledge_forager_allow_remote` | bool | `false` | no | `ANTHILL_KNOWLEDGE_ALLOW_REMOTE` | **changes what the colony may do** |

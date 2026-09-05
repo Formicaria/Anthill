@@ -65,6 +65,16 @@ public static class EventTypes
     /// be written into.</summary>
     public const string MissionPlanSubstituted = "mission_plan_substituted";
 
+    /// <summary>v0.3.8.124 — this mission's model routing came from its PROJECT rather than from the
+    /// colony. Recorded for the same reason a plan substitution is: the route a mission actually ran
+    /// on is not visible anywhere in its transcript, and "the colony is configured for Claude" and
+    /// "this project pins a local model" produce identical-looking runs with very different answers.
+    ///
+    /// Logged only when the project overrides SOMETHING. A project that names no priority and no
+    /// role route behaves exactly as no project at all, and an event claiming it routed the mission
+    /// would be recording a decision nobody made.</summary>
+    public const string MissionProjectRouting = "mission_project_routing";
+
     /// <summary>v0.3.8.122 — a worker proposed a change to canonical knowledge. It has its own type
     /// because it was riding on <c>module_registered</c>, a one-time boot event: a proposal filed
     /// under it could not be found by anyone looking for proposals, and any future consumer would

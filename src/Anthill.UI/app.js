@@ -469,8 +469,8 @@ function applyRoleVisibility(){
 // deep-linkable routes, breadcrumbs, and contextual sub-navigation for the grouped domains.
 const PAGE_TITLES = {
   overview:'Dashboard', colony:'Topology', missions:'Missions', results:'Mission Results',
-  patches:'Changes & Approvals', objboard:'Objectives', antobs:'Roles', events:'Events',
-  activity:'Activity', pheromones:'Memory & Signals', homelab:'Infrastructure', antconfig:'Roles',
+  patches:'Changes & Approvals', objboard:'Objectives', events:'Events',
+  activity:'Activity', pheromones:'Memory & Signals', homelab:'Infrastructure',
   autonomy:'Automation', security:'Security', shell:'Terminal', settings:'Settings', users:'Users',
   chat:'Chat', projects:'Projects', toolsview:'Tools',
   readiness:'Readiness', projectview:'Project', integrations:'Integrations',
@@ -550,15 +550,18 @@ const IA = [
     // console's side columns; its composer hands every message to Chat, which stays the one entry.
     { label:'Live', route:'/colony/live', page:'colony', vis:'all' },
     { label:'Overview', route:'/colony', page:'overview', vis:'all' },
-    // v0.3.8.55 (field report): Models & Routing merged INTO the Ant Inspector — one box per
-    // role carries route, gates, telemetry and profile; the colony-wide priority and the
-    // orchestration roles (planner, conversation) sit above the grid on the same page.
-    { label:'Ant Inspector', route:'/colony/inspector', page:'antobs', vis:'admin' },
+    // v0.3.8.124 — THE ANT INSPECTOR IS GONE, and both halves of it went somewhere better. Its
+    // TELEMETRY (per-ant task counts, success rate, recent activity) is now the ant tab in Colony
+    // Live: you click the ant you are asking about instead of finding its card in a grid of
+    // twenty-five. Its ROUTING moved into projects, because "which model does this work" turned out
+    // to be a per-project question — one project on a local model, another on Claude — and a
+    // colony-wide page could not express that at all. `/colony/inspector` aliases to Projects.
     // v0.3.8.122 — THE MOUND REGISTRY. `+ Mound` can add as many chambers as an operator wants, so
     // "the mound settings page" stopped being a coherent destination: there is no single mound to
     // settle. This is the list — every chamber the operator has made, what it is, and the one place
-    // a chamber is deleted. Clicking INTO a chamber in the colony opens that particular mound's
-    // settings; deleting is a fleet-level act and belongs to the fleet-level view.
+    // a chamber is deleted. v0.3.8.124 — this is now the ONLY door to a mound's settings: clicking
+    // a chamber in the colony focuses it like any other chamber, and the Mounds button beside
+    // `+ Mound` opens this page.
     { label:'Mounds', route:'/colony/mounds', page:'mounds', vis:'all' },
     // v0.3.8.55 (field report): Automation moved into Projects — the Director's backlog is
     // project work, and it now lives beside the projects it feeds (right-hand column there).
@@ -621,14 +624,34 @@ const DOMAIN_HOME = {};
     }
   }
 })();
+/* v0.3.8.124 — INFRASTRUCTURE IS A ROUTE WITHOUT A NAV ENTRY, and that is deliberate.
+
+   The page was reachable only through a card on Integrations, which is why `PAGE_HOME.homelab`
+   pointed there. That card is gone: Infrastructure is a MOUND now, and its settings open from its
+   row in the mound registry like every other mound's. A sidebar entry would be a second door and
+   would make the registry's promise — "every mound, and where its settings are" — a half-truth.
+
+   Registered here rather than in `IA` because `buildNav` renders the sidebar FROM `IA`: an entry
+   there is a nav item by construction. This gives the router a real destination for
+   `go('/tools/infrastructure')`, for the eleven `/infrastructure/*` sub-routes the page's own
+   sub-nav drives, and for the `homelab` legacy hash — without putting a link in the rail. */
+ROUTE_TABLE['/tools/infrastructure']={
+  page:'homelab', hlsub:null, vis:'admin',
+  crumb:['Colony','Mounds','Infrastructure'], domain:'colony',
+  section:'/colony/mounds', tabs:null, activeTab:null,
+};
+
 // Deterministic canonical home per page (first-occurrence is ambiguous for shared pages like homelab).
 Object.assign(PAGE_HOME,{
   overview:'/colony', colony:'/colony/live', missions:'/projects',
   activity:'/settings/system',
   results:'/projects', events:'/settings/system',
   patches:'/chat', objboard:'/projects',
-  pheromones:'/tools/memory', homelab:'/tools/integrations',
-  antconfig:'/colony/inspector', antobs:'/colony/inspector',
+  pheromones:'/tools/memory',
+  // v0.3.8.124: Infrastructure has its own canonical route now. It used to be homed on the
+  // Integrations page because a card there was the only way in; that card is gone — the page is
+  // reached from the mound registry, INFRASTRUCTURE being a mound.
+  homelab:'/tools/infrastructure',
   autonomy:'/projects', security:'/settings/security',
   shell:'/settings/terminal', settings:'/settings/general', users:'/settings/users',
   integrations:'/tools/integrations', projectview:'/projects', readiness:'/settings/readiness',
@@ -648,8 +671,8 @@ const LEGACY_REDIRECT={
   overview:'/colony', colony:'/colony/live', missions:'/projects',
   events:'/settings/system', results:'/projects',
   patches:'/chat', objboard:'/projects',
-  pheromones:'/tools/memory', homelab:'/tools/integrations',
-  antconfig:'/colony/inspector', antobs:'/colony/inspector',
+  pheromones:'/tools/memory', homelab:'/tools/infrastructure',
+  antconfig:'/projects', antobs:'/projects',
   autonomy:'/projects', security:'/settings/security',
   shell:'/settings/terminal', settings:'/settings/general', users:'/settings/users'
 };
@@ -663,17 +686,20 @@ const ROUTE_ALIAS={
   '/objectives':'/projects',
   '/integrations':'/tools/integrations',
   '/tools-view':'/tools',
-  // v0.3.8.49: the standalone Ants & Roles tab folded into Models & Routing.
-  '/colony/roles':'/colony/inspector',
-  // v0.3.8.55: Models & Routing merged into the Ant Inspector.
-  '/colony/model-routing':'/colony/inspector',
+  /* v0.3.8.124 — SEVEN BOOKMARKS THAT USED TO LAND ON THE ANT INSPECTOR NOW LAND ON PROJECTS.
+     Every one of them is a "where do I configure the colony's models" link, and the answer moved:
+     routing is set per project. Projects is where an operator now goes to answer the question the
+     old page answered, so that is where the old links go — not to Colony Live, which shows the
+     ants but configures none of them. `/colony/inspector` itself is here for the same reason. */
+  '/colony/roles':'/projects',
+  '/colony/model-routing':'/projects',
   '/colony/model-routing/providers':'/tools/integrations',
-  // Roles / Inspector / Automation moved from Settings into Colony.
-  '/settings/roles':'/colony/inspector',
+  '/settings/roles':'/projects',
   '/colony/topology':'/colony',
-  '/colony/agents':'/colony/inspector',
-  '/colony/agents/configure':'/colony/inspector',
-  '/colony/agents/inspect':'/colony/inspector',
+  '/colony/inspector':'/projects',
+  '/colony/agents':'/projects',
+  '/colony/agents/configure':'/projects',
+  '/colony/agents/inspect':'/projects',
   '/colony/agents/coding':'/tools/integrations',
   '/colony/signals':'/tools/memory',
   '/administration/users':'/settings/users',
@@ -682,17 +708,17 @@ const ROUTE_ALIAS={
   '/administration/readiness':'/settings/readiness',
   '/security/posture':'/settings/security',
   '/security/access':'/tools/integrations',
-  '/infrastructure/overview':'/tools/integrations',
-  '/infrastructure/compute':'/tools/integrations',
-  '/infrastructure/containers':'/tools/integrations',
-  '/infrastructure/storage':'/tools/integrations',
-  '/infrastructure/network':'/tools/integrations',
-  '/infrastructure/services':'/tools/integrations',
-  '/infrastructure/health':'/tools/integrations',
-  '/infrastructure/alerts':'/tools/integrations',
-  '/infrastructure/activity':'/tools/integrations',
-  '/infrastructure/automation':'/tools/integrations',
-  '/infrastructure/apps':'/tools/integrations',
+  '/infrastructure/overview':'/tools/infrastructure',
+  '/infrastructure/compute':'/tools/infrastructure',
+  '/infrastructure/containers':'/tools/infrastructure',
+  '/infrastructure/storage':'/tools/infrastructure',
+  '/infrastructure/network':'/tools/infrastructure',
+  '/infrastructure/services':'/tools/infrastructure',
+  '/infrastructure/health':'/tools/infrastructure',
+  '/infrastructure/alerts':'/tools/infrastructure',
+  '/infrastructure/activity':'/tools/infrastructure',
+  '/infrastructure/automation':'/tools/infrastructure',
+  '/infrastructure/apps':'/tools/infrastructure',
   '/operations/missions':'/projects',
   '/operations/missions/console':'/projects',
   '/operations/missions/history':'/projects',
@@ -806,10 +832,12 @@ function showPage(id,o){
     id='integrations';
     o=Object.assign({},o,{route:'/tools/integrations'});
   }
-  // v0.3.8.55: Models & Routing merged into the Ant Inspector — same remap for old callers.
-  if(id==='antconfig'){
-    id='antobs';
-    o=Object.assign({},o,{route:'/colony/inspector'});
+  // v0.3.8.124: both `antconfig` and `antobs` are gone. An old caller naming either is asking for
+  // model configuration, which is a project's now — so it lands on Projects rather than on a page
+  // id that resolves to no element and would leave the console showing nothing at all.
+  if(id==='antconfig'||id==='antobs'){
+    id='projects';
+    o=Object.assign({},o,{route:'/projects'});
   }
   try{ localStorage.setItem('last-page',id); }catch{} // reopen where you left off
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -1300,8 +1328,6 @@ async function loadColonyRegistry(){
       antRuntimeStatus={};
       (r.data.runtime_status||[]).forEach(st=>{ antRuntimeStatus[String(st.role_id||'').toLowerCase()]=st; });
       buildNodes();renderColonyLegend();
-      // v0.3.8.55: the config panel lives inside the merged inspector page now.
-      if(document.getElementById('page-antobs')?.classList.contains('active')) openAntConfig();
       return;
     }
     // A structured failure is still a failure. `if(r.success)` with no else meant an authorisation
@@ -1897,14 +1923,14 @@ function inspectorEditorHtml(n){
       ? 'Control plane — routes missions, never runs a model itself.'
       : (rt&&rt.unavailability_reason) || 'Not executable — no model route applies.';
     modelBlock=`<div class="ad-note">${escapeHtml(why)}</div>`;
-  } else if(!antRouteCatalogReady){
-    modelBlock=`<div class="ad-note">Loading model catalog…</div>`;
   } else {
-    modelBlock=`
-      <label class="ad-lbl" for="ins-provider">Provider</label>
-      <select class="ad-input" id="ins-provider" data-insact="provider">${antcfgProviderOptions(provider)}</select>
-      <label class="ad-lbl" for="ins-model">Model route</label>
-      <select class="ad-input" id="ins-model" data-provider="${escapeHtml(provider)}">${antcfgModelOptions(provider,model)}</select>`;
+    /* v0.3.8.124 — THIS PANEL SHOWS THE ROUTE; IT NO LONGER SETS IT. Routing became a per-project
+       decision, and a colony-wide editor here would have been the second place routes are written,
+       with a different scope from the first. Two editors that disagree about WHOSE model they are
+       changing is worse than one editor in a slightly less convenient place — the operator cannot
+       see the scope, so a mis-scoped change is silent. Where it is set is named, not implied. */
+    modelBlock=`<div class="ad-note">Runs on <b>${escapeHtml(provider||'ollama')}</b>`
+      + `${model?' · '+escapeHtml(model):''}. Set per project in Projects → Settings.</div>`;
   }
 
   return `
@@ -1947,21 +1973,13 @@ async function inspectorSave(caste){
   const set=(t,c)=>{ if(msg){ msg.style.color=c; msg.textContent=t; } };
   const nameEl=document.getElementById('ins-name');
   const colEl=document.getElementById('ins-color');
-  const provEl=document.getElementById('ins-provider');
-  const modEl=document.getElementById('ins-model');
 
   const nm=(nameEl&&nameEl.value||'').trim().slice(0,28);
   const col=cssColor(colEl&&colEl.value, casteColor(caste));
   const patch={color:col};
   if(nm) patch.name=nm;
-
-  if(provEl&&modEl&&modEl.value){
-    const provider=provEl.value||'ollama', model=modEl.value;
-    patch.model=model;
-    patch.provider=provider!=='ollama'?provider:undefined;
-    try{ await saveModelRoute({[caste]:{provider,model}}); }
-    catch(e){ set('Route failed: '+((e&&e.message)||'error'),'var(--red)'); return; }
-  }
+  // v0.3.8.124: name and colour only. The route this panel used to write was colony-wide; routes
+  // are a project's now, and are written from Projects → Settings alone.
 
   uiState.castes[caste]=Object.assign({},uiState.castes[caste],patch);
   applyUiState(); saveUiState();
@@ -1975,12 +1993,6 @@ async function inspectorSave(caste){
 document.getElementById('agent-detail').addEventListener('click',e=>{
   const btn=e.target.closest('[data-insact="save"]');
   if(btn) inspectorSave(btn.dataset.caste);
-});
-document.getElementById('agent-detail').addEventListener('change',e=>{
-  const sel=e.target.closest('[data-insact="provider"]');
-  if(!sel) return;
-  const modEl=document.getElementById('ins-model');
-  if(modEl){ modEl.dataset.provider=sel.value; modEl.innerHTML=antcfgModelOptions(sel.value,''); }
 });
 /* ---------------------------------------------------------------------------------------------
  * v2.14.14 Stage 7 — topology overlays.
@@ -4306,143 +4318,50 @@ document.getElementById('obj-seed-improve')?.addEventListener('click',()=>{
   setEl('obj-msg','Seeded — read it, adjust it, then press Add. Nothing was created yet.');
 });
 
-// -- Ant Inspector + Performance Observatory (v1.8.23, UI Phase 8) ------------
-const ANTOBS_CASTES=[
-  ['researcher','Researcher',['model']],
-  ['web','Web',['web_search']],
-  ['file','File',['file_tools']],
-  ['coder','Coder',['file_writing','patch_application']],
-  ['builder','Builder',['model']],
-  ['verifier','Verifier',['model']],
-];
-const ANTOBS_GATELABEL={web_search:'web',file_tools:'file read',file_writing:'file write',patch_application:'apply',model:'model only'};
-// v0.3.8.55: the merged page loads BOTH halves — the colony-wide/orchestration routing panel
-// (openAntConfig, which now renders only into #antcfg-global) and the per-role inspector grid.
-PAGE_ENTER['antobs']=()=>{ if(ROLE==='admin'){ if(typeof openAntConfig==='function') openAntConfig(); loadAntObs(); } };
-async function loadAntObs(){
-  const grid=document.getElementById('antobs-grid'); if(!grid) return;
-  grid.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Loading ant telemetry…</div>';
-  try{
-    // v0.3.8.55 (field report, Models & Routing merged in): the same fetch that feeds the cards
-    // also fetches what can actually RUN — /routes/json lists installed local models, configured
-    // catalogs and installed agents — so each card's route selectors offer only real choices.
-    const [r,rj]=await Promise.all([api('/ants/stats'),api('/routes/json')]);
-    if(!r.success) throw new Error(r.message);
-    obsProvModels=new Map(); obsRoutes={};
-    if(rj&&rj.success&&rj.data){
-      for(const m of (rj.data.available_models||[])){
-        if(!obsProvModels.has(m.provider)) obsProvModels.set(m.provider,[]);
-        obsProvModels.get(m.provider).push({model:m.model,label:m.label});
-      }
-      for(const x of (rj.data.roles||[])) obsRoutes[x.role]={provider:x.provider,model:x.model,available:x.available};
-    }
-    const d=r.data||{}, stats=d.ants||{}, routes=d.routes||{}, gates=d.gates||{};
-    // v0.3.8.50 (field report §20): the operator's names and colors, applied wherever the ant is
-    // drawn on this page. The registry id stays visible in the role line — an override is a face,
-    // not a new identity.
-    antProfiles=d.profiles||{};
-    grid.innerHTML=ANTOBS_CASTES.map(([ant,label,gateKeys])=>{
-      let am=(typeof ANT_MAP!=='undefined'&&ANT_MAP[ant])||{color:'var(--muted)',role:ant};
-      const prof=antProfiles[ant]||{};
-      if(prof.color) am={...am,color:prof.color};
-      if(prof.display_name) label=prof.display_name;
-      const s=stats[ant]||{total:0,complete:0,failed:0,skipped:0,running:0,avg_seconds:0};
-      const total=s.total||0, ok=s.complete||0, fail=s.failed||0, skip=s.skipped||0;
-      const rate=total?Math.round(ok/total*100):null;
-      const rt=routes[ant]||{};
-      const gateBadges=gateKeys.map(g=>{
-        if(g==='model') return `<span class="ac-gate off">model only</span>`;
-        const on=!!gates[g];
-        return `<span class="ac-gate ${on?'on':'off'}">${ANTOBS_GATELABEL[g]||g}${on?'':' off'}</span>`;
-      }).join('');
-      const okPct=total?ok/total*100:0, failPct=total?fail/total*100:0, skipPct=total?skip/total*100:0;
-      return `<div class="ant-card" style="border-left-color:${cssColor(am.color)}">
-        <div class="ac-hd"><span class="ac-dot" style="color:${cssColor(am.color)};background:${cssColor(am.color)}"></span>
-          <span class="ac-name">${escapeHtml(label)}</span><span class="ac-role">${escapeHtml(am.role||ant)}</span>
-          <button class="chat-copy ant-edit" data-ant-edit="${escapeHtml(ant)}" title="Edit this ant's name and color" aria-label="Edit ant profile">✎</button></div>
-        <div class="ant-edit-slot" data-ant-slot="${escapeHtml(ant)}" hidden></div>
-        ${obsRoutes[ant]
-          ? obsRouteControls(ant, obsRoutes[ant])
-          : `<div class="ac-route">${escapeHtml(rt.provider||'ollama')} · ${escapeHtml(rt.model||'—')}</div>`}
-        <div class="ac-gates">${gateBadges}</div>
-        <div class="ac-stats">
-          <div class="ac-stat"><div class="n" style="color:var(--text)">${total}</div><div class="l">Tasks</div></div>
-          <div class="ac-stat"><div class="n" style="color:var(--green)">${ok}</div><div class="l">Done</div></div>
-          <div class="ac-stat"><div class="n" style="color:${fail?'var(--red)':'var(--dim)'}">${fail}</div><div class="l">${ant==='verifier'?'Reject':'Failed'}</div></div>
-          <div class="ac-stat"><div class="n" style="color:${rate==null?'var(--dim)':(rate>=70?'var(--green)':rate>=40?'var(--queen)':'var(--red)')}">${rate==null?'—':rate+'%'}</div><div class="l">Success</div></div>
-        </div>
-        <div class="ac-bar">
-          <i style="width:${okPct}%;background:var(--green)"></i><i style="width:${failPct}%;background:var(--red)"></i><i style="width:${skipPct}%;background:var(--dim)"></i>
-        </div>
-        <div class="ac-sub">avg ${s.avg_seconds?Number(s.avg_seconds).toFixed(1)+'s':'—'}/task${skip?` · ${skip} skipped`:''}${s.running?` · ${s.running} running`:''}</div>
-        <details data-ant="${ant}" data-ontoggle="onAntRecentToggle(this)"><summary>recent activity</summary><div class="ac-recent"><div style="color:var(--dim)">Expand to load…</div></div></details>
-      </div>`;
-    }).join('');
-    // v0.3.8.56 (field report): planner, strategist, conversation and fallback are CARDS IN THIS
-    // GRID now, not a separate panel above it — same shape, same immediate-save route selectors.
-    // They carry no gates, telemetry or profile editor because they have none: they are
-    // control-plane roles, and inventing empty stats for them would claim telemetry that does
-    // not exist. ORCHESTRATION_ROLES (inspector-routing.js) supplies label and purpose.
-    const antIds=new Set(ANTOBS_CASTES.map(x=>x[0]));
-    const orch=(typeof ORCHESTRATION_ROLES!=='undefined'?ORCHESTRATION_ROLES:[])
-      .filter(r=>!antIds.has(r.id) && obsRoutes[r.id]);
-    grid.innerHTML += orch.map(r=>`<div class="ant-card" style="border-left-color:${cssColor('#8b93a8')}">
-        <div class="ac-hd"><span class="ac-dot" style="color:#8b93a8;background:#8b93a8"></span>
-          <span class="ac-name">${escapeHtml(r.label)}</span><span class="ac-role">orchestration · ${escapeHtml(r.id)}</span></div>
-        ${obsRouteControls(r.id, obsRoutes[r.id])}
-        <div class="ac-sub" style="margin-top:6px;line-height:1.5;">${escapeHtml(r.why)}</div>
-      </div>`).join('');
-    wireAntProfileEditors(grid);
-    wireObsRouting(grid);
-    loadAntObsDirectory(grid);
-  }catch(e){ grid.innerHTML=`<div class="hud-state err">Error loading ant stats: ${escapeHtml(e.message)}</div>`; }
-}
+// -- Per-ant telemetry (v1.8.23 as the Observatory; the ant tab in Colony Live since .124) -----
 
-// v2.2.4: full colony directory — the six cards above are the legacy executable castes with task
-// telemetry; this section lists EVERY registry ant (roles + workers) with its purpose so any ant
-// can be inspected here, matching the colony map inspector.
-async function loadAntObsDirectory(grid){
-  try{
-    // Stage F: truthful runtime state per role — never a bare 'inactive'.
-    //
-    // v3.8.34: this fetched `/colony/graph`, a route that does not exist in the API. The request
-    // 404'd on every load, so `rt` stayed empty, `s` was always undefined, and the `${s?…:''}`
-    // guard below omitted the runtime state line from every card — the comment above described
-    // behaviour this function never had. `runtime_status` is returned by `/colony/registry`
-    // (ApiHost.Routes.cs), which this function already fetches, so the second request was wrong
-    // AND redundant. Line ~986 reads the same field off the same response correctly; of the two
-    // call sites for one contract, this was the one that disagreed.
-    const r=await api('/colony/registry');
-    if(!(r&&r.success&&r.data))return;
-    const roles=Array.isArray(r.data.roles)?r.data.roles:(Array.isArray(r.data.Roles)?r.data.Roles:[]);
-    if(!roles.length)return;
-    const rt={};
-    ((r.data.runtime_status)||[]).forEach(s=>{ rt[String(s.role_id).toLowerCase()]=s; });
-    const total=roles.reduce((n,x)=>n+1+antWorkers(x).length,0);
-    const html=roles.map(role=>{
-      const rid=antRoleId(role), rname=antRoleName(role);
-      let label=String(rid).toLowerCase().includes('queen')?'Queen':getRoleLabel(rid);
-      if(label==='Other')label=getRoleLabel(rname);
-      const color=getRoleColor(label==='Other'?rid:label);
-      const workers=antWorkers(role);
-      const s=rt[String(rid).toLowerCase()];
-      const stateColor=s? (s.runtime_available||s.runtime_kind!=='MissionAgent'?'var(--green)':(s.implemented?'var(--orange)':'var(--dim)')) : 'var(--dim)';
-      return `<div class="ant-card" style="border-left-color:${color}">
-        <div class="ac-hd"><span class="ac-dot" style="color:${color};background:${color}"></span>
-          <span class="ac-name">${escapeHtml(rname)}</span><span class="ac-role">${escapeHtml(label)}</span></div>
-        ${s?`<div style="font-size:9px;font-weight:700;color:${stateColor};margin:2px 0;" title="${escapeHtml(s.unavailability_reason||'')}">${escapeHtml(s.status_label||'')}</div>`:''}
-        ${antPurpose(role)?`<div class="ac-sub" style="margin:4px 0 6px;">${escapeHtml(antPurpose(role))}</div>`:''}
-        ${workers.length?`<div style="font-size:9px;color:var(--dim);margin-bottom:2px;">WORKERS · ${workers.length}</div>`+
-          workers.map(w=>`<div style="padding:3px 0;border-bottom:1px solid rgba(30,51,84,.4);font-size:10px;">
-            <b style="color:var(--text)">${escapeHtml(antWorkerName(w))}</b>
-            ${antPurpose(w)?`<div style="color:var(--muted);font-size:9px;">${escapeHtml(antPurpose(w))}</div>`:''}
-          </div>`).join(''):''}
-      </div>`;
-    }).join('');
-    grid.insertAdjacentHTML('beforeend',
-      `<div style="grid-column:1/-1;margin-top:10px;font-size:11px;color:var(--muted);letter-spacing:.08em;">COLONY DIRECTORY · ${total} ants — every registered role and worker with its duty</div>`+html);
-  }catch(e){ /* directory is additive; telemetry cards above still render */ }
+/**
+ * One ant's lifetime counters, for whoever is drawing that ant. v0.3.8.124.
+ *
+ * LIVES HERE RATHER THAN IN colony-home.js FOR A RULE, not for tidiness. `ColonyLiveGuardTests`
+ * holds that colony-host.js is the ONLY file in the Colony Live feature that reaches the network —
+ * the host hydrates, the reducer and the renderer consume, and the page chrome resolves a project
+ * for its composer and nothing more. The ant tab needs telemetry, so the fetch belongs outside that
+ * boundary: app.js already owns `/ants/stats` (this is what `loadAntObs` read), and colony-home.js
+ * reaches it the same way it already reaches `onAntRecentToggle`.
+ *
+ * CACHED FOR FIFTEEN SECONDS because `/ants/stats` is a COLONY-WIDE read — every ant's counters in
+ * one payload — and an operator clicking through six residents in a row should cost one request,
+ * not six. Short enough that a mission finishing mid-inspection shows up.
+ */
+let antTelemetryCache=null, antTelemetryAt=0;
+async function antTelemetry(){
+  const now=Date.now();
+  if(antTelemetryCache && now-antTelemetryAt<15000) return antTelemetryCache;
+  const r=await api('/ants/stats');
+  if(!r||!r.success) throw new Error((r&&r.message)||'telemetry unavailable');
+  antTelemetryCache=r.data||{}; antTelemetryAt=now;
+  return antTelemetryCache;
 }
+/* v0.3.8.124 — `PAGE_ENTER['antobs']`, `loadAntObs` and `loadAntObsDirectory` WERE HERE.
+
+   The Ant Inspector was two things stapled together, and each half had a better home:
+
+   · TELEMETRY — per-ant task counts, success rate, average duration and recent activity — is now
+     the ant tab in Colony Live. You click the ant you are asking about instead of scanning a grid
+     of twenty-five cards for it, and the stats sit beside the name and colour editors that were
+     already there. `colony-home.js` renders it from the same `/ants/stats` this read.
+
+   · ROUTING moved into projects. "Which model does this work" turned out to be a per-project
+     question — one project pinned to a local model, another to Claude — and a colony-wide page
+     could not express that at all. `routing-controls.js` builds the same selectors against
+     `/projects/{id}/routes`.
+
+   The COLONY DIRECTORY that hung below the grid is simply gone. It listed every registry role and
+   worker with its purpose, which the colony view now shows by drawing them: a chamber's orbs ARE
+   its residents, and clicking one opens it. A textual list of the same roster, on a page you had to
+   know to visit, is the thing the live view was built to replace. */
+
 /* ── Chat-first surface (v3.8.39) ─────────────────────────────────────────────────────────────
  *
  * The conversation as the application, rather than a widget on a grid the operator has to learn
@@ -6160,11 +6079,12 @@ async function loadIntegrations(){
     </div>
     ${!p.agent?`<div class="int-cfg-slot" data-cfg-slot="${escapeHtml(p.provider)}" hidden style="padding:0 13px 13px;"></div>`:''}
     </div>`;}).join('')
-    +`<div class="card" style="margin-top:10px;"><div style="padding:11px 13px;display:flex;align-items:center;gap:10px;">
-       <b style="color:var(--text);font-size:12px;">Homelab</b>
-       <span class="sch-badge">infrastructure</span>
-       <span style="font-size:10px;color:var(--muted);flex:1;">Proxmox, containers, storage, networking and automation — managed in its own deck.</span>
-       <button class="btn btn-ghost" data-int-hl>Open</button></div></div>`;
+;
+  /* v0.3.8.124 — THE HOMELAB CARD IS GONE FROM HERE. Infrastructure is a mound now: it is drawn as
+     one in Colony Live, conduited to the Queen like one, and listed in the mound registry beside
+     every other mound. Its settings open from that row. A second door on this page would have made
+     the registry's listing a half-truth — "every mound, and its settings" is only true if this is
+     not also true somewhere else. */
   // The agent install buttons, wired the way the retired page wired them.
   host.querySelectorAll('.agentcli-install').forEach(btn=>
     btn.addEventListener('click',()=>installAgentCli(btn.dataset.agent,btn)));
@@ -6193,8 +6113,6 @@ async function loadIntegrations(){
     slot.innerHTML=renderProviderCard(p,byId[provider]||{});
     slot.hidden=false;
   }));
-  // v0.3.8.56: no more hop to a hidden agents page — the cards above ARE that page's content.
-  host.querySelector('[data-int-hl]')?.addEventListener('click',()=>showPage('homelab',{noHistory:false}));
   host.querySelectorAll('[data-int-test]').forEach(b=>b.addEventListener('click',async ()=>{
     b.disabled=true; b.textContent='Testing…';
     const r=await api('/providers/'+encodeURIComponent(b.dataset.intTest)+'/test','POST',{},30000);
@@ -6228,6 +6146,11 @@ async function loadProjectView(){
 function pvTab(name){
   document.querySelectorAll('.pv-tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
   document.querySelectorAll('.pv-body').forEach(b=>b.hidden=b.id!=='pv-body-'+name);
+  // v0.3.8.124 — the routing panel is read when its tab is OPENED, not on every project load.
+  // It costs three requests (installed models, the provider catalog, this project's routes) and
+  // most visits to a project never touch Settings; paying for them on the Chat tab would put
+  // three fetches in front of the thing an operator actually came for.
+  if(name==='settings'&&typeof renderProjectRouting==='function') renderProjectRouting(projectViewId);
 }
 document.querySelectorAll('.pv-tab').forEach(t=>t.addEventListener('click',()=>pvTab(t.dataset.tab)));
 document.getElementById('pv-back')?.addEventListener('click',()=>go('/projects'));
@@ -6627,7 +6550,6 @@ async function onAntRecentToggle(det){
     }).join('') : '<div style="color:var(--dim)">No recent events for this caste.</div>';
   }catch(e){ box.innerHTML=`<div style="color:var(--red)">Error: ${escapeHtml(e.message)}</div>`; }
 }
-document.getElementById('antobs-refresh')?.addEventListener('click',loadAntObs);
 
 
 // Route a job's "View Result" to the Results page when it has a mission; the overlay stays as
@@ -6862,8 +6784,12 @@ const PALETTE_PAGES=[
   ['overview','Dashboard',false],['colony','Colony · Topology',false],['missions','Missions',false],
   ['results','Mission Results',false],['events','Activity · Events',false],
   ['patches','Changes & Approvals',true],['objboard','Automation · Objectives',true],
-  ['pheromones','Colony · Signals',true],['antconfig','Agents · Configure',true],
-  ['antobs','Agents · Inspect',true],['autonomy','Automation · Director',true],['security','Security',true],
+  ['pheromones','Colony · Signals',true],
+  // v0.3.8.124: `antconfig` and `antobs` are gone from the palette with the page they opened.
+  // A palette entry for a retired page is worse than no entry — it is a search result that
+  // answers, and then does nothing.
+  ['mounds','Colony · Mounds',false],
+  ['autonomy','Automation · Director',true],['security','Security',true],
   ['shell','Terminal',true],['settings','Settings',true],['users','Users',true],
 ];
 const PALETTE_ACTIONS=[
@@ -7789,15 +7715,15 @@ async function ensureAntRouteCatalog(){
   await antRouteCatalogLoading;
 }
 
-/** Merge one role's route into the full map and persist the WHOLE map. See modelRoutes above. */
-async function saveModelRoute(updates){
-  const merged=Object.assign({},modelRoutes);
-  Object.keys(updates).forEach(k=>{ merged[k]=updates[k]; });
-  const r=await api('/settings','POST',{model_routes:merged});
-  if(!r||!r.success) throw new Error((r&&r.message)||'route update rejected');
-  modelRoutes=merged;
-  return merged;
-}
+/* v0.3.8.124 — `saveModelRoute` WAS HERE, and nothing calls it any more.
+
+   It merged one role into the colony-wide `model_routes` map and posted the whole map back, which
+   was the right shape for a colony-wide editor and had exactly two callers: the Ant Inspector page
+   and the 2D canvas inspector's route selectors. Both are gone — routes are written per project,
+   through `/projects/{id}/routes`, one role at a time against a table rather than a map.
+
+   `modelRoutes` itself stays: `ensureAntRouteCatalog` still reads it so the inspector can DISPLAY
+   which model an ant runs on, which is a question worth answering wherever an ant is drawn. */
 let antcfgConfigured=new Set(); // provider ids that currently have a working key saved
 
 async function fetchModelNames(){
@@ -7816,9 +7742,10 @@ async function fetchProviderCatalog(){
   }catch{antcfgCatalog=[];antcfgConfigured=new Set();}
 }
 
-// v0.3.8.55: the ant-config globals (options builders, the colony-wide priority panel,
-// openAntConfig, save/reset) live in inspector-routing.js — the inspector/routing domain's own
-// asset, under the app.js size guard.
+// v0.3.8.124: the model option builders (`antcfgModelOptions`, `antcfgProviderOptions`) live in
+// routing-controls.js — the routing domain's own asset, under the app.js size guard. They read
+// `availableModels`, `antcfgCatalog` and `antcfgConfigured`, which are declared here and reached
+// at call time through the shared global scope.
 
 // -- Autonomy page (Phase 1/2: Colony Director, objective backlog, Strategist runs) -------------
 let autonomyObjectives=[];

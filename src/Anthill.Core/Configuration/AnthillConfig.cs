@@ -643,17 +643,36 @@ public sealed class AnthillConfig
     // The colony's organizational knowledge comes from FORAGER, a separate local application. See
     // docs/FORAGER_INTEGRATION.md for the boundary and docs/KNOWLEDGE_API.md for the surface.
     //
-    // EVERY KEY HERE IS FileOnly, and that is two decisions rather than an omission.
+    // EVERY KEY HERE IS FileOnly EXCEPT THE ON/OFF SWITCH, and the line is drawn where it is on
+    // purpose. v0.3.8.124 moved exactly one key across it; the rest did not move.
     //
-    // First, security: knowledge_forager_endpoint decides which service the colony trusts as the
-    // source of organizational fact, and knowledge_project_map decides which knowledge a mission may
-    // read. Making either writable from the console would let a console compromise redirect the
-    // colony's beliefs, or widen a project's scope, without touching a config file.
+    // WHAT STAYS IN THE FILE, and why. knowledge_forager_endpoint decides which service the colony
+    // trusts as the source of organizational fact. knowledge_forager_token is the credential for it.
+    // knowledge_forager_allow_remote permits reaching one across a network, and FORAGER has no
+    // authentication of its own. knowledge_project_map decides which knowledge a mission may read.
+    // Each of those either REDIRECTS what the colony believes or WIDENS who may read what, so making
+    // any of them console-writable would let a console compromise do the same without touching a
+    // file. That is the property this section was written to keep, and it is unchanged.
     //
-    // Second, and more prosaically: TheEditableSurface_IsExactlyWhatItWasBeforeItBecameAProjection
-    // pins the editable key count. Widening that surface is a decision a release should make on
-    // purpose, not one a new feature makes as a side effect.
-    [ConfigKey(Security = ConfigSecurity.Safety, EnvOverride = "ANTHILL_KNOWLEDGE_ENABLED",
+    // WHY THE SWITCH CROSSED, v0.3.8.124. knowledge_enabled does none of those things. It decides
+    // whether the module talks to the endpoint the operator ALREADY wrote in the file, under the
+    // token already in the file, within the scopes the map already grants. Turning it on cannot
+    // reach a service the file does not name and cannot read a project the map does not list — the
+    // client re-reads all four on every call and refuses on each of them independently. So the
+    // switch's blast radius is "the thing the operator configured now runs", which is precisely the
+    // decision a toggle is for. It was FileOnly by inheriting the section's rule rather than by
+    // being measured against it, which meant Tools > Knowledge could describe the feature and then
+    // tell the operator to go and edit JSON to use it.
+    //
+    // The env override still wins over the file, so a colony pinned by ANTHILL_KNOWLEDGE_ENABLED is
+    // pinned. /knowledge/status reports that, and the console withholds the toggle rather than
+    // offering a button whose write would be silently re-overridden on the next projection.
+    //
+    // Widening the editable surface is a security decision:
+    // TheEditableSurface_IsExactlyWhatItWasBeforeItBecameAProjection pins the count, and it moved
+    // 98 -> 99 in the same commit as this attribute. Nothing else here moves without doing the same.
+    [ConfigKey(Exposure = ConfigExposure.Editable,
+        Security = ConfigSecurity.Safety, EnvOverride = "ANTHILL_KNOWLEDGE_ENABLED",
         Section = "knowledge", SectionNote = """Organizational knowledge, retrieved from FORAGER (https://github.com/Formicaria/Forager) -- a separate local application that turns documents into canonical, evidence-backed knowledge. OFF BY DEFAULT: with knowledge_enabled false the module registers no tools, the console reports the feature as unconfigured, and nothing about an existing colony changes. ANTHILL never parses documents, never stores knowledge and never resolves conflicts -- it asks FORAGER, and presents what comes back with its support level and its provenance intact. This integration adds NO tables to ANTHILL's database, so enabling and disabling it are both safe. Retrieval is scoped: knowledge_project_map decides which FORAGER project a mission's ANTHILL project may read, and a mission whose project is unmapped retrieves nothing rather than falling back to a default.""")]
     [JsonPropertyName("knowledge_enabled")] public bool KnowledgeEnabled { get; set; } = false;
 
@@ -672,6 +691,12 @@ public sealed class AnthillConfig
     /// Permit a non-loopback FORAGER endpoint. Off by default: FORAGER has no auth, so reaching one
     /// across a network is a decision with a real blast radius and should be made deliberately
     /// rather than inherited from a copied config.
+    ///
+    /// DELIBERATELY NOT EDITABLE, and it did not follow knowledge_enabled across in v0.3.8.124. The
+    /// switch above only starts using what the file already permits; this one CHANGES what is
+    /// permitted, and what it permits is sending the colony's queries to an unauthenticated service
+    /// on the network. A console toggle for that is a console compromise's shortest path off the
+    /// loopback interface. The console names this key and says it needs a file edit instead.
     /// </summary>
     [ConfigKey(Security = ConfigSecurity.Safety, EnvOverride = "ANTHILL_KNOWLEDGE_ALLOW_REMOTE")]
     [JsonPropertyName("knowledge_forager_allow_remote")] public bool KnowledgeForagerAllowRemote { get; set; } = false;

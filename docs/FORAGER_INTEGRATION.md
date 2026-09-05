@@ -374,7 +374,12 @@ That last sentence is load-bearing. The failure text is part of the safety desig
 - The module is not loaded when disabled, so the `knowledge.*` tools are never registered, never
   offered to a model, and never appear in the tool inventory projection.
 - The console's Knowledge section is present but reports the feature as unconfigured, with the
-  reason — the same way the Micromound console reports an absent fleet.
+  reason — the same way the Micromound console reports an absent fleet. Since v0.3.8.124 it also
+  carries the switch: `knowledge_enabled` is editable from the settings surface, so an operator who
+  has set the endpoint in the file does not have to go back to the file to start using it. Nothing
+  else in the section moved — the endpoint, the token, `knowledge_forager_allow_remote` and
+  `knowledge_project_map` are still a file edit, because they decide trust and scope rather than
+  whether the configured thing runs.
 - Rolling back is deleting the config section.
 
 Upgrade is tested against a database fixture created before the change.
