@@ -2944,6 +2944,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           #page-knowledge .kn-lbl{font-size:9px;color:var(--muted);display:flex;gap:4px;align-items:center}
           #page-knowledge .kn-select{background:var(--inner);border:1px solid var(--border);color:var(--text);border-radius:var(--r);font-size:10px;padding:3px 6px}
           #page-knowledge .kn-say{font-size:10px;margin:8px 0 0;min-height:14px}
+          /* The on/off row. Sits above the search box on the working page and under the diagnosis
+             on the unreachable one, so the control is in the same place in both. */
+          #page-knowledge .kn-gate{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:11px;padding:7px 10px;margin-bottom:10px;border:1px solid var(--border);border-radius:6px;background:var(--inner)}
+          #page-knowledge .kn-gate-sp{flex:1}
           #page-knowledge .kn-ok{color:var(--green)} #page-knowledge .kn-bad{color:var(--red)}
           #page-knowledge .kn-cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin-bottom:10px}
           @media (max-width:900px){#page-knowledge .kn-cols{grid-template-columns:minmax(0,1fr)}}
