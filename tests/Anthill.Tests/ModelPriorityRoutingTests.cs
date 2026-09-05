@@ -160,42 +160,43 @@ public class ModelPriorityRoutingTests : IDisposable
     /// <summary>
     /// Every routable role must be REACHABLE from the console, not merely present in the table.
     ///
-    /// The caste grid is built from the ant roster, so planner, strategist and fallback — which make
-    /// model calls and are not ants — had no control anywhere in the UI. That is the defect the
-    /// operator reported: a colony whose planner model had gone missing fell back to a static plan
-    /// with nowhere to repoint it. A route that exists in config and nowhere in the console is the
-    /// same "shipped but unreachable" failure this project keeps paying for.
+    /// The original defect: the caste grid was built from the ant roster, so planner, strategist and
+    /// fallback — which make model calls and are not ants — had no control anywhere in the UI. A
+    /// colony whose planner model had gone missing fell back to a static plan with nowhere to
+    /// repoint it. A route that exists in config and nowhere in the console is the "shipped but
+    /// unreachable" failure this project keeps paying for.
+    ///
+    /// v0.3.8.124 — THE SURFACE MOVED AND THE RULE DID NOT. Routing is a project's decision now, so
+    /// the controls live in the project workspace and the roster they are built from is the SERVER'S
+    /// `RoutableRoles`, returned by `/projects/{id}/routes`. That is the property worth guarding:
+    /// the console renders whatever the server lists, so a role added to `RoutableRoles` tomorrow
+    /// gets a control without anybody editing the page. Asserted against the API and the renderer
+    /// rather than against a hand-kept list of role names, which would be the same copy that goes
+    /// stale as the grid did.
     /// </summary>
     [Fact]
     public void EveryRoleThatIsNotAnAnt_HasAConsoleControl()
     {
-        // v0.3.8.55: the ant-config globals live in inspector-routing.js — the inspector/routing
-        // domain's own console asset (the app.js size guard's split rule).
-        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "inspector-routing.js"));
+        var api = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "ApiHost.Providers.cs"));
+        var console = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "routing-controls.js"));
 
-        // The full ROSTER, not ExecutableRoleIds. The latter is computed from live specialist gates,
-        // so it shrinks and grows with configuration — a role whose canary gate happens to be closed
-        // is still an ant with a card in the caste grid. Asserting against it would make this test
-        // report six false failures depending on which gates were open when it ran, which is how a
-        // guard becomes something people rerun instead of read.
+        // There ARE roles that are not ants — the premise of the whole guard. Without this the two
+        // assertions below would pass on a colony where every routable role happened to be an ant.
         var ants = AntRegistry.Roles.Select(r => r.RoleId).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
         var orchestration = AnthillRuntime.RoutableRoles.Where(r => !ants.Contains(r)).ToList();
         Assert.NotEmpty(orchestration);
 
-        // Rendered from ORCHESTRATION_ROLES, so each must appear there by id.
-        var block = Regex.Match(app, @"var ORCHESTRATION_ROLES = \[.*?\];", RegexOptions.Singleline).Value;
-        Assert.NotEqual("", block);
+        // The endpoint enumerates the routing table itself, so every routable role is offered.
+        Assert.Contains("AnthillRuntime.RoutableRoles.Select(role =>", api);
 
-        var missing = orchestration.Where(r => !block.Contains($"id:'{r}'")).ToList();
-        Assert.True(missing.Count == 0,
-            "These roles are routable but have no console control, so an operator cannot change the "
-          + "model they call: " + string.Join(", ", missing));
+        // And the console renders a row per role the server returned — it does not filter.
+        Assert.Contains("(pvRoutingData.roles || []).map(r =>", console);
+        Assert.Contains("pv-route-prov", console);
     }
 
     /// <summary>
-    /// v3.8.1 — a role gets model controls because it HAS A ROUTE, never because it happens to be
-    /// executable right now.
+    /// A role gets model controls because it HAS A ROUTE, never because it happens to be executable
+    /// right now.
     ///
     /// The old caste grid hid the provider/model pair whenever a role's Executable flag was false,
     /// and that flag is computed from live specialist canary gates. So archivist, medic, scribe,
@@ -204,48 +205,53 @@ public class ModelPriorityRoutingTests : IDisposable
     /// did not even serve. Executability decides whether a role DISPATCHES today; it says nothing
     /// about whether an operator may choose the model it calls when it does.
     ///
-    /// v0.3.8.55: the caste grid folded into the Ant Inspector, and the RULE moved with it — the
-    /// card's route selectors render when the role appears in obsRoutes, which is filled from
-    /// /routes/json's roles list: the ROUTE MAP, so every role the server routes gets a control
-    /// automatically as new ones are added. Asserted on the condition itself rather than on
-    /// rendered output, because the original bug was the condition: any rule that consults
-    /// executability here reintroduces it exactly.
+    /// Asserted on the CONDITION rather than on rendered output, at every surface the rule has
+    /// lived on, because the original bug was the condition: any rule that consults executability
+    /// here reintroduces it exactly.
     /// </summary>
     [Fact]
     public void ModelControls_AreGatedOnHavingARoute_NotOnExecutability()
     {
-        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "app.js"));
-        var routing = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "inspector-routing.js"));
+        var console = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "routing-controls.js"));
+        var api = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "ApiHost.Providers.cs"));
 
-        // The card renders controls iff the role is IN THE ROUTE MAP — nothing else.
-        var condition = Regex.Match(app, @"obsRoutes\[ant\]\s*\r?\n?\s*\?\s*obsRouteControls").Value;
-        Assert.NotEqual("", condition);
+        Assert.DoesNotContain("roleExecutable", console);
+        Assert.DoesNotContain("Executable", console);
 
-        // The map is filled from /routes/json's roles list — the server's own routing table.
-        Assert.Contains("rj.data.roles", app);
-        Assert.Contains("obsRoutes[x.role]", app);
-
-        // And neither the gate nor the control builder consults executability.
-        Assert.DoesNotContain("roleExecutable", routing);
-        var obsBlock = Regex.Match(app, @"obsProvModels=new Map\(\); obsRoutes=\{\};.*?const d=r\.data",
+        // The server's own list is the routing table, not the executable set — the same distinction,
+        // one layer down, where it now decides what the console is even given.
+        var block = Regex.Match(api, @"\[""roles""\] = AnthillRuntime\.RoutableRoles.*?\.ToList\(\),",
             RegexOptions.Singleline).Value;
-        Assert.NotEqual("", obsBlock);
-        Assert.DoesNotContain("roleExecutable", obsBlock);
+        Assert.NotEqual("", block);
+        Assert.DoesNotContain("Executable", block);
     }
 
     /// <summary>
-    /// And the priority must be CLEARABLE from the console. A save that only ever wrote non-empty
-    /// values would let an operator promote a model and never demote it — the setting would be a
-    /// one-way door, which is exactly the shape of the Disable/Enable defect found in v3.7.2.
+    /// And a priority must be CLEARABLE, at both scopes. A save that only ever wrote non-empty
+    /// values would let an operator promote a model and never demote it — a one-way door, which is
+    /// exactly the shape of the Disable/Enable defect found in v3.7.2.
+    ///
+    /// v0.3.8.124 — there are two priorities now, the colony's and each project's, and the rule
+    /// binds both. The project one is the surface an operator actually uses; the colony one stays
+    /// settable over `POST /settings` for the flows that belong to no project.
     /// </summary>
     [Fact]
     public void ThePriority_CanBeClearedFromTheConsole()
     {
-        // v0.3.8.55: the priority panel and its save handler live in inspector-routing.js now.
-        var app = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "inspector-routing.js"));
+        var console = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.UI", "routing-controls.js"));
 
-        Assert.Contains("model_priority_provider", app);
-        Assert.Contains("m.value ? p.value : ''", app);
+        // The project's priority: an empty model clears BOTH halves rather than leaving a provider
+        // pointing at nothing, which is the state `HasPriority` reads as "no priority" anyway.
+        Assert.Contains("default_provider: m.value ? p.value : ''", console);
+        Assert.Contains("default_model: m.value || ''", console);
+
+        // And clearing a per-role override is expressible, meaning "follow the colony" rather than
+        // "this role has no model" — a project cannot un-route a role, only decline to override it.
+        Assert.Contains("saveProjectRoute(role, '', '')", console);
+
+        // The colony-wide keys remain operator-editable for project-less flows.
+        Assert.Contains("model_priority_provider", AnthillRuntime.EditableSettingKeys);
+        Assert.Contains("model_priority_model", AnthillRuntime.EditableSettingKeys);
     }
 
     private static string RepoRoot()

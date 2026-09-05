@@ -23,6 +23,20 @@ function extract(name, open = '[', close = '];') {
 const IA = extract('IA', '[', '];');
 const ROUTE_ALIAS = extract('ROUTE_ALIAS', '{', '};');
 
+/**
+ * Every route the ROUTER can resolve — which since v0.3.8.124 is not the same set as the routes the
+ * SIDEBAR shows.
+ *
+ * `buildRoutes` derives ROUTE_TABLE from IA, so for most of this file's life "a live route" and "an
+ * IA entry" were the same thing. `/tools/infrastructure` broke that on purpose: Infrastructure is
+ * reached from its row in the mound registry, being a mound, and a nav entry would have been a
+ * second door that made the registry's listing a half-truth. So it is registered straight onto
+ * ROUTE_TABLE after the build.
+ *
+ * Read out of app.js by the same slice-and-evaluate trick the rest of this file uses, rather than
+ * listed here: a hand-kept list of the exceptions is exactly the copy that passes forever after the
+ * original changes.
+ */
 function iaRoutes() {
   const routes = new Set();
   for (const d of IA) {
@@ -32,8 +46,22 @@ function iaRoutes() {
       for (const t of s.tabs || []) routes.add(t.route);
     }
   }
+  for (const m of src.matchAll(/^ROUTE_TABLE\['([^']+)'\]\s*=/gm)) routes.add(m[1]);
   return routes;
 }
+
+test('a route may exist without a nav entry, and Infrastructure is the one that does', () => {
+  const live = iaRoutes();
+  const inNav = new Set();
+  for (const d of IA) {
+    if (d.route) inNav.add(d.route);
+    for (const s of d.sections || []) { inNav.add(s.route); for (const t of s.tabs || []) inNav.add(t.route); }
+  }
+  assert.ok(live.has('/tools/infrastructure'), 'the router cannot resolve /tools/infrastructure');
+  assert.ok(!inNav.has('/tools/infrastructure'),
+    'Infrastructure is in the sidebar again — it is reached from the mound registry, and a second '
+    + 'door makes the registry\'s "every mound, and where its settings are" a half-truth');
+});
 
 test('the navigation has exactly the five destinations, in order', () => {
   // v0.3.8.49 (UI/UX pass §20): Colony, Projects, Chat, Tools, Settings.
@@ -51,18 +79,30 @@ test('the removed / folded destinations do not render as top-level', () => {
     assert.ok(!ids.includes(gone), `${gone} is still a top-level nav entry`);
 });
 
-test('Models, Roles, Model Routing and the Inspector live under Colony (§11)', () => {
+test('routing left Colony for Projects, and every old link still lands (§11, v0.3.8.124)', () => {
   const colony = IA.find(d => d.id === 'colony');
   assert.ok(colony, 'Colony domain missing');
   const routes = (colony.sections || []).flatMap(s => [s.route, ...(s.tabs || []).map(t => t.route)]);
-  // v0.3.8.49: the standalone Ants & Roles tab folded away. v0.3.8.55: Models & Routing folded
-  // INTO the Ant Inspector — one box per role — so the Inspector is the one live destination and
-  // /colony/model-routing must survive as an ALIAS to a Colony route, not as a section.
-  assert.ok(routes.includes('/colony/inspector'), '/colony/inspector is not under Colony');
+
+  // v0.3.8.49: the standalone Ants & Roles tab folded into Models & Routing. v0.3.8.55: Models &
+  // Routing merged INTO the Ant Inspector. v0.3.8.124: the Inspector itself is gone — its telemetry
+  // is the ant tab in Colony Live, and its ROUTING moved into projects, because "which model does
+  // this work" turned out to be a per-project question a colony-wide page could not express.
+  assert.ok(!routes.includes('/colony/inspector'),
+    '/colony/inspector is a Colony section again — it was retired in v0.3.8.124');
   assert.ok(!routes.includes('/colony/model-routing'),
     '/colony/model-routing is a section again — it merged into the Inspector in v0.3.8.55');
-  assert.strictEqual(ROUTE_ALIAS['/colony/model-routing'], '/colony/inspector',
-    'the /colony/model-routing bookmark must still land on the Inspector');
+
+  // Every bookmark that used to reach model configuration now reaches Projects, which is where
+  // model configuration IS. Not Colony Live: that draws the ants and configures none of them.
+  for (const old of ['/colony/inspector', '/colony/model-routing', '/colony/roles',
+                     '/settings/roles', '/colony/agents'])
+    assert.strictEqual(ROUTE_ALIAS[old], '/projects',
+      `${old} must land on Projects, where routing now lives`);
+
+  // And Colony keeps the two destinations that are still about looking at the colony.
+  assert.ok(routes.includes('/colony/live'), 'Colony Live is not under Colony');
+  assert.ok(routes.includes('/colony/mounds'), 'the mound registry is not under Colony');
 });
 
 test('Integrations lives under Tools (§9)', () => {

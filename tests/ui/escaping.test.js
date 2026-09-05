@@ -94,12 +94,14 @@ test('the error sinks still exist in escaped form, so the guard above cannot pas
 });
 
 test('model ids are escaped in the ant-config option list, in both attribute and text position', () => {
-  // v0.3.8.55: antcfgModelOptions moved to inspector-routing.js — the inspector/routing domain's
-  // own console asset (the app.js size guard's split rule). The guard follows the code.
+  // v0.3.8.55: antcfgModelOptions moved out of app.js into the routing domain's own console asset
+  // (the app.js size guard's split rule). v0.3.8.124 renamed that asset to routing-controls.js when
+  // the Ant Inspector page it was named for was retired and routing moved into projects. The guard
+  // follows the code, which is the whole reason it names a file rather than searching every asset.
   const routingSrc = fs.readFileSync(
-    path.join(__dirname, '..', '..', 'src', 'Anthill.UI', 'inspector-routing.js'), 'utf8');
+    path.join(__dirname, '..', '..', 'src', 'Anthill.UI', 'routing-controls.js'), 'utf8');
   const at = routingSrc.indexOf('function antcfgModelOptions');
-  assert.ok(at >= 0, 'antcfgModelOptions not found in inspector-routing.js — renamed or moved again');
+  assert.ok(at >= 0, 'antcfgModelOptions not found in routing-controls.js — renamed or moved again');
   const fn = routingSrc.slice(at);
   const body = fn.slice(0, fn.indexOf('\n}'));
 

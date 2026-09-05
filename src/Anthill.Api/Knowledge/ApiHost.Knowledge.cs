@@ -41,6 +41,31 @@ public static partial class ApiHost
 
     private const int KnowledgeMaxLimit = 50;
 
+    /// <summary>
+    /// The settings key behind the console's knowledge toggle. Named once, here, and used by both
+    /// the status route and <see cref="KnowledgeGateEnvVar"/> so the console cannot be reporting on
+    /// one key while its button writes another.
+    /// </summary>
+    public const string KnowledgeGateKey = "knowledge_enabled";
+
+    /// <summary>
+    /// The environment variable that overrides <see cref="KnowledgeGateKey"/>, read from the config
+    /// catalog rather than spelled again. Empty if the declaration ever stops declaring one — in
+    /// which case nothing can be pinned and <see cref="KnowledgeGateEnvPinned"/> is false, which is
+    /// the correct answer rather than a guess.
+    /// </summary>
+    public static string KnowledgeGateEnvVar =>
+        ConfigCatalog.Find(KnowledgeGateKey)?.EnvOverride ?? "";
+
+    /// <summary>
+    /// True when that variable is set, so the file value cannot win. Read live: an operator's
+    /// process environment does not change under it, but reading it live costs nothing and removes
+    /// a cached-at-startup answer that would be wrong after a restart under a different unit file.
+    /// </summary>
+    public static bool KnowledgeGateEnvPinned =>
+        KnowledgeGateEnvVar.Length > 0
+     && !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(KnowledgeGateEnvVar));
+
     private sealed record KnowledgeRetrieveRequest(string? Query, string? Project, int? TopK, bool? IncludeHistorical);
     private sealed record KnowledgeIngestRequest(string? Project, string[]? Paths, bool? Force);
 
@@ -144,6 +169,34 @@ public static partial class ApiHost
                 ["endpoint"] = availability.Endpoint,
                 ["reason"] = availability.Reason,
                 ["projects"] = AnthillRuntime.Knowledge.ProjectMap.Keys.ToList(),
+
+                // ---- What the console's on/off toggle needs to tell the truth. v0.3.8.124 -------
+                //
+                // `endpoint` above is the endpoint that was PROBED, and a disabled provider probes
+                // nothing — `KnowledgeAvailability.Off` carries no endpoint at all. So with
+                // knowledge off the console could describe the feature but could not say what it
+                // was about to point at. This is the CONFIGURED value, reported whether or not a
+                // request was made with it.
+                ["configured_endpoint"] = AnthillRuntime.Knowledge.Endpoint,
+
+                // Whether the file permits a non-loopback FORAGER. Reported because turning
+                // knowledge on against a remote endpoint with this false produces a refusal at the
+                // client — "refusing a non-loopback knowledge request" — and an operator who was
+                // shown an Enable button deserves to know that before pressing it, not after.
+                ["allow_remote"] = AnthillRuntime.Knowledge.AllowRemote,
+
+                // AND WHETHER THE SWITCH IS PINNED BY THE ENVIRONMENT.
+                //
+                // `AnthillRuntime` projects `Enabled` as env-over-file, so on a colony that exports
+                // ANTHILL_KNOWLEDGE_ENABLED a settings write would persist to config.json, be
+                // re-projected, and lose to the variable — a toggle that appears to do nothing. The
+                // console withholds the control in that case and names the variable instead.
+                //
+                // The variable's NAME is read out of the declaration rather than written here a
+                // second time: two spellings of one environment variable is how the console ends up
+                // reporting a pin that does not exist, or missing one that does.
+                ["gate_env_var"] = KnowledgeGateEnvVar,
+                ["gate_env_pinned"] = KnowledgeGateEnvPinned,
             });
         });
 

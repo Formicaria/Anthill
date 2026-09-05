@@ -88,20 +88,128 @@ async function loadKnowledge() {
   }
 }
 
+/* ── the gate ─────────────────────────────────────────────────────────────────
+   ONE KEY, AND THE OTHERS ARE NAMED RATHER THAN OFFERED. v0.3.8.124.
+
+   `knowledge_enabled` is the only knowledge setting the settings surface will
+   write, and that is the whole design rather than a first instalment. It starts
+   or stops using what the config file already says; the endpoint, the token,
+   the remote permission and the project map decide WHO the colony trusts and
+   WHAT a mission may read, so those stay a file edit. Where one of them is what
+   is actually standing in the operator's way, this page says which key and
+   where — a toggle that silently could not help is worse than a sentence that
+   explains.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/** True when this operator may write settings at all. Mirrors `/settings` POST,
+    which is gated on manage_settings — admin-only in the shipped role set. */
+function knMayToggle() {
+  return ROLE === 'admin';
+}
+
+/**
+ * Flip the gate and re-read the page.
+ *
+ * `KnowledgeModule` re-reads its options on every call, so this takes effect on
+ * the next request rather than at the next restart — the message says so,
+ * because the homelab gate beside it needs a restart and an operator who has
+ * used that one will otherwise assume this one does too.
+ */
+async function knSetGate(on) {
+  if (!knMayToggle()) return;
+  knSay(on ? 'Enabling…' : 'Disabling…', true);
+  try {
+    const r = await api('/settings', 'POST', { knowledge_enabled: !!on });
+    if (!r || !r.success) { knSay((r && r.message) || 'The setting could not be written.', false); return; }
+    await loadKnowledge();
+    knSay(on
+      ? 'Knowledge enabled. Live on the next request — no restart needed.'
+      : 'Knowledge disabled. Missions continue without organizational knowledge.', true);
+  } catch (e) {
+    knSay(e.message || 'The setting could not be written.', false);
+  }
+}
+
+/** A non-loopback endpoint that the file has not permitted. Enabling with this
+    true configures nothing useful: every request is refused at the client. */
+function knRemoteBlocked(s) {
+  const ep = s.configured_endpoint || s.endpoint || '';
+  if (!ep || s.allow_remote) return false;
+  try {
+    const h = new URL(ep).hostname.toLowerCase();
+    return !(h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '[::1]' || /^127\./.test(h));
+  } catch (_) { return false; }
+}
+
+/**
+ * The on/off row shown once knowledge IS on — reachable or not.
+ *
+ * Returns markup, never null, so the two call sites can concatenate it
+ * unconditionally; when the operator cannot toggle, it degrades to a statement
+ * of what is on rather than disappearing, because "knowledge is enabled" is
+ * worth reading even by someone who may not change it.
+ */
+function knGateBar(s) {
+  const ep = escapeHtml(s.configured_endpoint || s.endpoint || '—');
+  let right;
+  if (s.gate_env_pinned) {
+    right = `<span class="kn-sub">pinned by <code>${escapeHtml(s.gate_env_var || '')}</code> — the config file cannot change it</span>`;
+  } else if (knMayToggle()) {
+    right = '<button class="kn-btn" data-onclick="knSetGate(false)">Disable knowledge</button>';
+  } else {
+    right = '<span class="kn-sub">changing this needs <code>manage_settings</code></span>';
+  }
+
+  return '<div class="kn-gate">'
+    + '<span>Knowledge: <b class="kn-ok">enabled</b></span>'
+    + `<span class="kn-sub">${ep}</span>`
+    + '<span class="kn-gate-sp"></span>'
+    + right
+    + '</div>';
+}
+
 function knRenderShell(host) {
   const s = knStatus || {};
 
-  // Not configured. Not an error — say what it is and what turns it on, and stop.
+  // Not configured. Not an error — say what it is, offer the switch, and stop.
   if (!s.enabled) {
+    const ep = s.configured_endpoint || '';
+    let action;
+    if (s.gate_env_pinned) {
+      // The switch is pinned by the environment. Offering a button here would
+      // write config.json, lose to the variable on re-projection, and leave the
+      // page looking exactly as it does now — the button that appears to do
+      // nothing. Name the variable instead.
+      action = '<p class="kn-lede kn-bad">This colony pins the switch in its environment: '
+        + `<code>${escapeHtml(s.gate_env_var || 'ANTHILL_KNOWLEDGE_ENABLED')}</code> is set, and it `
+        + 'overrides the config file. Change it where the process environment is defined — a toggle '
+        + 'here would be overridden the moment it was applied.</p>';
+    } else if (!knMayToggle()) {
+      action = '<p class="kn-sub">Enabling knowledge needs <code>manage_settings</code>.</p>';
+    } else {
+      action = '<button class="kn-btn kn-primary" data-onclick="knSetGate(true)">Enable knowledge</button>'
+        + (knRemoteBlocked(s)
+            ? '<p class="kn-lede kn-bad" style="margin-top:8px">The configured endpoint is not on '
+              + 'loopback, and <code>knowledge_forager_allow_remote</code> is off — requests will be '
+              + 'refused until that key is set in the config file. It is deliberately not editable '
+              + 'here: FORAGER has no authentication of its own, so reaching one across a network is '
+              + 'a decision to make in the file.</p>'
+            : '');
+    }
+
     host.innerHTML = '<div class="kn-card"><h3>Knowledge is not configured</h3>'
       + '<p class="kn-lede">This colony has no organizational knowledge base. Knowledge comes from '
       + 'FORAGER, a separate local application that turns documents into evidence-backed, traceable '
       + 'statements.</p>'
-      + '<p class="kn-lede">To enable it, set <code>knowledge_enabled</code> and '
-      + '<code>knowledge_forager_endpoint</code> in your configuration, then map this colony\'s '
-      + 'projects to FORAGER projects with <code>knowledge_project_map</code>. See '
-      + '<code>docs/FORAGER_INTEGRATION.md</code>.</p>'
-      + '<p class="kn-lede">Missions run normally without it.</p></div>';
+      + `<p class="kn-sub">Endpoint: <code>${escapeHtml(ep || 'not set')}</code></p>`
+      + '<p class="kn-lede">Switching it on here sets <code>knowledge_enabled</code>. The endpoint, '
+      + 'the access token and the project map stay in the config file — they decide which service '
+      + 'the colony trusts and which knowledge a mission may read, so they are not editable from a '
+      + 'browser. Set <code>knowledge_forager_endpoint</code> and map this colony\'s projects with '
+      + '<code>knowledge_project_map</code>; see <code>docs/FORAGER_INTEGRATION.md</code>.</p>'
+      + '<p class="kn-lede">Missions run normally without it.</p>'
+      + action
+      + '<div class="kn-say" id="kn-say"></div></div>';
     return;
   }
 
@@ -109,10 +217,15 @@ function knRenderShell(host) {
   if (!s.reachable) {
     host.innerHTML = '<div class="kn-card"><h3>The knowledge base is not responding</h3>'
       + `<p class="kn-lede">${escapeHtml(s.reason || 'FORAGER did not answer.')}</p>`
-      + `<p class="kn-sub">Endpoint: <code>${escapeHtml(s.endpoint || '—')}</code></p>`
+      + `<p class="kn-sub">Endpoint: <code>${escapeHtml(s.endpoint || s.configured_endpoint || '—')}</code></p>`
       + '<p class="kn-lede">Missions continue without organizational knowledge. Retrieval will report '
       + 'itself unavailable rather than answering from assumption.</p>'
-      + '<button class="kn-btn" data-onclick="loadKnowledge()">Check again</button></div>';
+      + '<button class="kn-btn" data-onclick="loadKnowledge()">Check again</button>'
+      // Offered HERE too, because "it is on and not answering" is exactly when an operator wants to
+      // switch it off — leaving the control only on the working page would mean the one state you
+      // cannot leave is the broken one.
+      + knGateBar(s)
+      + '<div class="kn-say" id="kn-say"></div></div>';
     return;
   }
 
@@ -123,6 +236,7 @@ function knRenderShell(host) {
 
   host.innerHTML =
     '<div class="kn-card">'
+    + knGateBar(s)
     + '<div class="kn-searchrow">'
     + '<input id="kn-q" class="kn-input" type="search" placeholder="Search organizational knowledge…" '
     + 'autocomplete="off" aria-label="Search organizational knowledge">'
