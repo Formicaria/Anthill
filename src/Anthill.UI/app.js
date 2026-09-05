@@ -469,8 +469,8 @@ function applyRoleVisibility(){
 // deep-linkable routes, breadcrumbs, and contextual sub-navigation for the grouped domains.
 const PAGE_TITLES = {
   overview:'Dashboard', colony:'Topology', missions:'Missions', results:'Mission Results',
-  patches:'Changes & Approvals', objboard:'Objectives', antobs:'Roles', events:'Events',
-  activity:'Activity', pheromones:'Memory & Signals', homelab:'Infrastructure', antconfig:'Roles',
+  patches:'Changes & Approvals', objboard:'Objectives', events:'Events',
+  activity:'Activity', pheromones:'Memory & Signals', homelab:'Infrastructure',
   autonomy:'Automation', security:'Security', shell:'Terminal', settings:'Settings', users:'Users',
   chat:'Chat', projects:'Projects', toolsview:'Tools',
   readiness:'Readiness', projectview:'Project', integrations:'Integrations',
@@ -6760,8 +6760,12 @@ const PALETTE_PAGES=[
   ['overview','Dashboard',false],['colony','Colony · Topology',false],['missions','Missions',false],
   ['results','Mission Results',false],['events','Activity · Events',false],
   ['patches','Changes & Approvals',true],['objboard','Automation · Objectives',true],
-  ['pheromones','Colony · Signals',true],['antconfig','Agents · Configure',true],
-  ['antobs','Agents · Inspect',true],['autonomy','Automation · Director',true],['security','Security',true],
+  ['pheromones','Colony · Signals',true],
+  // v0.3.8.124: `antconfig` and `antobs` are gone from the palette with the page they opened.
+  // A palette entry for a retired page is worse than no entry — it is a search result that
+  // answers, and then does nothing.
+  ['mounds','Colony · Mounds',false],
+  ['autonomy','Automation · Director',true],['security','Security',true],
   ['shell','Terminal',true],['settings','Settings',true],['users','Users',true],
 ];
 const PALETTE_ACTIONS=[

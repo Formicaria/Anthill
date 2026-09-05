@@ -1002,7 +1002,8 @@ kbd{display:inline-block;min-width:16px;padding:1px 5px;border:1px solid var(--b
 .ob-chip{font-size:8px;font-family:var(--mono);padding:1px 5px;border-radius:3px;background:rgba(255,255,255,.05);color:var(--muted);}
 .ob-mini{padding:2px 0;line-height:1.4;}
 /* -- Ant Inspector + Performance Observatory (v1.8.23, Phase 8) -- */
-.antobs-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;}
+/* v0.3.8.124: .antobs-grid retired with the Ant Inspector page. The .ant-card / .ac-* rules below
+   it stay — the ant tab in Colony Live reuses them, so the numbers read as they always did. */
 /* v0.3.8.124 — one row per routable role in a project's Settings tab. Grid rather than flex so the
    provider and model selects line up down the column: a list where every row's controls sit at a
    different x is a list nobody scans. */

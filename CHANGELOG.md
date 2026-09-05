@@ -1,3 +1,76 @@
+## v0.3.8.124 - which model does this work is a question about a project
+
+**ROUTING WAS COLONY-WIDE, AND OPERATORS DO NOT WORK THAT WAY.** One priority model and fourteen
+per-role routes in `config.json`, edited on the Ant Inspector page. An operator running one project
+against a local model and another against Claude had no way to say so: every change was to the whole
+colony, and the workaround was rewriting the routes between missions.
+
+**The plumbing was half-built and had been for two releases.** `Project.DefaultProvider` and
+`Project.DefaultModel` have existed since v0.3.8.48 — persisted by `SqliteMemory.Projects`, written
+by `PATCH /projects/{id}`, and read by **nothing**. A settable, saved, never-honoured preference is
+the shape of a feature that was designed and then not connected. This connects it, adds the per-role
+half as a `project_model_routes` table, and resolves both through `ProjectRoutingScope`.
+
+Ambient, for the reason `ConversationScope` and `MissionWorkspaceScope` are: `ModelRouter` is one
+object per Queen shared by every ant, and the project is a property of the FLOW. Threading a project
+id through `SendCore` would mean threading it through every `Generate`, `GenerateTyped` and
+`SendTyped`, then every ant, then `ToolCallingLoop` — a large refactor of code with no other reason
+to change, to carry a value that is constant for the whole mission.
+
+Precedence mirrors the colony's own chain one layer deeper, rather than inventing a second grammar:
+
+```
+project priority → project role route → colony priority → colony role route → colony fallback
+```
+
+Two properties are guarded harder than the rest. **A role the project does not name inherits the
+colony's route** — that is the difference between a project being a set of overrides an operator
+fills in as they care to and a fourteen-row form they must complete first. And **outside a scope
+nothing moves**: a scheduled run, an autonomy objective, a chat outside a project all route exactly
+as they did, because a narrowing that changes the un-narrowed case is not a narrowing. Pheromone
+learning also stops reordering a route a project pinned — reading only the colony's two facts would
+have let it override the pin invisibly, since a learned route is not displayed as an override
+anywhere.
+
+**THE ANT INSPECTOR IS GONE, AND BOTH HALVES OF IT WENT SOMEWHERE BETTER.** Its telemetry — task
+counts, success rate, average duration, recent activity — is the ant tab in Colony Live: you click
+the ant you are asking about instead of finding its card among twenty-five. Its routing is the
+project workspace's Settings tab. The colony directory below the grid is simply deleted: it listed
+every registry role and worker with its purpose, which the colony view shows by drawing them.
+
+The 2D canvas inspector lost its route selectors too, and kept its name and colour. It was the
+second place routes were written, at a different scope from the first, and an operator cannot see
+the scope of a control — so a mis-scoped route change is silent. It now says where routing is set
+rather than offering to set it.
+
+**THE MOUNDS BUTTON OPENS THE REGISTRY.** It used to focus the built-in fleet chamber and sat
+disabled whenever no device had enrolled — greyed out beside `+ Mound`, on a colony that already had
+mound chambers in it, which reads as broken rather than as "no device yet".
+
+**AND A MOUND CHAMBER IS A CHAMBER AGAIN.** `.122` made its second click a door to its settings page.
+The intent was reachability; the effect was that the one chamber an operator most wanted to recolour
+was the one where a second click threw them out of the colony view. Settings live in the registry,
+which is one place rather than two.
+
+**INFRASTRUCTURE'S SETTINGS OPEN INFRASTRUCTURE.** It is a mound in every way the registry cares
+about, and is listed there — but it has no device, no enrolment token and no charter, so the
+micromound console had nothing to show for it and would have offered a form for hardware that does
+not exist. Its row opens the Infrastructure page, where its eight real roles have always been
+configured. That page loses its Integrations card and gains a route with no nav entry: a second door
+would make the registry's "every mound, and where its settings are" a half-truth.
+
+**THE WINDOWS QUICK ACTIONS TARGETED A SERVICE THAT HAS NEVER EXISTED.** `Get-Service Anthill`,
+`Get-EventLog -Source Anthill`, `Restart-Service Anthill` — nothing in this repository registers a
+Windows service, and on Windows an operator runs `AnthillDesktop.exe`. All three failed, which is
+exactly the defect `ShellPlatform`'s own header says it exists to prevent: "an action is only shown
+when the environment it targets can actually run it." The name was never verified — it was written
+as a plausible convention beside a Linux set that was real, and it read as symmetric rather than as
+a guess. Restart now stops the process and relaunches it from the path the running process reports,
+which is the only way to start the same binary without assuming an install location.
+
+**Also:** shell scripts check out LF through a new `.gitattributes`, so `scripts/release.sh` — the
+path the tag guard's own error message points operators at — can run on Windows at all.
+
 ## v0.3.8.123 - settings you can answer, a colony you can read, and a citation that has to trace
 
 **THE MICROMOUND SETTINGS PAGE ASKED AN OPERATOR TO TYPE A CHARTER.** Capability id strings, an
