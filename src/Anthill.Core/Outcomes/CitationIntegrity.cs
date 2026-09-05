@@ -28,6 +28,19 @@ namespace Anthill.Core.Outcomes;
 /// AN UNSOURCED CLAIM IS NOT A FAILURE. It is the honest outcome for something the mission could not
 /// attribute, and refusing a mission for admitting one would teach exactly the wrong lesson: that
 /// deleting the unsupported parts is how an answer passes.
+///
+/// CITATION LAUNDERING, CLOSED AT v0.3.8.123. `recall_set` rows are written by `ResearcherAnt` with
+/// `Url = "mission:&lt;id&gt;"`, and until this release a claim citing one resolved because the recall
+/// HAPPENED — the record proves the colony consulted mission `abc`, and nothing asked what mission
+/// `abc` itself rested on. So an unsupported assertion made in one mission became a resolvable
+/// citation in the next, and a third could cite the second: each hop looked like attribution and the
+/// chain as a whole was attached to nothing. That is worse than a fabricated url, because it is
+/// TRUE at every step — the recall really did occur — and the falsehood lives only in what the
+/// operator concludes from it.
+///
+/// The fix is the walk in <see cref="Resolvable"/>: a `mission:` citation resolves only when the
+/// recalled mission's own record reaches something the WORLD said. Depth-limited and cycle-safe,
+/// because two missions that recalled each other would otherwise each vouch for the other forever.
 /// </summary>
 public static class CitationIntegrity
 {
@@ -130,7 +143,15 @@ public static class CitationIntegrity
     /// nothing. Failing closed here would demote every mission whose store hiccuped for a fault
     /// none of them committed — unlike the assessment objective, where an unreadable store means a
     /// required inspection cannot be SHOWN and absence is the whole question.</param>
-    public static Result Evaluate(IReadOnlyList<Artifact>? artifacts)
+    /// <param name="recalledArtifacts">v0.3.8.123 — a prior mission's artifacts by mission id, so a
+    /// `mission:` citation can be traced to what that mission itself rested on. A LOOKUP rather than
+    /// a store reference, for the reason <c>TrailGuidedSelection.Prefer</c> takes one: the verdict
+    /// stays a pure function of its arguments and is therefore replayable in a test from a
+    /// hand-built history, which is the only way the cycle case can be exercised at all. Null means
+    /// no prior mission can be traced, and a `mission:` citation then does not resolve — see
+    /// <see cref="Resolvable"/> for why that direction is the safe one.</param>
+    public static Result Evaluate(IReadOnlyList<Artifact>? artifacts,
+        Func<string, IReadOnlyList<Artifact>?>? recalledArtifacts = null)
     {
         var answer = Answer(artifacts);
         if (answer is null) return NothingToCheck;
@@ -138,8 +159,9 @@ public static class CitationIntegrity
         var retrieved = Retrieved(artifacts);
         if (retrieved.Count == 0) return NothingToCheck;
 
+        var resolvable = Resolvable(artifacts, recalledArtifacts);
         var unresolved = answer.CitedUrls
-            .Where(url => !retrieved.Contains(url))
+            .Where(url => !resolvable.Contains(url))
             .ToList();
 
         return new Result(unresolved.Count == 0, unresolved, answer.Claims.Count, answer.UnsourcedCount);
@@ -149,7 +171,7 @@ public static class CitationIntegrity
     /// Evaluate under the CONTRACT trigger as well as the retrieval one. v0.3.8.109.
     ///
     /// THE NULL ASYMMETRY IS INVERTED HERE, and that is the substance of the second trigger rather
-    /// than a detail of it. <see cref="Evaluate(IReadOnlyList{Artifact})"/> treats an unreadable
+    /// than a detail of it. The retrieval-trigger overload treats an unreadable
     /// store as satisfied because its job is to catch a claim the record CONTRADICTS, and an empty
     /// record contradicts nothing. For a mission whose contract requires retrieved sources the
     /// question is the opposite one — absence IS the finding — so the same emptiness that means
@@ -158,9 +180,15 @@ public static class CitationIntegrity
     /// and the reason the `.99` gate alone could never have caught a research mission that searched
     /// nothing: both cases leave exactly the same empty store.
     /// </summary>
-    public static Result Evaluate(Missions.MissionSpecification? specification, IReadOnlyList<Artifact>? artifacts)
+    /// <param name="recalledArtifacts">See the other overload. The CONTRACT trigger's own two
+    /// refusals below still read <see cref="Retrieved"/> rather than <see cref="Resolvable"/>, and
+    /// that is deliberate: they ask whether this mission recorded consulting ANYTHING, which is a
+    /// question about this mission's own conduct. Whether what it consulted can be traced further
+    /// back is the citation question, and it is asked once, below, where the citations are.</param>
+    public static Result Evaluate(Missions.MissionSpecification? specification, IReadOnlyList<Artifact>? artifacts,
+        Func<string, IReadOnlyList<Artifact>?>? recalledArtifacts = null)
     {
-        if (!RequiresSources(specification)) return Evaluate(artifacts);
+        if (!RequiresSources(specification)) return Evaluate(artifacts, recalledArtifacts);
 
         if (artifacts is null)
             return new Result(false, Array.Empty<string>(), 0, 0,
@@ -182,7 +210,8 @@ public static class CitationIntegrity
               + "so nothing attributes any part of the answer to any of them. What was retrieved "
               + "cannot be told apart from what was invented.");
 
-        var unresolved = answer.CitedUrls.Where(url => !retrieved.Contains(url)).ToList();
+        var resolvable = Resolvable(artifacts, recalledArtifacts);
+        var unresolved = answer.CitedUrls.Where(url => !resolvable.Contains(url)).ToList();
         return new Result(unresolved.Count == 0, unresolved, answer.Claims.Count, answer.UnsourcedCount);
     }
 
@@ -195,10 +224,16 @@ public static class CitationIntegrity
             .FirstOrDefault(a => a is not null);
 
     /// <summary>
-    /// Everything this mission may honestly cite: what the world said (`source_set`) and what the
-    /// colony already knew (`recall_set`). Both are records of something CONSULTED, which is the
-    /// only property that makes a citation checkable — the difference between them is where the
-    /// knowledge came from, not whether it can be traced.
+    /// Everything this mission recorded CONSULTING: what the world said (`source_set`) and what the
+    /// colony already knew (`recall_set`). Both are records of an act this mission performed, which
+    /// is what the triggers above ask about — did this mission consult anything at all.
+    ///
+    /// NOT the set a citation resolves against; that is <see cref="Resolvable"/>, and v0.3.8.123
+    /// split the two because they answer different questions. This one said "everything this
+    /// mission may honestly cite" until that release, and the sentence was wrong in exactly the way
+    /// the laundering path needed: a `recall_set` row records that the colony consulted its own
+    /// history, which is a fact about this mission's conduct and no evidence about what the recalled
+    /// mission itself rested on.
     ///
     /// Case-insensitive on the URL, because a model that reproduces one with different
     /// capitalisation has cited the same page and refusing that would grade transcription rather
@@ -212,4 +247,119 @@ public static class CitationIntegrity
             : SourceSetPayload.UrlsFrom(artifacts
                 .Where(a => ArtifactSchemas.CitableRecords.Contains(a.Schema))
                 .Select(a => a.Payload));
+
+    /// <summary>The url scheme an internal source is recorded under — <c>ResearcherAnt</c>'s
+    /// `mission:&lt;id&gt;`, named here so the writer and this reader cannot drift apart.</summary>
+    public const string RecalledMissionPrefix = "mission:";
+
+    /// <summary>
+    /// How many recall hops the provenance walk will follow before it stops. Four, and the number
+    /// is a BOUND rather than a judgment: the cycle guard already terminates every loop, so this
+    /// exists for the chain that is merely long — A recalled B recalled C recalled D — where each
+    /// additional hop makes "this claim traces to a source" a weaker statement about the claim and
+    /// a more expensive one to compute. Somewhere the chain has to be treated as untraceable, and
+    /// an unresolved citation is the honest answer at that point rather than a guess in either
+    /// direction.
+    /// </summary>
+    public const int MaxRecallDepth = 4;
+
+    /// <summary>True when this url names a prior mission rather than a page in the world.</summary>
+    public static bool IsRecalledMission(string? url) =>
+        url is not null && url.StartsWith(RecalledMissionPrefix, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// EVERYTHING A CITATION MAY ACTUALLY RESOLVE TO. v0.3.8.123, and the difference from
+    /// <see cref="Retrieved"/> is the whole of this release's citation fix.
+    ///
+    /// <see cref="Retrieved"/> answers "what did this mission record consulting" — every url in
+    /// every citable record, external and internal alike — and that is still the right question for
+    /// the triggers, which ask whether this mission did any consulting at all. This answers the
+    /// narrower one the citations themselves need: which of those a claim may honestly REST on.
+    ///
+    /// For a `source_set` url the two sets are identical, and deliberately so: the world said it,
+    /// the mission wrote down that it read it, and there is nothing further back to walk. The
+    /// divergence is `recall_set`. `mission:abc` records that the colony consulted its own history
+    /// — a fact about THIS mission's conduct, and no evidence at all about what mission `abc`
+    /// rested on. Resolving on the recall alone made "we concluded this before" a citation, which
+    /// is how an unsupported assertion becomes a sourced one by being remembered: laundering, and
+    /// it compounds, because the mission that cites the launderer launders in turn.
+    ///
+    /// SO THE WALK ASKS THE RECALLED MISSION THE SAME QUESTION. It resolves when that mission holds
+    /// a `source_set` of its own — it went and read something — and otherwise follows ITS recalls
+    /// one hop further, up to <see cref="MaxRecallDepth"/>. A visited set makes the cycle terminate:
+    /// A citing B citing A is two missions vouching for each other and no source anywhere, so it
+    /// must end, and it must end UNRESOLVED rather than at whichever of the two the walk entered
+    /// from.
+    ///
+    /// AN UNTRACEABLE RECALL IS NOT A NEW CLAIM STATE. The url simply is not in this set, so the
+    /// citing claim lands in <c>Result.Unresolved</c> exactly as an invented url does, and
+    /// <c>SourcedAnswer</c> keeps deriving "unsourced" from a null url as it always has. A third
+    /// state would have to be understood by every consumer downstream, and every one of them
+    /// already knows what an unresolved citation means.
+    ///
+    /// A NULL LOOKUP RESOLVES NO RECALL, and that direction is chosen rather than inherited. This
+    /// method's job is to say what a claim may rest on; "we have no way to find out" is not a
+    /// reason to say yes. It is the opposite asymmetry from <c>Evaluate</c>'s
+    /// permissive null store, and the two do not conflict: an unreadable store leaves nothing to
+    /// contradict and the gate stays silent, while a caller that supplies no history has still
+    /// produced a citation that nothing traces.
+    /// </summary>
+    public static IReadOnlySet<string> Resolvable(IReadOnlyList<Artifact>? artifacts,
+        Func<string, IReadOnlyList<Artifact>?>? recalledArtifacts)
+    {
+        var resolvable = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var url in Retrieved(artifacts))
+        {
+            if (!IsRecalledMission(url)) { resolvable.Add(url); continue; }
+            if (TracesToRetrieval(url[RecalledMissionPrefix.Length..].Trim(), recalledArtifacts,
+                    MaxRecallDepth, new HashSet<string>(StringComparer.OrdinalIgnoreCase)))
+                resolvable.Add(url);
+        }
+        return resolvable;
+    }
+
+    /// <summary>
+    /// Did this prior mission's own record reach something the world said? The walk described in
+    /// <see cref="Resolvable"/>.
+    ///
+    /// A `source_set` with at least one readable url ends it. An EMPTY one does not: a record of a
+    /// search that returned nothing is a record of consulting nothing, and treating the artifact's
+    /// existence as the answer would make the schema name the evidence — the silent-parse failure
+    /// <see cref="SourceSetPayload"/> exists to have ended, reintroduced one layer up.
+    ///
+    /// Never throws. A history lookup that fails is a walk that cannot trace, which is already what
+    /// this returns for a mission with no record — a diagnostic must not fail the grading it
+    /// informs.
+    /// </summary>
+    private static bool TracesToRetrieval(string missionId,
+        Func<string, IReadOnlyList<Artifact>?>? recalledArtifacts, int depth, HashSet<string> visited)
+    {
+        if (recalledArtifacts is null || missionId.Length == 0 || depth <= 0) return false;
+        // The cycle, and the reason it must answer FALSE: A vouching for B while B vouches for A is
+        // two missions and no source, and returning true for whichever the walk entered from would
+        // make the verdict depend on where it started.
+        if (!visited.Add(missionId)) return false;
+
+        IReadOnlyList<Artifact>? history;
+        try { history = recalledArtifacts(missionId); }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"[citations] could not read the record of recalled mission {missionId}: {error.Message}");
+            return false;
+        }
+        if (history is null || history.Count == 0) return false;
+
+        if (history.Any(a => string.Equals(a.Schema, ArtifactSchemas.SourceSet, StringComparison.OrdinalIgnoreCase)
+                          && SourceSetPayload.Read(a.Payload).Count > 0))
+            return true;
+
+        foreach (var url in SourceSetPayload.UrlsFrom(history
+                     .Where(a => string.Equals(a.Schema, ArtifactSchemas.RecallSet, StringComparison.OrdinalIgnoreCase))
+                     .Select(a => a.Payload)))
+            if (IsRecalledMission(url)
+                && TracesToRetrieval(url[RecalledMissionPrefix.Length..].Trim(), recalledArtifacts, depth - 1, visited))
+                return true;
+
+        return false;
+    }
 }

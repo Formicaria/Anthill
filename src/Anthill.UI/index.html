@@ -2294,7 +2294,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                   <label class="clb-row"><span>Motion</span>
                     <select class="clb-sel" id="clb-motion" aria-label="Motion"><option value="off">Off</option><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option></select></label>
                   <label class="clb-row"><span>Labels</span>
-                    <select class="clb-sel" id="clb-labels" aria-label="Labels"><option value="zoom" selected>All (on zoom)</option><option value="fixed">All (always)</option><option value="min">Focused only</option><option value="none">None</option></select></label>
+                    <select class="clb-sel" id="clb-labels" aria-label="Labels"><option value="all" selected>All</option><option value="min">Focused only</option><option value="none">None</option></select></label>
                   <label class="clb-row"><span>Linkage</span>
                     <input class="clb-range" id="clb-linkalpha" type="range" min="0" max="1" step="0.025" value="0.125" aria-label="Linkage opacity"></label>
                   <label class="clb-row"><span>Pheromone trails</span>
@@ -2973,6 +2973,16 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       </div>
       <div class="page page-scroll" id="page-micromound">
         <style id="mm-theme">
+          .mm-adv > summary { cursor: pointer; font-weight: 600; padding: 2px 0; }
+          .mm-adv[open] > summary { margin-bottom: 8px; }
+          .mm-dev { border: 1px solid var(--line, rgba(128,140,160,.28)); border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
+          .mm-dev-hd { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+          .mm-dev-hd strong { font-size: 13px; }
+          .mm-kind { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; opacity: .7; }
+          .mm-warn { border-left: 3px solid #d9b054; padding: 6px 10px; margin: 6px 0; font-size: 12.5px; }
+          .mm-refuse { border-left: 3px solid #e21f7b; padding: 6px 10px; margin: 6px 0; font-size: 12.5px; }
+          .mm-carry { border-left: 3px solid #5ec4cf; padding: 6px 10px; margin: 6px 0; font-size: 12.5px; }
+
           #page-micromound .mm-card{border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:12px;background:rgba(255,255,255,.012);}
           #page-micromound h3{font-size:12px;margin-bottom:3px;}
           #page-micromound .mm-lede{font-size:10px;color:var(--dim);line-height:1.65;margin-bottom:9px;}
@@ -3036,6 +3046,22 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div class="mm-say" id="mm-say"></div>
         </div>
 
+        <!-- v0.3.8.123 — THE PAGE AN OPERATOR ACTUALLY USES. Everything below the Advanced fold is
+             the raw contract: capability id strings, an action-class enum, a lease TTL in seconds,
+             a device_limits map keyed by capability, evidence globs. All of it is real and none of
+             it is a question a person can answer, which is what the operator meant by "less of a
+             json file communicated as settings". This card asks the questions instead; the server
+             compiles the answers into exactly those two documents, and the raw forms stay
+             reachable underneath for the cases the simple vocabulary cannot say. -->
+        <div class="mm-card" id="mm-setup">
+          <h3>Set up &mdash; <span class="mm-target" data-mm-target>(none)</span></h3>
+          <p class="mm-lede">Describe what this mound is wired to and how far it may go. ANTHILL
+            writes the charter and the hardware map from your answers. Only capabilities the device
+            itself reported are offered, so a form that saves is a form the mound can accept &mdash;
+            and names and notes you write here stay in the colony, never on the device.</p>
+          <div id="mm-setup-body"><div class="mm-empty">Choose a mound above to set it up.</div></div>
+        </div>
+
         <div class="mm-card">
           <h3>Adopt a device</h3>
           <p class="mm-lede">Mints a one-time enrollment token. The colony stores only a hash: the
@@ -3052,6 +3078,12 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div id="mm-token"></div>
         </div>
 
+        <details class="mm-card mm-adv">
+          <summary>Advanced &mdash; the raw charter and manifest</summary>
+          <p class="mm-lede">The contract itself, unmediated. Use it for anything the set-up card
+            above cannot say: a manifest-declared worker, a reasoning mode, an evidence pattern of
+            your own. Saving from the simple card does not delete what you write here &mdash; it
+            carries it through untouched and tells you it is there.</p>
         <div class="mm-card">
           <h3>Charter &mdash; acting on <span class="mm-target" data-mm-target>(none)</span></h3>
           <p class="mm-lede">A charter is the delegation document: a complete replacement, never a
@@ -3091,6 +3123,8 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </div>
           <button class="mm-btn" data-onclick="mmIssueConfig()">Author manifest</button>
         </div>
+
+        </details>
 
         <div class="mm-card">
           <h3>Physical mission &mdash; acting on <span class="mm-target" data-mm-target>(none)</span></h3>

@@ -192,6 +192,40 @@ public static partial class ApiHost
         [property: JsonPropertyName("reasoning_mode")] string? ReasoningMode,
         [property: JsonPropertyName("safe_state")] string? SafeState);
 
+    /* ---- The friendly form's wire shape. v0.3.8.123 -------------------------------------------
+       Deliberately NOT `FriendlyMoundConfiguration` itself. Every field here is nullable so the
+       console can send a partial form as the operator fills it in and get a live answer back, and
+       the defaults are applied in one place (`ReadAuthoringForm`) rather than being scattered
+       between the wire contract and the model. `AdvancedCarry` IS sent whole, because the console
+       never authors it — it round-trips exactly what the projection handed over, which is the
+       property that stops a simple page deleting an advanced one's work. */
+    private sealed record AuthoringDeviceBody(
+        [property: JsonPropertyName("capability")] string? Capability,
+        [property: JsonPropertyName("device")] string? Device,
+        [property: JsonPropertyName("driver")] string? Driver,
+        [property: JsonPropertyName("purpose")] string? Purpose,
+        [property: JsonPropertyName("assigned_ant")] string? AssignedAnt,
+        [property: JsonPropertyName("safe_min")] double? SafeMin,
+        [property: JsonPropertyName("safe_max")] double? SafeMax,
+        [property: JsonPropertyName("max_run_s")] double? MaxRunSeconds,
+        [property: JsonPropertyName("min_rest_s")] double? MinRestSeconds,
+        [property: JsonPropertyName("max_per_hour")] double? MaxTimesPerHour,
+        [property: JsonPropertyName("verified_by")] string? VerifiedBy,
+        [property: JsonPropertyName("settings")] Dictionary<string, string>? Settings);
+
+    private sealed record AuthoringBody(
+        [property: JsonPropertyName("mound_id")] string? MoundId,
+        [property: JsonPropertyName("purpose")] string? Purpose,
+        [property: JsonPropertyName("devices")] List<AuthoringDeviceBody>? Devices,
+        [property: JsonPropertyName("routines")] List<string>? Routines,
+        [property: JsonPropertyName("control_mode")] string? ControlMode,
+        [property: JsonPropertyName("action_level")] string? ActionLevel,
+        [property: JsonPropertyName("check_in_minutes")] int? CheckInMinutes,
+        [property: JsonPropertyName("authority_days")] int? AuthorityDays,
+        [property: JsonPropertyName("proof_interval_s")] int? ProofIntervalSeconds,
+        [property: JsonPropertyName("safe_state")] string? SafeState,
+        [property: JsonPropertyName("advanced")] AdvancedCarry? Advanced);
+
     private sealed record MissionBody(
         [property: JsonPropertyName("mound_id")] string? MoundId,
         [property: JsonPropertyName("steps")] List<MissionStep>? Steps,
@@ -294,38 +328,19 @@ public static partial class ApiHost
     private static void MapMicromoundEndpoints(WebApplication app)
     {
         // ---- Fleet: what the colony can see -------------------------------------------------
-        /* THE SEVEN DEFAULT MOUND ANTS, SO THE COLONY CAN DRAW A MOUND IT HAS NOT MET YET.
-           v0.3.8.122.
+        /* v0.3.8.123 — `/micromound/roster/defaults` WAS HERE AND IS GONE. It served the seven
+           names a `+ Mound` chamber is drawn with, and being inside this region meant those seven
+           presentation labels required the micromound repository to be checked out beside this one
+           and the operator to hold `read_micromound`. Neither has anything to do with labelling a
+           chamber in your own colony view, and when either was missing the chamber came up with no
+           ants in it. The roster now lives in `Anthill.SDK.Modules.MoundRoster` and is served by
+           `/colony/mound-roster`, which is always mapped; `MicromoundRoster` forwards to the same
+           list, so there is still exactly one store and the device-runtime check still covers it.
 
-           `+ Mound` adds a chamber to Colony Live immediately, populated with the roster every
-           mound runs. Those names have to come from somewhere, and there is exactly one honest
-           source: `MicromoundRoster`, itself a CHECKED projection of the device runtime's
-           `DefaultAnts` (`RosterProjectionTests` compares them by compiled reference, so a rename
-           upstream stops compiling rather than silently matching nothing).
-
-           SERVED FROM HERE RATHER THAN FROM /colony/live/snapshot, deliberately. This file already
-           lives inside `#if MICROMOUND`; the colony endpoint does not, and putting the roster there
-           would push conditional compilation into a file that has none and make its payload differ
-           between builds. `colony-host.js` already fetches `/micromound/mounds`, so this rides a
-           path that exists.
-
-           WHAT THE OPERATOR THEN DOES WITH THESE NAMES NEVER LEAVES THE COLONY. A renamed or
+           WHAT THE OPERATOR THEN DOES WITH THOSE NAMES STILL NEVER LEAVES THE COLONY. A renamed or
            recoloured ant is a label in the operator's saved layout, not a command: the mound is
            enrolled by one-time token and keeps taking orders under its own identity whatever the
-           colony calls it. That separation is the entire point of the feature — an operator can
-           label their fleet for their own use case without touching what the devices are. */
-        app.MapGet("/micromound/roster/defaults", (HttpContext ctx) =>
-        {
-            var auth = RequireAuth(ctx, MicromoundPermissions.Read); if (auth is not null) return auth;
-            return ApiJson.Ok(new Dictionary<string, object?>
-            {
-                ["ants"] = MicromoundRoster.Names.Select(n => new Dictionary<string, object?>
-                {
-                    ["name"] = n,
-                    ["role"] = MicromoundRoster.Roles.GetValueOrDefault(n, ""),
-                }).ToList(),
-            });
-        });
+           colony calls it. That separation is the entire point of the feature. */
 
         app.MapGet("/micromound/mounds", (HttpContext ctx) =>
         {
@@ -780,7 +795,234 @@ public static partial class ApiHost
 
         app.MapPost("/micromound/stop/resume", async (HttpContext ctx) =>
             await SetMoundStop(ctx, stopped: false));
+
+        /* ---- THE AUTHORING LAYER. v0.3.8.123 --------------------------------------------------
+           Three routes over `MicromoundAuthoring`, which is a translation and not a second set of
+           rules — the charter and configuration services below are still the only issuers and the
+           mound is still the authority that can refuse them both.
+
+           THE PERMISSIONS SPLIT ON WHAT EACH ROUTE ACTUALLY DOES, not on which page calls it.
+           Reading the form is `Read`. COMPILING it is also `Read`, because a compile issues nothing
+           and reaches no device — it is the page asking "would this be accepted, and what would you
+           warn me about", and gating it behind `Approve` would mean an operator could not see a
+           refusal until they were entitled to act on it. SAVING is `Approve`, because a save issues
+           a charter, and a charter is authority. `Manage` is not enough for the save even though
+           the manifest half of it would be: the two documents go out together, and the higher of
+           the two permissions governs. */
+        app.MapGet("/micromound/authoring/{moundId}", (HttpContext ctx, string moundId) =>
+        {
+            var auth = RequireAuth(ctx, MicromoundPermissions.Read); if (auth is not null) return auth;
+            var mound = Mounds.GetMound(moundId);
+            if (mound is null) return ApiJson.Error($"No such mound '{moundId}'.", "not_found");
+
+            var manifest = string.IsNullOrEmpty(mound.ManifestId) ? null : Mounds.GetManifest(mound.ManifestId);
+            var charter = string.IsNullOrEmpty(mound.CharterId) ? null : Mounds.GetCharter(mound.CharterId);
+            var projection = MicromoundAuthoring.Project(mound, manifest, charter);
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["form"] = AuthoringFormPayload(projection.Configuration),
+                // Named out loud rather than carried silently: everything here IS preserved across
+                // a save, and an operator who cannot see it on this page needs to know the advanced
+                // page still holds something.
+                ["unrepresented"] = projection.Unrepresented,
+                // What the DEVICE reported it physically has. A fact, never a grant — the page
+                // offers these and nothing else, so a form cannot be built that the mound refuses.
+                ["reported"] = mound.Capabilities,
+                // How to read a capability id as a sentence, and which of the seven holds it.
+                ["catalog"] = MicromoundCapabilityCatalog.All.Select(c => new Dictionary<string, object?>
+                {
+                    ["id"] = c.Id,
+                    ["label"] = c.Label,
+                    ["kind"] = c.Kind,
+                    ["unit"] = c.Unit,
+                    ["verifiable"] = c.Verifiable,
+                    // Sent rather than derived in the browser. Which of the seven holds a
+                    // capability is ANTS.md's own division — sensing to the Scout, action to the
+                    // Forager — and a console that hard-coded two of those names would be the
+                    // second store of a roster that has exactly one.
+                    ["default_ant"] = MicromoundCapabilityCatalog.DefaultAnt(c.Id),
+                }).ToList(),
+                ["ants"] = MicromoundRoster.Names,
+                ["control_modes"] = ControlModes.All,
+                ["action_levels"] = ActionLevels.All,
+                ["enrolled"] = !string.IsNullOrEmpty(mound.PublicKey),
+                ["stopped"] = MicromoundStop.AppliesTo(mound, MicromoundRuntime.Options),
+            });
+        });
+
+        // Compile without issuing. The page calls this as the operator types, so a refusal reads as
+        // a sentence beside the field that caused it rather than as a failed save.
+        app.MapPost("/micromound/authoring/preview", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, MicromoundPermissions.Read); if (auth is not null) return auth;
+            var read = await ReadAuthoringForm(ctx);
+            if (read.Error is not null) return read.Error;
+
+            var plan = MicromoundAuthoring.Compile(read.Form!, read.Mound!);
+            return ApiJson.Ok(AuthoringPlanPayload(plan, issued: false));
+        });
+
+        app.MapPost("/micromound/authoring", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, MicromoundPermissions.Approve); if (auth is not null) return auth;
+            var read = await ReadAuthoringForm(ctx);
+            if (read.Error is not null) return read.Error;
+
+            var mound = read.Mound!;
+            var plan = MicromoundAuthoring.Compile(read.Form!, mound);
+            if (!plan.Ok) return ApiJson.Error(string.Join("; ", plan.Refusals), "refused");
+
+            var by = CurrentUsername(ctx) ?? "operator";
+            var now = DateTimeOffset.UtcNow;
+
+            /* THE MANIFEST GOES FIRST, AND THAT ORDER IS THE SAFE ONE. `device_limits` is the
+               middle tier of SAFETY.md Layer 1's intersection, so it can only ever NARROW what a
+               charter may later spend. Issuing the bound before the authority means that if the
+               second call refuses, the mound is left holding tighter limits and its previous
+               authority — which is the failure everyone would choose. The reverse order would open
+               a window where new authority was in force against the old bounds. */
+            var config = MicromoundConfigSvc.Issue(plan.Configuration!, by, now);
+            if (!config.Issued) return ApiJson.Error(string.Join("; ", config.Refusals), "refused");
+
+            var issue = MicromoundCharterSvc.Issue(plan.Charter!, by, now);
+            if (!issue.Issued)
+                return ApiJson.Error(
+                    "The limits were saved; the authority was refused: " + string.Join("; ", issue.Refusals),
+                    "refused");
+
+            // The one field neither document carries. `AutonomyPolicy` has been on the record since
+            // .114 with no command path to set it — v0.3.8.123 is when the console started deciding
+            // it, and re-reading the record here rather than reusing `mound` keeps the charter
+            // service's own writes (charter id, lease, quiesce) rather than overwriting them.
+            var after = Mounds.GetMound(mound.MoundId) ?? mound;
+            after.AutonomyPolicy = plan.Autonomy;
+            Mounds.UpsertMound(after);
+
+            BuildMicromoundWidgets();
+            var payload = AuthoringPlanPayload(plan, issued: true);
+            payload["manifest_id"] = config.Manifest!.ManifestId;
+            payload["charter_id"] = issue.Charter!.CharterId;
+            payload["expires_at"] = issue.Charter.ExpiresAt;
+            // Not "delivered", and not "in force". The mound collects both documents on its next
+            // beat and validates them against its own drivers; it may still refuse.
+            payload["awaiting_collection"] = Mounds.PendingDownlinkCount(mound.MoundId);
+            return ApiJson.Ok(payload);
+        });
     }
+
+    /// <summary>What both authoring POSTs need before they can do anything: a form and a mound.</summary>
+    private sealed record AuthoringRead(FriendlyMoundConfiguration? Form, MoundRecord? Mound, IResult? Error);
+
+    private static async Task<AuthoringRead> ReadAuthoringForm(HttpContext ctx)
+    {
+        AuthoringBody? body;
+        try { body = await ctx.Request.ReadFromJsonAsync<AuthoringBody>(); }
+        catch { return new AuthoringRead(null, null, ApiJson.Error("Invalid request body.", "bad_request")); }
+
+        if (body is null || string.IsNullOrWhiteSpace(body.MoundId))
+            return new AuthoringRead(null, null, ApiJson.Error("mound_id is required.", "bad_request"));
+
+        var mound = Mounds.GetMound(body.MoundId.Trim());
+        if (mound is null)
+            return new AuthoringRead(null, null, ApiJson.Error($"No such mound '{body.MoundId}'.", "not_found"));
+
+        var form = new FriendlyMoundConfiguration(
+            mound.MoundId,
+            Purpose: body.Purpose ?? "",
+            Devices: [.. (body.Devices ?? []).Select(d => new FriendlyDevice(
+                Capability: d.Capability ?? "",
+                Device: d.Device ?? "",
+                Driver: d.Driver ?? "",
+                Purpose: d.Purpose ?? "",
+                AssignedAnt: d.AssignedAnt ?? "",
+                SafeMin: d.SafeMin,
+                SafeMax: d.SafeMax,
+                MaxRunSeconds: d.MaxRunSeconds,
+                MinRestSeconds: d.MinRestSeconds,
+                MaxTimesPerHour: d.MaxTimesPerHour,
+                VerifiedBy: d.VerifiedBy ?? "",
+                Settings: d.Settings))],
+            Routines: body.Routines,
+            ControlMode: body.ControlMode ?? ControlModes.ManualOnly,
+            ActionLevel: body.ActionLevel ?? ActionLevels.WatchOnly,
+            CheckInMinutes: body.CheckInMinutes ?? 15,
+            AuthorityDays: body.AuthorityDays ?? 7,
+            ProofIntervalSeconds: body.ProofIntervalSeconds ?? 60,
+            SafeState: string.IsNullOrWhiteSpace(body.SafeState) ? MicromoundAuthoring.DefaultSafeState : body.SafeState,
+            Advanced: body.Advanced);
+
+        return new AuthoringRead(form, mound, null);
+    }
+
+    /// <summary>
+    /// The friendly form on the wire, in this file's own snake_case rather than C#'s property
+    /// names. Written by hand for the same reason `/micromound/mounds` serializes `MoundRecord`
+    /// directly and does NOT hand-project it: there, the record IS the payload and projecting it
+    /// would create a second list of its fields to keep in step. Here the payload is a different
+    /// shape from the model on purpose — the console sends partial forms and reads snake_case
+    /// everywhere else — so the mapping is written once, in the one direction it travels.
+    /// </summary>
+    private static Dictionary<string, object?> AuthoringFormPayload(FriendlyMoundConfiguration form) => new()
+    {
+        ["mound_id"] = form.MoundId,
+        ["purpose"] = form.Purpose,
+        ["control_mode"] = form.ControlMode,
+        ["action_level"] = form.ActionLevel,
+        ["check_in_minutes"] = form.CheckInMinutes,
+        ["authority_days"] = form.AuthorityDays,
+        ["proof_interval_s"] = form.ProofIntervalSeconds,
+        ["safe_state"] = form.SafeState,
+        ["routines"] = form.Routines ?? [],
+        ["devices"] = (form.Devices ?? []).Select(d => new Dictionary<string, object?>
+        {
+            ["capability"] = d.Capability,
+            ["device"] = d.Device,
+            ["driver"] = d.Driver,
+            ["purpose"] = d.Purpose,
+            ["assigned_ant"] = d.AssignedAnt,
+            ["safe_min"] = d.SafeMin,
+            ["safe_max"] = d.SafeMax,
+            ["max_run_s"] = d.MaxRunSeconds,
+            ["min_rest_s"] = d.MinRestSeconds,
+            ["max_per_hour"] = d.MaxTimesPerHour,
+            ["verified_by"] = d.VerifiedBy,
+            ["settings"] = d.Settings,
+        }).ToList(),
+        // Sent back exactly as it will be received. The console does not read this — it posts it
+        // straight back — and that is what makes a save from the simple page lossless.
+        ["advanced"] = form.Advanced,
+    };
+
+    private static Dictionary<string, object?> AuthoringPlanPayload(MoundPlan plan, bool issued) => new()
+    {
+        ["ok"] = plan.Ok,
+        ["issued"] = issued,
+        // Both lists always, even when empty. A page that reads `refusals` only on a failure and
+        // `warnings` only on a success ends up with two code paths for one answer.
+        ["refusals"] = plan.Refusals,
+        ["warnings"] = plan.Warnings,
+        ["control_mode"] = ControlModes.FromPolicy(plan.Autonomy),
+        // What the operator's answers actually became, so the advanced page and this one are
+        // demonstrably describing the same mound rather than two views nobody has compared.
+        ["compiled"] = plan.Charter is null ? null : new Dictionary<string, object?>
+        {
+            ["action_ceiling"] = plan.Charter.ActionCeiling,
+            ["capabilities"] = plan.Charter.Capabilities,
+            ["routines"] = plan.Charter.Routines,
+            ["lease_ttl_s"] = (int)plan.Charter.LeaseTtl.TotalSeconds,
+            ["duration_s"] = (int)plan.Charter.Duration.TotalSeconds,
+            ["evidence_required_for"] = plan.Charter.EvidenceRequiredFor,
+            ["evidence_min_interval_s"] = plan.Charter.EvidenceMinIntervalSeconds,
+            ["safe_state"] = plan.Charter.SafeState,
+            ["device_limits"] = plan.Configuration?.DeviceLimits,
+            ["hardware"] = plan.Configuration?.Hardware.Select(h => new Dictionary<string, object?>
+            {
+                ["device"] = h.Device,
+                ["driver"] = h.Driver,
+            }).ToList(),
+        },
+    };
 
     private static async Task<IResult> SetMoundStop(HttpContext ctx, bool stopped)
     {

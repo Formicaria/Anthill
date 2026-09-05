@@ -14,6 +14,13 @@ namespace Anthill.Tests;
 /// These tests hold both directions — a real citation resolves, an invented one fails the mission —
 /// and the two boundaries that keep the gate honest: it says nothing about missions that retrieved
 /// nothing, and it does not punish an answer for admitting what it could not attribute.
+///
+/// v0.3.8.123 adds the third direction, which is neither of the first two: a citation that is TRUE
+/// and rests on nothing. `mission:&lt;id&gt;` resolved because the recall happened, so an unsupported
+/// assertion became a sourced one by being remembered — and the next mission could cite that. The
+/// tests for it come in a pair on purpose, because either alone is satisfiable by a gate that has
+/// stopped working: one refuses the laundering chain (and its cycle), the other proves legitimate
+/// recall still resolves.
 /// </summary>
 public class CitationIntegrityTests
 {
@@ -47,6 +54,41 @@ public class CitationIntegrityTests
 
     private static SourcedAnswer Claims(params (string Text, string? Url)[] claims) =>
         new() { Claims = claims.Select(c => new SourcedClaim(c.Text, c.Url)).ToList() };
+
+    /// <summary>
+    /// A recall record spelled THE WAY ITS PRODUCER SPELLS IT, for the reason
+    /// <see cref="SourceSet"/> is: `ResearcherAnt.WithRecallRecord` writes the same `sources` shape
+    /// a source set uses, with `mission:&lt;id&gt;` in the url slot. One vocabulary for "what may be
+    /// cited" is what lets one gate resolve both — and it is also exactly what made the laundering
+    /// path possible, so a fixture that wrote it any other way would prove nothing about it.
+    /// </summary>
+    private static Artifact RecallSet(params string[] missionUrls) => Artifact.Create(
+        schema: ArtifactSchemas.RecallSet,
+        producerRole: "researcher",
+        missionId: "m",
+        payload: Json.Dumps(new
+        {
+            query = "q",
+            sources = missionUrls.Select(u => new { Url = u, Title = "an earlier mission" }),
+        }));
+
+    /// <summary>
+    /// The colony's prior missions, as the lookup the evaluator is handed — `Queen` supplies the
+    /// artifact store's `ForMission` in production, and this supplies a history written by hand.
+    ///
+    /// A LOOKUP RATHER THAN A DATABASE is what makes the cycle case expressible at all: two
+    /// missions that recall each other would need mission rows, artifact rows and a working store
+    /// before the walk under test ever ran, and what would then have been proven is that SQLite can
+    /// hold a cycle. An unknown id returns null, which is what an unreadable or absent record
+    /// returns in production, and the two must reach the same verdict.
+    /// </summary>
+    private static Func<string, IReadOnlyList<Artifact>?> History(
+        params (string MissionId, Artifact[] Artifacts)[] missions)
+    {
+        var byId = new Dictionary<string, IReadOnlyList<Artifact>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (missionId, artifacts) in missions) byId[missionId] = artifacts;
+        return id => byId.TryGetValue(id, out var found) ? found : null;
+    }
 
     [Fact]
     public void TheBuildersClaimFormat_Parses_AndKeepsUnsourcedClaims()
@@ -184,38 +226,170 @@ public class CitationIntegrityTests
     }
 
     /// <summary>
-    /// AN INTERNAL SOURCE IS A SOURCE. v0.3.8.99.
+    /// AN INTERNAL SOURCE IS A SOURCE — WHEN THE MISSION BEHIND IT WENT AND READ SOMETHING.
+    /// v0.3.8.99, NARROWED AT v0.3.8.123.
     ///
-    /// A claim drawn from the colony's own prior missions is TRACEABLE — the recall left a record,
-    /// and `mission:<id>` resolves against it. Before the recall record existed, such a claim could
-    /// only render `[UNSOURCED]`, which flattens "we could not attribute this" together with "this
-    /// came from our own history": different facts, leading an operator to different next steps.
+    /// The original claim stands and is still asserted here: work drawn from the colony's own prior
+    /// missions is TRACEABLE, the recall leaves a record, and `mission:&lt;id&gt;` resolves against
+    /// it. Before that record existed such a claim could only render `[UNSOURCED]`, which flattens
+    /// "we could not attribute this" together with "this came from our own history" — different
+    /// facts, leading an operator to different next steps. An unrecalled mission id still fails
+    /// exactly as an invented url does.
     ///
-    /// And an internal citation is held to the SAME standard: a mission id that was never recalled
-    /// fails exactly as an invented url does. Otherwise "cite the colony" would be the loophole
-    /// through which anything could be asserted.
+    /// WHAT `.123` CHANGED, and why this test was rewritten rather than deleted. The recall record
+    /// proves the recall HAPPENED. It says nothing whatever about what the recalled mission itself
+    /// rested on — so an unsupported assertion made in mission A became a resolvable citation in
+    /// mission B simply by being remembered, and C could then cite B. Every hop was true; the chain
+    /// as a whole hung on nothing. The fixture below therefore gives the recalled mission a
+    /// `source_set` of its own, which is the case the original test MEANT and the case the gate
+    /// should always have been asserting: the recall is legitimate because there is a page at the
+    /// end of it. <see cref="ARecalledMissionThatRestsOnNothing_DoesNotLaunderTheClaim"/> is the
+    /// other half, and the two must be read together: this one alone would pass against a gate that
+    /// never checked anything.
     /// </summary>
     [Fact]
     public void AClaimCitingARecalledMission_Resolves_AndAnUnrecalledOneDoesNot()
     {
-        var recall = Artifact.Create(
-            schema: ArtifactSchemas.RecallSet,
-            producerRole: "researcher",
-            missionId: "m",
-            payload: Json.Dumps(new
-            {
-                query = "q",
-                sources = new[] { new { Url = "mission:abc123", Title = "an earlier audit" } },
-            }));
+        var recall = RecallSet("mission:abc123");
+
+        // The recalled mission went and read something. That is what makes citing it honest.
+        var history = History(("abc123", new[] { SourceSet(Ollama) }));
 
         var honest = new[] { recall, Answer(Claims(("We concluded this before.", "mission:abc123"))) };
         var invented = new[] { recall, Answer(Claims(("We concluded this before.", "mission:never-ran"))) };
 
-        Assert.True(CitationIntegrity.Evaluate(honest).Satisfied);
+        Assert.True(CitationIntegrity.Evaluate(honest, history).Satisfied);
 
-        var refused = CitationIntegrity.Evaluate(invented);
+        var refused = CitationIntegrity.Evaluate(invented, history);
         Assert.False(refused.Satisfied);
         Assert.Equal("mission:never-ran", Assert.Single(refused.Unresolved));
+    }
+
+    /// <summary>
+    /// CITATION LAUNDERING, REFUSED. v0.3.8.123 — and it is the failure that a citation cannot show
+    /// on the page, because every step of it is TRUE.
+    ///
+    /// Mission A answered without attributing anything. That is an honest outcome and this layer has
+    /// always permitted it (see <see cref="AnAnswerThatAdmitsWhatItCannotAttribute_IsSatisfied"/>);
+    /// nothing here punishes A. Mission B then recalls A and cites `mission:A` — and until this
+    /// release that citation RESOLVED, because the recall record proves the recall happened and
+    /// nothing asked what A itself rested on. B's answer therefore read as sourced, its source was
+    /// A's narrative, and A's narrative was attached to nothing. Worse than a fabricated url,
+    /// because a fabricated url is false and can be caught by looking; this is true at every hop and
+    /// false only in what an operator concludes from the chain.
+    ///
+    /// AND THE CYCLE TERMINATES, UNRESOLVED. Two missions that recalled each other vouch for one
+    /// another forever, and a walk that answered "resolved" for whichever it happened to enter from
+    /// would make the verdict a fact about the walk instead of about the evidence. It must stop, and
+    /// it must stop by saying no — a hang here would read as a slow suite rather than as a defect.
+    /// </summary>
+    [Fact]
+    public void ARecalledMissionThatRestsOnNothing_DoesNotLaunderTheClaim()
+    {
+        var cited = new[] { RecallSet("mission:A"), Answer(Claims(("A concluded this, so it stands.", "mission:A"))) };
+
+        // A retrieved nothing and attributed nothing: an honest unsourced answer, and not a source.
+        var unsupported = History(("A", new[] { Answer(Claims(("It stands.", null))) }));
+
+        var laundered = CitationIntegrity.Evaluate(cited, unsupported);
+        Assert.False(laundered.Satisfied);
+        Assert.Equal("mission:A", Assert.Single(laundered.Unresolved));
+
+        // The same verdict from a history that has never heard of A, and from no history at all.
+        // "We cannot find out" is not a reason to say yes about what a claim rests on.
+        Assert.False(CitationIntegrity.Evaluate(cited, History()).Satisfied);
+        Assert.False(CitationIntegrity.Evaluate(cited).Satisfied);
+
+        // THE CYCLE. A recalled B, B recalled A, and neither ever retrieved anything.
+        var cycle = History(
+            ("A", new[] { RecallSet("mission:B") }),
+            ("B", new[] { RecallSet("mission:A") }));
+
+        var refused = CitationIntegrity.Evaluate(cited, cycle);
+        Assert.False(refused.Satisfied);
+        Assert.Equal("mission:A", Assert.Single(refused.Unresolved));
+    }
+
+    /// <summary>
+    /// AND LEGITIMATE RECALL IS UNTOUCHED. v0.3.8.123.
+    ///
+    /// The narrowing above is worth nothing if it also refuses the case the recall record was built
+    /// for: a claim drawn from a prior mission that DID go and read something. That mission's answer
+    /// traces to a page in the world, and citing it is attribution rather than assertion — the whole
+    /// distinction `.99` created the `recall_set` to make expressible.
+    ///
+    /// THE CHAIN RESOLVES TOO, and it is the same fact one hop further out. A recalled B, B recalled
+    /// nothing but retrieved a source; the provenance reaches the world through two hops instead of
+    /// one, and stopping at the first would refuse a mission for the shape of its history rather
+    /// than for its evidence. What bounds it is depth, not distrust — see
+    /// <see cref="CitationIntegrity.MaxRecallDepth"/>.
+    /// </summary>
+    [Fact]
+    public void ARecalledMissionThatRetrievedItsOwnSources_StillResolves()
+    {
+        var cited = new[] { RecallSet("mission:A"), Answer(Claims(("A established this.", "mission:A"))) };
+
+        Assert.True(CitationIntegrity.Evaluate(cited,
+            History(("A", new[] { SourceSet(Ollama), Answer(Claims(("Runs locally.", Ollama))) }))).Satisfied);
+
+        // A → B → the world.
+        Assert.True(CitationIntegrity.Evaluate(cited, History(
+            ("A", new[] { RecallSet("mission:B") }),
+            ("B", new[] { SourceSet(LlamaCpp) }))).Satisfied);
+
+        // A `source_set` that retrieved NOTHING is not the end of the walk. The artifact's existence
+        // is not the evidence — its contents are, and a search that returned nothing is a record of
+        // having consulted nothing.
+        Assert.False(CitationIntegrity.Evaluate(cited, History(("A", new[] { SourceSet() }))).Satisfied);
+    }
+
+    /// <summary>
+    /// THE VERIFIER'S EVALUATOR INHERITS THE SAME REFUSAL. v0.3.8.123.
+    ///
+    /// `VerifierAnt` reads the evidence store and never walks citations, which is correct and stays
+    /// as it is — asking a verifier to trace provenance would put the model back inside the decision
+    /// ADR-008 removed it from. The gap was that nothing asserted a prior mission's NARRATIVE cannot
+    /// stand in for evidence at the layer that grades the answer.
+    ///
+    /// `ResearchIntegrity` delegates the "is what you cited real" question to `CitationIntegrity`
+    /// precisely so the two cannot disagree about what counts as retrieved. That delegation is what
+    /// this asserts: a research mission whose only source is another mission's unsupported answer
+    /// fails, in the same words, through the class gate that grades it. Without this, the fix could
+    /// be complete in the layer nobody's mission is actually graded by.
+    /// </summary>
+    [Fact]
+    public void AResearchMissionCitingAnotherMissionsNarrative_FailsTheClassGate()
+    {
+        var specification = Anthill.Core.Missions.MissionIntake.Resolve(
+            "Research what the papers and vendors say about local model quantization. "
+          + "What do the papers recommend? Which vendors ship it?");
+        Assert.Equal(Anthill.Core.Missions.MissionSpecification.ResearchClass, specification.MissionClass);
+
+        var artifacts = new[]
+        {
+            RecallSet("mission:A"),
+            Answer(Claims(("The vendors ship it, as we established before.", "mission:A"))),
+        };
+        // A retrieval RAN — so the second and third failures this class checks are satisfied, and
+        // whatever comes back is the citation layer speaking and nothing else.
+        var evidence = new[]
+        {
+            Evidence.Create(kind: EvidenceKinds.SourceRetrieval, deterministic: false, passed: true,
+                missionId: "m", detail: "recall: q"),
+        };
+
+        var unsupported = History(("A", new[] { Answer(Claims(("It is so.", null))) }));
+
+        var refused = ResearchIntegrity.Evaluate(specification, artifacts, evidence,
+            answer: null, recalledArtifacts: unsupported);
+        Assert.False(refused.Satisfied);
+        Assert.Contains("mission:A", refused.Explanation, StringComparison.Ordinal);
+        Assert.Contains("never retrieved", refused.Explanation, StringComparison.Ordinal);
+
+        // And the same mission passes this gate the moment the recalled mission has a source of its
+        // own — the fix refuses laundering, not recall.
+        Assert.True(ResearchIntegrity.Evaluate(specification, artifacts, evidence, answer: null,
+            recalledArtifacts: History(("A", new[] { SourceSet(Ollama) }))).Satisfied);
     }
 
     /// <summary>

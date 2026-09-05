@@ -137,13 +137,22 @@
        the mound chamber is never built. Nothing here invents a device to have something to draw. */
     api('/micromound/mounds').then(function (fleet) {
       if (topo) topo.ingestMound((fleet && fleet.data) || fleet);
-      // v0.3.8.122 — the roster a `+ Mound` chamber is drawn with. Served by the micromound API
-      // (the only place that may read it), fetched here because this is the only file that fetches.
-      // A refusal is not a failure: the colony simply has no defaults to draw with yet.
-      if (typeof api === 'function') api('/micromound/roster/defaults')
-        .then(function (r) { var d = (r && r.data) || r; if (live && live.setMoundDefaults && d && d.ants) live.setMoundDefaults(d.ants); })
-        .catch(function () { });
     }).catch(function () { /* no module, or no permission: there is no mound. */ });
+
+    /* The roster a mound chamber is drawn with — ITS OWN FETCH, not the fleet's passenger.
+       v0.3.8.123.
+
+       `.122` nested this inside the call above, so the seven ants a `+ Mound` chamber shows arrived
+       only when the micromound module was compiled in AND the operator held `read_micromound` AND
+       the fleet listing had already resolved. Any of those missing and the chamber came up empty,
+       which is what the operator saw: "i cant see the ants within them at all."
+
+       None of those conditions has anything to do with drawing seven labels in the operator's own
+       colony view, so the route moved to `/colony/mound-roster` — always mapped, guarded by the
+       same `read_graph` the snapshot uses — and the fetch moved out here beside the others. */
+    api('/colony/mound-roster')
+      .then(function (r) { var d = (r && r.data) || r; if (live && live.setMoundDefaults && d && d.ants) live.setMoundDefaults(d.ants); })
+      .catch(function (e) { try { console.warn('[colony-live] mound roster unavailable: ' + ((e && e.message) || e)); } catch (e2) { } });
   }
 
   /* ── The one mutation: per-mound stop / resume. Posts, then RE-READS the fleet so the view

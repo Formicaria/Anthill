@@ -123,10 +123,13 @@ public class OrchestrationRecordTests
     [Fact]
     public void TheSubstitutionVocabulary_IsCompleteAndDistinct()
     {
-        Assert.Equal(5, PlanSubstitutions.All.Count);
+        Assert.Equal(6, PlanSubstitutions.All.Count);
         Assert.Equal(PlanSubstitutions.All.Count, PlanSubstitutions.All.Distinct(StringComparer.Ordinal).Count());
         Assert.All(PlanSubstitutions.All, code => Assert.False(string.IsNullOrWhiteSpace(code)));
         Assert.Contains(PlanSubstitutions.NoModelRouter, PlanSubstitutions.All);
         Assert.Contains(PlanSubstitutions.LongInputSpecIngestion, PlanSubstitutions.All);
+        // v0.3.8.123's sixth. Reachable, and reached by `EvidenceGroundedPlanningTests` — a code in
+        // this list that nothing emits is the declaration-reaching-nobody defect in vocabulary form.
+        Assert.Contains(PlanSubstitutions.GroundedInspectionRequired, PlanSubstitutions.All);
     }
 }

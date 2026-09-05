@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Anthill.Core.Agents;
 using Anthill.Core.Common;
 using Anthill.Core.Configuration;
@@ -20,13 +21,19 @@ public sealed record PlanRejection(int TaskIndex, string Field, string Reason)
 /// <summary>
 /// WHY THE PLAN THAT RAN IS NOT THE PLAN THAT WAS ASKED FOR. v0.3.8.122.
 ///
-/// Stable codes, because a consumer must branch on the reason and never on prose. Each names one of
-/// the five conditions in <see cref="Planner.CreateTasks"/> that abandon dynamic planning for a
-/// static plan; every one of them was previously recorded by a console write and nothing else.
+/// Stable codes, because a consumer must branch on the reason and never on prose. Five of them name
+/// a condition in <see cref="Planner.CreateTasks"/> that abandons dynamic planning for a static
+/// plan; every one of those was previously recorded by a console write and nothing else.
 ///
 /// These are not failures of the mission — a fallback plan still runs and can still succeed. They
 /// are failures of ATTRIBUTION: without them, "the colony ignored my goal" and "the colony did what
 /// I asked and the answer is poor" are the same green run in the record.
+///
+/// v0.3.8.123 adds the sixth, <see cref="GroundedInspectionRequired"/>, and it is deliberately NOT a
+/// substitution of the first kind: nothing is abandoned there, a step is guaranteed. It lives here
+/// anyway because the question a reader brings to this vocabulary is "why is the plan that ran not
+/// the plan that was proposed", and answering that in two places with two shapes is how a consumer
+/// comes to read one of them and believe it has the whole answer.
 /// </summary>
 public static class PlanSubstitutions
 {
@@ -49,10 +56,25 @@ public static class PlanSubstitutions
     /// <summary>The model's answer could not be parsed as a plan at all.</summary>
     public const string PlanParseFailed = "plan_parse_failed";
 
+    /// <summary>
+    /// v0.3.8.123 — the request named evidence the colony must go and READ (the repository, the
+    /// files, the running state, what is persisted), so an inspection step was guaranteed ahead of
+    /// every synthesis whatever the planner — or the length gate above — proposed.
+    ///
+    /// Not a fallback like its five siblings: nothing is abandoned and the model's plan still runs.
+    /// It is recorded through the same channel for the same reason they are, which is the only
+    /// reason this class exists at all — a plan an operator did not write is a plan an operator must
+    /// be able to see. Without it, the most likely reader of a grounded plan concludes the planner
+    /// simply happened to include an inspection step, and the guarantee is invisible until it is
+    /// removed.
+    /// </summary>
+    public const string GroundedInspectionRequired = "grounded_inspection_required";
+
     /// <summary>Every code, for guards and for any consumer that wants to enumerate them.</summary>
     public static readonly IReadOnlyList<string> All =
     [
-        LongInputSpecIngestion, NoModelRouter, ModelCallFailed, PlanRejected, PlanParseFailed
+        LongInputSpecIngestion, NoModelRouter, ModelCallFailed, PlanRejected, PlanParseFailed,
+        GroundedInspectionRequired
     ];
 }
 
@@ -131,6 +153,123 @@ public sealed class Planner
     public static bool IsLongInput(string goal) =>
         AnthillRuntime.EnableSpecIngestion && (goal ?? "").Length > AnthillRuntime.LongInputThreshold;
 
+    /// <summary>
+    /// The ways an operator spells "go and read the source". v0.3.8.123.
+    ///
+    /// WORD-BOUNDARY MATCHED, NEVER BARE SUBSTRINGS, which is `MissionIntake`'s standing discipline
+    /// and this file inherits it rather than restating the argument: v0.3.8.96 was the release where
+    /// "ui" matched inside "b·ui·ld" and refused a documentation change.
+    ///
+    /// EVERY ALTERNATIVE NAMES AN ACT OF READING, not a noun. "the repository" alone appears in
+    /// perfectly ordinary research goals ("how do other projects lay out a repository?"); "inspect
+    /// the repository" is a request the colony can either satisfy with a file read or fail. That
+    /// distinction is the whole of what keeps this from firing on the missions it must not touch.
+    /// </summary>
+    private static readonly Regex RepositoryEvidencePhrases = new(
+        @"\b(?:inspect|inspecting|read|reading|open|opening|examine|examining|check|checking|"
+      + @"look\s+at|looking\s+at|search|searching)\s+"
+      + @"(?:the\s+|this\s+|our\s+|its\s+|your\s+)?"
+        // One optional adjective, from a closed list. "Inspect the CURRENT repository" is the
+        // recorded audit phrasing and would otherwise miss; an open `\w+\s+` here would let the
+        // verb and the noun drift arbitrarily far apart and match sentences that mean something
+        // else entirely.
+      + @"(?:current\s+|entire\s+|whole\s+|actual\s+|local\s+|live\s+)?"
+      + @"(?:repo|repository|codebase|code\s?base|source\s+tree|source\s+code|source|file|files|code)\b"
+      + @"|\bin\s+the\s+(?:repo|repository|codebase|code\s?base|source\s+tree|source\s+code)\b"
+      + @"|\bwhat\s+the\s+(?:code|source)\s+(?:actually\s+)?(?:does|says|is\s+doing)\b"
+      + @"|\bon\s+disk\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// The ways an operator spells "go and read what is actually running, or what was actually
+    /// recorded". v0.3.8.123 — narrower than its repository sibling, because runtime nouns
+    /// ("state", "running") are far commoner in ordinary prose than "codebase" is, so every
+    /// alternative here is either an explicit adverb of actuality or a named store.
+    /// </summary>
+    private static readonly Regex RuntimeEvidencePhrases = new(
+        @"\bactually\s+(?:running|runs|ran|enabled|wired|registered|used|configured)\b"
+      + @"|\bcurrently\s+running\b|\brunning\s+right\s+now\b"
+      + @"|\b(?:runtime|live|persisted|stored)\s+(?:state|records?)\b"
+      + @"|\b(?:check|query|read|inspect)\s+the\s+(?:database|db)\b|\bin\s+the\s+(?:database|db)\b"
+      + @"|\bwhat(?:'s|\s+is)\s+(?:actually\s+)?enabled\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// DOES THIS REQUEST ASK TO BE ANSWERED FROM EVIDENCE RATHER THAN FROM PROSE? v0.3.8.123.
+    ///
+    /// THE FAILURE THIS EXISTS FOR. <see cref="CreateSpecIngestionTasks"/> is reached on goal LENGTH
+    /// and nothing else, and a mission that says "inspect the repository and report what the code
+    /// actually does" is long BY CONSTRUCTION — so it was cut into `section_analysis` tasks handed
+    /// to the mission researcher, which read the operator's own sentences back to them and never
+    /// opened a file. Every task completed. Nothing was inspected. That is mission `7afd85b2`'s
+    /// shape arriving through the length gate instead of through a missing mission class, and the
+    /// length gate is the door no class can guard, because it is taken before any class is
+    /// consulted.
+    ///
+    /// WHAT IT ANSWERS is deliberately not "is this about code" — half of every research goal is —
+    /// but "did the operator name a source of evidence the colony can go and read". The vocabulary
+    /// is <see cref="Anthill.Core.Missions.WorkerCapabilities"/>'s own two inspection ids, and the
+    /// two phrase sets above are the ways an operator spells them.
+    ///
+    /// THE CONTRACT SIGNAL IS KEYED ON REQUIRED EVIDENCE, NOT ON THE CAPABILITY LIST — the same
+    /// discipline <c>CitationIntegrity.RequiresSources</c> applies, and here it is load-bearing
+    /// rather than tidy. The troubleshooting class ALSO declares `inspect_repository`, and it has
+    /// already decided how that capability is served: through its diagnosis lane, with the check
+    /// receipts as the evidence. Reading the capability list alone would insert a second, separate
+    /// file read into every troubleshooting plan — this method answering a class question it was
+    /// never asked. A class that declares it must SHOW an INSPECTION is a class whose plan must
+    /// contain one, and at v0.3.8.123 exactly one class says that.
+    ///
+    /// THE ASK, NOT THE TRANSCRIPT. <c>MissionIntake.OperatorAskOnly</c> is reused rather than
+    /// reimplemented, for `.110`'s reason: the composed goal carries the standing context and the
+    /// whole conversation below a `--- ` marker, and a detector reading colony narration would fire
+    /// on the colony's own account of an inspection it performed three missions ago — `.96`'s
+    /// self-sustaining refusal with the sign flipped.
+    ///
+    /// CONSERVATIVE, and the asymmetry is chosen: a false negative leaves a mission exactly as it
+    /// planned before this method existed, while a false positive spends a real inspection task on
+    /// every mission that mentions a file in passing.
+    /// </summary>
+    /// <returns>The inspection capabilities the request demands, in the order they must be
+    /// inserted — repository before runtime, matching the audit class's own ordering — or empty
+    /// when the request named no evidence at all.</returns>
+    public static IReadOnlyList<string> DemandedInspectionCapabilities(
+        string? goal, Anthill.Core.Missions.MissionSpecification? specification)
+    {
+        var ask = specification?.OriginalRequest is { Length: > 0 } stated
+            ? stated
+            : Anthill.Core.Missions.MissionIntake.OperatorAskOnly(goal ?? "");
+
+        var mustShowAnInspection = specification is not null
+            && specification.RequiredEvidence.Contains(
+                   Anthill.SDK.Artifacts.EvidenceKinds.Inspection, StringComparer.OrdinalIgnoreCase);
+        IReadOnlyList<string> declared = specification?.RequiredCapabilities ?? Array.Empty<string>();
+
+        bool Declared(string capability) =>
+            mustShowAnInspection && declared.Contains(capability, StringComparer.OrdinalIgnoreCase);
+
+        var demanded = new List<string>(2);
+
+        if (Declared(Anthill.Core.Missions.WorkerCapabilities.InspectRepository)
+            || RepositoryEvidencePhrases.IsMatch(ask))
+            demanded.Add(Anthill.Core.Missions.WorkerCapabilities.InspectRepository);
+
+        if (Declared(Anthill.Core.Missions.WorkerCapabilities.InspectRuntimeState)
+            || RuntimeEvidencePhrases.IsMatch(ask))
+            demanded.Add(Anthill.Core.Missions.WorkerCapabilities.InspectRuntimeState);
+
+        return demanded;
+    }
+
+    /// <summary>
+    /// True when the request explicitly asks for repository, file, runtime or persisted-state
+    /// evidence. The predicate form of <see cref="DemandedInspectionCapabilities"/>, for the callers
+    /// that only need to know whether the plan must be grounded and not with what.
+    /// </summary>
+    public static bool DemandsGroundedInspection(
+        string? goal, Anthill.Core.Missions.MissionSpecification? specification) =>
+        DemandedInspectionCapabilities(goal, specification).Count > 0;
+
     /// <param name="skillContext">Certified/experimental procedures proven in this environment.
     /// Offered as known-good ROUTES to consider, never as scripts to run: every task planned from
     /// one still passes the ordinary authorization, contract and permission gates.</param>
@@ -153,7 +292,10 @@ public sealed class Planner
     /// v0.3.8.122 — CALLED WHENEVER THE PLAN THAT RUNS IS NOT THE PLAN THAT WAS ASKED FOR.
     ///
     /// Five conditions below abandon dynamic planning and return a static plan, and every one of
-    /// them was recorded by `Console.Error.WriteLine` and nothing else. That is not a log-level
+    /// them was recorded by `Console.Error.WriteLine` and nothing else. (v0.3.8.123 adds a sixth
+    /// reason that abandons nothing — see <see cref="PlanSubstitutions.GroundedInspectionRequired"/>
+    /// — and it reports here because a reader asking "why is this plan not what I asked for" must
+    /// find every answer in one place.) That is not a log-level
     /// quibble: the substitution is the most consequential thing this class does, it leaves no row,
     /// no event and no artifact, and the mission that follows looks exactly like a mission that was
     /// planned as requested. The file's own comment above says it — an operator sees a colony that
@@ -181,6 +323,23 @@ public sealed class Planner
         // shown, locally, so a claimed skill_id is checked against what this plan offered — never
         // against whatever a concurrently running plan happened to be offered.
         var offeredSkillIds = SkillContextIds(skillContext);
+
+        // v0.3.8.123 — RECORDED HERE, INSERTED ELSEWHERE, and the split is not an accident.
+        //
+        // The step itself is guaranteed by `EnsureClassCoverage`, which every one of the five return
+        // paths below funnels through — that is where it belongs, because a guarantee written on one
+        // path is a guarantee the other four do not have. But `EnsureClassCoverage` is static and
+        // holds no reporting callback, and the mission id lives two layers out; this is the only
+        // scope that can say WHY the plan has a shape nobody proposed. Reported before the paths
+        // diverge, because the demand is a fact about the REQUEST and is true whichever path it
+        // takes.
+        var demandedInspection = DemandedInspectionCapabilities(goal, specification);
+        if (demandedInspection.Count > 0)
+            Substituted(PlanSubstitutions.GroundedInspectionRequired,
+                "the request names evidence the colony must go and read ("
+              + string.Join(", ", demandedInspection)
+              + "); the plan is guaranteed a read-only inspection step ahead of every synthesis "
+              + "rather than being answered from the request's own prose");
 
         // Long specification / architecture / framework documents are never sent into a single
         // "Analyze Mission Goal" task — they are chunked into bounded, parallel section reviews
@@ -417,6 +576,15 @@ Required JSON:
     internal static List<Task> EnsureClassCoverage(List<Task> tasks, string goal,
         Anthill.Core.Missions.MissionSpecification? specification)
     {
+        // v0.3.8.123 — FIRST, AND WITHOUT ASKING WHAT CLASS THIS IS. Every branch below guards one
+        // class's promise; a request for repository or runtime evidence is a promise the OPERATOR
+        // made the colony make, and it arrives on missions of every class — including `general`,
+        // which has no branch here at all and is exactly where the length gate sends a precisely
+        // worded inspection request. Running it ahead of the class branches also means their own
+        // "is this step already present" guards see what it inserted, so an audit gets one
+        // inspection step rather than two spellings of one.
+        tasks = EnsureGroundedInspection(tasks, goal, specification);
+
         // v0.3.8.102 — the system-action class's coverage: the operation step is ensured
         // deterministically, the standing doctrine. The medic pattern in reverse — nothing else
         // is inserted, because the operator ant carries the whole propose/approve/execute/record
@@ -626,16 +794,7 @@ Required JSON:
         // holds no write permission at all, so this is a description of the work rather than a
         // restraint on it — but a task that reads as ambiguous invites a plan repair that is not.
         if (!tasks.Any(t => string.Equals(t.AssignedAnt, "file", StringComparison.OrdinalIgnoreCase)))
-            tasks.Insert(0, new Task
-            {
-                Title = "Inspect the workspace (read-only)",
-                Description = "List and read the repository files relevant to this assessment. "
-                            + "Do not modify anything — this is an observation, and its findings "
-                            + $"are the evidence the assessment must rest on: {goal}",
-                AssignedAnt = "file",
-                TaskType = "file_inspection",
-                RequiredCapability = Anthill.Core.Missions.WorkerCapabilities.InspectRepository,
-            });
+            tasks.Insert(0, RepositoryInspectionTask(goal));
 
         // THE RUNTIME HALF. "What is implemented" and "what is enabled right now" are different
         // questions against different sources, and an audit that answers only the first reads the
@@ -644,17 +803,7 @@ Required JSON:
         // is reached without editing this step.
         if (!tasks.Any(t => string.Equals(t.RequiredCapability, Anthill.Core.Missions.WorkerCapabilities.InspectRuntimeState,
                                           StringComparison.OrdinalIgnoreCase)))
-            tasks.Insert(0, new Task
-            {
-                Title = "Inspect the live colony state (read-only)",
-                Description = "Report the colony's current runtime state — which roles and workers "
-                            + "are executable and what they declare, which tools this run registered, "
-                            + "the verification policy in force, and what has already run. Read only; "
-                            + $"change nothing: {goal}",
-                AssignedAnt = "researcher",
-                TaskType = "research",
-                RequiredCapability = Anthill.Core.Missions.WorkerCapabilities.InspectRuntimeState,
-            });
+            tasks.Insert(0, RuntimeInspectionTask(goal));
 
         if (!tasks.Any(t => string.Equals(t.AssignedAnt, "builder", StringComparison.OrdinalIgnoreCase)))
             tasks.Add(new Task
@@ -677,6 +826,116 @@ Required JSON:
 
         return tasks;
     }
+
+    /// <summary>
+    /// The read-only repository inspection, spelled ONCE. v0.3.8.123.
+    ///
+    /// It was a literal inside the audit branch, and <see cref="EnsureGroundedInspection"/> needs
+    /// the identical step for a mission of any class. Two copies of a task definition is how the
+    /// audit lane and the grounding lane come to insert subtly different work for the same reason,
+    /// and how a later fix to one of them silently misses the other — the duplicated-detector defect
+    /// <c>UiChangeGate</c> and <c>InjectSpecialistRouting</c> already paid for once.
+    ///
+    /// Workers are left unassigned on purpose: which worker serves an inspection is the
+    /// specification's question, and the step names the CAPABILITY so
+    /// <see cref="Agents.WorkerResolution"/> answers it.
+    /// </summary>
+    internal static Task RepositoryInspectionTask(string goal) => new()
+    {
+        Title = "Inspect the workspace (read-only)",
+        Description = "List and read the repository files relevant to this assessment. "
+                    + "Do not modify anything — this is an observation, and its findings "
+                    + $"are the evidence the assessment must rest on: {goal}",
+        AssignedAnt = "file",
+        TaskType = "file_inspection",
+        RequiredCapability = Anthill.Core.Missions.WorkerCapabilities.InspectRepository,
+    };
+
+    /// <summary>The read-only runtime inspection, spelled once, for the reason
+    /// <see cref="RepositoryInspectionTask"/> gives.</summary>
+    internal static Task RuntimeInspectionTask(string goal) => new()
+    {
+        Title = "Inspect the live colony state (read-only)",
+        Description = "Report the colony's current runtime state — which roles and workers "
+                    + "are executable and what they declare, which tools this run registered, "
+                    + "the verification policy in force, and what has already run. Read only; "
+                    + $"change nothing: {goal}",
+        AssignedAnt = "researcher",
+        TaskType = "research",
+        RequiredCapability = Anthill.Core.Missions.WorkerCapabilities.InspectRuntimeState,
+    };
+
+    /// <summary>
+    /// AN EXPLICIT DEMAND FOR EVIDENCE IS SERVED BY A STEP THAT GOES AND READS IT. v0.3.8.123.
+    ///
+    /// THE BUG, precisely. `IsLongInput` fires on goal length alone and hands the mission to
+    /// <see cref="CreateSpecIngestionTasks"/>, whose every step is a `section_analysis` assigned to
+    /// `researcher.mission_researcher` — a worker whose contract is to read the colony's own history.
+    /// So "inspect the repository and report what the code actually does", written carefully enough
+    /// to be long, became N tasks that paraphrased the operator's own sentences and one synthesis
+    /// that combined the paraphrases. Nothing opened a file, every task completed, and the mission
+    /// graded green. The class gates cannot catch it: the length gate is taken before any class
+    /// branch is reached, and a `general` mission has no branch to reach.
+    ///
+    /// WHY NOT SIMPLY SKIP SPEC INGESTION when the detector fires. Because the chunking is not
+    /// wrong — a long request still has to be read in bounded pieces, and throwing that away would
+    /// trade a mission that inspects nothing for a mission that overflows context. The architecture
+    /// stands and an inspection step is guaranteed inside it.
+    ///
+    /// ORDER, NOT MERELY PRESENCE, which is the half a presence check would have missed: an
+    /// inspection that runs AFTER the synthesis is evidence nothing consumed. Hence the dependency
+    /// wiring below — and its one deliberate omission.
+    ///
+    /// WHY A TASK THAT DECLARES NO DEPENDENCIES IS LEFT ALONE. `PlanningService.AutoWireDependencies`
+    /// fills exactly those, and it already puts every researcher/file task ahead of the builder and
+    /// everything ahead of the verifier — so the ordering is guaranteed there by a rule that also
+    /// carries the plan's OTHER edges. Writing our two ids into an empty `DependsOn` would satisfy
+    /// this method and silently opt that task out of auto-wiring, replacing a full ordering with a
+    /// narrower one: the synthesis would then wait for the inspection and for nothing else. The
+    /// spec-ingestion plan — the one this exists for — declares its edges explicitly and is skipped
+    /// by auto-wiring entirely, which is precisely the case this branch serves.
+    /// </summary>
+    internal static List<Task> EnsureGroundedInspection(List<Task> tasks, string goal,
+        Anthill.Core.Missions.MissionSpecification? specification)
+    {
+        var demanded = DemandedInspectionCapabilities(goal, specification);
+        if (demanded.Count == 0) return tasks;
+
+        var inserted = new List<string>();
+        foreach (var capability in demanded)
+        {
+            // Only what is MISSING is added — `EnsureClassCoverage`'s standing rule, applied to a
+            // demand rather than to a class. A plan that already carries the capability carries it
+            // for the same reason, whoever put it there.
+            if (tasks.Any(t => string.Equals(t.RequiredCapability, capability, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            var step = string.Equals(capability, Anthill.Core.Missions.WorkerCapabilities.InspectRuntimeState,
+                           StringComparison.OrdinalIgnoreCase)
+                ? RuntimeInspectionTask(goal)
+                : RepositoryInspectionTask(goal);
+            tasks.Insert(0, step);
+            inserted.Add(step.Id);
+        }
+
+        if (inserted.Count == 0) return tasks;
+
+        foreach (var downstream in tasks.Where(t => ConsumesEvidence(t) && t.DependsOn.Count > 0))
+            downstream.DependsOn = downstream.DependsOn.Concat(inserted).Distinct(StringComparer.Ordinal).ToList();
+
+        return tasks;
+    }
+
+    /// <summary>
+    /// A task that writes the answer rather than gathering it — the steps an inspection must
+    /// precede. Named once because <see cref="EnsureGroundedInspection"/> and any later reader of
+    /// this rule must agree about which steps consume evidence; two spellings of "the synthesis"
+    /// is how an ordering guarantee comes to cover a plan's builder and not its verifier.
+    /// </summary>
+    internal static bool ConsumesEvidence(Task t) =>
+        t.AssignedAnt is "builder" or "verifier"
+     || t.TaskType is "synthesis" or "build_answer" or "verification"
+                   or "document_creation" or "data_analysis";
 
     private static List<Task> AssignDefaultWorkers(List<Task> tasks, string goal, MissionConstraints constraints,
         Anthill.Core.Missions.MissionSpecification? specification = null)

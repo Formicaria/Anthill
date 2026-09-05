@@ -4,18 +4,57 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: main carries **v0.3.8.121** (`36f2283`, tagged — FORAGER as the knowledge subsystem, plus the
-mission replay configuration contract). **v0.3.8.122 is complete in the working tree.**
+State: **v0.3.8.122 was handed to the operator for release** (`57b33c9` — the colony has no floor,
+and a decision nobody recorded is a decision nobody made). **v0.3.8.123 is complete in the working
+tree**, on `feat/v0.3.8.123-authoring`.
 
-`.122` is one UI change the operator asked for and three records that were being decided and not
-kept. **The ground plane under Colony Live is gone and the camera orbits the full sphere** — the
-floor bounced light onto the chambers and was the only thing left asserting an up. **An attempt to stop a
-failed verification closing as complete was made and withdrawn** — the evaluator's `failed` turns out
-to mean "not passed", which is not the same fact, and the withdrawal is the more useful result. **The planner's five silent plan
-substitutions reach the event log**, so a colony that ignored the goal stops looking like one that
-did not. **A knowledge review proposal survives being made** — it was published to the bus only,
-under a boot event's type, while the tool told the worker it was queued. See the `.122` section
-below; every one is guarded and the UI change was verified by rendering it.
+`.123` is one large operator batch and one correctness fix that arrived with it.
+
+**The Micromound settings page stopped being a JSON file.** `MicromoundAuthoring` compiles plain
+answers — what the mound is wired to, how far it may go, who decides, how often it checks in — into
+exactly the `CharterRequest` and `ConfigurationRequest` the existing services already take. It is a
+TRANSLATION: no ceiling, limit or policy is decided in the browser or in the authoring layer, both
+protocol validators still run, and the mound is still the authority that can refuse either document.
+Four decisions are written into its own header and are the things to read before changing it — limits
+go in the manifest and not the charter; the evidence policy can only get stricter; there is no
+"what should it do offline?" question because `offline_behaviour` is a field on a worker the friendly
+form does not author; and a save from the simple page carries through everything it cannot author,
+AND names it, because carrying silently and losing silently are one bug apart. The raw forms are
+folded behind Advanced rather than deleted, and a live preview shows the two documents a save writes.
+
+**Every mound now hangs off the Queen.** There was one hard-coded `queen → mound` conduit, so
+INFRASTRUCTURE and every operator-added chamber floated unattached. The strands are derived from the
+sector table now.
+
+**A `+ Mound` chamber came up with no ants in it**, because seven presentation labels were served
+from inside `#if MICROMOUND`, behind `read_micromound`, fetched from inside the fleet listing's own
+`.then`. The roster moved to `Anthill.SDK.Modules.MoundRoster` and `/colony/mound-roster`, always
+mapped. Still one store — `MicromoundRoster` forwards to it and the runtime projection test still
+covers the chain.
+
+**The mound registry's Delete button had no listener.** `onAct` was bound to `#page-colony` and the
+registry lives in `#page-mounds`. Not a broken handler — an unlistened one. Worth remembering as a
+shape: a whole page can be inert and look like a logic bug.
+
+**Memory holds the colony's stored rows now**, whoever wrote them, and the unattributable-record
+fallback moved there from the Queen's Core — an authority chamber should not be where rows land whose
+author is precisely what could not be resolved. **The Queen sits at the centre of her own chamber**,
+the seat jitter is gone, record radii are quantised into three shells, **labels are one setting** that
+names every clickable dot once you have zoomed in, and **light mode inverts its highlights** instead
+of piling white on white.
+
+**A mission that asks for evidence gets a step that reads it.** `IsLongInput` fires on goal length
+alone, so a carefully worded "inspect the repository and report what the code actually does" was cut
+into `section_analysis` tasks that paraphrased the operator's own sentences, completed, and graded
+green. The class gates cannot catch it — the length gate is taken first and a `general` mission has no
+branch. A conservative detector now guarantees a read-only inspection ahead of every synthesis, on
+every planning path.
+
+**And a citation has to trace.** `recall_set` rows carry `mission:<id>`, and a claim citing one
+resolved because the recall HAPPENED. An unsupported assertion in mission A therefore became a
+sourced citation in mission B, and C could cite B — every step TRUE, the chain attached to nothing.
+`CitationIntegrity.Resolvable` now walks past the recall to what that mission itself consulted,
+depth-limited and cycle-safe, and an untraceable recall is simply unresolved rather than a new state.
 
 Behind that: main carried **v0.3.8.119** (the Colony Live re-port, PR #87) plus the colony polish
 batch (PR #89, rebase-merged), and **`release/v0.3.8.120` is the release commit for it.** The Colony Live UI

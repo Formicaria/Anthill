@@ -1,5 +1,12 @@
 using Micromound.Protocol;
 
+// The SDK's copy is the ONE store of the seven names as of v0.3.8.123 (see MoundRoster's own
+// summary for why they moved out of this file). Aliased with `global::` deliberately: this
+// namespace ends in `Micromound`, so unqualified lookups here resolve relative to it and go
+// looking for names that do not exist. The module README says so; this file learned it the
+// expensive way.
+using SdkRoster = global::Anthill.SDK.Modules.MoundRoster;
+
 namespace Anthill.Modules.Micromound;
 
 /// <summary>One of a mound's workers, as the colony projects it. Not an Anthill ant.</summary>
@@ -62,17 +69,20 @@ public sealed record MoundWorker(string Name, string Role, bool Standard)
 /// </summary>
 public static class MicromoundRoster
 {
-    public const string MoundMajor = "Mound Major";
-    public const string Scout = "Scout Ant";
-    public const string Forager = "Forager Ant";
-    public const string Guard = "Guard Ant";
-    public const string Witness = "Witness Ant";
-    public const string Cache = "Cache Ant";
-    public const string Runner = "Runner Ant";
+    // v0.3.8.123 — THESE FORWARD, THEY NO LONGER DECLARE. The names and roles moved to
+    // `Anthill.SDK.Modules.MoundRoster` so the console can draw a mound chamber's ants without the
+    // micromound integration being compiled in; see that type for the whole argument. Every
+    // reference in this module keeps working unchanged, and there is still exactly one list.
+    public const string MoundMajor = SdkRoster.MoundMajor;
+    public const string Scout = SdkRoster.Scout;
+    public const string Forager = SdkRoster.Forager;
+    public const string Guard = SdkRoster.Guard;
+    public const string Witness = SdkRoster.Witness;
+    public const string Cache = SdkRoster.Cache;
+    public const string Runner = SdkRoster.Runner;
 
     /// <summary>The seven, in the order ANTS.md draws them: the coordinator, then its six.</summary>
-    public static readonly IReadOnlyList<string> Names =
-        [MoundMajor, Scout, Forager, Guard, Witness, Cache, Runner];
+    public static IReadOnlyList<string> Names => SdkRoster.Names;
 
     /// <summary>
     /// What each one is for, in the words ANTS.md uses. These are RESPONSIBILITIES, not
@@ -80,17 +90,7 @@ public static class MicromoundRoster
     /// capabilities, applicable routines, limits and relevant options" but "must not silently
     /// change their fundamental role definitions."
     /// </summary>
-    public static readonly IReadOnlyDictionary<string, string> Roles =
-        new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            [MoundMajor] = "local coordinator",
-            [Scout] = "observation and sensing",
-            [Forager] = "requested physical action",
-            [Guard] = "runtime health and operational safety",
-            [Witness] = "independent physical outcome confirmation",
-            [Cache] = "short-term operational persistence",
-            [Runner] = "secure external communication",
-        };
+    public static IReadOnlyDictionary<string, string> Roles => SdkRoster.Roles;
 
     /// <summary>
     /// The standard colony for a mound, with each worker's capabilities filled in from its manifest

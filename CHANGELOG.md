@@ -1,3 +1,120 @@
+## v0.3.8.123 - settings you can answer, a colony you can read, and a citation that has to trace
+
+**THE MICROMOUND SETTINGS PAGE ASKED AN OPERATOR TO TYPE A CHARTER.** Capability id strings, an
+action-class enum, a lease TTL in seconds, a `device_limits` map keyed by capability, an evidence
+policy expressed as glob patterns. Every one of those is a real part of the protocol and none of
+them is a question a person can answer. The operator's own summary was the brief: "i just want it
+user friendly and easier to understand and less of a json file communicated as settings."
+
+`MicromoundAuthoring` is the answer, and it is a **translation, not a second set of rules**. The
+page asks what the mound is wired to, how far it may go, who decides when it acts, and how often it
+must check in; the server compiles those answers into exactly the `CharterRequest` and
+`ConfigurationRequest` the existing services already take. `MicromoundCharters` and
+`MicromoundConfiguration` are still the only issuers, both protocol validators still run, and the
+mound is still the authority that can refuse either. Four decisions are worth knowing:
+
+- **Limits go in the manifest, not the charter.** "How far may this move?" is asked once, and
+  writing it to both documents would be one fact in two stores with a projection that has two
+  values to disagree about. `device_limits` is the operator's own standing bound — the middle tier
+  of SAFETY.md Layer 1's intersection — and a bound that expires with the authority that mentioned
+  it is a bound on one errand, not on the device.
+- **The evidence policy can only get stricter.** `RequiredFor` starts at the protocol's `act.*` /
+  `routine.*` baseline and the friendly answers are a union on top. There is no friendly way to
+  remove a pattern, because a simplified page that can quietly relax a proof requirement is a
+  simplified page that makes a device less safe.
+- **There is no "what should it do offline?" question, deliberately.** It is the obvious one, and
+  `offline_behaviour` is a field on a WORKER — the friendly form authors none, and the standard
+  seven are the device runtime rather than manifest entries. A mound-level answer would have had
+  nowhere to go, which is a control that reaches nobody dressed as helpfulness. What an operator
+  actually controls is the check-in interval: when the lease lapses the mound enters its safe state.
+- **A save from the simple page never deletes advanced work.** A manifest and a charter are complete
+  replacements, so saving writes the whole document. Manifest-declared workers, a reasoning mode and
+  grants with no device row are carried through untouched AND named on screen — carrying something
+  silently and losing it silently are one bug apart.
+
+`hazardous` cannot be spelled in the friendly vocabulary at all. The charter issuer refuses it as a
+standing ceiling; this is the earlier and quieter half of the same rule, and the better half,
+because an operator never meets an option they would then be told they cannot have. The raw charter
+and manifest forms are folded behind **Advanced**, not deleted — and a live preview compiles every
+edit and shows the two documents the save would write, so nothing is hidden. What changed is who
+writes them.
+
+**EVERY MOUND NOW HANGS OFF THE QUEEN.** There was one authority conduit and it was hard-coded
+`queen → mound`. Infrastructure had none and an operator-added chamber had none, so the two kinds of
+mound an operator actually ends up with floated unattached while the one built-in placeholder was
+wired. A conduit in this view is the statement that a chamber answers to the Queen; a mound that
+takes charters from her and shows no strand is the console contradicting what the colony does. The
+strands are derived from the sector table now, so adding a mound wires it and removing one drops it.
+
+**AND THE ANTS INSIDE THEM ARE VISIBLE.** `+ Mound` drew a chamber with nothing in it, and the cause
+was four conditions stacked behind seven presentation labels: `/micromound/roster/defaults` lived
+inside `#if MICROMOUND`, behind `read_micromound`, fetched from inside the fleet listing's own
+`.then`. None of those is about authority — no device is contacted to draw a roster in the
+operator's own colony view. The seven names moved to `Anthill.SDK.Modules.MoundRoster`, served at
+`/colony/mound-roster`, always mapped and guarded like the rest of the picture. There is still
+exactly one store: `MicromoundRoster` forwards to it, and the projection test still checks the whole
+chain against the device runtime by compiled inspection.
+
+**THE MOUND REGISTRY'S DELETE BUTTON HAD NO LISTENER.** `onAct` was bound to `#page-colony` alone
+while the registry lives in `#page-mounds`, so Settings and Delete emitted clicks that reached
+nothing at all. Not a broken delete — an unlistened one. The registry now lists every mound,
+INFRASTRUCTURE included, marks which are the operator's to remove, and a mound chamber's second
+click carries its own id to its own settings instead of dropping it on the floor.
+
+**MEMORY IS WHERE THE COLONY'S STORED ROWS LIVE.** Every record was filed by whoever wrote it, which
+is right for most of them and wrong for the rows where the record IS the colony committing something
+to memory. Those were scattered across six chambers by author while MEMORY — the chamber whose whole
+subject is what the colony keeps — sat almost empty. A `_stored` or `_written` row, a memory
+candidate and a scored trail are Memory records whoever produced them; `_recorded` still stays with
+its author, because that is the colony noting that something happened. Nothing is invented: the
+event type already carried the fact and this reads it.
+
+The fallback moved with it, from the Queen's Core to Memory. The Queen's Core is an authority
+chamber, so filing an unattributable row there says the colony's command layer produced it — an
+attribution we have no basis for about a row whose author is precisely what could not be resolved.
+Memory claims nothing about who did the work.
+
+**THE QUEEN SITS AT THE CENTRE OF HER OWN CHAMBER**, at nearly double size, with the ring closing
+around her. Two pieces of deliberate noise came out of the seat layout — a phase offset and a
+`sin(ri * 2.4)` wobble on the roles, an alternating zigzag on the workers — and record radii are
+quantised into three shells rather than varying continuously, which was the one thing scattering a
+lattice that is perfectly even underneath. A record still keeps its seat as the chamber fills around
+it. The operator's word for the old arrangement was madness; the new one is a ring, an arc of
+workers under each seat, and shells.
+
+**LABELS ARE ONE SETTING NOW.** `.122` shipped a zoom-driven mode beside the old always-on one and
+offered both; the choice was the problem. **All** IS the zoom behaviour, and at the closest tier
+every point you can click carries a label — records included, not only the ones a link happens to
+join. A dot you can click is a dot you should be able to read. `normal`, `fixed` and `zoom` all heal
+to `all` at both ends.
+
+**LIGHT MODE STOPPED PILING WHITE ON WHITE.** An ant's core and a chamber's key-light bloom were
+near-white in both environments, which is right against the galaxy and an eye sore against paper. A
+core exists to make an ant read as lit from within, and on a light ground the way to say that is
+contrast, not more white. Both invert with the environment.
+
+**A MISSION THAT ASKS FOR EVIDENCE NOW GETS A STEP THAT READS IT.** `IsLongInput` fires on goal
+length alone, so "inspect the repository and report what the code actually does" — written carefully
+enough to be long — was cut into `section_analysis` tasks handed to the mission researcher, which
+paraphrased the operator's own sentences and never opened a file. Every task completed and the
+mission graded green. The class gates could not catch it: the length gate is taken before any class
+branch is reached, and a `general` mission has no branch to reach. A conservative detector now
+recognises an explicit demand for repository, file, runtime or persisted-state evidence and
+guarantees a read-only inspection step ahead of every synthesis, on every planning path, recorded
+through the same substitution channel that already answers "why is this plan not what I asked for".
+The chunking stays: a long request still has to be read in bounded pieces.
+
+**AND A CITATION HAS TO TRACE.** `recall_set` rows carry `mission:<id>`, and a claim citing one
+resolved because the recall HAPPENED — nothing asked what the recalled mission itself rested on. So
+an unsupported assertion in one mission became a sourced citation in the next, and a third could
+cite the second: each hop looked like attribution and the chain as a whole was attached to nothing.
+That is worse than a fabricated url, because every step is TRUE and the falsehood lives only in what
+the reader concludes. A `mission:` citation now resolves only when that mission's own record reaches
+something the world said, walked depth-limited and cycle-safe — two missions that recalled each
+other vouch for each other and for no source, so the walk ends unresolved rather than at whichever
+one it entered from. An untraceable recall is not a new claim state: the url simply is not
+resolvable and the claim lands in `Unresolved` exactly as an invented one does.
+
 ## v0.3.8.122 - the colony has no floor, and a decision nobody recorded is a decision nobody made
 
 **THE GROUND PLANE IS GONE.** Colony Live drew a lit floor at y=340: a wide faint disc, three unseen

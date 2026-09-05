@@ -56,9 +56,9 @@
     var W = 0, H = 0, scx = 0, scy = 0, raf = 0, ro = null, destroyed = false;
     var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     // env: space (galaxy, default) | light | strata | nebula | void.
-    // labels: none | min | fixed | zoom.  links.opacity: 0..1.
+    // labels: none | min | all (zoom-driven; see labelTier).  links.opacity: 0..1.
     // conduits: density less | normal | more; bright 0.4–2; color null (each conduit's own) or '#rrggbb'.
-    var opts = { motion: 'normal', labels: 'zoom', trails: true, env: 'space',
+    var opts = { motion: 'normal', labels: 'all', trails: true, env: 'space',
       conduits: { density: 'normal', bright: 1, color: null },
       links: { opacity: .125 } };
     function isLight() { return opts.env === 'light'; }
@@ -133,8 +133,35 @@
       rebuildRoot(r); return r;
     }
     var roots = ROOT_PAIRS.map(function (p) { return mkRoot(p[0], p[1], p[2], p[3]); });
-    var authority = mkRoot('queen', 'mound', 1, 20);
-    function rebuildAll() { roots.forEach(rebuildRoot); rebuildRoot(authority); }
+    /* EVERY MOUND HANGS OFF THE QUEEN, AND WHICH MOUNDS EXIST CHANGES WHILE THE PAGE IS OPEN.
+       v0.3.8.123.
+
+       `.122` had exactly one authority strand, hard-coded `queen → mound`. Infrastructure had none
+       and an operator-added chamber had none — so the two kinds of mound an operator actually ends
+       up with floated unattached while the one built-in placeholder was wired. That is not a
+       cosmetic gap. A conduit in this view is the statement that a chamber answers to the Queen,
+       and a mound that takes charters from her and shows no strand is the console contradicting
+       what the colony does.
+
+       So the strands are DERIVED from the sector table rather than listed: one per chamber flagged
+       `mound`, rebuilt whenever that set changes. Adding a mound wires it; removing one drops its
+       strand with it; nothing has to remember to keep a second list in step. */
+    var authorities = {};
+    function rebuildAuthorities() {
+      var want = {}, changed = false;
+      SEC.forEach(function (s) {
+        if (!s.mound) return;
+        want[s.id] = true;
+        if (!authorities[s.id]) { authorities[s.id] = mkRoot('queen', s.id, 1, 20); changed = true; }
+      });
+      Object.keys(authorities).forEach(function (id) { if (!want[id]) { delete authorities[id]; changed = true; } });
+      return changed;
+    }
+    function eachAuthority(fn) { Object.keys(authorities).forEach(function (id) { fn(authorities[id], id); }); }
+    // A new strand with no particles on it reads as a dead line, so the streams are rebuilt in the
+    // same breath the strand set changes rather than waiting for whatever else happens to call it.
+    function rebuildAll() { var ch = rebuildAuthorities(); roots.forEach(rebuildRoot); eachAuthority(rebuildRoot); if (ch) buildStreams(); }
+    rebuildAuthorities();
 
     // active route + ants — REPLACED wholesale by setTopology; demo defaults below
     var rootIndex = {}; roots.forEach(function (r, i) { rootIndex[r.a + '>' + r.b] = i; rootIndex[r.b + '>' + r.a] = i; });
@@ -205,10 +232,19 @@
           var id = r.recordId || r.id || (r.title + r.createdAt);
           var place = r.place || hashPlace(String(id));
           var verified = r.verification === 'verified', pher = trailOf(r.ant);
-          var durable = (verified ? .55 : .1) + pher * .45, depth = 1 - Math.min(.94, durable);
+          var durable = (verified ? .55 : .1) + pher * .45;
           var slot = Math.floor(unit(id, 'slot') * SLOTS) % SLOTS, probe = 0; while (taken[slot] && probe < SLOTS) { slot = (slot + 1) % SLOTS; probe++; }
           var ring = Math.floor(Object.keys(taken).length / SLOTS); taken[slot] = true;   // a 97th record starts a second, inner ring
-          var seatR = s.R * (verified ? .30 + (1 - depth) * .1 : .62 + depth * .28) * (ring ? .8 : 1);
+          /* THE RADIUS IS QUANTISED INTO SHELLS. v0.3.8.123 — this was a continuous function of
+             durability, so no two records sat at quite the same distance and the cloud read as
+             fuzz: the lattice underneath it is perfectly even, and a per-record radius was the one
+             thing scattering it. Three shells (core, mid, outer) keep exactly the meaning the
+             continuous version carried — verified and well-trailed records sit deeper — and let
+             the eye see the arrangement, which is what "less madness" asks for. Which shell a
+             record lands in still comes only from its own durability, so its seat is as stable as
+             it ever was. */
+          var shell = verified ? 0 : durable > .34 ? 1 : 2;
+          var seatR = s.R * [.34, .62, .84][shell] * (ring ? .8 : 1);
           var o = [LATTICE[slot][0] * seatR, LATTICE[slot][1] * seatR, LATTICE[slot][2] * seatR];
           var ang = k * SPIRAL_STEP, rad = s.R * .86 * band * Math.sqrt((k + .55) / mcount);
           var org = [Math.cos(ang) * rad, y, Math.sin(ang) * rad];
@@ -222,20 +258,45 @@
           pts.push(pt);
         });
       });
-      // residents: one orb per role on the mid ring, its workers as smaller orbs beside it; in the
-      // ordered formation they line up on a row above the top stratum
+      /* RESIDENTS SIT ON A RING, NOT IN A DRIFT. v0.3.8.123.
+
+         The seats used to carry two pieces of deliberate noise — a `+.7` phase offset and a
+         `sin(ri * 2.4)` vertical wobble on the role orbs, and an alternating ±.08R zigzag on the
+         workers. Both were there to keep orbs from overlapping, and both worked, at the cost of a
+         chamber that reads as a handful of ants dropped in rather than a colony arranged in one.
+         The operator's word for it was "method and symmetry and less madness."
+
+         What replaces them: roles on a level ring, first seat at the top and the rest evenly round
+         it; each role's workers on a concentric outer arc CENTRED ON THEIR PARENT, at one fixed
+         drop below it, so a role and its sub-ants read as one group. Nothing overlaps because the
+         spacing is computed rather than jittered, and the arrangement now says something true —
+         the ring is the roster, the arc under a seat is that role's workers.
+
+         THE QUEEN IS THE EXCEPTION, and she is the exception everywhere else in this colony too:
+         her chamber is the authority chamber, she is the one resident who is not a peer of the
+         others, and drawing her as one seat among seven on the same ring said otherwise. She sits
+         at the centre of her own chamber at nearly double size, and the ring closes around her. */
       var top = s.strata.length ? s.strata[0].y - s.R * .42 : -s.R * .4;   // −y is up: the row sits over the highest level
-      (sec.residents || []).forEach(function (r, ri) {
-        var n = Math.max(1, (sec.residents || []).length), th = ri / n * TAU + .7, yy = Math.sin(ri * 2.4) * .25;
-        var base = [Math.cos(th) * s.R * .55, yy * s.R, Math.sin(th) * s.R * .55];
-        var rowX = ((ri + .5) / n - .5) * s.R * 2.2;
+      var resList = sec.residents || [];
+      function isQueenSeat(r) { return s.id === 'queen' && String(r.roleId || '').toLowerCase() === 'queen'; }
+      var ringN = Math.max(1, resList.filter(function (r) { return !isQueenSeat(r); }).length), ringI = 0;
+      resList.forEach(function (r, ri) {
+        var queenSeat = isQueenSeat(r);
+        var th = -Math.PI / 2 + (queenSeat ? 0 : (ringI / ringN) * TAU);
+        if (!queenSeat) ringI++;
+        var base = queenSeat ? [0, 0, 0] : [Math.cos(th) * s.R * .58, 0, Math.sin(th) * s.R * .58];
+        var rowX = queenSeat ? 0 : ((ringI - .5) / ringN - .5) * s.R * 2.2;
         var ov = antStyles[String(r.roleId || '').toLowerCase()] || {};
-        pts.push({ o: base, org: [rowX, top, 0], layer: 1, cl: 0, sz: 2.4, a: .95, ph: ri, born: 0, rec: null, below: !!(ri % 2), antColor: ov.color || null, resident: { roleId: r.roleId, name: ov.name || r.name || r.roleId, registryName: r.name || r.roleId, status: r.status, trail: r.trail || null, workers: (r.workers || []).length, color: ov.color || null } });
+        pts.push({ o: base, org: [rowX, queenSeat ? top - s.R * .22 : top, 0], layer: 1, cl: 0, sz: queenSeat ? 4.4 : 2.4, a: .95, ph: ri, born: 0, rec: null, below: false, queen: queenSeat, antColor: ov.color || null, resident: { roleId: r.roleId, name: ov.name || r.name || r.roleId, registryName: r.name || r.roleId, status: r.status, trail: r.trail || null, workers: (r.workers || []).length, color: ov.color || null } });
         var roleIdx = pts.length - 1;
+        var wn = (r.workers || []).length;
         (r.workers || []).forEach(function (w, wi) {
-          var wn = (r.workers || []).length, wt = th + (wi - (wn - 1) / 2) * .28;
+          // Spread so the arc a role's workers occupy never reaches its neighbour's, however many
+          // it has: the ring's own angular pitch, minus a gap, divided among them.
+          var pitch = TAU / ringN, spread = Math.min(pitch * .62, .34 * Math.max(1, wn - 1));
+          var wt = th + (wn > 1 ? (wi / (wn - 1) - .5) * spread : 0);
           var ovw = antStyles[String(w.id || '').toLowerCase()] || {};
-          pts.push({ o: [Math.cos(wt) * s.R * .68, base[1] + (wi % 2 ? .08 : -.08) * s.R, Math.sin(wt) * s.R * .68], org: [rowX + (wi - (wn - 1) / 2) * s.R * .12, top - s.R * .16, 0], layer: 1, cl: 0, sz: 1.4, a: .8, ph: wi, born: 0, rec: null, antColor: ovw.color || ov.color || null, resident: { roleId: w.id, name: ovw.name || w.name || w.id, registryName: w.name || w.id, parent: w.parent || r.roleId, status: w.enabled === false ? 'disabled' : r.status, worker: true, color: ovw.color || null } });
+          pts.push({ o: [Math.cos(wt) * s.R * .82, s.R * .22, Math.sin(wt) * s.R * .82], org: [rowX + (wi - (wn - 1) / 2) * s.R * .12, top - s.R * .16, 0], layer: 1, cl: 0, sz: 1.4, a: .8, ph: wi, born: 0, rec: null, below: true, antColor: ovw.color || ov.color || null, resident: { roleId: w.id, name: ovw.name || w.name || w.id, registryName: w.name || w.id, parent: w.parent || r.roleId, status: w.enabled === false ? 'disabled' : r.status, worker: true, color: ovw.color || null } });
           links.push([pts.length - 1, roleIdx]);   // the roster chain: worker → its role
         });
       });
@@ -254,7 +315,7 @@
     var flights = [], playedTransitions = {};
 
     // pheromone streams (the 3h connection language: particles, not lines)
-    var rootStreams = [], circStreams = [], retStream = [], authStream = [];
+    var rootStreams = [], circStreams = [], retStream = [], authStreams = {};
     function mkStream(pts, n, s0, s1) { var out = []; for (var i = 0; i < n; i++) out.push({ pts: pts, t: rnd(), sp: s0 + rnd() * (s1 - s0), n: (rnd() - .5) * 10, ph: rnd() * TAU }); return out; }
     function densityK() { return opts.conduits.density === 'less' ? .5 : opts.conduits.density === 'more' ? 1.9 : 1; }
     function buildStreams() {
@@ -265,7 +326,8 @@
       rootStreams = roots.filter(function (r) { return r.a === 'queen'; }).map(function (r) { return mkStream(r.strands[0], Math.round(6 * k), .000016, .00003); });
       circStreams = circuit.map(function (sg) { return { col: sg.col, ps: mkStream(sg.pts, Math.round(22 * k), .00004, .00007) }; });
       retStream = retSeg ? mkStream(retSeg.pts, Math.round(8 * k), .00003, .00005) : [];
-      authStream = mkStream(authority.strands[0], Math.round(7 * k), .00002, .000035);
+      authStreams = {};
+      eachAuthority(function (a, id) { authStreams[id] = mkStream(a.strands[0], Math.round(7 * k), .00002, .000035); });
     }
     /** A conduit's particle colour: the operator's override, else its own (darkened on the light page). */
     function conduitRGB(own) { var c = opts.conduits.color ? h2(opts.conduits.color) : own.split(',').map(Number); if (isLight()) c = shade3(c, .7); return c.join(','); }
@@ -383,28 +445,32 @@
     }
     function fog(zc) { return Math.max(.06, Math.min(1, 1.5 - zc / (cam.dist * 1.55))); }
     /**
-     * HOW MUCH TEXT THIS CHAMBER HAS EARNED, 0..3. v0.3.8.122.
+     * HOW MUCH TEXT THIS CHAMBER HAS EARNED, 0..3. v0.3.8.123.
      *
      *   0  nothing        1  the chamber's name
-     *   2  + every ant in it, WORKERS INCLUDED       3  + the linked record points
+     *   2  + every ant in it, WORKERS INCLUDED       3  + EVERY point you can click
      *
-     * `fixed` is the old `normal`: chamber names always, ants when you focus one. It is kept as an
-     * option because it is what an operator used to reading the colony at a glance already knows.
+     * TWO MODES, NOT FOUR. `.122` shipped `fixed` (the old always-on behaviour) beside a new
+     * zoom-driven `zoom`, and offered both. The operator's answer was that the choice was the
+     * problem: "i dont want a 'all on zoom' option, i just want it that when all is selected, when
+     * you zoom into a chamber, allll the little dots that can be clicked on, show some sort of
+     * label on them." So `All` IS the zoom behaviour now — there is no separate setting for it —
+     * and it goes all the way: at the closest tier every point `pickPoint` would accept carries a
+     * label, records included, not just the ones a link happens to join.
      *
-     * `zoom` is the default and answers the actual complaint — a survey full of text nobody is
-     * reading. It shows NOTHING from a distance and earns detail as you approach: the name as the
-     * chamber fills the frame, then its ants, then the labels on the points the links join. The
-     * thresholds are multiples of the chamber's own radius, not absolute distances, so a small
-     * chamber and a large one hand over their names at the same apparent size.
+     * `min` is unchanged and still means what it always did: the Queen's name, and detail only in
+     * the chamber you have focused. `none` draws no text at all. A browser holding `fixed`, `zoom`
+     * or the older `normal` heals to `all` — see `setOptions`.
+     *
+     * The thresholds are multiples of the chamber's own RADIUS rather than absolute distances, so a
+     * small chamber and a large one hand over their names at the same apparent size. Tier 3 sits
+     * comfortably inside `pickPoint`'s own 7.5R reach, which is the property that makes "labelled"
+     * and "clickable" the same set rather than two sets that nearly agree.
      */
     function labelTier(s, isFocused) {
       if (opts.labels === 'none') return 0;
-      if (opts.labels !== 'zoom') {
-        // 'fixed' and 'min' keep their old behaviour exactly.
-        var named = opts.labels !== 'min' || isFocused || s.id === 'queen';
-        return isFocused ? 2 : (named ? 1 : 0);
-      }
-      if (cam.dist < s.R * 2.6 && isFocused) return 3;
+      if (opts.labels === 'min') return isFocused ? 2 : (s.id === 'queen' ? 1 : 0);
+      if (cam.dist < s.R * 3 && isFocused) return 3;
       if (cam.dist < s.R * 5.5 && isFocused) return 2;
       if (cam.dist < s.R * 9.5) return 1;
       return 0;
@@ -664,9 +730,15 @@
       // under the galaxy, which is the same weight to the eye against a white ground.
       var cb = opts.conduits.bright * (isLight() ? 1.9 : 1), strandInk = isLight() ? 'rgba(52,64,84,$A)' : 'rgba(146,158,176,$A)';
       roots.forEach(function (r) { if (!bySec[r.a].present || !bySec[r.b].present) return; var carries = flowing.indexOf(r.strands[0]) >= 0; if (r.a === 'queen' || carries) drawStrand(r.strands[0], strandInk, (carries ? .055 : .032) * cb, 2.2, ts); });
-      if (bySec.mound.present) authority.strands.forEach(function (st) { drawStrand(st, 'rgba(226,31,123,$A)', .045 * cb, 2.2, ts); });
+      // One authority conduit per mound chamber, drawn when that chamber is on screen. The colour
+      // is the Queen's, not the mound's: the strand is her authority reaching it, and every mound
+      // — infrastructure, the fleet chamber, each one an operator added — is reached the same way.
+      eachAuthority(function (a, id) {
+        if (!bySec[id] || !bySec[id].present) return;
+        a.strands.forEach(function (st) { drawStrand(st, 'rgba(226,31,123,$A)', .045 * cb, 2.2, ts); });
+        if (authStreams[id]) drawStream(authStreams[id], conduitRGB('226,31,123'), .5 * cb);
+      });
       rootStreams.forEach(function (ps, i) { var r = roots.filter(function (x) { return x.a === 'queen'; })[i]; if (r && r.b && bySec[r.b].present) drawStream(ps, conduitRGB('146,158,176'), .42 * cb); });
-      if (bySec.mound.present) drawStream(authStream, conduitRGB('226,31,123'), .5 * cb);
       var dens = opts.motion === 'low' ? .55 : 1;
       circStreams.forEach(function (cs, ci) { var c = h2(cs.col); drawStream(cs.ps.slice(0, Math.ceil(cs.ps.length * dens)), conduitRGB(c[0] + ',' + c[1] + ',' + c[2]), Math.min(1, .95 * cb), 1.6, circuit[ci] && circuit[ci].rev); });
       if (opts.trails) drawStream(retStream, conduitRGB('217,176,84'), .75 * cb, 1.4);
@@ -697,6 +769,7 @@
         var s = o.s, pr = o.pr;
         var isFocused = focused === s.id;
         var tier = labelTier(s, isFocused);
+        var labelBudget = 140;   // per chamber, per frame — see the tier-3 block below
         var rot = s.frozen != null ? s.frozen : (live() ? ts * s.rot : 0);
         var cr = Math.cos(rot), sr = Math.sin(rot);
         var pal = sectorColors(s), c0 = pal.c0, c1 = pal.c1, sty = s.style;
@@ -734,8 +807,13 @@
         ctx.beginPath(); ctx.arc(pr.x, pr.y, Math.max(4, nr * 1.6 * sty.glow), 0, TAU); ctx.fillStyle = g; ctx.fill();
         var lo = lightOffset(s, pr);
         if (lo.front) {
-          var hr = Math.max(3, nr * 1.4), hg = ctx.createRadialGradient(pr.x + lo.dx, pr.y + lo.dy, 0, pr.x + lo.dx, pr.y + lo.dy, hr);
-          hg.addColorStop(0, 'rgba(235,240,250,' + (.10 * LT.expo * fog(pr.zc)) + ')'); hg.addColorStop(1, 'rgba(235,240,250,0)');
+          // Same inversion as the ant cores: a pale specular is invisible on paper at best and a
+          // milky smear at worst, so on the light page the key light leaves a soft DARK bloom where
+          // it would otherwise leave a bright one. Both read as a lit sphere; only one of them reads
+          // as a lit sphere on white.
+          var hr = Math.max(3, nr * 1.4), hc = isLight() ? '44,58,78' : '235,240,250';
+          var hg = ctx.createRadialGradient(pr.x + lo.dx, pr.y + lo.dy, 0, pr.x + lo.dx, pr.y + lo.dy, hr);
+          hg.addColorStop(0, 'rgba(' + hc + ',' + ((isLight() ? .08 : .10) * LT.expo * fog(pr.zc)) + ')'); hg.addColorStop(1, 'rgba(' + hc + ',0)');
           ctx.beginPath(); ctx.arc(pr.x + lo.dx, pr.y + lo.dy, hr, 0, TAU); ctx.fillStyle = hg; ctx.fill();
         }
         /* LINKAGE OPACITY IS THE OPERATOR'S. v0.3.8.122 — this was hard-coded at .045 focused and
@@ -781,21 +859,39 @@
             hg2.addColorStop(0, 'rgba(' + col + ',' + (alpha * .55) + ')'); hg2.addColorStop(1, 'rgba(' + col + ',0)');
             ctx.beginPath(); ctx.arc(q.x, q.y, hrad, 0, TAU); ctx.fillStyle = hg2; ctx.fill();
             ctx.beginPath(); ctx.arc(q.x, q.y, rad, 0, TAU); ctx.fillStyle = 'rgba(' + col + ',' + alpha + ')'; ctx.fill();
-            ctx.beginPath(); ctx.arc(q.x, q.y, rad * .45, 0, TAU); ctx.fillStyle = isLight() ? 'rgba(255,255,255,' + (alpha * .9) + ')' : 'rgba(255,250,240,' + (alpha * .85) + ')'; ctx.fill();
+            /* AN ANT'S CORE IS ITS BRIGHTEST POINT UNDER THE GALAXY AND ITS DARKEST ON PAPER.
+               v0.3.8.123 — it was near-white in both, which is right against black and an eye sore
+               against an off-white page: the operator's words were that the inside of the ants
+               being "hued with white or lighter shade" is "kind of an eye sore with how bright it
+               is." The core exists to make an ant read as lit from within rather than as a flat
+               disc, and on a light ground the way to say "lit from within" is CONTRAST, not more
+               white. So the highlight inverts with the environment — deep ink on paper, warm white
+               under the sky — and the shape reads the same in both. */
+            ctx.beginPath(); ctx.arc(q.x, q.y, rad * .45, 0, TAU); ctx.fillStyle = isLight() ? 'rgba(20,28,42,' + (alpha * .82) + ')' : 'rgba(255,250,240,' + (alpha * .85) + ')'; ctx.fill();
             ctx.beginPath(); ctx.arc(q.x, q.y, rad + 2.2, 0, TAU); ctx.strokeStyle = 'rgba(' + col + ',' + (alpha * (res.status === 'working' ? .9 * tw : .45)) + ')'; ctx.lineWidth = res.status === 'working' ? 1.4 : .9; ctx.stroke();
           } else { ctx.beginPath(); ctx.arc(q.x, q.y, rad, 0, TAU); ctx.fillStyle = 'rgba(' + col + ',' + alpha + ')'; ctx.fill(); }
           // Every ant at tier 2 — INCLUDING THE WORKERS HANGING OFF EACH ROLE, which `fixed` still
           // omits. A worker is drawn smaller and labelled smaller, so the role reads as the parent
           // and the sub-ants read as its children rather than as nine peers of equal weight.
-          if (res && tier >= 2 && m > .25 && (opts.labels === 'zoom' || !res.worker))
+          if (res && tier >= 2 && m > .25)
             label(res.name, q.x, p.below ? q.y + rad + 11 : q.y - rad - 6,
-              (res.worker ? "7px" : "8px") + " 'IBM Plex Mono',monospace",
-              ink((res.worker ? .62 : .8) * m), 'center');
-          // Tier 3 labels the RECORD points the links actually join — the endpoints, not every
-          // grain, because a label on a point nothing connects to is noise at any zoom.
-          if (!res && tier >= 3 && p.linked && p.rec && p.rec.title)
+              (res.worker ? "7px" : p.queen ? "600 9.5px" : "8px") + " 'IBM Plex Mono',monospace",
+              ink((res.worker ? .62 : p.queen ? .95 : .8) * m), 'center');
+          /* TIER 3 LABELS EVERY CLICKABLE POINT. v0.3.8.123 — it used to label only the record
+             points a link joined, on the argument that a label on a point nothing connects to is
+             noise. The operator disagreed with the premise: a dot you can click is a dot you should
+             be able to read, and a dot you can click but not read is the worse noise. So the `linked`
+             filter is gone and the only condition left is that the point HAS something to say.
+
+             The count is capped per chamber because the anti-stacking pass is quadratic in labels
+             drawn and a chamber can hold two hundred records. Beyond the cap the grains are still
+             there, still clickable, and still name themselves on hover — an unreadable wall of
+             overprinted text would not have told the operator anything the tooltip does not. */
+          if (!res && tier >= 3 && p.rec && p.rec.title && labelBudget > 0) {
+            labelBudget--;
             label(String(p.rec.title).slice(0, 28), q.x, q.y - rad - 5,
               "6.5px 'IBM Plex Mono',monospace", ink(.5 * m), 'center');
+          }
           if (hp) { ctx.beginPath(); ctx.arc(q.x, q.y, Math.max(4, p.sz * q.s + 5), 0, TAU); ctx.strokeStyle = 'rgba(' + c0.join(',') + ',.7)'; ctx.lineWidth = 1; ctx.stroke(); }
         });
         if (selHere != null && s.pts[selHere]._q) {
@@ -809,12 +905,16 @@
             ctx.beginPath(); ctx.arc(rq.x, rq.y, 2.4, 0, TAU); ctx.fillStyle = 'rgba(' + c0.join(',') + ',.9)'; ctx.fill();
           });
         }
-        if (s.id === 'mound') {
-          for (var k2 = 0; k2 < 6; k2++) { var th3 = k2 * 1.047 + .5; var w2 = [s.pos[0] + Math.cos(th3) * s.R * .62, s.pos[1] + Math.sin(th3) * s.R * .5, s.pos[2] + Math.sin(th3 * 2) * 8]; var q2 = proj(w2); if (q2) { ctx.beginPath(); ctx.arc(q2.x, q2.y, Math.max(.8, 1.6 * q2.s), 0, TAU); ctx.fillStyle = 'rgba(201,207,220,' + (.5 * fog(q2.zc)) + ')'; ctx.fill(); } }
+        // THE DEVICE RING MARKS EVERY MOUND, not only the built-in fleet chamber. v0.3.8.123 —
+        // this was keyed on `s.id === 'mound'`, so an operator-added chamber and infrastructure
+        // were drawn as plain spheres and read as ordinary chambers. The ring is what says "this
+        // one is hardware", and it is the same claim for all three kinds.
+        if (s.mound) {
+          for (var k2 = 0; k2 < 6; k2++) { var th3 = k2 * 1.047 + .5; var w2 = [s.pos[0] + Math.cos(th3) * s.R * .62, s.pos[1] + Math.sin(th3) * s.R * .5, s.pos[2] + Math.sin(th3 * 2) * 8]; var q2 = proj(w2); if (q2) { ctx.beginPath(); ctx.arc(q2.x, q2.y, Math.max(.8, 1.6 * q2.s), 0, TAU); ctx.fillStyle = isLight() ? 'rgba(64,78,98,' + (.5 * fog(q2.zc)) + ')' : 'rgba(201,207,220,' + (.5 * fog(q2.zc)) + ')'; ctx.fill(); } }
           if (s.stopped) { ctx.beginPath(); ctx.arc(pr.x, pr.y, s.R * 1.2 * pr.s, 0, TAU); ctx.strokeStyle = 'rgba(226,31,123,.8)'; ctx.lineWidth = 2.2; ctx.stroke(); }
         }
         if (tier >= 1) {
-          label(s.label + (s.id === 'mound' && s.stopped ? ' · STOPPED' : ''), pr.x, pr.y + (s.R + 18) * pr.s,
+          label(s.label + (s.mound && s.stopped ? ' · STOPPED' : ''), pr.x, pr.y + (s.R + 18) * pr.s,
             '600 ' + Math.max(8, Math.min(11, 9 * pr.s * 8)) + "px 'IBM Plex Mono',monospace",
             'rgba(' + (isLight() ? shade3(c0, .62).join(',') : c0.join(',')) + ',' + ((isFocused ? .95 : (isLight() ? .8 : .5)) * fog(pr.zc)) + ')', 'center');
         }
@@ -907,8 +1007,13 @@
       setOptions: function (o) {
         o = o || {};
         var before = opts.conduits.density;
-        // `normal` became `fixed` at .122 when `zoom` took over the "All" slot.
-        if (o.labels === 'normal') o.labels = 'fixed';
+        /* A browser remembering a label mode this build no longer has heals to `all` rather than
+           falling through to a default it never chose. `normal` was `.121`'s name for always-on;
+           `.122` renamed it `fixed` and added `zoom` beside it; `.123` folded both into `all`,
+           which IS the zoom behaviour — the operator asked for one setting, not a choice between
+           two ways of showing everything. `min` and `none` are untouched and still mean what they
+           always meant. */
+        if (o.labels === 'normal' || o.labels === 'fixed' || o.labels === 'zoom') o.labels = 'all';
         if (o.links) { opts.links = Object.assign({}, opts.links, o.links); opts.links.opacity = clampNum(opts.links.opacity, 0, 1, .125); delete o.links; }
         if (o.conduits) { opts.conduits = Object.assign({}, opts.conduits, o.conduits); if (opts.conduits.color && !validColor(opts.conduits.color)) opts.conduits.color = null; opts.conduits.bright = clampNum(opts.conduits.bright, .4, 2, 1); delete o.conduits; }
         Object.assign(opts, o);
@@ -954,10 +1059,23 @@
         rebuildAll(); saveLayout(); api.survey();
         return true;
       },
-      /** The operator's mound chambers, for a registry listing. */
+      /** EVERY MOUND CHAMBER, for the registry listing — not only the operator-added ones.
+          v0.3.8.123.
+
+          `.122` listed `added` chambers alone, so the registry showed nothing until you had used
+          `+ Mound`, and INFRASTRUCTURE — a mound in every respect the renderer cares about, and the
+          one an operator meets first — was absent from the page that exists to list mounds. The
+          operator asked for it directly: "lets treat the infrastructure as a micromound, so have it
+          be in the colony>mounds tab, even though its already been fully built in with roles."
+
+          `removable` is the difference the registry has to render, because it is the difference
+          `removeMound` enforces: a chamber the operator created is theirs to delete, and one the
+          server declared is not. A Delete button that exists to be refused is worse than no button,
+          so the flag travels with the row rather than the page guessing from the id. */
       listMounds: function () {
-        return SEC.filter(function (x) { return x.added; }).map(function (x) {
-          return { id: x.id, label: x.label, color: x.style.color || x.color, residents: x.residents.length };
+        return SEC.filter(function (x) { return x.mound; }).map(function (x) {
+          return { id: x.id, label: x.label, color: x.style.color || x.color,
+            residents: x.residents.length, removable: !!x.added, present: !!x.present };
         });
       },
       getSectorStyle: function (id) { var s = bySec[id]; return s ? { color: s.style.color, glow: s.style.glow, bright: s.style.bright, defaultColor: s.color } : null; },

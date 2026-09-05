@@ -67,11 +67,19 @@ public static class ResearchIntegrity
     /// reason.</param>
     /// <param name="answer">The assembled answer, so each request can be traced to a retrieval
     /// rather than to the mission as a whole.</param>
+    /// <param name="recalledArtifacts">v0.3.8.123 — a prior mission's artifacts by id, handed
+    /// straight to <see cref="CitationIntegrity"/>. Passed THROUGH rather than acted on here, and
+    /// that is the point: this class delegates the "is what you cited real" question precisely so
+    /// the two layers cannot disagree about what counts as retrieved, and a research mission whose
+    /// answer cites another mission's narrative must therefore inherit the same refusal a coding
+    /// mission would get for it. A parameter this class never reads for itself is the cheapest way
+    /// to keep that inheritance true rather than merely intended.</param>
     public static Result Evaluate(
         Missions.MissionSpecification specification,
         IReadOnlyList<Artifact>? artifacts,
         IReadOnlyList<Evidence>? evidence,
-        AssembledAnswer? answer)
+        AssembledAnswer? answer,
+        Func<string, IReadOnlyList<Artifact>?>? recalledArtifacts = null)
     {
         ArgumentNullException.ThrowIfNull(specification);
 
@@ -79,7 +87,7 @@ public static class ResearchIntegrity
 
         // 1. SOMETHING WAS RETRIEVED. Delegated to the citation layer's contract trigger rather
         //    than re-derived, so the two can never disagree about what a retrieval is.
-        var citations = CitationIntegrity.Evaluate(specification, artifacts);
+        var citations = CitationIntegrity.Evaluate(specification, artifacts, recalledArtifacts);
         if (!citations.Satisfied) failures.Add(citations.Explanation);
 
         // 2. AND THE STORE AGREES. The artifact record says what was cited; the evidence record
