@@ -979,10 +979,10 @@ public class ColonyLiveGuardTests
 
         // And one mound's settings carry WHICH mound. A destination that cannot say which is the
         // reason this was rebuilt: `window.micromoundPendingId` is the console's established shape
-        // for that, the same one the project pickers use. `.123` — the renderer hands the chamber
-        // over and this passes its id on, which the `.122` handler dropped on the floor.
+        // for that, the same one the project pickers use. v0.3.8.124 — the id now travels from the
+        // REGISTRY ROW rather than from a chamber click, the chamber having stopped being a door.
         Assert.Contains("window.micromoundPendingId = id", home);
-        Assert.Contains("openMoundSettings(s && s.id)", home);
+        Assert.Contains("openMoundSettings(b.dataset.moundId", home);
 
         // BOTH DESTINATIONS DELETE, AND A DELETE ANYWHERE TAKES THE CHAMBER OUT OF THE COLONY AT
         // ONCE. An operator who removes a mound and then finds it still drawn has been told a lie
@@ -1091,23 +1091,35 @@ public class ColonyLiveGuardTests
     }
 
     /// <summary>
-    /// A MOUND CHAMBER IS A DOOR, AND ONLY ON THE SECOND CLICK — v0.3.8.122.
+    /// A MOUND CHAMBER IS A CHAMBER — v0.3.8.124, reversing .122.
     ///
-    /// Navigating on the first click would make a mound the one chamber an operator cannot approach,
-    /// recolour or read the residents of without being thrown out of the colony. So the first click
-    /// focuses it like any other chamber and the second, deliberate one opens its settings.
+    /// `.122` made a mound's second click a door to its settings page. The intent was reachability;
+    /// the effect was that the one chamber an operator most wanted to recolour and rename was the
+    /// one where a second click threw them out of the colony view, taking the panel they were using
+    /// with it. Every other chamber rewards a second click by staying put.
     ///
-    /// The renderer decides WHICH chambers are doors because it owns the sector table; the page owns
-    /// navigation and does the `go()`. Splitting it the other way would put a route in the renderer.
+    /// Settings live in ONE place now — the mound registry — reachable from the Mounds button beside
+    /// `+ Mound` and from the chamber's own panel. This guards the reversal at both ends: the
+    /// renderer emits no settings event, and the page listens for none.
+    ///
+    /// The parity assertions below are the part that was always right and stays: a mound reaches the
+    /// sector panel through the same `sector` event as every other chamber, so customization is not a
+    /// special case that could quietly stop applying to it.
     /// </summary>
     [Fact]
-    public void AMoundChamber_OpensItsSettingsOnTheSecondClick_AndKeepsEveryOtherChambersControls()
+    public void AMoundChamber_IsAnOrdinaryChamber_AndItsSettingsLiveInTheRegistry()
     {
         var live = Code("colony-live.js");
+        var home = Code("colony-home.js");
 
-        Assert.Contains("if (s2.mound && focused === s2.id) { emit('moundsettings', s2); return; }", live);
-        Assert.Contains("live.on('moundsettings'", Code("colony-home.js"));
-        Assert.Contains("go('/tools/micromound')", Code("colony-home.js"));
+        // No door in the renderer, and no listener on the page. Both, because either alone would
+        // leave half a feature that reads as working.
+        Assert.DoesNotContain("emit('moundsettings'", live);
+        Assert.DoesNotContain("live.on('moundsettings'", home);
+
+        // The one way in is the registry, and the button beside `+ Mound` opens it.
+        Assert.Contains("if (act === 'mounds') { go('/colony/mounds'); return; }", home);
+        Assert.Contains("act === 'moundopen'", home);
 
         // Both chambers that present as mounds are flagged as such, in the sector table.
         Assert.Contains("id: 'mound', label: 'MICROMOUND', mound: true", live);
@@ -1119,7 +1131,42 @@ public class ColonyLiveGuardTests
         // Customization parity is not a special case: the sector panel is generic and a mound reaches
         // it through the same `sector` event as everything else. If that ever stops being true this
         // asserts the panel still reads its style from the renderer rather than from a branch.
-        Assert.Contains("live.getSectorStyle(s.id)", Code("colony-home.js"));
+        Assert.Contains("live.getSectorStyle(s.id)", home);
+    }
+
+    /// <summary>
+    /// INFRASTRUCTURE'S SETTINGS ARE INFRASTRUCTURE'S — v0.3.8.124.
+    ///
+    /// It is a mound in every way the registry cares about: drawn as one, conduited to the Queen
+    /// like one, listed beside the others. What it is NOT is a micromound — no device, no enrolment
+    /// token, no charter — so the micromound console had nothing to show for it and would have
+    /// offered an operator a form for hardware that does not exist.
+    ///
+    /// So the destination is decided PER ROW rather than per page, and the row that is not a device
+    /// goes to the page where its eight real roles have always been configured. That page also loses
+    /// its card on Integrations, because two doors would make the registry's own promise — "every
+    /// mound, and where its settings are" — a half-truth.
+    /// </summary>
+    [Fact]
+    public void TheInfrastructureRow_OpensInfrastructure_NotAMicromoundForm()
+    {
+        var home = Code("colony-home.js");
+        var app = Code("app.js");
+
+        // The registry sends this row somewhere else, and says where.
+        Assert.Contains("infraopen", home);
+        Assert.Contains("go('/tools/infrastructure')", home);
+
+        // The router can resolve that, without a nav entry — the registry is the way in.
+        Assert.Contains("ROUTE_TABLE['/tools/infrastructure']", app);
+
+        // And the Integrations card is gone at both ends: the markup and its handler.
+        Assert.DoesNotContain("data-int-hl", app);
+        Assert.DoesNotContain("showPage('homelab'", app);
+
+        // VACUITY FLOOR: the registry really does list infrastructure, which is the premise the
+        // whole guard rests on. `listMounds` returns every chamber flagged `mound`, not only added.
+        Assert.Contains("return SEC.filter(function (x) { return x.mound; })", Code("colony-live.js"));
     }
 
     /// <summary>

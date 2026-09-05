@@ -1,3 +1,110 @@
+## v0.3.8.124 - which model does this work is a question about a project
+
+**ROUTING WAS COLONY-WIDE, AND OPERATORS DO NOT WORK THAT WAY.** One priority model and fourteen
+per-role routes in `config.json`, edited on the Ant Inspector page. An operator running one project
+against a local model and another against Claude had no way to say so: every change was to the whole
+colony, and the workaround was rewriting the routes between missions.
+
+**The plumbing was half-built and had been for two releases.** `Project.DefaultProvider` and
+`Project.DefaultModel` have existed since v0.3.8.48 — persisted by `SqliteMemory.Projects`, written
+by `PATCH /projects/{id}`, and read by **nothing**. A settable, saved, never-honoured preference is
+the shape of a feature that was designed and then not connected. This connects it, adds the per-role
+half as a `project_model_routes` table, and resolves both through `ProjectRoutingScope`.
+
+Ambient, for the reason `ConversationScope` and `MissionWorkspaceScope` are: `ModelRouter` is one
+object per Queen shared by every ant, and the project is a property of the FLOW. Threading a project
+id through `SendCore` would mean threading it through every `Generate`, `GenerateTyped` and
+`SendTyped`, then every ant, then `ToolCallingLoop` — a large refactor of code with no other reason
+to change, to carry a value that is constant for the whole mission.
+
+Precedence mirrors the colony's own chain one layer deeper, rather than inventing a second grammar:
+
+```
+project priority → project role route → colony priority → colony role route → colony fallback
+```
+
+Two properties are guarded harder than the rest. **A role the project does not name inherits the
+colony's route** — that is the difference between a project being a set of overrides an operator
+fills in as they care to and a fourteen-row form they must complete first. And **outside a scope
+nothing moves**: a scheduled run, an autonomy objective, a chat outside a project all route exactly
+as they did, because a narrowing that changes the un-narrowed case is not a narrowing. Pheromone
+learning also stops reordering a route a project pinned — reading only the colony's two facts would
+have let it override the pin invisibly, since a learned route is not displayed as an override
+anywhere.
+
+**THE ANT INSPECTOR IS GONE, AND BOTH HALVES OF IT WENT SOMEWHERE BETTER.** Its telemetry — task
+counts, success rate, average duration, recent activity — is the ant tab in Colony Live: you click
+the ant you are asking about instead of finding its card among twenty-five. Its routing is the
+project workspace's Settings tab. The colony directory below the grid is simply deleted: it listed
+every registry role and worker with its purpose, which the colony view shows by drawing them.
+
+The 2D canvas inspector lost its route selectors too, and kept its name and colour. It was the
+second place routes were written, at a different scope from the first, and an operator cannot see
+the scope of a control — so a mis-scoped route change is silent. It now says where routing is set
+rather than offering to set it.
+
+**THE MOUNDS BUTTON OPENS THE REGISTRY.** It used to focus the built-in fleet chamber and sat
+disabled whenever no device had enrolled — greyed out beside `+ Mound`, on a colony that already had
+mound chambers in it, which reads as broken rather than as "no device yet".
+
+**AND A MOUND CHAMBER IS A CHAMBER AGAIN.** `.122` made its second click a door to its settings page.
+The intent was reachability; the effect was that the one chamber an operator most wanted to recolour
+was the one where a second click threw them out of the colony view. Settings live in the registry,
+which is one place rather than two.
+
+**INFRASTRUCTURE'S SETTINGS OPEN INFRASTRUCTURE.** It is a mound in every way the registry cares
+about, and is listed there — but it has no device, no enrolment token and no charter, so the
+micromound console had nothing to show for it and would have offered a form for hardware that does
+not exist. Its row opens the Infrastructure page, where its eight real roles have always been
+configured. That page loses its Integrations card and gains a route with no nav entry: a second door
+would make the registry's "every mound, and where its settings are" a half-truth.
+
+**THE WINDOWS QUICK ACTIONS TARGETED A SERVICE THAT HAS NEVER EXISTED.** `Get-Service Anthill`,
+`Get-EventLog -Source Anthill`, `Restart-Service Anthill` — nothing in this repository registers a
+Windows service, and on Windows an operator runs `AnthillDesktop.exe`. All three failed, which is
+exactly the defect `ShellPlatform`'s own header says it exists to prevent: "an action is only shown
+when the environment it targets can actually run it." The name was never verified — it was written
+as a plausible convention beside a Linux set that was real, and it read as symmetric rather than as
+a guess. Restart now stops the process and relaunches it from the path the running process reports,
+which is the only way to start the same binary without assuming an install location.
+
+**TOOLS › KNOWLEDGE EXPLAINED THE FEATURE AND THEN TOLD YOU TO GO AND EDIT JSON.** The FORAGER
+integration has shipped since `.121` with a console section that describes it, names its three
+states precisely, and offers no way to turn it on. `knowledge_enabled` was declared FileOnly — not
+because anyone measured it and decided it needed to be, but because it inherited a section rule
+written for the endpoint and the scope map. There is now a toggle.
+
+**Exactly one key crossed the line, and the four that matter did not.**
+`knowledge_forager_endpoint` decides which service the colony trusts as the source of organizational
+fact. `knowledge_forager_token` is its credential. `knowledge_project_map` decides which knowledge a
+mission may read. `knowledge_forager_allow_remote` permits sending the colony's queries to a service
+that has **no authentication of its own**, across a network. Each of those either redirects what the
+colony believes or widens who may read what, and a console compromise must not be able to do either
+without touching a file. `knowledge_enabled` does neither: it decides whether the module talks to
+the endpoint the file already names, under the token already there, within the scopes the map
+already grants — the client re-reads and independently refuses on all four every call. Its blast
+radius is "the thing the operator configured now runs", which is what a toggle is for. The editable
+surface goes 98 → 99 and the guard that pins it says why.
+
+Where a file-only key is what is actually in the way, the page **names it**. A non-loopback endpoint
+with `allow_remote` off fails at the client with "refusing a non-loopback knowledge request" — after
+you have enabled knowledge and are staring at an unreachable base — so the Enable button says so
+first, and says why that one is a decision to make in the file. And a colony that exports
+`ANTHILL_KNOWLEDGE_ENABLED` gets no toggle at all: the runtime projects that gate env-over-file, so
+a write would persist to `config.json`, lose to the variable on re-projection, and leave the page
+looking exactly as it did. `/knowledge/status` reports the pin and the console names the variable
+instead of shipping a button that appears to do nothing — which is the defect `.96` and `.97` each
+found live, a release apart, on three other switches. The new guard drives the real settings path
+and reads the live runtime gate on the other side rather than asserting that an attribute is
+present.
+
+Toggling takes effect on the **next request**, not the next restart: `KnowledgeModule` re-reads its
+options per call and always has. The message says so, because the homelab gate beside it does need a
+restart.
+
+**Also:** shell scripts check out LF through a new `.gitattributes`, so `scripts/release.sh` — the
+path the tag guard's own error message points operators at — can run on Windows at all.
+
 ## v0.3.8.123 - settings you can answer, a colony you can read, and a citation that has to trace
 
 **THE MICROMOUND SETTINGS PAGE ASKED AN OPERATOR TO TYPE A CHARTER.** Capability id strings, an

@@ -1256,12 +1256,17 @@
         var s2 = vis[i], pr = proj(s2.pos);
         if (pr && Math.hypot(pr.x - m.x, pr.y - m.y) < Math.max(20, s2.R * pr.s)) {
           selRec = null;
-          // A MOUND CHAMBER IS A DOOR (v0.3.8.122). The first click approaches it like any other
-          // chamber — an operator still gets to look at it, recolour it and read its residents.
-          // Clicking the one already focused is the deliberate second act, and THAT opens its
-          // settings. Navigating on the first click would make a mound the one chamber an operator
-          // cannot inspect without leaving the colony.
-          if (s2.mound && focused === s2.id) { emit('moundsettings', s2); return; }
+          /* A MOUND CHAMBER IS A CHAMBER. v0.3.8.124.
+
+             `.122` made a mound's second click a door to its settings page. The intent was
+             reachability; the effect was that the one chamber an operator most wanted to recolour
+             and rename was the one chamber where a second click threw them out of the colony view
+             — and the panel they were using went with it. Every other chamber rewards a second
+             click by staying put.
+
+             Settings now live in ONE place, the registry, which is reachable from the Mounds button
+             beside `+ Mound` and from this chamber's own panel. A chamber here behaves like every
+             other chamber: focus, look, rename, recolour. */
           api.focus(s2.id); return;
         }
       }

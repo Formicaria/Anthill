@@ -150,6 +150,15 @@ public sealed class ConversationRunner
 
         var ordinal = _memory.LoadConversationTurns(conversation.Id).Count + 1;
 
+        /* v0.3.8.124 — A CONVERSATION IN A PROJECT IS ROUTED BY THAT PROJECT.
+           Routing became a per-project decision at .124 and `Queen.RunMission` enters the scope for
+           a mission. A conversation reaches the model on its own path too — every turn of it — and
+           an operator who pinned a project to a local model would otherwise find their chat in that
+           project still answering from whatever the colony is set to. Same scope, same precedence,
+           entered for the duration of the turn; a conversation with no project enters none and
+           routes exactly as it did. */
+        using var routingScope = Projects.ProjectRoutingScope.Enter(RoutingFor(conversation.ProjectId));
+
         // v0.3.8.58 — THERE IS NO SECOND LANE. Every message the operator sends is a mission.
         //
         // `requested` still arrives from the API because the console has a mission button, but it no
@@ -330,6 +339,40 @@ public sealed class ConversationRunner
     /// missions" from "there was nothing running". Silence on that distinction is what makes people
     /// press cancel twice.
     /// </summary>
+    /// <summary>
+    /// This project's routing, or null when the conversation belongs to none. v0.3.8.124.
+    ///
+    /// Returns null rather than an empty routing for a project that overrides nothing, which is the
+    /// same distinction `Queen.RunMission` draws: entering an empty scope and entering none behave
+    /// identically, and only one of them is honest about whether a project made a decision.
+    ///
+    /// Never throws. A project row that cannot be read leaves the turn routed by the colony — the
+    /// behaviour before this feature existed — because a routing lookup that fails must not take a
+    /// conversation down with it.
+    /// </summary>
+    private Projects.ProjectRoutingScope.Routing? RoutingFor(string? projectId)
+    {
+        if (string.IsNullOrWhiteSpace(projectId)) return null;
+
+        try
+        {
+            if (_memory.LoadProject(projectId!) is not { } project) return null;
+
+            var routing = new Projects.ProjectRoutingScope.Routing(
+                project.Id, project.DefaultProvider ?? "", project.DefaultModel ?? "",
+                _memory.LoadProjectRoutes(project.Id));
+
+            return routing.IsEmpty ? null : routing;
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine(
+                $"[routing] could not read project routing for '{projectId}': {error.Message} — "
+              + "this turn uses the colony's route.");
+            return null;
+        }
+    }
+
     public int Cancel(string conversationId)
     {
         var conversation = _memory.LoadConversation(conversationId);
