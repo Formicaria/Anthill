@@ -778,6 +778,12 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // a project with a working directory. Resolved here, once, from the persisted project row;
         // a project without a path (or a mission without a project) keeps the configured source.
         string? projectSourceRoot = null;
+        // v0.3.8.124 — AND THE PROJECT'S MODEL ROUTING, resolved in the same read. Routing became a
+        // per-project decision at .124, and this is the one place a mission ever loads its project
+        // row, so resolving both here costs nothing extra and keeps "which project is this" a
+        // question answered once. A mission with no project enters no scope and routes exactly as
+        // it did before the feature existed.
+        Projects.ProjectRoutingScope.Routing? missionRouting = null;
         if (mission.ProjectId is not null)
         {
             try
@@ -785,11 +791,37 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
                 var missionProject = Memory.LoadProject(mission.ProjectId);
                 if (missionProject is not null && !string.IsNullOrWhiteSpace(missionProject.Path))
                     projectSourceRoot = missionProject.Path;
+
+                if (missionProject is not null)
+                {
+                    var candidate = new Projects.ProjectRoutingScope.Routing(
+                        missionProject.Id,
+                        missionProject.DefaultProvider ?? "",
+                        missionProject.DefaultModel ?? "",
+                        Memory.LoadProjectRoutes(missionProject.Id));
+
+                    // A project that overrides nothing enters NO scope rather than an empty one.
+                    // The two behave identically, and the difference is what the event below says:
+                    // "this mission is routed by its project" must not be logged for a project that
+                    // routes nothing, or the record claims a decision nobody made.
+                    missionRouting = candidate.IsEmpty ? null : candidate;
+                }
             }
             catch { /* a project row that cannot be read falls back to the configured source */ }
         }
         var missionWorkspace = wantsWorkspace ? PrepareWorkspace(mission.Id, projectSourceRoot) : null;
         using var workspaceScope = Anthill.Core.Workspaces.MissionWorkspaceScope.Enter(missionWorkspace);
+        using var routingScope = Projects.ProjectRoutingScope.Enter(missionRouting);
+        if (missionRouting is not null)
+            Memory.LogEvent(mission.Id, SDK.Events.EventTypes.MissionProjectRouting,
+                $"Model routing for this mission comes from project '{missionRouting.ProjectId}'.",
+                metadata: new()
+                {
+                    ["project_id"] = missionRouting.ProjectId,
+                    ["priority_provider"] = missionRouting.PriorityProvider,
+                    ["priority_model"] = missionRouting.PriorityModel,
+                    ["overridden_roles"] = missionRouting.Routes.Keys.OrderBy(r => r, StringComparer.Ordinal).ToList(),
+                });
         Memory.LogEvent(mission.Id, "mission_context_resolved",
             "Mission constraints, capability grants, deadline and budgets resolved at intake.",
             metadata: context.Snapshot());

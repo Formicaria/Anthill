@@ -1003,6 +1003,21 @@ kbd{display:inline-block;min-width:16px;padding:1px 5px;border:1px solid var(--b
 .ob-mini{padding:2px 0;line-height:1.4;}
 /* -- Ant Inspector + Performance Observatory (v1.8.23, Phase 8) -- */
 .antobs-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;}
+/* v0.3.8.124 — one row per routable role in a project's Settings tab. Grid rather than flex so the
+   provider and model selects line up down the column: a list where every row's controls sit at a
+   different x is a list nobody scans. */
+.pv-route-row{display:grid;grid-template-columns:130px 170px 190px 1fr auto;gap:8px;align-items:center;
+  padding:5px 0;border-bottom:1px solid rgba(30,51,84,.35);font-size:10px;}
+.pv-route-name{font-weight:600;color:var(--text);}
+/* v0.3.8.124 — the ant tab's telemetry block, inside the colony's record panel. Reuses .ac-stats /
+   .ac-bar / .ac-sub from the retired inspector cards, so the numbers read identically to where an
+   operator last saw them. */
+.clb-ant-note{font-size:10px;color:var(--muted);padding:6px 0;line-height:1.45;}
+#clb-ant-stats .ac-stats{margin-top:8px;}
+#clb-ant-stats .clb-ant-recent{margin-top:6px;font-size:10px;}
+#clb-ant-stats .clb-ant-recent summary{cursor:pointer;color:var(--muted);}
+.pv-route-inherit{font-size:9px;}
+@media (max-width:820px){.pv-route-row{grid-template-columns:1fr 1fr;}.pv-route-inherit{grid-column:1/-1;}}
 .ant-card{background:var(--hud-glass);border:1px solid var(--border);border-left-width:3px;border-radius:8px;padding:13px 15px;}
 .ant-card .ac-hd{display:flex;align-items:center;gap:9px;margin-bottom:10px;}
 .ant-card .ac-dot{width:11px;height:11px;border-radius:50%;flex-shrink:0;box-shadow:0 0 8px currentColor;}
@@ -2277,7 +2292,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <button class="clb-btn on" data-homeact="survey" title="The whole colony">Survey</button>
               <button class="clb-btn" data-homeact="mission" title="Approach the Queen's core">Mission</button>
               <button class="clb-btn" data-homeact="memory" title="Approach Memory">Memory</button>
-              <button class="clb-btn" data-homeact="mounds" title="Approach the Micromound">Mounds</button>
+              <button class="clb-btn" data-homeact="mounds" title="The mound registry — every mound chamber, its settings, and where one is deleted">Mounds</button>
               <button class="clb-btn clb-addmound" data-homeact="addmound" id="clb-addmound" title="Add a Micromound chamber to the colony — a label for your own fleet; it changes nothing on the device">+ Mound</button>
               <button class="clb-btn" data-homeact="follow" title="Ride the active mission circuit">Follow</button>
               <button class="clb-btn" data-homeact="resetview" title="Reset orbit and zoom">Reset view</button>
@@ -2324,7 +2339,6 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <button class="clb-btn clb-mini" data-homeact="secstylereset" title="Back to this chamber's own colour, glow and brightness">reset</button>
             <!-- Only ever shown for a chamber the OPERATOR added (+ Mound). A registry chamber is
                  not theirs to delete, and the renderer refuses it even if this button were shown. -->
-            <button class="clb-btn clb-mini" data-homeact="moundsettings" id="clb-mound-settings" style="display:none" title="Open this mound's settings in Tools &#8250; Micromound">settings &#8594;</button>
             <button class="clb-btn clb-mini" data-homeact="moundregistry" id="clb-mound-registry" style="display:none" title="All your mound chambers, and where one is deleted">registry &#8594;</button>
             <button class="clb-btn" data-homeact="survey" title="Back to the whole colony (Esc)">← Survey</button>
           </div>
@@ -2338,7 +2352,12 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <button class="clb-btn clb-mini" data-homeact="antstylereset" title="Back to the registry name and the chamber colour">reset</button>
             </div>
             <div class="clb-record-meta" id="clb-record-meta"></div>
-            <div class="clb-record-row"><span class="clb-record-tag" id="clb-record-verif">recorded</span><button class="clb-btn" data-homeact="openant" id="clb-record-open">Open ant →</button></div>
+            <div class="clb-record-row"><span class="clb-record-tag" id="clb-record-verif">recorded</span></div>
+            <!-- v0.3.8.124 — THE ANT INSPECTOR, HERE. This panel used to end with an "Open ant →"
+                 button that navigated to a grid of twenty-five cards so you could find the one you
+                 had just clicked on. The telemetry it went to fetch is now in the panel: lifetime
+                 task counts, success rate, average duration, and recent activity on demand. -->
+            <div id="clb-ant-stats" style="display:none"></div>
           </div>
         <div id="colony-canvas-area">
           <canvas id="c"></canvas>
@@ -2808,6 +2827,13 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <button class="btn btn-primary" id="pv-grant-open">Open gate</button>
               <span class="save-msg" id="pv-grant-msg"></span>
             </div>
+
+            <!-- v0.3.8.124 — MODEL ROUTING, PER PROJECT. The Ant Inspector configured this for the
+                 whole colony, which could not express the thing operators actually wanted: this
+                 project on a local model, that one on Claude. Rendered by routing-controls.js,
+                 which reads /projects/{id}/routes — the project's own priority, its per-role
+                 overrides, and what each role inherits when it has none. -->
+            <div id="pv-routing"></div>
           </div></div>
         </div>
       </div><!-- /page-projectview -->
@@ -3695,23 +3721,12 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         </div>
       </div>
 
-      <div class="page page-scroll" id="page-antobs">
-        <div class="page-hdr">
-          <div><h1>Ant Inspector</h1><div class="sub">One box per role: model route, capability gates, lifetime performance, name &amp; colour. Colony-wide routing sits above the roles.</div></div>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <span class="save-msg text-green" id="antcfg-msg"></span>
-            <button class="btn btn-ghost" id="antcfg-reset">↺ Reset Defaults</button>
-            <button class="btn btn-primary" id="antcfg-save">Save Changes</button>
-            <button class="btn btn-ghost" id="antobs-refresh">↺ Refresh</button>
-          </div>
-        </div>
-        <!-- v3.8.1: colony-wide priority, then the roles that are NOT ants.
-             The planner is the reason this section exists: it makes model calls, it is not in the
-             ant roster, and so it had no control anywhere in the console — a colony whose planner
-             model went missing fell back to a static plan with no way to repoint it. -->
-        <div id="antcfg-global"></div>
-        <div id="antobs-grid" class="antobs-grid"><div class="hud-state"><div class="hud-spinner"></div>Loading ant telemetry…</div></div>
-      </div><!-- /page-antobs -->
+      <!-- v0.3.8.124 — PAGE-ANTOBS (the Ant Inspector) WAS HERE, and both halves of it moved.
+           Its telemetry is the ant tab in Colony Live — click the ant you are asking about rather
+           than finding its card among twenty-five. Its routing is per-project now, in the project
+           workspace's Settings tab, because "which model does this work" turned out to be a
+           question about a project and not about the colony. `/colony/inspector` aliases to
+           Projects; nothing links here any more. -->
 
       <!-- --------------------------------------------------------------------
            PAGE: AUTONOMY
@@ -4519,7 +4534,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 <script src="/ui/app.js" defer></script>
 <!-- v0.3.8.55: inspector routing + themes, split out of app.js (the size guard). Classic deferred
      scripts like the rest: everything in them is reached at call time, never at parse time. -->
-<script src="/ui/inspector-routing.js" defer></script>
+<script src="/ui/routing-controls.js" defer></script>
 <script src="/ui/themes.js" defer></script>
 <script src="/ui/console-extras.js" defer></script>
 <!-- Colony Live. Load order is load-bearing: the reducer (topology) before the renderer (live)

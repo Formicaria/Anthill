@@ -421,6 +421,25 @@ public sealed partial class SqliteMemory : IDisposable
             id TEXT PRIMARY KEY, project_id TEXT NOT NULL, path TEXT NOT NULL,
             granted_by TEXT NOT NULL DEFAULT '', granted_at TEXT NOT NULL)",
         @"CREATE INDEX IF NOT EXISTS idx_project_grants ON project_grants(project_id)",
+        /* v0.3.8.124 — PER-PROJECT MODEL ROUTES. The project's own priority model lives in two
+           columns on `projects` (`default_provider` / `default_model`, added at .48 and finally
+           read at .124); this is the per-ROLE half, which needs a row per override.
+
+           A table rather than a JSON column on `projects`, matching `project_grants` and
+           `project_schedules`: the console edits one role at a time, and a JSON blob would mean
+           read-modify-write on every single change, where two operators — or a page and an API
+           caller — racing would silently drop one of the two edits.
+
+           ABSENCE OF A ROW IS INHERITANCE, NOT ABSENCE OF A ROUTE. A role with no row here falls
+           through to the colony's own route, which is what makes a project a set of OVERRIDES an
+           operator fills in as they care to, rather than a fourteen-row form they must complete
+           before the project can run anything. */
+        @"CREATE TABLE IF NOT EXISTS project_model_routes (
+            project_id TEXT NOT NULL, role TEXT NOT NULL,
+            provider TEXT NOT NULL, model TEXT NOT NULL,
+            updated_by TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (project_id, role))",
+        @"CREATE INDEX IF NOT EXISTS idx_project_model_routes ON project_model_routes(project_id)",
         // Decisions are their own table: an operator asking "why was this allowed" is asking about
         // ACTIONS, not turns, and one turn can take several. Refusals are stored too — a refused
         // attempt is the one nobody saw happen.
