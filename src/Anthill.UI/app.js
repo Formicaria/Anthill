@@ -339,6 +339,21 @@ function enterApp(){
   applyRoleVisibility();
   if(!pollingStarted){ pollingStarted=true; startPolling(); }
   startEventStream();   // v0.3.8.52: live push now DRIVES the panels; the timers are the fallback
+  // v0.3.8.122 — RE-AUTHENTICATION IS A SIGN-IN TOO, and it was the half `.120` did not cover.
+  //
+  // `.120` fixed Colony Live enabling at DOMContentLoaded — on a fresh session that is the sign-in
+  // screen, both bounded reads are refused, and nothing retried them. The retry it added rides on
+  // `PAGE_ENTER['colony']`, which a first sign-in reaches because `startPolling()` → `restoreLayout()`
+  // navigates to the colony. But `pollingStarted` is set once per PAGE LOAD and never reset, so the
+  // second sign-in — token expired mid-session, `onUnauthorized()` bounced to login, operator signs
+  // back in — takes the guarded branch above, never re-enters the page, and leaves a colony that
+  // never retries. The remaining trigger is the first colony event, which on an idle colony may
+  // never come.
+  //
+  // Called directly rather than by re-running `restoreLayout()`: re-entering the page would also
+  // renavigate an operator who was somewhere else when their session lapsed, and losing their place
+  // is a worse bug than the one being fixed. `hydrate()` is idempotent — a no-op once hydrated.
+  try{ if(window.ColonyHost && typeof ColonyHost.hydrate==='function') ColonyHost.hydrate(); }catch{}
   // Restore nav collapse state
   if(localStorage.getItem('nav-collapsed')==='1') document.body.classList.add('nav-collapsed');
   applyNarrowNav();
@@ -539,6 +554,12 @@ const IA = [
     // role carries route, gates, telemetry and profile; the colony-wide priority and the
     // orchestration roles (planner, conversation) sit above the grid on the same page.
     { label:'Ant Inspector', route:'/colony/inspector', page:'antobs', vis:'admin' },
+    // v0.3.8.122 — THE MOUND REGISTRY. `+ Mound` can add as many chambers as an operator wants, so
+    // "the mound settings page" stopped being a coherent destination: there is no single mound to
+    // settle. This is the list — every chamber the operator has made, what it is, and the one place
+    // a chamber is deleted. Clicking INTO a chamber in the colony opens that particular mound's
+    // settings; deleting is a fleet-level act and belongs to the fleet-level view.
+    { label:'Mounds', route:'/colony/mounds', page:'mounds', vis:'all' },
     // v0.3.8.55 (field report): Automation moved into Projects — the Director's backlog is
     // project work, and it now lives beside the projects it feeds (right-hand column there).
   ]},
@@ -8762,7 +8783,10 @@ function registerGridWidgets(){
     // ApiJobRegistry names the type ApiMissionJob, POST /missions answers "Mission queued.", and
     // every row carries a mission_id. The queue is named after what is in it.
     {id:'colony-jobs',        title:'Mission Runs',       icon:'\u2637', size:'small',  body:'jobs-list'},
-    {id:'agent-inspector',    title:'Agent Inspector',    icon:'\u2b21', size:'medium', body:'agent-detail'},
+    // v0.3.8.122 — the colony has ants, not agents, everywhere else an operator reads. The widget
+    // ID stays `agent-inspector`: it is persisted dashboard-layout state, and renaming it would
+    // silently drop every saved placement of this card.
+    {id:'agent-inspector',    title:'Ant Inspector',      icon:'\u2b21', size:'medium', body:'agent-detail'},
     {id:'live-telemetry',     title:'Live Telemetry',     icon:'\u2261', size:'medium', body:'ov-feed-list'},
     {id:'recent-events',      title:'Recent Events',      icon:'\u25cf', size:'medium', body:'ov2-events-body'},
     {id:'recent-missions',    title:'Recent Missions',    icon:'\u25f4', size:'medium', body:'ov-sum-missions'},

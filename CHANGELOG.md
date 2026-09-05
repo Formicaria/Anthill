@@ -1,3 +1,227 @@
+## v0.3.8.122 - the colony has no floor, and a decision nobody recorded is a decision nobody made
+
+**THE GROUND PLANE IS GONE.** Colony Live drew a lit floor at y=340: a wide faint disc, three unseen
+lights glinting off it, and one coloured pool per chamber cast down onto it. Two environments used
+it, and one — `plane` — existed only to show it. Every one of those marks is a horizontal surface,
+so each silently declared a DOWN. The colony had a floor; the floor bounced light back up onto the
+chambers; and the camera could not be taken beneath it without drawing the colony through its own
+ground. `PLANE_Y`, `planePool`, `envGround`, `camPos` and `LIGHTS` are all removed, `void` is black
+with the chambers as the only light in it, and a browser that remembers `plane` heals to `void`
+rather than falling through to a default it never chose.
+
+The operator's report was that they hated the light bouncing off it. **The fix is not a dimmer
+floor** — a dimmer floor is still a floor, still fixes a horizon, and still stops the camera.
+
+**AND THE CAMERA ORBITS THE WHOLE SPHERE.** Pitch was clamped to `[0.05, 1.15]` radians, roughly 3°
+to 66°: a band chosen to keep the camera above the plane and tilted down at it. With nothing
+underneath, the clamp was the only thing left asserting an up. It is gone, and the view goes over the
+top, edge-on, and fully inverted. What makes that safe is not the drag line but the painter's sort —
+chambers are projected and drawn back-to-front by camera-space depth every frame — so the guard
+asserts the sort in the same test as the unclamp, because removing it would break every angle past
+the horizon and no test about the camera would notice.
+
+Two consequences of a free angle, both fixed here. The strata backdrop's parallax was `cam.pitch * 40`
+and `cam.yaw * 24` — linear in an angle that never wraps. **Yaw was already free, so a few full turns
+already slid that backdrop off the canvas and left a bare gradient behind**; it is `Math.sin` of both
+now, bounded and periodic. And reset drops whole turns out of both angles before it eases home, by
+shifting `cam` and `goal` together — the rendered orientation is identical, so it is not a jump, and
+an operator who has spun the colony three times no longer watches it unwind three revolutions.
+
+Verified by rendering rather than by reading: a headless Chromium harness mounted the renderer
+against a synthetic scene at five camera angles. The bottom fifth of the default frame drops from a
+mean luminance of 4.695 to 0.178, and from 5.434 to 0.004 seen from below; the fully inverted view
+draws every chamber, label and conduit with no page errors. `.116`'s lesson holds — the harness found
+in minutes what three passes of reading had not settled.
+
+---
+
+**THE `UNASSIGNED` CHAMBER IS GONE, AND IT TURNED OUT TO HAVE BEEN EMPTY.** It existed to catch roles
+whose registry `Colony` this presentation did not map, on the sound reasoning that a visible neutral
+bucket gets noticed and a plausible placement does not. Measuring it ended the argument: all sixteen
+colonies the registry declares already mapped to real sectors, so the chamber held no residents at
+all — it occupied a seat in the colony and invited an operator to wonder what was wrong with it.
+
+The protection it gave is now stronger and earlier.
+`EveryRegistryColony_MapsToARealChamber_SoTheFallbackIsUnreachable` ranges over the LIVE registry and
+fails the moment a new colony value appears, which is a failing test at the point of the change
+rather than an odd sphere somebody has to notice and interpret. That guard is what makes it safe for
+the fallback to be a real sector: it proves nothing reaches it. The snapshot now states
+`fallback_sector` where it used to state `unassigned_sector`, so the browser still never picks a
+default for itself — the `|| 'queen'` this whole read model exists to prevent stays forbidden, and
+the guard that forbids it is unchanged.
+
+**LABELS ARE EARNED BY ZOOM.** Every chamber name was drawn at every distance: a survey was a wall of
+text nobody read, while the detail an operator actually wants was never shown at all. "All" now means
+**nothing far out**, the chamber's name as it fills the frame, then every ant in it — **including the
+workers hanging off each role**, which the old mode omitted — and then, closer still, labels on the
+record points the links actually join. Thresholds are multiples of each chamber's OWN radius, so a
+small chamber and a large one hand over their names at the same apparent size; a fixed distance would
+have made that look like a bug rather than a rule. The previous behaviour is kept as **All (always)**,
+and a browser remembering the old name heals to it at both ends rather than falling back to a default
+nobody chose.
+
+**THE LINKAGE HAS AN OPACITY SLIDER**, 0 for the dots alone to 1 for solid lines. It was hard-coded
+at `.045` focused and `.022` otherwise — "almost transparent" was the only answer available. The
+default is `.125`, which reproduces those two numbers exactly, so an operator who never touches it
+sees no change.
+
+**`+ MOUND` ADDS A CHAMBER, AND WHAT AN OPERATOR CALLS IT REACHES NO DEVICE.** The button used to
+navigate to the Micromound console to mint an enrolment token — the enrolment story, not this
+button's job. It now puts a mound chamber in the colony immediately, drawn with the roster every
+mound runs, positioned on its own ring so a fleet of six never lands on itself.
+
+**The separation is the whole feature.** The chamber's name, its colour and its ants' names are
+PRESENTATION: they live in the operator's saved layout beside the chamber seats, and nothing is ever
+sent anywhere. A mound is enrolled by one-time token and keeps answering under its own identity
+whatever the colony calls it — so an operator can label a fleet for their own use case, "ROOF
+SENSORS" and "GARAGE", without altering a thing about the devices or how Anthill commands them.
+
+**The roster has exactly one source and this did not add a second.** The seven default ants come from
+`MicromoundRoster` — itself a checked projection of the device runtime's `DefaultAnts`, compared by
+compiled reference so a rename upstream stops compiling rather than silently matching nothing —
+served at a new `GET /micromound/roster/defaults`. Served from the MICROMOUND file rather than from
+`/colony/live/snapshot` because that file already lives inside `#if MICROMOUND` and the colony
+endpoint does not; putting it there would have pushed conditional compilation into a file with none
+and made its payload differ between builds. `colony-host.js` already fetched `/micromound/mounds`, so
+this rides a path that exists. A guard fails if any of the seven names appears in console **code** —
+comments excepted, because `colony-topology.js` legitimately explains that the wire value
+`edge_queen` displays as "Mound Major", and a guard that cannot tell a note from a copy teaches the
+next author to delete useful sentences.
+
+**AND THERE IS A MOUND REGISTRY, because "the micromound settings page" stopped naming a
+destination.** Once `+ Mound` can make six chambers there is no single mound for a settings page to
+be about. So `Colony › Mounds` is the fleet: every chamber the operator has made, what it holds, and
+the one place a chamber is deleted — a fleet-level act you should not have to be standing inside the
+thing to perform. A chamber's own panel offers the door to the registry rather than the axe.
+
+Clicking INTO a chamber opens THAT mound's settings, carrying which one through
+`window.micromoundPendingId` — the shape this console already uses for project hand-offs, rather than
+a second parameterised route. Tools › Micromound then shows a panel for that chamber alone, so an
+operator with six mounds configures them one at a time instead of meeting one page that cannot say
+which mound it is about.
+
+**Both surfaces delete, and either takes the chamber out of the colony at once.** The registry and
+the chamber's own settings call the same `removeMound`; an operator who removes a mound and then
+finds it still drawn has been lied to by one of two surfaces keeping separate notions of what exists.
+`removeMound` refuses anything the operator did not create, in the renderer rather than by hiding a
+button, because hiding is not enforcing.
+
+**And deleting removes a LABEL.** The panel says so in words rather than trusting the reader, because
+a Delete button beside the word "micromound" invites the other reading: no device is retired, no
+token revoked, nothing stopped. An enrolled mound keeps answering under the identity its one-time
+token gave it — which is exactly what made a colony-side labelling layer safe to build.
+
+**HOMELAB IS NOW INFRASTRUCTURE, AND IT PRESENTS AS A MOUND.** The label changes; the sector id and
+its eight roles do not, so saved layouts survive. Both mound-class chambers are doors: the first
+click approaches one like any other chamber — recolour it, rename it, read its residents, all through
+the same generic panel — and the second, deliberate click opens its settings. Navigating on the first
+click would have made a mound the one chamber an operator cannot inspect without leaving the colony.
+
+And the **Agent Inspector is the Ant Inspector**. The widget id stays `agent-inspector`: it is
+persisted dashboard-layout state, and renaming it would silently drop every saved placement of that
+card.
+
+---
+
+**RE-AUTHENTICATION IS A SIGN-IN TOO.** `.120` fixed Colony Live enabling at `DOMContentLoaded`,
+which on a fresh session is the sign-in screen: both bounded reads refused, nothing retried. That fix
+rides on `PAGE_ENTER['colony']`, which a first sign-in reaches because `startPolling()` runs
+`restoreLayout()`. But `pollingStarted` is set once per PAGE LOAD and never reset — so the SECOND
+sign-in, after a token expired mid-session, took the guarded branch, never re-entered the page, and
+left a colony whose refused reads were retried only by the first colony event, which on an idle
+colony may never arrive. `enterApp` is the one function every sign-in path reaches, and it now nudges
+the idempotent `hydrate()`. Not by re-running `restoreLayout()`: that would also renavigate an
+operator who was somewhere else when their session lapsed, and losing their place is worse than the
+bug being fixed.
+
+---
+
+**AN ATTEMPT TO RECONCILE THE STATUS AND THE GRADE WAS MADE, AND WITHDRAWN, AND THE WITHDRAWAL IS
+WORTH MORE THAN THE FIX WOULD HAVE BEEN.** A finished mission carries two persisted accounts of
+itself: `mission.Status`, computed from task terminal states alone, and `VerificationStatus`,
+computed a hundred lines later from the evidence. They still do not meet, so `complete` can still sit
+beside `verification_status: failed` in one finalization. `docs/ORCHESTRATION-FINDINGS.md` calls that
+a check that reached nobody, and this release tried to join them.
+
+**The join was wrong, and the test suite said so in one run.** `Verification.Failed` does not mean
+"a check said no". `MissionVerification.IsSatisfied` requires the VERIFIER'S OWN VERDICT to be a
+pass, and `VerifierAnt` downgrades a model-authored pass to `Unknown` whenever the evidence store
+holds nothing deterministic to back it. So a mission with a verifier, a passing narrative and no
+tester grades `Failed` — meaning NOT PASSED, not "actively failed" — and demoting on it reclassified
+a legitimately complete scripted mission that `ScriptedProviderTests` has pinned for releases.
+
+The three-way the evaluator exposes is `not_run` / `passed` / `failed`, and **`failed` silently spans
+"the check said no" and "nothing could satisfy the check"**. That is a finding the map did not have:
+the fix for closure is not "make the status line read `VerificationStatus`", because that value
+already means something broader than the finding assumed. Separating the two needs the per-task
+execution record, which is where closure enforcement was already scheduled. The reasoning is written
+into `Queen.cs` at the line where the join would have gone, so the next attempt starts from what the
+code means rather than from what the finding assumed it meant.
+
+**THE PLANNER'S SILENT SUBSTITUTIONS BECOME FACTS.** `Planner.CreateTasks` abandons dynamic planning
+for a static plan on five conditions, and every one of them was recorded by `Console.Error.WriteLine`
+and nothing else — no event, no row, no artifact. `docs/ORCHESTRATION-FINDINGS.md` called this the
+cheapest item on the list with the worst failure mode, and the file's own comment already said why:
+*an operator sees a colony that ignored their goal, with a green run behind it.* Five stable reason
+codes now reach the mission's event log as `mission_plan_substituted`, so "the colony ignored my
+goal" and "the colony did what I asked and the answer is poor" stop being the same green run.
+
+The most consequential is `long_input_spec_ingestion`. That gate fires on `goal.Length` and nothing
+else, so **a precisely specified workflow — long by construction — is the input most likely to be
+chunked into section analyses instead of followed.** `.122` does not move the gate; moving it needs
+the execution records. It stops a mission it fired on from looking identical to one planned as asked.
+
+A callback, not a store: the planner is a pure function of a goal and a router, and giving it a
+database to satisfy a reporting need would put one in every planning test. `PlanningService` holds
+the mission id and does the recording. The parameter is optional and trailing, and a test asserts
+that planning with no callback produces the identical plan — `.118` shipped a `CS0535` to CI by
+widening a signature an interface member had to match, and that is the check that would have caught it.
+
+---
+
+**A KNOWLEDGE REVIEW PROPOSAL SURVIVES BEING MADE.** `knowledge_review` told a worker its proposal
+was "queued for an operator to approve or decline". Three things were wrong with that sentence. The
+proposal went to `Events.Publish`, which is BUS-ONLY — it reached whichever browsers had the stream
+open at that instant and then ceased to exist. It was filed under `EventTypes.ModuleRegistered`, a
+one-time boot event, so even the live copy was shelved where nobody looking for proposals would look.
+And there is no queue: no approval surface consumes these, so a model told its change was pending
+would plan the next step as though it were.
+
+Now `LogEvent` — which writes the row and then publishes, so the live stream is unchanged and the
+proposal is replayable, auditable and findable — under a `knowledge_review_proposed` type of its own.
+The tool says what actually happened. And the module's default proposal sink was `_ => { }`: composed
+without one it accepted every proposal, dropped it, and reported success. **A worker cannot tell a
+silent discard from a filing**, so the default now throws into the honest failure branch the tool
+already had and had never had a reason to reach.
+
+---
+
+**AND CI HAD BEEN RED FOR THREE RELEASES WITHOUT ANYONE FINDING OUT.** `Formicaria/micromound` had
+been made private. Anthill compiles `Anthill.Modules.Micromound` against that repository's wire
+contract by `ProjectReference`, so every .NET job clones it before it can build anything — and the
+default `GITHUB_TOKEN` is scoped to this repository alone. Every one of them died at "Check out the
+MICROMOUND wire contract" with git exit 128. The repository is public again, which is the entire fix;
+no workflow change ships here.
+
+**The error string is why it cost three releases.** "Repository not found" is byte-identical to what
+GitHub returns for a repository that does not exist, so it sends every reader at the pinned ref — and
+the pin was never wrong: `v0.9.10` has been on the remote throughout. `ci.yml` now names the first
+question out loud (`gh api repos/Formicaria/micromound --jq .private`), spells out the token and
+deploy-key remedies if it ever goes private again, and warns that a `token:` whose secret does not
+exist fails identically. **The dependency is real and invisible from inside this repository: taking
+micromound private stops Anthill's CI, and nothing in Anthill says so.**
+
+**The reason nobody found out is worth more than the cause.** `.119`, `.120` and `.121` all reached
+`main` as plain commits — none carries the `(#NN)` a squash merge leaves — so none went through the
+gate. `.118` (`#86`) is the last commit CI actually verified. A gate that only runs on a path
+releases have stopped taking is not a gate, and it stayed silent for three releases while looking
+exactly like a gate with nothing to complain about.
+
+**WHAT IS NOT DONE.** The per-task authoritative execution record — the one thing items 3–8 of the
+orchestration brief all consume — does not exist yet, and nothing here pretends otherwise. `.122`
+closes the two findings that could be closed without it and names the rest. `docs/PLAN.md` §2e
+carries the work; `docs/ORCHESTRATION-FINDINGS.md` carries the evidence.
+
 ## v0.3.8.121 - what the organization knows
 
 **ORGANIZATIONAL KNOWLEDGE, AND THE BOUNDARY THAT KEEPS IT HONEST.** The colony can now ask what

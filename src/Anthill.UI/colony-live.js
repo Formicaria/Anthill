@@ -37,13 +37,12 @@
     { id: 'valid', label: 'VALIDATION', color: '#c25f6e', core: '#d98a96', pos: [310, -20, 50], R: 58, n: 230, rot: .000045 },
     { id: 'memory', label: 'MEMORY', color: '#d9b054', core: '#ecd39a', pos: [210, 180, -40], R: 60, n: 250, rot: -.00003 },
     { id: 'output', label: 'OUTPUT', color: '#8f78c9', core: '#b3a0e0', pos: [-180, 200, -70], R: 56, n: 220, rot: .00004 },
-    { id: 'homelab', label: 'HOMELAB', color: '#5aa07a', core: '#9ad4b0', pos: [-330, 90, -40], R: 48, n: 0, rot: .00004 },
-    { id: 'unassigned', label: 'UNASSIGNED', color: '#8a98ad', core: '#c3cad6', pos: [340, 200, 60], R: 40, n: 0, rot: .00005 },
-    { id: 'mound', label: 'MICROMOUND', color: '#a55a7e', core: '#c9cfdc', pos: [-95, 265, 70], R: 34, n: 110, rot: .00006 }
+    { id: 'homelab', label: 'INFRASTRUCTURE', mound: true, color: '#5aa07a', core: '#9ad4b0', pos: [-330, 90, -40], R: 48, n: 0, rot: .00004 },
+    { id: 'mound', label: 'MICROMOUND', mound: true, color: '#a55a7e', core: '#c9cfdc', pos: [-95, 265, 70], R: 34, n: 110, rot: .00006 }
   ];
   // Ids are the server's (ColonySectors); labels are its DEFAULTS, overridable per operator in the
   // persisted layout. Positions are constants — a stable spatial grammar — until the operator drags.
-  var SECTOR_ORDER = ['queen', 'intel', 'forge', 'valid', 'memory', 'output', 'homelab', 'unassigned', 'mound'];
+  var SECTOR_ORDER = ['queen', 'intel', 'forge', 'valid', 'memory', 'output', 'homelab', 'mound'];
   // One strand per root. The Queen's spokes are always drawn (faint); the inter-sector roots exist
   // for the mission circuit and evidence return to travel along and are drawn ONLY when they carry
   // flow — an idle colony shows no lines that mean nothing.
@@ -56,9 +55,12 @@
     var root = null, cv = null, ctx = null, tip = null, crumb = null;
     var W = 0, H = 0, scx = 0, scy = 0, raf = 0, ro = null, destroyed = false;
     var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    // env: space (galaxy, default) | light | strata | plane | nebula | void.  labels: none | min | normal.
+    // env: space (galaxy, default) | light | strata | nebula | void.
+    // labels: none | min | fixed | zoom.  links.opacity: 0..1.
     // conduits: density less | normal | more; bright 0.4–2; color null (each conduit's own) or '#rrggbb'.
-    var opts = { motion: 'normal', labels: 'normal', trails: true, env: 'space', conduits: { density: 'normal', bright: 1, color: null } };
+    var opts = { motion: 'normal', labels: 'zoom', trails: true, env: 'space',
+      conduits: { density: 'normal', bright: 1, color: null },
+      links: { opacity: .125 } };
     function isLight() { return opts.env === 'light'; }
     // text ink and the sector palette follow the environment: dark ink on the light page, and the
     // chamber colours darkened so grains read on paper instead of washing out
@@ -78,7 +80,41 @@
     var SEC = SECTOR_DEFS.map(function (d) { return Object.assign({ morph: 0, frozen: null, defPos: d.pos.slice(), defLabel: d.label, present: false, pts: [], links: [], records: [], residents: [], clusters: [], counts: null, style: { color: null, glow: 1, bright: 1 } }, d, { pos: d.pos.slice() }); });
     // operator overrides for ants: { roleIdLower: { name, color } } — presentation, persisted with the layout
     var antStyles = {};
+    /* OPERATOR-ADDED MOUND CHAMBERS — v0.3.8.122.
+       `+ Mound` puts a chamber in the colony straight away, drawn with the roster every mound runs
+       (fetched from /micromound/roster/defaults, never invented here — `moundDefaults` stays empty
+       until the server answers, and a chamber added before then simply has no residents yet).
+
+       EVERY NAME AND COLOUR AN OPERATOR SETS ON ONE OF THESE IS PRESENTATION AND NOTHING ELSE. It
+       lives in this layout, beside the chamber positions, and never reaches a device: a mound is
+       enrolled by one-time token and keeps taking commands under its own identity whatever the
+       colony calls it. That is the whole point — an operator labels their fleet for their own use
+       case, and the fleet does not care. */
+    var moundDefaults = [];
+    var addedMounds = [];   // [{ id, label, pos }] — persisted; the sector defs are derived
     var bySec = {}; SEC.forEach(function (s) { bySec[s.id] = s; });
+    /** Materialise one operator-added mound as a sector, in the same shape SECTOR_DEFS produce. */
+    function mountAddedMound(rec) {
+      if (bySec[rec.id]) return bySec[rec.id];
+      var d = { id: rec.id, label: rec.label, mound: true, added: true, color: '#a55a7e', core: '#c9cfdc',
+        pos: rec.pos.slice(), R: 34, n: 110, rot: .00006 };
+      var s = Object.assign({ morph: 0, frozen: null, defPos: d.pos.slice(), defLabel: d.label,
+        present: true, pts: [], links: [], records: [], residents: [], clusters: [], counts: null,
+        style: { color: null, glow: 1, bright: 1 } }, d, { pos: d.pos.slice() });
+      SEC.push(s); bySec[s.id] = s;
+      return s;
+    }
+    /** Where the next added mound sits: a ring below the colony, so they never land on each other. */
+    function nextMoundSeat(n) {
+      var th = n * 1.05 + .4;
+      return [Math.cos(th) * 260, 300 + (n % 2 ? 40 : 0), Math.sin(th) * 200];
+    }
+    /** The residents an added mound shows: the default roster, as presentation-only ants. */
+    function moundResidents(sectorId) {
+      return moundDefaults.map(function (a) {
+        return { roleId: sectorId + '/' + a.name, name: a.name, status: 'idle', workers: [], trail: null, note: a.role };
+      });
+    }
     /** A chamber is drawn only when the scene names it (the mound only when the fleet has one). */
     function shown() { return SEC.filter(function (s) { return s.present; }); }
 
@@ -206,6 +242,10 @@
       // a mission's thread through this chamber: records sharing a mission_id, in recorded order
       var byMission = {}; pts.forEach(function (p, i) { if (p.rec && p.rec.mission) (byMission[p.rec.mission] = byMission[p.rec.mission] || []).push(i); });
       Object.keys(byMission).forEach(function (mkey) { var list = byMission[mkey].sort(function (a, b) { return pts[a].rec.time < pts[b].rec.time ? -1 : 1; }); if (list.length < 2) return; for (var i = 1; i < list.length; i++) links.push([list[i - 1], list[i]]); });
+      // Which points a link actually joins, so tier 3 can label the endpoints and nothing else.
+      // Computed here, once per rebuild, rather than scanned per frame inside the draw loop.
+      pts.forEach(function (p) { p.linked = false; });
+      links.forEach(function (lk) { if (pts[lk[0]]) pts[lk[0]].linked = true; if (pts[lk[1]]) pts[lk[1]].linked = true; });
       s.pts = pts; s.links = links;
       s.records = sec.records || []; s.residents = sec.residents || []; s.clusters = sec.clusters || [];
       s.counts = { records: sec.recordCount != null ? sec.recordCount : s.records.length, running: (sec.runningTasks || []).length, residents: s.residents.length, verified: s.records.filter(function (r) { return r.verification === 'verified'; }).length };
@@ -237,18 +277,28 @@
     // ENVIRONMENTS (design doc §17, operator review): nothing is painted flat on the glass any more.
     // Every light in the sky is a point in WORLD space that the camera projects, so a drag moves
     // it like everything else, and the plane's light comes from sources that are never drawn.
-    //   strata — (default; mockup 2a = 3a + 3h) the formicarium's cross-section: soil-strata bands
-    //            and contour lines behind the colony, and the dust motes in TRUE 3D so they parallax
-    //            with every orbit, zoom and pan. No galaxy, no band, no blobs.
-    //   plane  — a ground beneath the colony lit by unseen sources: soft pools that glint as you
-    //            orbit (real reflection against the camera position) and each sector's own tint
-    //            cast on the ground under it, brighter when it is on the active circuit.
+    //   strata — the formicarium's cross-section: soil-strata bands and contour lines behind the
+    //            colony, and the dust motes in TRUE 3D so they parallax with every orbit and pan.
     //   space  — a star sphere (varied, a few tinted) and a galactic haze along an INCLINED GREAT
     //            CIRCLE in world space — a 3D band that swings with the camera, not a stripe.
     //   nebula — layered gas at several depths, each patch tinted by the nearest sector, so the
     //            sectors appear to light the gas around them; heavy parallax.
-    //   void   — black; the sectors are the only light, with their glow on a faint ground disc.
-    var PLANE_Y = 340;
+    //   void   — black. The sectors are the only light there is.
+    //
+    // THERE IS NO GROUND PLANE, AND THAT IS THE POINT (v0.3.8.122). `plane` drew a lit floor at
+    // y=340 — a wide faint disc, three unseen lights glinting off it, and one coloured pool per
+    // chamber — and `void` drew the disc too. Every one of those is a horizontal surface, so each
+    // one silently declared a down: the colony had a floor, the floor bounced light back up onto
+    // the chambers, and the camera could not be taken under it without drawing the colony through
+    // its own shadow. The operator's word for it was that the light bouncing off it was the
+    // problem, and the fix is not to dim the floor — a dimmer floor is still a floor, and still
+    // fixes the horizon. The whole plane is gone: `PLANE_Y`, `planePool`, `LIGHTS`, `envGround`,
+    // `camPos`, and the `plane` environment that existed only to show them.
+    //
+    // A colony suspended in a void has no privileged direction, which is what lets the camera
+    // orbit through the full sphere (see the pitch drag). Everything that remains — stars, band,
+    // clouds, strata, nebula gas — is a WORLD point the camera projects, so it reads correctly
+    // from underneath. Nothing is painted flat on the glass.
     // THE GALAXY (default sky). Everything below is a WORLD point the camera projects — stars,
     // band grains, dust lanes, cloud sub-blobs, spiral-arm points — so orbit, zoom and pan move the
     // sky as a sky. Built once with the seeded generator; drawn with fillRect where it can be.
@@ -303,10 +353,6 @@
     })();
     var STRATA = [];  // contour lines for 'strata': y position (fraction), wave phases, warmth
     for (var st2 = 0; st2 < 9; st2++) STRATA.push({ y: .08 + st2 * .105 + (rnd() - .5) * .03, ph: rnd() * TAU, ph2: rnd() * TAU, amp: 6 + rnd() * 10, warm: rnd() });
-    var LIGHTS = [ // unseen sources above the plane, for 'plane': never drawn, only their pools
-      { p: [-320, -560, 140], c: '118,150,225', r: 300, ph: 0 },
-      { p: [340, -500, -110], c: '226,110,170', r: 260, ph: 2.1 },
-      { p: [30, -640, 380], c: '96,196,206', r: 340, ph: 4.2 }];
     var FOG = [];   // nebula layers: patches at several depths, tinted later by the nearest sector
     for (var fz = 0; fz < 4; fz++) for (var fp = 0; fp < 9; fp++) FOG.push({ p: [(rnd() - .5) * 1500, (rnd() - .5) * 900, -520 - fz * 260 + (rnd() - .5) * 120], r: 160 + rnd() * 220, a: .035 + rnd() * .035, ph: rnd() * TAU });
 
@@ -336,6 +382,47 @@
       return { x: scx + x1 * s, y: scy + y1 * s, s: s, zc: zc };
     }
     function fog(zc) { return Math.max(.06, Math.min(1, 1.5 - zc / (cam.dist * 1.55))); }
+    /**
+     * HOW MUCH TEXT THIS CHAMBER HAS EARNED, 0..3. v0.3.8.122.
+     *
+     *   0  nothing        1  the chamber's name
+     *   2  + every ant in it, WORKERS INCLUDED       3  + the linked record points
+     *
+     * `fixed` is the old `normal`: chamber names always, ants when you focus one. It is kept as an
+     * option because it is what an operator used to reading the colony at a glance already knows.
+     *
+     * `zoom` is the default and answers the actual complaint — a survey full of text nobody is
+     * reading. It shows NOTHING from a distance and earns detail as you approach: the name as the
+     * chamber fills the frame, then its ants, then the labels on the points the links join. The
+     * thresholds are multiples of the chamber's own radius, not absolute distances, so a small
+     * chamber and a large one hand over their names at the same apparent size.
+     */
+    function labelTier(s, isFocused) {
+      if (opts.labels === 'none') return 0;
+      if (opts.labels !== 'zoom') {
+        // 'fixed' and 'min' keep their old behaviour exactly.
+        var named = opts.labels !== 'min' || isFocused || s.id === 'queen';
+        return isFocused ? 2 : (named ? 1 : 0);
+      }
+      if (cam.dist < s.R * 2.6 && isFocused) return 3;
+      if (cam.dist < s.R * 5.5 && isFocused) return 2;
+      if (cam.dist < s.R * 9.5) return 1;
+      return 0;
+    }
+    /**
+     * Drop whole turns out of yaw and pitch WITHOUT MOVING THE CAMERA.
+     *
+     * Both angles accumulate freely, so an operator who has spun the colony a few times sits at,
+     * say, pitch 7.4 rad. Reset then eases from 7.4 to 0.4 — the same orientation, reached by
+     * unwinding a full revolution the operator never asked for. Subtracting the same multiple of
+     * 2π from `cam` AND `goal` leaves the rendered orientation bit-identical (cos and sin are
+     * 2π-periodic) and leaves the ease with the short way round. Called before reset sets its goal;
+     * never mid-drag, where shifting only one of the pair WOULD be a visible jump.
+     */
+    function unwind() {
+      var t = TAU, k = Math.round(cam.pitch / t); cam.pitch -= k * t; goal.pitch -= k * t;
+      k = Math.round(cam.yaw / t); cam.yaw -= k * t; goal.yaw -= k * t;
+    }
     // LIGHTING (design doc §17: "the lighting is dynamic as you move"). Three terms, all cheap:
     //   key   — a fixed WORLD-space light up-left-front, so each sphere has a lit hemisphere that
     //           you see from different angles as you orbit (the lit side does not follow you);
@@ -377,7 +464,10 @@
         if (s.style.color || s.style.glow !== 1 || s.style.bright !== 1) styles[s.id] = { color: s.style.color || null, glow: s.style.glow, bright: s.style.bright };
       });
       var ants = {}; Object.keys(antStyles).forEach(function (k) { if (antStyles[k].name || antStyles[k].color) ants[k] = antStyles[k]; });
-      return { schema: LAYOUT_SCHEMA, positions: positions, names: names, styles: styles, ants: ants };
+      // The added mounds themselves, not just their seats: without this the chambers vanish on
+      // reload and the operator's fleet labelling goes with them.
+      var mounds = addedMounds.map(function (m) { return { id: m.id, label: m.label, pos: (bySec[m.id] || m).pos.slice() }; });
+      return { schema: LAYOUT_SCHEMA, positions: positions, names: names, styles: styles, ants: ants, mounds: mounds };
     }
     function validColor(c) { return typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c) ? c.toLowerCase() : null; }
     function clampNum(v, lo, hi, dflt) { v = Number(v); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : dflt; }
@@ -390,7 +480,7 @@
        y flipped, applied to this world's home seat, then written back as schema 3 so it happens
        once. Schema 1 (the `.115` world, factor never recorded) still resets — a guessed factor
        would be a fiction dressed as a migration. */
-    var SCHEMA2_HOME = { queen: [0, 0, 0], intel: [-16.5, 0, 16.5], forge: [16.5, 0, 16.5], valid: [16.5, 0, -16.5], memory: [-16.5, 0, -16.5], output: [0, 17, 0], mound: [0, -17, 0], homelab: [33, 0, 0], unassigned: [-33, 0, 0] };
+    var SCHEMA2_HOME = { queen: [0, 0, 0], intel: [-16.5, 0, 16.5], forge: [16.5, 0, 16.5], valid: [16.5, 0, -16.5], memory: [-16.5, 0, -16.5], output: [0, 17, 0], mound: [0, -17, 0], homelab: [33, 0, 0] };
     var SCHEMA2_SCALE = 10;
     function migrateSchema2(l) {
       var positions = {}, any = false;
@@ -413,6 +503,26 @@
         var st = l.styles && l.styles[s.id];
         if (st && typeof st === 'object') s.style = { color: validColor(st.color), glow: clampNum(st.glow, .5, 2.5, 1), bright: clampNum(st.bright, .3, 2.5, 1) };
       });
+      // Added mounds are restored BEFORE the styles and names above would want them — so they are
+      // re-read here and the whole apply runs again over the enlarged sector list.
+      if (Array.isArray(l.mounds)) {
+        addedMounds = [];
+        l.mounds.slice(0, 24).forEach(function (m) {
+          if (!m || typeof m.id !== 'string' || m.id.indexOf('mound:') !== 0) return;
+          var pos = Array.isArray(m.pos) && m.pos.length === 3 && m.pos.every(function (n) { return typeof n === 'number' && isFinite(n) && Math.abs(n) <= 1200; })
+            ? m.pos.slice() : nextMoundSeat(addedMounds.length);
+          var rec = { id: m.id, label: String(m.label || 'MICROMOUND').toUpperCase().slice(0, 28), pos: pos };
+          addedMounds.push(rec); mountAddedMound(rec);
+        });
+        // second pass so a restored mound picks up its own name, seat and style
+        SEC.forEach(function (s2) {
+          if (!s2.added) return;
+          var p2 = l.positions && l.positions[s2.id]; if (Array.isArray(p2) && p2.length === 3) s2.pos = p2.slice();
+          var nm3 = l.names && l.names[s2.id]; if (typeof nm3 === 'string' && nm3.trim()) { s2.label = nm3.trim().toUpperCase().slice(0, 28); s2.renamed = true; }
+          var st3 = l.styles && l.styles[s2.id];
+          if (st3 && typeof st3 === 'object') s2.style = { color: validColor(st3.color), glow: clampNum(st3.glow, .5, 2.5, 1), bright: clampNum(st3.bright, .3, 2.5, 1) };
+        });
+      }
       antStyles = {};
       if (l.ants && typeof l.ants === 'object') Object.keys(l.ants).slice(0, 200).forEach(function (k) { var a = l.ants[k] || {}; var nm2 = typeof a.name === 'string' ? a.name.trim().slice(0, 28) : ''; var col = validColor(a.color); if (nm2 || col) antStyles[String(k).toLowerCase()] = { name: nm2 || null, color: col }; });
       rebuildAll(); if (lastScene) api.setTopology(lastScene); return true;
@@ -440,50 +550,20 @@
       }
     }
     // ---- environments ---------------------------------------------------------------------
-    function camPos() { return [cam.tgt[0] - cam.dist * LT.cp * LT.syw, cam.tgt[1] - cam.dist * LT.sp, cam.tgt[2] - cam.dist * LT.cp * LT.cyw]; }
-    function softPoint(q, r, c, a) { if (!q || a <= 0) return; var rr = Math.max(2, r * q.s); var g = ctx.createRadialGradient(q.x, q.y, 0, q.x, q.y, rr); g.addColorStop(0, 'rgba(' + c + ',' + a + ')'); g.addColorStop(1, 'rgba(' + c + ',0)'); ctx.beginPath(); ctx.arc(q.x, q.y, rr, 0, TAU); ctx.fillStyle = g; ctx.fill(); }
-    /** A lit pool on the ground plane: the projected ellipse, filled with a falloff at its centre. */
-    function planePool(cx, cz, r, c, a) {
-      if (a <= 0.002) return;
-      var q = proj([cx, PLANE_Y, cz]); if (!q) return;
-      ctx.beginPath();
-      for (var i = 0; i < 30; i++) { var th = i / 30 * TAU, pq = proj([cx + Math.cos(th) * r, PLANE_Y, cz + Math.sin(th) * r]); if (!pq) return; if (i) ctx.lineTo(pq.x, pq.y); else ctx.moveTo(pq.x, pq.y); }
-      ctx.closePath();
-      var g = ctx.createRadialGradient(q.x, q.y, 0, q.x, q.y, Math.max(3, r * q.s));
-      g.addColorStop(0, 'rgba(' + c + ',' + a + ')'); g.addColorStop(.55, 'rgba(' + c + ',' + (a * .35) + ')'); g.addColorStop(1, 'rgba(' + c + ',0)');
-      ctx.fillStyle = g; ctx.fill();
-    }
-    function activeSectors() { var set = {}; circuit.forEach(function (sg) { SEC.forEach(function (s) { if (s.color === sg.col) set[s.id] = true; }); }); if (circuit.length) set.queen = true; return set; }
+    function softPoint(q, r, c, a){ if (!q || a <= 0) return; var rr = Math.max(2, r * q.s); var g = ctx.createRadialGradient(q.x, q.y, 0, q.x, q.y, rr); g.addColorStop(0, 'rgba(' + c + ',' + a + ')'); g.addColorStop(1, 'rgba(' + c + ',0)'); ctx.beginPath(); ctx.arc(q.x, q.y, rr, 0, TAU); ctx.fillStyle = g; ctx.fill(); }
     function drawStars(list, base, ts) { list.forEach(function (st) { var q = proj(st.p); if (!q) return; var tw = .55 + Math.sin(ts * .0011 + st.ph) * .35; ctx.beginPath(); ctx.arc(q.x, q.y, st.sz, 0, TAU); ctx.fillStyle = 'rgba(' + (st.c || '220,228,245') + ',' + (base * tw) + ')'; ctx.fill(); }); }
     function drawDust(ts) { DUST.forEach(function (d) { if (live()) { d.p[1] -= d.sp * 1.4; if (d.p[1] < -400) d.p[1] = 400; } var q = proj(d.p); if (!q) return; var tw = .55 + Math.sin(ts * .0009 + d.ph) * .35; ctx.beginPath(); ctx.arc(q.x, q.y, Math.max(.4, q.s), 0, TAU); ctx.fillStyle = 'rgba(172,182,208,' + (.10 * tw * fog(q.zc)) + ')'; ctx.fill(); }); }
-    function envGround(ts, withPools) {
-      var act = activeSectors(), pulse = live() ? .5 + .5 * Math.sin(ts * .0016) : .5;
-      // the ground itself: a wide, very faint disc so the pools have something to land on
-      planePool(0, 40, 780, '120,130,160', .028 * LT.expo);
-      if (withPools) {
-        var V = camPos();
-        LIGHTS.forEach(function (L) {
-          var px = L.p[0] + Math.sin(cam.yaw + L.ph) * 30, pz = L.p[2] + Math.cos(cam.yaw + L.ph) * 30;   // the pool leans with the view
-          // glint: reflect the light off the plane (normal points up, i.e. -y) toward the camera
-          var ix = px - L.p[0], iy = PLANE_Y - L.p[1], iz = pz - L.p[2], il = Math.hypot(ix, iy, iz) || 1; ix /= il; iy /= il; iz /= il;
-          var rx = ix, ry = -iy, rz = iz;   // reflection about the plane normal
-          var vx = V[0] - px, vy = V[1] - PLANE_Y, vz = V[2] - pz, vl = Math.hypot(vx, vy, vz) || 1;
-          var spec = Math.pow(Math.max(0, (rx * vx + ry * vy + rz * vz) / vl), 6);
-          var breathe = live() ? .85 + .15 * Math.sin(ts * .0004 + L.ph) : 1;
-          planePool(px, pz, L.r, L.c, (.075 + .16 * spec) * breathe * LT.expo);
-        });
-      }
-      // each sector lights the ground beneath it with its own colour; the active circuit burns brighter
-      shown().forEach(function (s) {
-        var c = h2(s.color).join(','), h = Math.max(60, PLANE_Y - s.pos[1]);
-        var a = (act[s.id] ? .09 + .05 * pulse : .04) * Math.min(1, 260 / h) * LT.expo;
-        planePool(s.pos[0], s.pos[2], s.R * 2.1 + h * .25, c, a);
-      });
-    }
     function envStrata(ts) {
       // soil, darker and warmer with depth; the whole section slides a little with the camera so
-      // the backdrop answers a drag without pretending to be geometry
-      var oy = cam.pitch * 40, ox = cam.yaw * 24;
+      // the backdrop answers a drag without pretending to be geometry.
+      //
+      // THE OFFSETS ARE TRIGONOMETRIC BECAUSE THE ANGLES ARE UNBOUNDED. These were `cam.pitch * 40`
+      // and `cam.yaw * 24` — linear in an angle that never wraps. Yaw has always been free, so a few
+      // full turns already slid this backdrop off the canvas and left a flat gradient behind; with
+      // pitch now free as well (v0.3.8.122) it would do the same going over the top. sin/cos are
+      // bounded and periodic, so the parallax returns to where it started after a full turn, which
+      // is what a backdrop tied to a viewing angle should do.
+      var oy = Math.sin(cam.pitch) * 40, ox = Math.sin(cam.yaw) * 24;
       var g = ctx.createLinearGradient(0, -oy, 0, H - oy);
       g.addColorStop(0, '#07080c'); g.addColorStop(.35, '#0b0a0d'); g.addColorStop(.7, '#100c0d'); g.addColorStop(1, '#130e0e');
       ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
@@ -561,10 +641,8 @@
           softPoint({ x: q.x + drift, y: q.y, s: q.s }, f.r, c, f.a * Math.min(1, 520 / nd) * LT.expo);
         });
         drawStars(STARS, .3, ts); drawDust(ts);
-      } else if (opts.env === 'void') {
-        envGround(ts, false); drawStars(STARS, .16, ts);
-      } else { // plane
-        envGround(ts, true); drawStars(STARS, .3, ts); drawDust(ts);
+      } else { // void — black, and the chambers are the only light in it
+        drawStars(STARS, .16, ts);
       }
     }
 
@@ -618,6 +696,7 @@
       order.forEach(function (o) {
         var s = o.s, pr = o.pr;
         var isFocused = focused === s.id;
+        var tier = labelTier(s, isFocused);
         var rot = s.frozen != null ? s.frozen : (live() ? ts * s.rot : 0);
         var cr = Math.cos(rot), sr = Math.sin(rot);
         var pal = sectorColors(s), c0 = pal.c0, c1 = pal.c1, sty = s.style;
@@ -659,7 +738,14 @@
           hg.addColorStop(0, 'rgba(235,240,250,' + (.10 * LT.expo * fog(pr.zc)) + ')'); hg.addColorStop(1, 'rgba(235,240,250,0)');
           ctx.beginPath(); ctx.arc(pr.x + lo.dx, pr.y + lo.dy, hr, 0, TAU); ctx.fillStyle = hg; ctx.fill();
         }
-        ctx.strokeStyle = 'rgba(' + c0.join(',') + ',' + ((isFocused ? .045 : .022) * fog(pr.zc)) + ')'; ctx.lineWidth = .6;   // linkage: almost transparent
+        /* LINKAGE OPACITY IS THE OPERATOR'S. v0.3.8.122 — this was hard-coded at .045 focused and
+           .022 otherwise, which is "almost transparent" and was the only answer available. The
+           range now runs from 0 (the dots alone, no lines at all) to 1 (solid), and .125 is the
+           value that reproduces exactly what it looked like before, which is why it is the default:
+           an operator who never touches the slider sees no change. */
+        var linkA = clampNum(opts.links.opacity, 0, 1, .125) * (isFocused ? .36 : .18) * fog(pr.zc);
+        ctx.strokeStyle = 'rgba(' + c0.join(',') + ',' + linkA + ')'; ctx.lineWidth = .6;
+        if (linkA > .002) 
         s.links.forEach(function (lk) {
           var pa = s.pts[lk[0]], pb = s.pts[lk[1]];
           if (pa.hidden || pb.hidden) return;
@@ -698,7 +784,18 @@
             ctx.beginPath(); ctx.arc(q.x, q.y, rad * .45, 0, TAU); ctx.fillStyle = isLight() ? 'rgba(255,255,255,' + (alpha * .9) + ')' : 'rgba(255,250,240,' + (alpha * .85) + ')'; ctx.fill();
             ctx.beginPath(); ctx.arc(q.x, q.y, rad + 2.2, 0, TAU); ctx.strokeStyle = 'rgba(' + col + ',' + (alpha * (res.status === 'working' ? .9 * tw : .45)) + ')'; ctx.lineWidth = res.status === 'working' ? 1.4 : .9; ctx.stroke();
           } else { ctx.beginPath(); ctx.arc(q.x, q.y, rad, 0, TAU); ctx.fillStyle = 'rgba(' + col + ',' + alpha + ')'; ctx.fill(); }
-          if (res && !res.worker && isFocused && m > .25 && opts.labels !== 'none') label(res.name, q.x, p.below ? q.y + rad + 11 : q.y - rad - 6, "8px 'IBM Plex Mono',monospace", ink(.8 * m), 'center');
+          // Every ant at tier 2 — INCLUDING THE WORKERS HANGING OFF EACH ROLE, which `fixed` still
+          // omits. A worker is drawn smaller and labelled smaller, so the role reads as the parent
+          // and the sub-ants read as its children rather than as nine peers of equal weight.
+          if (res && tier >= 2 && m > .25 && (opts.labels === 'zoom' || !res.worker))
+            label(res.name, q.x, p.below ? q.y + rad + 11 : q.y - rad - 6,
+              (res.worker ? "7px" : "8px") + " 'IBM Plex Mono',monospace",
+              ink((res.worker ? .62 : .8) * m), 'center');
+          // Tier 3 labels the RECORD points the links actually join — the endpoints, not every
+          // grain, because a label on a point nothing connects to is noise at any zoom.
+          if (!res && tier >= 3 && p.linked && p.rec && p.rec.title)
+            label(String(p.rec.title).slice(0, 28), q.x, q.y - rad - 5,
+              "6.5px 'IBM Plex Mono',monospace", ink(.5 * m), 'center');
           if (hp) { ctx.beginPath(); ctx.arc(q.x, q.y, Math.max(4, p.sz * q.s + 5), 0, TAU); ctx.strokeStyle = 'rgba(' + c0.join(',') + ',.7)'; ctx.lineWidth = 1; ctx.stroke(); }
         });
         if (selHere != null && s.pts[selHere]._q) {
@@ -716,12 +813,12 @@
           for (var k2 = 0; k2 < 6; k2++) { var th3 = k2 * 1.047 + .5; var w2 = [s.pos[0] + Math.cos(th3) * s.R * .62, s.pos[1] + Math.sin(th3) * s.R * .5, s.pos[2] + Math.sin(th3 * 2) * 8]; var q2 = proj(w2); if (q2) { ctx.beginPath(); ctx.arc(q2.x, q2.y, Math.max(.8, 1.6 * q2.s), 0, TAU); ctx.fillStyle = 'rgba(201,207,220,' + (.5 * fog(q2.zc)) + ')'; ctx.fill(); } }
           if (s.stopped) { ctx.beginPath(); ctx.arc(pr.x, pr.y, s.R * 1.2 * pr.s, 0, TAU); ctx.strokeStyle = 'rgba(226,31,123,.8)'; ctx.lineWidth = 2.2; ctx.stroke(); }
         }
-        if (opts.labels !== 'none' && (opts.labels !== 'min' || isFocused || s.id === 'queen')) {
+        if (tier >= 1) {
           label(s.label + (s.id === 'mound' && s.stopped ? ' · STOPPED' : ''), pr.x, pr.y + (s.R + 18) * pr.s,
             '600 ' + Math.max(8, Math.min(11, 9 * pr.s * 8)) + "px 'IBM Plex Mono',monospace",
             'rgba(' + (isLight() ? shade3(c0, .62).join(',') : c0.join(',')) + ',' + ((isFocused ? .95 : (isLight() ? .8 : .5)) * fog(pr.zc)) + ')', 'center');
         }
-        if (isFocused && m > .25 && s.strata && s.strata.length && opts.labels !== 'none') {
+        if (isFocused && m > .25 && s.strata && s.strata.length && tier >= 2) {
           // one label per stratum, at the level's right edge (rotates with the chamber), each on its
           // own level so labels cannot stack; the level's ring is a faint guide under its records
           s.strata.forEach(function (st) {
@@ -797,7 +894,7 @@
       return best;
     }
     var api = {
-      survey: function () { SEC.forEach(function (s) { s.frozen = null; }); focused = null; follow = false; selRec = null; goal.yaw = -.3; goal.pitch = .4; goal.dist = fitDist(); goal.tgt = [0, 20, 0]; setCrumb('colony survey'); emit('deselect'); },
+      survey: function () { SEC.forEach(function (s) { s.frozen = null; }); focused = null; follow = false; selRec = null; unwind(); goal.yaw = -.3; goal.pitch = .4; goal.dist = fitDist(); goal.tgt = [0, 20, 0]; setCrumb('colony survey'); emit('deselect'); },
       focus: function (id) { var s = bySec[id]; if (!s) return; if (s.frozen == null) s.frozen = live() ? performance.now() * s.rot : 0; focused = id; follow = false; goal.tgt = s.pos.slice(); goal.dist = s.R * 4.6; setCrumb('colony survey → ' + s.label.toLowerCase()); emit('sector', s); },
       followMission: function () { follow = true; focused = null; goal.dist = 460; setCrumb('following active mission'); },
       resetView: function () { api.survey(); },
@@ -810,14 +907,59 @@
       setOptions: function (o) {
         o = o || {};
         var before = opts.conduits.density;
+        // `normal` became `fixed` at .122 when `zoom` took over the "All" slot.
+        if (o.labels === 'normal') o.labels = 'fixed';
+        if (o.links) { opts.links = Object.assign({}, opts.links, o.links); opts.links.opacity = clampNum(opts.links.opacity, 0, 1, .125); delete o.links; }
         if (o.conduits) { opts.conduits = Object.assign({}, opts.conduits, o.conduits); if (opts.conduits.color && !validColor(opts.conduits.color)) opts.conduits.color = null; opts.conduits.bright = clampNum(opts.conduits.bright, .4, 2, 1); delete o.conduits; }
         Object.assign(opts, o);
+        // A browser that remembers `plane` is remembering an environment that no longer exists
+        // (v0.3.8.122, the ground plane). It heals to `void` — the same black field, minus the floor
+        // it was named for — rather than being left to fall through to a default it never chose.
+        if (opts.env === 'plane') opts.env = 'void';
         if (opts.conduits.density !== before) buildStreams();
         if (root) root.classList.toggle('cl-light', isLight());
         restyleChrome();
       },
-      getOptions: function () { return { motion: opts.motion, labels: opts.labels, trails: opts.trails, env: opts.env, conduits: Object.assign({}, opts.conduits) }; },
+      getOptions: function () { return { motion: opts.motion, labels: opts.labels, trails: opts.trails, env: opts.env, conduits: Object.assign({}, opts.conduits), links: Object.assign({}, opts.links) }; },
       setSectorStyle: function (id, patch) { var s = bySec[id]; if (!s) return; patch = patch || {}; if ('color' in patch) s.style.color = validColor(patch.color); if ('glow' in patch) s.style.glow = clampNum(patch.glow, .5, 2.5, 1); if ('bright' in patch) s.style.bright = clampNum(patch.bright, .3, 2.5, 1); saveLayout(); },
+      isMound: function (id) { var s = bySec[id]; return !!(s && s.mound); },
+      isAddedMound: function (id) { var s = bySec[id]; return !!(s && s.added); },
+      /** The roster every mound runs, from the server. Presentation only — see `addedMounds`. */
+      setMoundDefaults: function (list) {
+        if (!Array.isArray(list)) return;
+        moundDefaults = list.filter(function (a) { return a && typeof a.name === 'string' && a.name; })
+          .slice(0, 24).map(function (a) { return { name: String(a.name).slice(0, 40), role: String(a.role || '').slice(0, 80) }; });
+        // A chamber added before the roster arrived fills in now rather than staying empty.
+        SEC.forEach(function (s2) { if (s2.added) rebuildSector(s2, { residents: moundResidents(s2.id), records: [], clusters: [] }); });
+      },
+      /** Add a mound chamber. Returns its id. The label is the operator's from the first frame. */
+      addMound: function (label) {
+        var n = addedMounds.length + 1, id = 'mound:' + n;
+        while (bySec[id]) { n++; id = 'mound:' + n; }
+        var rec = { id: id, label: String(label || ('MICROMOUND ' + n)).toUpperCase().slice(0, 28), pos: nextMoundSeat(addedMounds.length) };
+        addedMounds.push(rec);
+        var s2 = mountAddedMound(rec);
+        rebuildSector(s2, { residents: moundResidents(id), records: [], clusters: [] });
+        rebuildAll(); saveLayout(); api.focus(id);
+        return id;
+      },
+      /** Remove one. Only ever an ADDED chamber: the registry's own sectors are not the operator's
+          to delete, and silently ignoring the difference is how a colony loses a real chamber. */
+      removeMound: function (id) {
+        var s2 = bySec[id]; if (!s2 || !s2.added) return false;
+        SEC = SEC.filter(function (x) { return x.id !== id; });
+        delete bySec[id];
+        addedMounds = addedMounds.filter(function (m) { return m.id !== id; });
+        if (focused === id) { focused = null; }
+        rebuildAll(); saveLayout(); api.survey();
+        return true;
+      },
+      /** The operator's mound chambers, for a registry listing. */
+      listMounds: function () {
+        return SEC.filter(function (x) { return x.added; }).map(function (x) {
+          return { id: x.id, label: x.label, color: x.style.color || x.color, residents: x.residents.length };
+        });
+      },
       getSectorStyle: function (id) { var s = bySec[id]; return s ? { color: s.style.color, glow: s.style.glow, bright: s.style.bright, defaultColor: s.color } : null; },
       setAntStyle: function (roleId, patch) { var k = String(roleId || '').toLowerCase(); if (!k) return; var cur = antStyles[k] || { name: null, color: null }; patch = patch || {}; if ('name' in patch) cur.name = (typeof patch.name === 'string' && patch.name.trim()) ? patch.name.trim().slice(0, 28) : null; if ('color' in patch) cur.color = validColor(patch.color); if (cur.name || cur.color) antStyles[k] = cur; else delete antStyles[k]; if (lastScene) api.setTopology(lastScene); saveLayout(); },
       getAntStyle: function (roleId) { return Object.assign({ name: null, color: null }, antStyles[String(roleId || '').toLowerCase()] || {}); },
@@ -843,7 +985,11 @@
           rebuildSector(s, sec);
         });
         SEC.forEach(function (s) {
-          if (s.id === 'mound') { s.present = !!(scene.mound && scene.mound.present); if (s.present) s.stopped = (scene.mound.mounds || []).some(function (m) { return m.stopped; }); }
+          // An ADDED mound is the operator's, not the server's: the snapshot has never heard of it
+          // and must not switch it off. Everything else is present exactly when the projection
+          // says so, which is the rule that stops a chamber outliving the roles behind it.
+          if (s.added) s.present = true;
+          else if (s.id === 'mound') { s.present = !!(scene.mound && scene.mound.present); if (s.present) s.stopped = (scene.mound.mounds || []).some(function (m) { return m.stopped; }); }
           else s.present = !!named[s.id];
         });
         // The mission circuit: the chambers with RUNNING tasks, in the canonical order, from the Queen.
@@ -971,7 +1117,13 @@
       var dx2 = e.clientX - drag.x, dy2 = e.clientY - drag.y;
       if (Math.abs(dx2) + Math.abs(dy2) > 3) moved = true;
       goal.yaw = drag.yaw + dx2 * .0035;
-      goal.pitch = Math.max(.05, Math.min(1.15, drag.pitch + dy2 * .003));
+      // PITCH IS FREE, LIKE YAW (v0.3.8.122). It was clamped to [0.05, 1.15] rad — about 3° to 66°,
+      // a band that kept the camera above the ground plane and looking slightly down at it. With the
+      // plane gone there is nothing under the colony to be on the wrong side of, and the operator
+      // asked to be able to go under it. The projection is a plain two-axis rotation and the
+      // chambers are painted back-to-front by `zc` every frame, so every angle draws correctly:
+      // overhead, edge-on, and from below with the colony inverted, which is what a full orbit means.
+      goal.pitch = drag.pitch + dy2 * .003;
       follow = false;
     }
     function onUp() { if (sphDrag && moved) saveLayout(); if (drag || sphDrag) cv.style.cursor = 'grab'; drag = null; sphDrag = null; }
@@ -981,7 +1133,20 @@
       var m = local(e);
       var pi = pickPoint(m.x, m.y);
       if (pi != null) { selRec = { sec: focused, idx: pi }; var s = bySec[focused]; var w = s.pts[pi]._w; if (w) { goal.tgt = w.slice(); goal.dist = Math.max(120, s.R * 2.2); } var rec = api.recordAt(focused, pi); if (!rec) return; if (rec.roleId) { setCrumb('colony survey → ' + s.label.toLowerCase() + ' → ' + rec.name); emit('resident', { sector: focused, index: pi, resident: rec }); return; } setCrumb('colony survey → ' + s.label.toLowerCase() + ' → ' + rec.title); emit('record', { sector: focused, index: pi, record: rec }); return; }
-      var vis = shown(); for (var i = 0; i < vis.length; i++) { var s2 = vis[i], pr = proj(s2.pos); if (pr && Math.hypot(pr.x - m.x, pr.y - m.y) < Math.max(20, s2.R * pr.s)) { selRec = null; api.focus(s2.id); return; } }
+      var vis = shown();
+      for (var i = 0; i < vis.length; i++) {
+        var s2 = vis[i], pr = proj(s2.pos);
+        if (pr && Math.hypot(pr.x - m.x, pr.y - m.y) < Math.max(20, s2.R * pr.s)) {
+          selRec = null;
+          // A MOUND CHAMBER IS A DOOR (v0.3.8.122). The first click approaches it like any other
+          // chamber — an operator still gets to look at it, recolour it and read its residents.
+          // Clicking the one already focused is the deliberate second act, and THAT opens its
+          // settings. Navigating on the first click would make a mound the one chamber an operator
+          // cannot inspect without leaving the colony.
+          if (s2.mound && focused === s2.id) { emit('moundsettings', s2); return; }
+          api.focus(s2.id); return;
+        }
+      }
       if (selRec) { selRec = null; var sf = bySec[focused]; if (sf) { goal.tgt = sf.pos.slice(); goal.dist = sf.R * 4.6; setCrumb('colony survey → ' + sf.label.toLowerCase()); emit('sector', sf); } else emit('deselect'); return; }
       api.survey();
     }

@@ -96,9 +96,32 @@ public sealed class PlanningService : IPlanningService
         // v0.3.8.98 — the specification travels INTO planning, because worker assignment happens
         // inside `CreateTasks`. See the block below for what this release learned about the cost of
         // resolving one layer too late.
+        // v0.3.8.122 — a substitution inside the planner becomes a row in THIS mission's event log.
+        //
+        // The planner is pure and stays pure: it reports, this service records. The mission id lives
+        // here and not there, which is the whole reason the reporting is a callback — a planner
+        // holding a store to satisfy a reporting need would put a database in every planning test.
         var tasks = _planner.CreateTasks(goal, context.Constraints, memoryContext, _tools.DescribeTools(),
             _memory.FormatPheromoneContext(8), SkillPlanningContext.Format(_skills()),
-            context.Specification);
+            context.Specification,
+            onSubstituted: (reason, detail) =>
+            {
+                // ONLY FOR A MISSION THAT EXISTS. `Queen.PlanPreview` runs this same service over a
+                // transient mission it deliberately never persists, and `PlanningServiceTests` builds
+                // contexts the same way — so an unconditional write here violated the events→missions
+                // foreign key and took nine tests down with it on the first run.
+                //
+                // The check is not a workaround for those tests. A substitution event is an entry in
+                // a mission's history; planning that is not attached to a mission has no history to
+                // write into, and inventing a row for one would be worse than not recording it. What
+                // a preview should show an operator about its own fallback belongs in the preview's
+                // return value, not in the event log, and is not this release's to design.
+                if (_memory.GetMission(context.MissionId) is null) return;
+                _memory.LogEvent(context.MissionId,
+                    Anthill.SDK.Events.EventTypes.MissionPlanSubstituted,
+                    $"Planning did not use the requested plan ({reason}).",
+                    metadata: new() { ["reason"] = reason, ["detail"] = TextUtil.Truncate(detail, 800) });
+            });
 
         foreach (var task in tasks)
         {

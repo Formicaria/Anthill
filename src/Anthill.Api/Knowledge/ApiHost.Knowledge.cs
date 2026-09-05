@@ -76,24 +76,45 @@ public static partial class ApiHost
                     DefaultProjectRef = settings.DefaultProject,
                 };
             },
-            // Where a proposal goes. Recorded as a colony event for now: the approval pipeline's
-            // typed intake is a core surface, and wiring a new proposal KIND into it is a change
-            // that deserves its own release rather than riding along with the integration. The
-            // event carries everything an operator needs to act, and nothing applies itself.
-            proposal => Queen?.Events.Publish(new SDK.Events.ColonyEvent
+            // WHERE A PROPOSAL GOES — v0.3.8.122, and it now goes somewhere that survives.
+            //
+            // This was `Queen?.Events.Publish(...)` under `EventTypes.ModuleRegistered`, and both
+            // halves were wrong in ways that compounded. `Publish` is BUS-ONLY: the proposal reached
+            // whichever browsers happened to have the stream open at that instant and then ceased to
+            // exist — while the tool told the model it was "queued for an operator to approve or
+            // decline". A worker was being told its proposal had been filed, by a call that filed
+            // nothing. And `module_registered` is a one-time boot event, so even the live copy was
+            // shelved where nobody looking for proposals would think to look.
+            //
+            // `LogEvent` writes the row and THEN publishes, so the console's live stream is
+            // unchanged and the proposal is now in the event log, replayable on reconnect and
+            // auditable afterwards. This is not the approval pipeline — a typed proposal KIND is a
+            // core surface and deserves its own release — but a durable record with every field an
+            // operator needs is the difference between "not built yet" and "silently discarded".
+            //
+            // No colony composed means nowhere durable to put it, and that THROWS rather than
+            // returning quietly: the tool has a failure branch that tells the worker the proposal
+            // could not be recorded, and that answer is true. The previous null-conditional made the
+            // same situation look like success.
+            proposal =>
             {
-                EventType = SDK.Events.EventTypes.ModuleRegistered,
-                MissionId = proposal.MissionId ?? "",
-                Message = $"Knowledge review proposed: {proposal.Action} {proposal.KnowledgeId}",
-                Metadata = new Dictionary<string, object?>
-                {
-                    ["module"] = "knowledge",
-                    ["knowledge_id"] = proposal.KnowledgeId,
-                    ["action"] = proposal.Action,
-                    ["rationale"] = proposal.Rationale,
-                    ["scope"] = proposal.Scope.ToString(),
-                },
-            }));
+                var queen = Queen ?? throw new InvalidOperationException(
+                    "No colony is composed, so a knowledge review proposal has nowhere durable to go.");
+                queen.Memory.LogEvent(
+                    string.IsNullOrWhiteSpace(proposal.MissionId)
+                        ? AnthillRuntime.SystemApiMissionId
+                        : proposal.MissionId!,
+                    SDK.Events.EventTypes.KnowledgeReviewProposed,
+                    $"Knowledge review proposed: {proposal.Action} {proposal.KnowledgeId}",
+                    metadata: new Dictionary<string, object?>
+                    {
+                        ["module"] = "knowledge",
+                        ["knowledge_id"] = proposal.KnowledgeId,
+                        ["action"] = proposal.Action,
+                        ["rationale"] = proposal.Rationale,
+                        ["scope"] = proposal.Scope.ToString(),
+                    });
+            });
 
         return KnowledgeHost;
     }

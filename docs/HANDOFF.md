@@ -4,8 +4,21 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: main carries **v0.3.8.119** (the Colony Live re-port, PR #87) plus the colony polish batch
-(PR #89, rebase-merged). **`release/v0.3.8.120` is the release commit for it.** The Colony Live UI
+State: main carries **v0.3.8.121** (`36f2283`, tagged — FORAGER as the knowledge subsystem, plus the
+mission replay configuration contract). **v0.3.8.122 is complete in the working tree.**
+
+`.122` is one UI change the operator asked for and three records that were being decided and not
+kept. **The ground plane under Colony Live is gone and the camera orbits the full sphere** — the
+floor bounced light onto the chambers and was the only thing left asserting an up. **An attempt to stop a
+failed verification closing as complete was made and withdrawn** — the evaluator's `failed` turns out
+to mean "not passed", which is not the same fact, and the withdrawal is the more useful result. **The planner's five silent plan
+substitutions reach the event log**, so a colony that ignored the goal stops looking like one that
+did not. **A knowledge review proposal survives being made** — it was published to the bus only,
+under a boot event's type, while the tool told the worker it was queued. See the `.122` section
+below; every one is guarded and the UI change was verified by rendering it.
+
+Behind that: main carried **v0.3.8.119** (the Colony Live re-port, PR #87) plus the colony polish
+batch (PR #89, rebase-merged), and **`release/v0.3.8.120` is the release commit for it.** The Colony Live UI
 runs on the approved read model — the WebGL renderer, its HUD and the vendored three.js went with the
 review that rejected them; the canvas-2D formicarium consumes `.115`'s reducer and endpoints unchanged
 (`/colony/live/snapshot`, `/colony/live/records`, the stream watermark, `/ui/state` layout
@@ -21,6 +34,21 @@ the sign-in screen** — both bounded reads were refused, nothing retried them, 
 empty sky. Hydration is now re-attempted on page entry and on the first stream event, idempotent and
 never on a clock, and a guard pins it.
 
+CI WAS RED FOR THREE RELEASES AND NOBODY FOUND OUT. Anthill compiles against the micromound wire
+contract by `ProjectReference`, so every .NET job clones `Formicaria/micromound` first — and that
+repository had been made private, which the default `GITHUB_TOKEN` cannot read. Exit 128,
+"Repository not found". It is public again and that is the whole fix.
+
+**TAKING micromound PRIVATE STOPS ANTHILL'S CI, AND NOTHING IN ANTHILL SAYS SO.** When that step
+fails, ask in this order: (1) `gh api repos/Formicaria/micromound --jq .private`, (2) does the
+`token:` secret exist if one is configured, (3) `MICROMOUND_REF` — and the pin has never once been
+the answer. `v0.9.10` has been on the remote throughout. The error string is identical to a missing
+repository, which is exactly what sends every reader to the pin first.
+
+AND THE REASON IT WENT UNNOTICED: `.119`, `.120` and `.121` reached `main` as plain commits with no
+`(#NN)` squash suffix, so none of them passed through a PR. `.118` (`#86`) is the last commit CI
+verified. A gate that only runs on a path releases have stopped taking is not a gate.
+
 MAIN IS PR-PROTECTED. A bare `git push` to main is rejected by a repository rule (GH013) — every
 change goes through a branch and a PR, including a one-commit docs fix. Paid at `.115`.
 
@@ -30,6 +58,105 @@ contributors. Anything quoting a SHA from before that date is dead. See the "ant
 
 TWO PEOPLE LAND ON `main` NOW. `.111` (Colony Live) arrived from xchronusx while `.112` was being
 built. Every release block must `git fetch` and verify HEAD before applying a patch.
+
+---
+
+## `.122` — the floor, the free camera, and three unrecorded decisions
+
+**THE GROUND PLANE IS GONE, AND THAT IS WHY THE CAMERA CAN GO UNDERNEATH.** The renderer drew a lit
+floor at y=340 — a wide faint disc, three unseen lights glinting off it, one coloured pool per
+chamber cast down onto it — and `void` drew the disc too. Every one of those is a horizontal surface,
+so each declared a DOWN. `PLANE_Y`, `planePool`, `envGround`, `camPos`, `LIGHTS` and the `plane`
+environment that existed only to show them are all removed; a stored `plane` preference heals to
+`void`. Pitch was clamped to `[0.05, 1.15]` rad to keep the camera above that floor and is now free.
+
+Three things a future session will be tempted by, all wrong:
+- **A dimmer floor is still a floor.** It fixes a horizon and it stops the camera. The operator's
+  words were that they hated the light bouncing off it; the answer is no floor, not less floor.
+- **The free orbit rests on the painter's sort**, not on the drag line — chambers are drawn
+  back-to-front by camera-space depth every frame. The guard asserts the sort in the same test as the
+  unclamp, because deleting it would break every angle past the horizon and no camera test would notice.
+- **An unbounded angle may not drive a linear offset.** The strata backdrop used `cam.pitch * 40` and
+  `cam.yaw * 24`; yaw was ALREADY free, so a few turns slid the backdrop off the canvas and left a
+  bare gradient. Both are `Math.sin` now. Reset drops whole turns from `cam` and `goal` TOGETHER, so
+  the orientation is unchanged and it is not a jump.
+
+**VERIFIED BY RENDERING.** A headless Chromium harness mounted the renderer against a synthetic scene
+at five angles: the bottom fifth of the default frame fell from mean luminance 4.695 to 0.178, and
+5.434 → 0.004 from below; the inverted view drew every chamber with no page errors. Same technique as
+`.116`, still ad hoc, still §2e item 4.
+
+**THE `UNASSIGNED` CHAMBER IS GONE AND THE PROTECTION MOVED EARLIER.** It caught roles whose registry
+`Colony` was unmapped, and measuring it ended the argument for keeping it: all sixteen declared
+colonies already mapped, so it held no residents. `EveryRegistryColony_MapsToARealChamber_...` ranges
+over the LIVE registry and fails when a new colony appears — a failing test at the point of change
+beats an odd sphere somebody has to notice. **That guard is what licenses the fallback to be a real
+sector**: it proves nothing reaches it. The snapshot states `fallback_sector`; the browser still picks
+nothing, and `|| 'queen'` in a client is still forbidden by the guard that has always forbidden it.
+
+**LABELS ARE EARNED BY ZOOM** (`labelTier`): nothing far out, chamber name as it fills the frame,
+every ant including workers when focused, link-endpoint labels closer still. Thresholds are multiples
+of the chamber's OWN radius — a fixed distance makes small and large chambers behave differently and
+reads as a bug. The old mode survives as `fixed`, with migration at both ends for a remembered
+`normal`. **Linkage opacity is a slider**, default `.125`, which reproduces the old hard-coded
+`.045`/`.022` exactly.
+
+**HOMELAB IS `INFRASTRUCTURE` AND PRESENTS AS A MOUND.** Label only — the sector id and its eight
+roles are untouched, so saved layouts survive. Mound chambers are doors on the SECOND click; the
+first still approaches and inspects, because navigating on the first would make a mound the one
+chamber an operator cannot look at. Customization is not special-cased: the sector panel is generic
+and a mound reaches it through the same `sector` event as everything else.
+
+**STILL OPEN FROM THAT BATCH, and why:** `+ Mound` does not yet create a placeholder chamber. The
+seven default mound ants live in exactly one place Anthill may legitimately read —
+`MicromoundRoster`, itself a CHECKED projection of the device runtime's `DefaultAnts` — and that
+module is referenced only under `MicromoundPresent`/`#if MICROMOUND`. Serving it from
+`/colony/live/snapshot` means putting a conditional-compilation branch into a file that has none, and
+a second copy in the browser is defect class 5b, which `MicromoundRoster`'s own header argues against
+at length. Decide that seam deliberately. The Ant Inspector also still wires per-view, which is why
+clicking an ant offers name/colour editing in two places.
+
+**RE-AUTHENTICATION IS A SIGN-IN TOO, and `.120` covered only the first one.** Its hydration retry
+rides on `PAGE_ENTER['colony']`, reached because `startPolling()` runs `restoreLayout()`. But
+`pollingStarted` is set once per PAGE LOAD and never reset, so a token that expired mid-session and
+was signed back into took the guarded branch, never re-entered the page, and left a colony retried
+only by the first colony event — which on an idle colony may never come. `enterApp` now nudges the
+idempotent `hydrate()`. Deliberately NOT by re-running `restoreLayout()`: that renavigates an
+operator who was somewhere else when their session lapsed.
+
+**THE STATUS AND THE GRADE STILL DO NOT MEET, AND THE FAILED ATTEMPT IS THE FINDING.** `.122` tried
+to demote a mission to partial when `evaluation.VerificationStatus` was `failed`, and
+`ScriptedProviderTests` failed it on the first run — correctly. **`Verification.Failed` does not mean
+"a check said no."** `MissionVerification.IsSatisfied` requires the verifier's own verdict to be a
+PASS, and `VerifierAnt` downgrades a model-authored pass to `Unknown` when no deterministic evidence
+backs it (`Ants.cs`, the `modelWroteIt && IsPass(fromProse)` branch). So a mission with a verifier, a
+passing narrative and no tester grades `failed`, meaning NOT PASSED — and demoting on it reclassifies
+legitimately complete missions.
+
+So the evaluator's three-way is not the clean `not_run` / `passed` / `failed` the map assumed:
+`failed` spans "the check said no" and "nothing could satisfy the check". **The next attempt must not
+start by making the status line read `VerificationStatus`.** Separating those two is closure
+enforcement, and closure enforcement needs the per-task execution record. The reasoning is written
+into `Queen.cs` at the line where the join would have gone.
+
+**THE PLANNER REPORTS ITS SUBSTITUTIONS.** Five conditions in `CreateTasks` abandon dynamic planning
+for a static plan, all previously recorded by `Console.Error.WriteLine` alone. `PlanSubstitutions`
+gives them stable codes and `PlanningService` logs `mission_plan_substituted`. The callback is
+optional and trailing because the planner stays pure — and a test asserts planning with no callback
+produces the identical plan, which is the check `.118`'s `CS0535` needed and did not have.
+
+`long_input_spec_ingestion` is the one to read twice: the gate fires on `goal.Length` and nothing
+else, so a precisely specified workflow is the input MOST likely to be chunked. `.122` does not move
+it — that needs the execution records — it stops it being invisible.
+
+**A KNOWLEDGE REVIEW PROPOSAL SURVIVES.** `knowledge_review` said "queued for an operator to approve
+or decline" while publishing to the BUS only, under `EventTypes.ModuleRegistered`, into a queue that
+does not exist. Now `LogEvent` (row then publish) under `knowledge_review_proposed`, and the tool says
+what happened. The module's default sink was `_ => { }` — accept, drop, report success — and now
+throws into the honest failure branch the tool already had.
+
+**WHAT `.122` DOES NOT DO.** The per-task authoritative execution record still does not exist, and
+items 3–8 of the orchestration brief all consume it. Nothing here claims otherwise.
 
 ---
 
@@ -228,6 +355,27 @@ re-read, and the composer as a doorway. The `§18` design-port rules went with t
   the 3D panel. Ask before building.
 
 PROCESS FACTS WORTH KEEPING:
+- **`Queen.PlanPreview` PLANS OVER A MISSION THAT IS NEVER PERSISTED.** So does every
+  `PlanningServiceTests` context. `events.mission_id` has a foreign key to `missions(id)`, so ANY
+  `LogEvent` added inside the shared planning path takes nine tests down with SQLite error 19. The
+  rule is not "guard the tests" — planning that is not attached to a mission has no mission history
+  to write into. Paid at `.122`.
+- **A DEFENSIVE `?? ""` ON A NON-NULLABLE PARAMETER CAUSES CS8604, IT DOES NOT PREVENT IT.** Writing
+  `(goal ?? "").Length` in a log message told the flow analysis that `goal` might be null, and the
+  next line — `CreateSpecIngestionTasks(goal)`, a `string goal` parameter that had been fine for
+  years — became a possible-null-argument error. The coalesce does not add safety; it removes the
+  compiler's. Paid twice now, at `.118` and `.122`, both times in a string I was only formatting.
+- **VERIFY THE PROPERTY, NOT THE SIGNATURE YOU HAPPENED TO LOOK FOR.** After the PowerShell pipeline
+  mangled `CHANGELOG.md`, the repair was checked by grepping for `â€` — single mojibake — which found
+  nothing outside the entry being fixed, and the file was declared clean. The actual damage was
+  `ΓÇö`, DOUBLE mojibake, 2144 of them, across every tagged entry. Counting em dashes would have
+  answered in one command. A check for one spelling of a fault is not a check for the fault, and
+  reporting "clean" from it is worse than not checking. Paid at `.118`.
+- **AN EXPLICIT-PATH COMMIT IS ONLY AS GOOD AS THE CHECK THAT NOTHING WAS LEFT BEHIND.** The `.118`
+  release block staged named paths, PRINTED the still-dirty list, and nobody read it — so the commit
+  went out missing `MissionServices.cs`, the local build was green because the file was edited in the
+  working tree, and CI failed on `CS0535`. A guard that only prints creates the feeling of having
+  checked. The block now THROWS when anything but the untracked changelog fragment remains.
 - NEVER run `git` through the device bridge. It takes `index.lock` and cannot unlink it. Violated
   once during `.118`; do not repeat it.
 - **DO NOT PIPE FILE CONTENT THROUGH POWERSHELL.** `git show <tag>:FILE | Out-File -Encoding utf8 X`

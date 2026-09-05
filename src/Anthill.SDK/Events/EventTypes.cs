@@ -50,6 +50,24 @@ public static class EventTypes
     /// stopped BEFORE dispatch. Emitted instead of silently substituting a plan the operator did not
     /// ask for, which is what used to happen.</summary>
     public const string MissionDispatchPlanRefused = "mission_dispatch_plan_refused";
+
+    /// <summary>v0.3.8.122 — the planner could not use the plan it was asked for and substituted a
+    /// static one. This was five `Console.Error.WriteLine` calls and nothing else: the substitution
+    /// happened, nothing recorded it, and an operator saw a colony that had ignored their goal with a
+    /// green run behind it. `reason` carries one of `PlanSubstitutions`' five codes.
+    ///
+    /// Only ever logged for a mission that EXISTS. `Queen.PlanPreview` plans over a transient mission
+    /// that is never persisted, and an event row for it would violate the events→missions foreign
+    /// key — correctly, because planning that is not attached to a mission has no mission history to
+    /// be written into.</summary>
+    public const string MissionPlanSubstituted = "mission_plan_substituted";
+
+    /// <summary>v0.3.8.122 — a worker proposed a change to canonical knowledge. It has its own type
+    /// because it was riding on <c>module_registered</c>, a one-time boot event: a proposal filed
+    /// under it could not be found by anyone looking for proposals, and any future consumer would
+    /// have had to distinguish the two by reading their metadata.</summary>
+    public const string KnowledgeReviewProposed = "knowledge_review_proposed";
+
     public const string MissionContextResolved = "mission_context_resolved";
     public const string MissionEvaluated = "mission_evaluated";
     public const string MissionOutcome = "mission_outcome";

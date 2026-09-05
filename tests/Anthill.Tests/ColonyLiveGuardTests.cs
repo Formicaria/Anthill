@@ -214,10 +214,15 @@ public class ColonyLiveGuardTests
     /// and resolved a miss with `sectorOfAnt(ant) || 'queen'`, so every role added after the map was
     /// last edited — and every plugin-contributed role — was silently filed under the Queen.
     ///
-    /// The registry owns membership. An unknown role is UNASSIGNED and visibly so.
+    /// THE REGISTRY OWNS MEMBERSHIP, and that is still the rule after v0.3.8.122 removed the
+    /// `unassigned` chamber. The fallback is queen-shaped again, and it is NOT the old bug
+    /// returning: the difference is where the decision lives. The server declares the fallback and
+    /// says so in the snapshot; the browser reads `fallback_sector` and picks nothing. A client that
+    /// hard-codes `|| 'queen'` is guessing about an open set it cannot see, and that is still
+    /// forbidden here.
     /// </summary>
     [Fact]
-    public void RoleToSectorMembership_ComesFromTheServerAndFallsToUnassigned()
+    public void RoleToSectorMembership_ComesFromTheServer_AndTheClientNeverPicksTheFallback()
     {
         var topo = Code("colony-topology.js");
 
@@ -225,29 +230,71 @@ public class ColonyLiveGuardTests
         Assert.DoesNotContain("|| 'queen'", topo);
         Assert.DoesNotContain("|| \"queen\"", topo);
 
-        // The membership table is built from the snapshot, and the miss resolves to unassigned.
+        // The membership table is built from the snapshot, and the miss resolves to what the SERVER
+        // named — never to a literal this file chose.
         Assert.Contains("st.roleSector", topo);
-        Assert.Contains("st.unassignedId", topo);
+        Assert.Contains("st.fallbackId", topo);
+        Assert.Contains("snap.fallback_sector", topo);
 
         // The server side of the same rule: one map, beside the registry it maps.
         var projection = SourceText.CodeOnly(File.ReadAllText(Path.Combine(
             SourceText.RepoRoot(), "src", "Anthill.Core", "ColonyLive", "ColonyLiveProjection.cs")));
         Assert.Contains("ByColony", projection);
-        Assert.Contains("Unassigned", projection);
+        Assert.Contains("Fallback", projection);
     }
 
     /// <summary>
-    /// The records endpoint applies the same rule. An event whose ant the colony does not recognise
-    /// is unassigned; it is never attributed to the Queen because she is the convenient default.
+    /// EVERY COLONY THE REGISTRY DECLARES HAS A CHAMBER OF ITS OWN — v0.3.8.122, and this is the
+    /// guard that made removing `unassigned` safe rather than convenient.
+    ///
+    /// The old design routed an unmapped colony to a visible neutral chamber, on the reasoning that
+    /// a bucket gets noticed and a plausible placement does not. That reasoning is sound and the
+    /// chamber is gone anyway, because THIS fact is a stronger version of the same protection: a new
+    /// colony value fails a test at the moment somebody adds it, rather than producing an odd sphere
+    /// an operator has to notice and interpret. The fallback is only allowed to point at a real
+    /// sector because this test proves nothing reaches it.
+    ///
+    /// Ranged over the LIVE registry, not over a list repeated here — a guard that keeps its own
+    /// copy of the thing it checks is checking its copy.
     /// </summary>
     [Fact]
-    public void TheRecordsEndpoint_FilesAnUnknownAntAsUnassigned()
+    public void EveryRegistryColony_MapsToARealChamber_SoTheFallbackIsUnreachable()
+    {
+        var mapped = ColonySectors.MappedColonies.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var declared = AntRegistry.Roles.Select(r => r.Colony)
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        var unmapped = declared.Where(c => !mapped.Contains(c)).OrderBy(c => c, StringComparer.Ordinal).ToList();
+        Assert.True(unmapped.Count == 0,
+            "these registry colonies have no chamber and would land on the fallback: "
+          + string.Join(", ", unmapped)
+          + ". Add each to ColonySectors.ByColony. The `unassigned` chamber that used to catch them "
+          + "was removed at v0.3.8.122 precisely because this test replaces it — so this failing is "
+          + "the protection working, not a test to relax.");
+
+        // VACUITY FLOOR: the registry was actually read, and every sector named is one that exists.
+        Assert.True(declared.Count >= 12, $"only {declared.Count} colonies seen — the sweep found nothing to check");
+        var real = ColonySectors.Order.ToHashSet(StringComparer.Ordinal);
+        Assert.All(declared, c => Assert.Contains(ColonySectors.ForColony(c), real));
+        Assert.DoesNotContain("unassigned", ColonySectors.Order);
+    }
+
+    /// <summary>
+    /// The records endpoint applies the same rule, and the point is WHERE the decision is made.
+    /// An event whose ant the colony does not recognise goes to the server's declared fallback —
+    /// stated in the snapshot, so the browser never has to choose. The forbidden thing was never
+    /// "the queen"; it was a client picking a default for an open set.
+    /// </summary>
+    [Fact]
+    public void TheRecordsEndpoint_FilesAnUnknownAnt_AtTheServersDeclaredFallback()
     {
         var api = SourceText.CodeOnly(File.ReadAllText(Path.Combine(
             SourceText.RepoRoot(), "src", "Anthill.Api", "ColonyLive", "ApiHost.ColonyLive.cs")));
 
-        Assert.Contains("sectorOfRole.GetValueOrDefault(ant, ColonySectors.Unassigned)", api);
-        Assert.DoesNotContain("ColonySectors.Queen)", api);
+        Assert.Contains("sectorOfRole.GetValueOrDefault(ant, ColonySectors.Fallback)", api);
+        // The snapshot tells the client where that is, so it is never inferred.
+        Assert.Contains("[\"fallback_sector\"] = ColonySectors.Fallback", api);
     }
 
     /// <summary>
@@ -291,26 +338,26 @@ public class ColonyLiveGuardTests
             $"only {placed.Count} roles and workers were placed at all.");
 
         var stranded = AntRegistry.Roles
-            .Where(r => !placed.TryGetValue(r.RoleId, out var sec) || sec == ColonySectors.Unassigned)
+            .Where(r => !placed.TryGetValue(r.RoleId, out _))
             .Select(r => $"{r.RoleId} (colony \"{r.Colony}\")")
             .OrderBy(x => x, StringComparer.Ordinal)
             .ToList();
 
         Assert.True(stranded.Count == 0,
-            "These shipped roles have no chamber, so Colony Live files them — and every record they "
-          + "author — under `unassigned`. `ColonySectors.ByColony` has fallen behind the registry: "
-          + string.Join(", ", stranded));
+            "These shipped roles appear in no chamber at all, so Colony Live cannot draw them and "
+          + "every record they author is misfiled. `ColonySectors.ByColony` has fallen behind the "
+          + "registry: " + string.Join(", ", stranded));
 
         var strandedWorkers = AntRegistry.Roles
             .SelectMany(r => r.Workers.Select(w => (Role: r, Worker: w)))
-            .Where(x => !placed.TryGetValue(x.Worker.WorkerId, out var sec) || sec == ColonySectors.Unassigned)
+            .Where(x => !placed.TryGetValue(x.Worker.WorkerId, out _))
             .Select(x => $"{x.Worker.WorkerId} (under {x.Role.RoleId})")
             .OrderBy(x => x, StringComparer.Ordinal)
             .ToList();
 
         Assert.True(strandedWorkers.Count == 0,
             "These shipped workers resolve to no chamber. An event names whichever unit ran, so "
-          + "every record they author lands in `unassigned`: " + string.Join(", ", strandedWorkers));
+          + "every record they author is misfiled: " + string.Join(", ", strandedWorkers));
     }
 
     /// <summary>
@@ -773,15 +820,297 @@ public class ColonyLiveGuardTests
         // throws rather than applying an empty body and calling the colony hydrated.
         Assert.Contains("if (!body || !body.sectors) throw new Error", host);
 
-        // The two triggers, and the door the page uses.
+        // The three triggers, and the door each uses.
         Assert.Contains("if (!hydrated()) hydrate();", host);
         Assert.Contains("hydrate: hydrate,", host);
         Assert.Contains("ColonyHost.hydrate()", Code("colony-home.js"));
+
+        // v0.3.8.122 — AND THE SECOND SIGN-IN. `.120` covered the first: `startPolling()` runs
+        // `restoreLayout()`, which navigates to the colony and fires `PAGE_ENTER`. But
+        // `pollingStarted` is set once per page load and never reset, so a session that lapsed and
+        // was signed back into took the guarded branch, never re-entered the page, and left a colony
+        // whose refused reads were retried only by the first colony event — which on an idle colony
+        // may never arrive. `enterApp` is the one function every sign-in path reaches.
+        var app = Code("app.js");
+        Assert.Matches(new Regex(@"function enterApp\(\)\{(?:(?!\n\}).)*ColonyHost\.hydrate\(\)", RegexOptions.Singleline), app);
 
         // ... and nothing on a clock anywhere in the feature.
         foreach (var asset in ColonyAssets)
             foreach (var timer in new[] { "setInterval", "setTimeout(hydrate" })
                 Assert.False(Code(asset).Contains(timer, StringComparison.Ordinal),
                     $"{asset} uses {timer}. Colony Live reads on a trigger, never on a clock.");
+    }
+
+    /// <summary>
+    /// A MOUND CHAMBER IS A LABEL, AND A LABEL REACHES NO DEVICE — v0.3.8.122.
+    ///
+    /// `+ Mound` adds a chamber to the operator's colony immediately, drawn with the roster every
+    /// mound runs. The whole feature rests on one separation: the chamber's name, its colour, and
+    /// its ants' names are PRESENTATION, stored in the operator's saved layout, and never sent
+    /// anywhere. A mound is enrolled by one-time token and keeps answering under its own identity
+    /// whatever the colony calls it — which is what lets an operator label a fleet for their own use
+    /// case without touching what the devices are.
+    ///
+    /// So the guard is about where the roster comes from and where the labels stop. The names come
+    /// from `MicromoundRoster` — itself a checked projection of the device runtime's `DefaultAnts` —
+    /// served over the micromound API, because that file already lives inside `#if MICROMOUND` and
+    /// the colony endpoint does not. Hand-copying seven strings into the browser would have been the
+    /// second store of one fact that `MicromoundRoster`'s own header argues against at length.
+    /// </summary>
+    [Fact]
+    public void AnOperatorAddedMound_IsDrawnFromTheServersRoster_AndItsLabelsGoNowhere()
+    {
+        var live = Code("colony-live.js");
+        var host = Code("colony-host.js");
+        var home = Code("colony-home.js");
+
+        // The roster is FETCHED, never spelled out here. If any of the seven names appears in the
+        // CODE of a console asset, someone has started a second copy of the device's roster.
+        //
+        // Comments are stripped first, and deliberately: `colony-topology.js` explains that the wire
+        // value `edge_queen` is displayed as "Mound Major", which is a note about a mapping and not
+        // a store of the roster. A guard that cannot tell those apart forces the next author to
+        // delete a useful sentence to make a test pass, which is how comments stop being written.
+        foreach (var ant in new[] { "Mound Major", "Scout Ant", "Forager Ant", "Guard Ant", "Witness Ant", "Cache Ant", "Runner Ant" })
+            foreach (var asset in ColonyAssets)
+                Assert.False(Code(asset).Contains(ant, StringComparison.Ordinal),
+                    $"{asset} names the mound ant \"{ant}\" in code. That roster has one source — "
+                  + "MicromoundRoster, served at /micromound/roster/defaults — and a copy here is the "
+                  + "second store of one fact that its own header warns about.");
+
+        Assert.Contains("api('/micromound/roster/defaults')", host);
+        Assert.Contains("setMoundDefaults", live);
+        Assert.Contains("moundDefaults", live);
+
+        // Added chambers survive a reload, and the snapshot cannot switch them off — the server has
+        // never heard of them.
+        Assert.Contains("mounds: mounds", live);
+        Assert.Contains("if (s.added) s.present = true;", live);
+
+        // Only the operator's own chambers can be deleted. A registry sector is refused in the
+        // renderer, not merely hidden in the page: a button that exists to be refused is worse than
+        // no button, and hiding is not enforcing.
+        Assert.Contains("if (!s2 || !s2.added) return false;", live);
+        Assert.Contains("live.isAddedMound(s.id)", home);
+
+        // DELETING BELONGS TO THE FLEET VIEW, NOT TO ONE CHAMBER'S PANEL. `+ Mound` makes as many
+        // chambers as an operator wants, so there is no single mound for a settings page to mean —
+        // the registry is the list, and removing one is a fleet-level act you should not have to be
+        // standing inside the thing to perform. A chamber's own panel offers the door to it.
+        Assert.Contains("act === 'moundremove'", home);
+        Assert.Contains("go('/colony/mounds')", home);
+        Assert.Contains("PAGE_ENTER['mounds'] = renderMounds", home);
+        Assert.Contains("id=\"page-mounds\"", Raw("index.html"));
+
+        // And one mound's settings carry WHICH mound. A destination that cannot say which is the
+        // reason this was rebuilt: `window.micromoundPendingId` is the console's established shape
+        // for that, the same one the project pickers use.
+        Assert.Contains("window.micromoundPendingId = id", home);
+
+        // BOTH DESTINATIONS DELETE, AND A DELETE ANYWHERE TAKES THE CHAMBER OUT OF THE COLONY AT
+        // ONCE. An operator who removes a mound and then finds it still drawn has been told a lie
+        // by one of the two surfaces, so the settings page calls the same `removeMound` the registry
+        // does rather than keeping a second notion of what exists.
+        var mm = Code("micromound.js");
+        Assert.Contains("live.removeMound(chamber.id)", mm);
+        Assert.Contains("window.micromoundPendingId", mm);
+        Assert.Contains("mm-chamber", Raw("index.html"));
+
+        // The button adds a chamber rather than navigating away, which is what it used to do.
+        Assert.Contains("lm.addMound()", home);
+        Assert.DoesNotContain("act === 'addmound') { go(", home);
+
+        // VACUITY FLOOR: the API this guard reasons about is actually exposed.
+        Assert.Contains("addMound: function (label)", live);
+        Assert.Contains("removeMound: function (id)", live);
+    }
+
+    /// <summary>
+    /// THE COLONY READS ITSELF AT THE ZOOM YOU ARE AT — v0.3.8.122.
+    ///
+    /// Every chamber name was drawn at every distance, so the survey was a wall of text nobody was
+    /// reading and the detail an operator actually wanted — which ants, which linked records — was
+    /// never shown at all. `zoom` is now the default and earns text in tiers: nothing far out, the
+    /// chamber name as it fills the frame, then EVERY ant including the workers hanging off each
+    /// role, then the labels on the record points the links join.
+    ///
+    /// The thresholds are multiples of the chamber's OWN radius rather than absolute distances,
+    /// which is the part worth guarding: a fixed distance makes a small chamber surrender its name
+    /// while a large one is still silent, and the two look like a bug rather than a rule.
+    ///
+    /// The old behaviour survives as `fixed`, because an operator who reads the colony at a glance
+    /// already knows it. A browser remembering the old name `normal` heals to it at both ends.
+    /// </summary>
+    [Fact]
+    public void LabelsAreEarnedByZoom_AndTheOldBehaviourIsStillAnOption()
+    {
+        var live = Code("colony-live.js");
+
+        Assert.Contains("function labelTier(s, isFocused)", live);
+        Assert.Contains("cam.dist < s.R * 2.6 && isFocused) return 3", live);
+        Assert.Contains("cam.dist < s.R * 5.5 && isFocused) return 2", live);
+        Assert.Contains("cam.dist < s.R * 9.5) return 1", live);
+
+        // Workers are labelled too, and ONLY in the zoom mode — that is the whole ask.
+        Assert.Contains("opts.labels === 'zoom' || !res.worker", live);
+        // Tier 3 labels link endpoints, not every grain.
+        Assert.Contains("tier >= 3 && p.linked", live);
+        Assert.Contains("pts[lk[0]].linked = true", live);
+
+        // Both migrations, so a remembered `normal` cannot leave the select and the renderer
+        // disagreeing about what the operator chose.
+        Assert.Contains("if (o.labels === 'normal') o.labels = 'fixed';", live);
+        Assert.Contains("v.labels === 'normal' ? 'fixed'", Code("colony-home.js"));
+
+        var html = Raw("index.html").Replace("\r\n", "\n");
+        Assert.Contains("value=\"zoom\" selected", html);
+        Assert.Contains("value=\"fixed\"", html);
+
+        // VACUITY FLOOR: the tier is consulted where labels are actually drawn.
+        Assert.Contains("var tier = labelTier(s, isFocused);", live);
+        Assert.Contains("if (tier >= 1) {", live);
+    }
+
+    /// <summary>
+    /// THE LINKAGE IS THE OPERATOR'S TO DIM — v0.3.8.122. It was hard-coded "almost transparent"
+    /// (.045 focused, .022 otherwise) with no way to see the lines or to hide them. The range now
+    /// runs 0 (dots alone) to 1 (solid), and the DEFAULT reproduces the old look exactly, which is
+    /// the property that makes this a new control rather than a restyle: an operator who never
+    /// touches the slider sees no change at all.
+    /// </summary>
+    [Fact]
+    public void LinkageOpacity_IsAnOperatorControl_AndItsDefaultChangesNothing()
+    {
+        var live = Code("colony-live.js");
+
+        Assert.Contains("links: { opacity: .125 }", live);
+        Assert.Contains("clampNum(opts.links.opacity, 0, 1, .125) * (isFocused ? .36 : .18)", live);
+        // 0 draws no line at all rather than a line nobody can see.
+        Assert.Contains("if (linkA > .002)", live);
+        // The old constants are gone, so there is one answer to how bright a link is.
+        Assert.DoesNotContain("(isFocused ? .045 : .022)", live);
+
+        Assert.Contains("clb-linkalpha", Raw("index.html"));
+        Assert.Contains("clb-linkalpha", Code("colony-home.js"));
+
+        // .125 * .36 == .045 and .125 * .18 == .0225: the pre-.122 look, to three decimals.
+        Assert.Equal(.045, .125 * .36, 3);
+        Assert.Equal(.022, .125 * .18, 2);
+    }
+
+    /// <summary>
+    /// A MOUND CHAMBER IS A DOOR, AND ONLY ON THE SECOND CLICK — v0.3.8.122.
+    ///
+    /// Navigating on the first click would make a mound the one chamber an operator cannot approach,
+    /// recolour or read the residents of without being thrown out of the colony. So the first click
+    /// focuses it like any other chamber and the second, deliberate one opens its settings.
+    ///
+    /// The renderer decides WHICH chambers are doors because it owns the sector table; the page owns
+    /// navigation and does the `go()`. Splitting it the other way would put a route in the renderer.
+    /// </summary>
+    [Fact]
+    public void AMoundChamber_OpensItsSettingsOnTheSecondClick_AndKeepsEveryOtherChambersControls()
+    {
+        var live = Code("colony-live.js");
+
+        Assert.Contains("if (s2.mound && focused === s2.id) { emit('moundsettings', s2); return; }", live);
+        Assert.Contains("live.on('moundsettings'", Code("colony-home.js"));
+        Assert.Contains("go('/tools/micromound')", Code("colony-home.js"));
+
+        // Both chambers that present as mounds are flagged as such, in the sector table.
+        Assert.Contains("id: 'mound', label: 'MICROMOUND', mound: true", live);
+        Assert.Contains("id: 'homelab', label: 'INFRASTRUCTURE', mound: true", live);
+        // HOMELAB is renamed at BOTH ends, and the server's label is the one that wins.
+        Assert.Contains("[Homelab] = \"INFRASTRUCTURE\"", SourceText.CodeOnly(File.ReadAllText(
+            Path.Combine(SourceText.RepoRoot(), "src", "Anthill.Core", "ColonyLive", "ColonyLiveProjection.cs"))));
+
+        // Customization parity is not a special case: the sector panel is generic and a mound reaches
+        // it through the same `sector` event as everything else. If that ever stops being true this
+        // asserts the panel still reads its style from the renderer rather than from a branch.
+        Assert.Contains("live.getSectorStyle(s.id)", Code("colony-home.js"));
+    }
+
+    /// <summary>
+    /// NOTHING HORIZONTAL IS DRAWN UNDER THE COLONY — v0.3.8.122.
+    ///
+    /// The renderer drew a lit floor at y=340: a wide faint disc, three unseen lights glinting off
+    /// it, and one coloured pool per chamber cast down onto it. Two environments used it, and one
+    /// (`plane`) existed only to show it. Every one of those marks is a horizontal surface, so each
+    /// silently declared a DOWN — the colony acquired a floor, the floor bounced light back onto the
+    /// chambers, and the camera could not be taken below it without drawing the colony through its
+    /// own ground.
+    ///
+    /// This guard is paired with the one below and they are not separable: the free orbit is only
+    /// coherent because there is no privileged direction left to be on the wrong side of. A future
+    /// session adding "just a faint floor for depth" re-creates both defects at once, which is why
+    /// the names of all five removed symbols are listed rather than only the drawing call.
+    /// </summary>
+    [Fact]
+    public void TheColonyIsSuspended_WithNothingDrawnBeneathIt()
+    {
+        var live = Code("colony-live.js");
+
+        foreach (var gone in new[] { "PLANE_Y", "planePool", "envGround", "camPos", "LIGHTS" })
+            Assert.False(live.Contains(gone, StringComparison.Ordinal),
+                $"colony-live.js still references `{gone}`. The ground plane was removed at .122 — "
+                + "a floor is what gave the colony a down, bounced light back onto the chambers, and "
+                + "stopped the camera going underneath. A dimmer floor is still a floor.");
+
+        // The environment it existed for is gone from the renderer, the page and the menu, and a
+        // browser that remembers it heals rather than falling through to a default it never chose.
+        Assert.DoesNotContain("<option value=\"plane\">", Raw("index.html").Replace("\r\n", "\n"), StringComparison.Ordinal);
+        Assert.Contains("if (opts.env === 'plane') opts.env = 'void';", live);
+        Assert.Contains("if (v === 'plane') { v = 'void';", Code("colony-home.js"));
+
+        // VACUITY FLOOR: the environment switch this guard is making a claim about still exists,
+        // and still has the branch a removed `plane` now heals into.
+        Assert.Contains("function drawEnv(ts)", live);
+        Assert.Contains("opts.env === 'void'", live);
+    }
+
+    /// <summary>
+    /// THE CAMERA ORBITS THROUGH THE WHOLE SPHERE — v0.3.8.122.
+    ///
+    /// Pitch was clamped to [0.05, 1.15] rad — roughly 3° to 66°, a band chosen to keep the camera
+    /// above the ground plane and tilted down at it. With the plane gone the clamp was the only
+    /// thing left asserting an up, and the operator asked to be able to go under the colony.
+    ///
+    /// What makes the unclamp SAFE is not the drag line, it is the painter's sort: chambers are
+    /// projected and drawn back-to-front by camera-space depth every frame, so a view from below is
+    /// composited in the right order rather than inside-out. That sort is asserted here, in the same
+    /// guard, because removing it would not break any test that talks about the camera and would
+    /// turn every angle past the horizon into a silent mess.
+    /// </summary>
+    [Fact]
+    public void TheCameraPitch_IsFree_AndDepthStillSortsBackToFront()
+    {
+        var live = Code("colony-live.js");
+
+        // The drag assigns pitch the way it assigns yaw: no clamp on either.
+        Assert.Contains("goal.pitch = drag.pitch + dy2 * .003;", live);
+        Assert.Contains("goal.yaw = drag.yaw + dx2 * .0035;", live);
+        Assert.DoesNotContain("goal.pitch = Math.max(", live);
+        Assert.DoesNotContain("goal.pitch = Math.min(", live);
+
+        // Whole turns are dropped from BOTH angles together before a reset eases home, so the reset
+        // never unwinds a revolution the operator did not ask for. Shifting cam and goal by the same
+        // multiple of 2π leaves the rendered orientation identical, which is why it is safe at all.
+        Assert.Contains("function unwind()", live);
+        Assert.Contains("cam.pitch -= k * t; goal.pitch -= k * t;", live);
+        Assert.Contains("cam.yaw -= k * t; goal.yaw -= k * t;", live);
+        Assert.Matches(new Regex(@"survey:\s*function\s*\(\)\s*\{[^\n]*unwind\(\);"), live);
+
+        // The backdrop's parallax is trigonometric, so an unbounded angle cannot slide it off the
+        // canvas and leave a bare gradient behind. Linear offsets were correct only while the angles
+        // were clamped, and yaw never was.
+        Assert.Contains("Math.sin(cam.pitch) * 40", live);
+        Assert.Contains("Math.sin(cam.yaw) * 24", live);
+
+        // The invariant the free orbit rests on: back-to-front by camera-space depth.
+        Assert.Contains("sort(function (a, b) { return b.pr.zc - a.pr.zc; })", live);
+
+        // VACUITY FLOOR: the drag handler and the projection this guard reasons about are both here.
+        Assert.Contains("function onMove(e)", live);
+        Assert.Contains("function proj(p)", live);
     }
 }

@@ -496,9 +496,14 @@ internal sealed class KnowledgeReviewTool : ITool
                 $"The review proposal could not be recorded: {error.Message}", ToolFailure.Classify(error));
         }
 
+        // v0.3.8.122 — SAYS WHAT ACTUALLY HAPPENED. This read "it is queued for an operator to
+        // approve or decline", and there is no queue: the proposal is recorded in the colony's event
+        // log, which an operator reads, and no approval surface consumes it yet. Describing a
+        // pipeline that does not exist is how a worker comes to believe its change is pending, and a
+        // model told its proposal is queued will plan the next step as though it were.
         return new ToolResult(Name, true,
-            $"Recorded a proposal to '{action}' knowledge item {id}. This has NOT changed the knowledge "
-          + "base; it is queued for an operator to approve or decline. Continue without assuming the "
-          + "change has been applied.");
+            $"Recorded a proposal to '{action}' knowledge item {id} in the colony's event log for an "
+          + "operator to read. This has NOT changed the knowledge base, and no approval step is "
+          + "waiting on you. Continue without assuming the change has been or will be applied.");
     }
 }

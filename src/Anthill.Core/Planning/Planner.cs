@@ -18,6 +18,45 @@ public sealed record PlanRejection(int TaskIndex, string Field, string Reason)
 }
 
 /// <summary>
+/// WHY THE PLAN THAT RAN IS NOT THE PLAN THAT WAS ASKED FOR. v0.3.8.122.
+///
+/// Stable codes, because a consumer must branch on the reason and never on prose. Each names one of
+/// the five conditions in <see cref="Planner.CreateTasks"/> that abandon dynamic planning for a
+/// static plan; every one of them was previously recorded by a console write and nothing else.
+///
+/// These are not failures of the mission — a fallback plan still runs and can still succeed. They
+/// are failures of ATTRIBUTION: without them, "the colony ignored my goal" and "the colony did what
+/// I asked and the answer is poor" are the same green run in the record.
+/// </summary>
+public static class PlanSubstitutions
+{
+    /// <summary>The goal was long enough to be treated as a document to chunk rather than a request
+    /// to follow. The most consequential of the five, and the one an operator is least likely to
+    /// guess: a precisely specified workflow is by construction a long input.</summary>
+    public const string LongInputSpecIngestion = "long_input_spec_ingestion";
+
+    /// <summary>No model was available to plan with — disabled, or no router composed.</summary>
+    public const string NoModelRouter = "no_model_router";
+
+    /// <summary>The planner model was asked and did not answer usably.</summary>
+    public const string ModelCallFailed = "model_call_failed";
+
+    /// <summary>The model answered and the plan failed admission. The detail carries every
+    /// rejection, not a count: "3 invalid task(s)" tells an operator that something was wrong and
+    /// nothing about what, and the fallback plan ran anyway.</summary>
+    public const string PlanRejected = "plan_rejected";
+
+    /// <summary>The model's answer could not be parsed as a plan at all.</summary>
+    public const string PlanParseFailed = "plan_parse_failed";
+
+    /// <summary>Every code, for guards and for any consumer that wants to enumerate them.</summary>
+    public static readonly IReadOnlyList<string> All =
+    [
+        LongInputSpecIngestion, NoModelRouter, ModelCallFailed, PlanRejected, PlanParseFailed
+    ];
+}
+
+/// <summary>
 /// The outcome of reading a model's proposed plan: the tasks, or the reasons there are none.
 ///
 /// v3.2.0 (phase) — strict, all-or-nothing schema validation. The parser used to repair a plan
@@ -110,10 +149,33 @@ public sealed class Planner
     /// optional because the offline/tooling callers have no mission; null means "requires nothing",
     /// which resolves exactly as this planner did before the parameter existed.
     /// </summary>
+    /// <param name="onSubstituted">
+    /// v0.3.8.122 — CALLED WHENEVER THE PLAN THAT RUNS IS NOT THE PLAN THAT WAS ASKED FOR.
+    ///
+    /// Five conditions below abandon dynamic planning and return a static plan, and every one of
+    /// them was recorded by `Console.Error.WriteLine` and nothing else. That is not a log-level
+    /// quibble: the substitution is the most consequential thing this class does, it leaves no row,
+    /// no event and no artifact, and the mission that follows looks exactly like a mission that was
+    /// planned as requested. The file's own comment above says it — an operator sees a colony that
+    /// ignored their goal, with a green run behind it.
+    ///
+    /// A callback rather than a store dependency: this class is deliberately pure — a goal and a
+    /// router in, tasks out — and giving it a database to satisfy a reporting need would make every
+    /// planning test carry one. The caller that HAS the mission id and the event log decides what
+    /// recording means. Null (every existing caller, and every unit test) behaves exactly as before.
+    /// </param>
     public List<Task> CreateTasks(string goal, MissionConstraints constraints, string memoryContext = "",
         string toolContext = "", string pheromoneContext = "", string skillContext = "",
-        Anthill.Core.Missions.MissionSpecification? specification = null)
+        Anthill.Core.Missions.MissionSpecification? specification = null,
+        Action<string, string>? onSubstituted = null)
     {
+        // One place, both channels: the console line stays for a developer watching a run, and the
+        // callback is what makes it a fact in the mission's record.
+        void Substituted(string reason, string detail)
+        {
+            Console.Error.WriteLine($"[planner] {reason}: {detail}");
+            onSubstituted?.Invoke(reason, detail);
+        }
 
         // v2.22.0 (made concurrency-safe in v2.26.0): capture exactly which skills THIS plan was
         // shown, locally, so a claimed skill_id is checked against what this plan offered — never
@@ -125,9 +187,29 @@ public sealed class Planner
         // followed by a synthesis pass. This runs regardless of model availability. (Spec-ingestion
         // plans are already research/synthesis/verify only — no coder tasks — so they honour the
         // no-patch constraint by construction.)
-        if (IsLongInput(goal)) return AssignDefaultWorkers(EnsureClassCoverage(CreateSpecIngestionTasks(goal), goal, specification), goal, constraints, specification);
+        if (IsLongInput(goal))
+        {
+            // Reported, not merely done. This is the gate `docs/ORCHESTRATION-FINDINGS.md` names:
+            // it asks "is this a giant document to summarise?" and answers "is this an instruction
+            // to follow?", so a precisely specified request is the MOST likely to be chunked. The
+            // gate is unchanged here — moving it needs the execution records — but a mission it
+            // fires on no longer looks identical to one that was planned as asked.
+            Substituted(PlanSubstitutions.LongInputSpecIngestion,
+                // `goal.Length`, NOT `(goal ?? "").Length`. The parameter is non-nullable and every
+                // line below dereferences it; coalescing here told the flow analysis it might be
+                // null and turned the very next call into CS8604. A defensive null check on a
+                // non-nullable parameter does not add safety, it removes the compiler's.
+                $"goal is {goal.Length} characters (> {AnthillRuntime.LongInputThreshold}); planned as spec ingestion "
+                + "rather than as a request");
+            return AssignDefaultWorkers(EnsureClassCoverage(CreateSpecIngestionTasks(goal), goal, specification), goal, constraints, specification);
+        }
 
-        if (!_useOllama || _router is null) return AssignDefaultWorkers(EnsureClassCoverage(EnforceConstraints(FallbackTasks(goal), goal, constraints), goal, specification), goal, constraints, specification);
+        if (!_useOllama || _router is null)
+        {
+            Substituted(PlanSubstitutions.NoModelRouter,
+                _router is null ? "no model router is composed" : "model use is disabled for this runtime");
+            return AssignDefaultWorkers(EnsureClassCoverage(EnforceConstraints(FallbackTasks(goal), goal, constraints), goal, specification), goal, constraints, specification);
+        }
 
         // v0.3.8.98 — THE REQUESTED DELIVERABLES, BY ID, so a task can say which one it serves.
         //
@@ -229,8 +311,8 @@ Required JSON:
         var response = result.Content;
         if (!result.Ok)
         {
-            Console.Error.WriteLine($"Planner failed to use Ollama ({result.Status.Name()}): {response}");
-            Console.Error.WriteLine("Using fallback static task plan.");
+            Substituted(PlanSubstitutions.ModelCallFailed,
+                $"planner model call returned {result.Status.Name()}: {TextUtil.Truncate(response ?? "", 300)}");
             return EnforceConstraints(FallbackTasks(goal), goal, constraints);
         }
         try
@@ -243,8 +325,9 @@ Required JSON:
                 // Every reason, not a count. "Planner dropped 3 invalid task(s)" told an operator
                 // that something was wrong and nothing about what, which is the same as telling
                 // them nothing — and the plan ran anyway.
-                Console.Error.WriteLine($"Dynamic plan REJECTED ({plan.Rejections.Count} problem(s)). Using fallback plan.");
-                foreach (var r in plan.Rejections) Console.Error.WriteLine("  " + r.Describe());
+                Substituted(PlanSubstitutions.PlanRejected,
+                    $"{plan.Rejections.Count} problem(s): "
+                    + string.Join("; ", plan.Rejections.Select(r => r.Describe())));
                 return EnforceConstraints(FallbackTasks(goal), goal, constraints);
             }
             var tasks = plan.Tasks.ToList();
@@ -254,7 +337,7 @@ Required JSON:
         }
         catch (Exception error)
         {
-            Console.Error.WriteLine($"Dynamic planner parse failed: {error.Message}");
+            Substituted(PlanSubstitutions.PlanParseFailed, error.Message);
             return AssignDefaultWorkers(EnsureClassCoverage(EnforceConstraints(FallbackTasks(goal), goal, constraints), goal, specification), goal, constraints, specification);
         }
     }
