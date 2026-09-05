@@ -78,6 +78,32 @@ contract by `ProjectReference`, so every .NET job clones `Formicaria/micromound`
 repository had been made private, which the default `GITHUB_TOKEN` cannot read. Exit 128,
 "Repository not found". It is public again and that is the whole fix.
 
+**A GITHUB PUSH THAT TIMES OUT WHILE `api.github.com` ANSWERS MAY BE NOTHING AT ALL. RETRY FIRST.**
+v0.3.8.123 lost about forty minutes to this and never did find a cause. `git push` to
+`github.com:443` timed out repeatedly while `gh` reached the API fine, `ssh.github.com` connected,
+and of GitHub's addresses `140.82.114.4` and `.5` timed out while `.6` and `.36` answered. That
+pattern reads convincingly as destination filtering. An hour later all ten addresses answered, with
+nothing changed on the machine or the network.
+
+A `codex_sandbox_offline_block_outbound` Windows Firewall rule was found while looking and was
+briefly believed to be the cause — `Direction Outbound`, `Action Block`, `Program Any`,
+`Profile Any`. It was not: its `LocalUser` SDDL scopes it to a single SID (`…-1004`, Codex's own
+sandbox account) and the operator is `…-1001`, so the rule never applied to the shell that was
+failing. **Recorded because the wrong explanation was more persuasive than the right one**, and a
+later session finding that rule will reach for it the same way. Check the security filter before
+believing it:
+
+```powershell
+Get-NetFirewallRule -DisplayName "codex_sandbox_*" | Get-NetFirewallSecurityFilter | Format-List LocalUser
+whoami /user
+```
+
+The order that would have cost five minutes instead of forty: **retry**, then a second network
+(hotspot), then look for a local cause. All three GitHub-connectivity incidents in this arc had a
+plausible explanation in the wrong layer — a private repo reading as a missing one at `.119`–`.121`,
+an unquoted bundle path reading as a git failure at `.123`, and a transient route reading as a
+firewall rule an hour later.
+
 **TAKING micromound PRIVATE STOPS ANTHILL'S CI, AND NOTHING IN ANTHILL SAYS SO.** When that step
 fails, ask in this order: (1) `gh api repos/Formicaria/micromound --jq .private`, (2) does the
 `token:` secret exist if one is configured, (3) `MICROMOUND_REF` — and the pin has never once been
