@@ -52,7 +52,7 @@ if ($node) {
     # is deliberately DOM-free so it can be proven without a browser harness.
     # v0.3.8.52: the DIRECTORY, not one named file — see the note in ci.yml.
     Write-Host "==> node --test on UI logic" -ForegroundColor Cyan
-    node --test tests/ui/
+    node --test tests/ui/*.test.js
     if ($LASTEXITCODE -ne 0) { exit 1 }
 } else {
     Write-Host "==> SKIP node --check (node not installed; CI ui-integrity job still enforces it)" -ForegroundColor Yellow

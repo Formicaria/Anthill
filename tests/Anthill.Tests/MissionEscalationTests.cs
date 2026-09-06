@@ -25,10 +25,13 @@ namespace Anthill.Tests;
 /// never refused also never ASKED: the operator saw no pending approval, which is indistinguishable
 /// from a mission that had nothing to approve.
 ///
-/// The tests are split deliberately. The first group is what now stops; the second is what
-/// deliberately does NOT, because the safety of this change is entirely in how narrow it is — a
-/// mission with no conversation has no operator policy to apply, and manufacturing `Ask` for it
-/// would refuse every patch the coding lane has ever written.
+/// The tests are split deliberately. The first group is what stops on a conversation's own policy.
+/// The second is the AUTONOMOUS lane, which `.128` left running ungated and argued for at the time:
+/// a mission with no conversation had no operator policy to apply, and manufacturing `Ask` for it
+/// would have refused every patch the coding lane has ever written. v0.3.8.130 supplies the missing
+/// half — `autonomy_escalation_policy`, the answer given once and in advance — so the scheduler, the
+/// CLI and the Director are governed by the same chokepoint, and a colony nobody has configured
+/// stops rather than writes.
 /// </summary>
 public class MissionEscalationTests : IDisposable
 {
@@ -44,10 +47,14 @@ public class MissionEscalationTests : IDisposable
         _registry = new ToolRegistry(_memory);
         _registry.Register(new SpyTool("apply_patch"));   // side-effecting
         _registry.Register(new SpyTool("system_info"));   // read-only
+        // The autonomous lane reads a runtime static. Pinned on the way in and restored on the way
+        // out, so a test that configures the colony cannot decide what a later one is testing.
+        Anthill.Core.Configuration.AnthillRuntime.AutonomyEscalationPolicy = "ask";
     }
 
     public void Dispose()
     {
+        Anthill.Core.Configuration.AnthillRuntime.AutonomyEscalationPolicy = "ask";
         _memory.Dispose();
         try { Directory.Delete(_dir, recursive: true); } catch { }
     }
@@ -204,28 +211,90 @@ public class MissionEscalationTests : IDisposable
         Assert.Equal(0, Spy("apply_patch").Calls);
     }
 
-    // ---- what deliberately does not stop ------------------------------------------------------
+    // ---- the autonomous lane, v0.3.8.130 -------------------------------------------------------
 
     /// <summary>
-    /// A MISSION WITH NO CONVERSATION IS UNCHANGED, and this test is the safety of the whole change.
+    /// A MISSION WITH NO CONVERSATION IS HELD TO THE COLONY'S STANDING POLICY, AND IT DEFAULTS TO ASK.
     ///
-    /// Autonomous runs, the scheduler and the CLI have no conversation and therefore no operator
-    /// policy. They are not ungoverned — `ToolAuthorization` and the mission's authority ceiling
-    /// both ran before this gate — they simply have nothing here to consult. Inventing `Ask` for
-    /// them would refuse every patch the coding lane has ever written, on the grounds that a
-    /// conversation nobody started did not answer a question nobody asked.
+    /// `.128` left this lane running ungated and wrote the reason down: there was no operator to
+    /// ask. `autonomy_escalation_policy` is the answer given in advance, so the scheduler, the CLI
+    /// and the Director are governed by the same chokepoint everything else is — and, on a colony
+    /// nobody has configured, an unattended `apply_patch` stops rather than lands.
     /// </summary>
     [Fact]
-    public void AMissionWithNoConversation_RunsExactlyAsItDid()
+    public void AnAutonomousMission_IsRefusedUnderTheDefaultPolicy()
     {
         var mission = MissionUnder(policy: null);
+        Anthill.Core.Configuration.AnthillRuntime.AutonomyEscalationPolicy = "ask";
 
         var result = _registry.RunTool("apply_patch", missionId: mission.Id, antName: "queen");
 
-        Assert.True(result.Success,
-            "the mission lane now gates work that has no operator policy behind it — this narrows "
-          + "the colony to a standstill rather than narrowing what a conversation may do.");
+        Assert.False(result.Success,
+            "an unattended mission reached a side-effecting action and nothing stopped it. The "
+          + "default must be ask: a colony an operator has not configured has not consented.");
+        Assert.Equal(0, Spy("apply_patch").Calls);
+    }
+
+    /// <summary>
+    /// AND THE REFUSAL LEAVES SOMETHING TO ANSWER. A gate that stops an autonomous run without
+    /// filing the question is indistinguishable, to the operator, from a mission that did nothing —
+    /// which is the failure `.105` built the approval row for.
+    /// </summary>
+    [Fact]
+    public void AnAutonomousRefusal_FilesTheQuestionItStoppedFor()
+    {
+        var mission = MissionUnder(policy: null);
+        Anthill.Core.Configuration.AnthillRuntime.AutonomyEscalationPolicy = "ask";
+
+        _registry.RunTool("apply_patch", missionId: mission.Id, antName: "queen");
+
+        var filed = _memory.ApprovalForTarget($"{mission.Id}:apply_patch", ApprovalActionType.ToolUse);
+        Assert.NotNull(filed);
+    }
+
+    /// <summary>
+    /// A STANDING COLONY POLICY LETS IT THROUGH — WITH THE RECORD OF WHAT PERMITTED IT. `.46`'s
+    /// rule reaches the lane that had no way to obey it: the decision names the configuration.
+    /// </summary>
+    [Theory]
+    [InlineData("bypass")]
+    [InlineData("auto_approve")]
+    public void AnAutonomousMission_RunsWhenTheOperatorConfiguredItTo(string configured)
+    {
+        var mission = MissionUnder(policy: null);
+        Anthill.Core.Configuration.AnthillRuntime.AutonomyEscalationPolicy = configured;
+
+        var result = _registry.RunTool("apply_patch", missionId: mission.Id, antName: "queen");
+
+        Assert.True(result.Success);
         Assert.Equal(1, Spy("apply_patch").Calls);
+    }
+
+    /// <summary>
+    /// AND AN UNRECOGNISED SPELLING FAILS CLOSED. A typo in a safety key must never read as
+    /// permission — the one direction this parser is not allowed to be lenient in.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("byapss")]
+    [InlineData("yes")]
+    [InlineData("auto")]
+    public void AnUnrecognisedPolicySpelling_IsAsk(string configured)
+    {
+        Assert.Equal(EscalationPolicy.Ask, OperatorDecisions.PolicyFromConfiguration(configured));
+    }
+
+    /// <summary>The spellings an operator may actually write, including the hyphenated one.</summary>
+    [Theory]
+    [InlineData("bypass", EscalationPolicy.Bypass)]
+    [InlineData("BYPASS", EscalationPolicy.Bypass)]
+    [InlineData("auto_approve", EscalationPolicy.AutoApprove)]
+    [InlineData("auto-approve", EscalationPolicy.AutoApprove)]
+    [InlineData("autoapprove", EscalationPolicy.AutoApprove)]
+    [InlineData("ask", EscalationPolicy.Ask)]
+    public void TheConfiguredSpellings_ReadAsThePolicyTheyName(string configured, EscalationPolicy expected)
+    {
+        Assert.Equal(expected, OperatorDecisions.PolicyFromConfiguration(configured));
     }
 
     /// <summary>

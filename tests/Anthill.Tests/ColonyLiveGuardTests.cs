@@ -925,21 +925,64 @@ public class ColonyLiveGuardTests
     /// <summary>
     /// THE COMPOSER IS A DOORWAY, NOT A SECOND PIPELINE. §3 still holds — Chat is the one mission
     /// entry. The home page's composer resolves WHERE the conversation lives, sets the hand-off state
-    /// Chat already honours, opens Chat and calls Chat's own send. It never creates a conversation
-    /// or posts a turn itself, so streaming, refusals, attachments and policy have one implementation.
+    /// Chat already honours, and calls Chat's own send. It never creates a conversation or posts a
+    /// turn itself, so streaming, refusals, attachments and policy have one implementation.
+    ///
+    /// v0.3.8.130 — AND NAVIGATION WAS NEVER PART OF THAT DECISION, which is why this guard had to
+    /// be widened rather than satisfied. It pinned a bare `go('/chat');` and therefore also pinned
+    /// "the composer always leaves", a property nobody chose and one the operator reported as the
+    /// defect: a mission takes minutes, and watching it meant leaving the colony for a progress bar
+    /// and then coming back to watch the ants. The rule is unchanged and is asserted below in its
+    /// own terms — no conversation, no turn, no mission fetched from this file. What is asserted
+    /// additionally is the split: an ASK goes to the thread, because a streamed answer's whole value
+    /// is there; a MISSION stays and is followed here.
     /// </summary>
     [Fact]
     public void TheComposer_IsADoorwayToChat_NotASecondPipeline()
     {
         var home = Code("colony-home.js");
         Assert.Contains("chatPendingProjectId = pid; chatActiveId = null; chatComposingNew = true;", home);
-        Assert.Contains("go('/chat');", home);
-        Assert.Contains("await chatSend(mode);", home);
+        Assert.Contains("var handed = await chatSend(mode);", home);
         foreach (var forbidden in new[] { "/conversations", "/turns", "/missions" })
             Assert.False(home.Contains(forbidden, StringComparison.Ordinal),
                 $"colony-home.js names {forbidden}. The composer hands its text to Chat; it does not run its own pipeline.");
         // A plain question runs as a chat turn and never invents a project to run work in.
         Assert.Contains("if (mode === 'mission' && $('ccp-scope') && $('ccp-scope').value === 'q') mode = 'chat';", home);
+
+        // The split, in both directions. An ask leaves; a mission does not, and is followed instead.
+        Assert.Contains("var watched = (mode === 'mission');", home);
+        Assert.Contains("if (!watched) go('/chat');", home);
+        Assert.Contains("if (watched) beginWatch(handed);", home);
+    }
+
+    /// <summary>
+    /// THE MISSION CHIP READS WHAT THE PAGE ALREADY HAS. v0.3.8.130.
+    ///
+    /// The composer now follows the mission it started, and the only honest way for THIS file to do
+    /// that is with signals it is already allowed to hold: `lastGraphData`, which the bar above it
+    /// already reads, filtered to the mission it was handed. A timer here would be a client mission
+    /// clock and a fetch here would be a second pipeline — the two things the guards above refuse —
+    /// so the chip is redrawn from `ColonyHost.onScene`, which already fires on every colony event.
+    ///
+    /// AND AN EMPTY TASK LIST IS NOT A FINISHED MISSION. A plan takes a moment to reach the graph;
+    /// treating "no tasks" as "all tasks terminal" would show the operator a completed chip, with a
+    /// link to open it, over work that had not started. That is the vacuity failure this repository
+    /// keeps finding, arriving in a progress indicator.
+    /// </summary>
+    [Fact]
+    public void TheMissionChip_IsDrawnFromTheSceneAndFiltersToItsOwnMission()
+    {
+        var home = Code("colony-home.js");
+
+        Assert.Contains("renderWatch();", home);
+        Assert.Contains("t.mission_id === watching.missionId", home);
+        Assert.Contains("tasks.length > 0 && live === 0", home);
+        Assert.Contains("refreshBar(); renderWatch();", home);
+
+        Assert.False(home.Contains("setTimeout(renderWatch", StringComparison.Ordinal),
+            "the mission chip drives itself from a timer. It is redrawn by ColonyHost.onScene, "
+          + "which already fires on every colony event — a second clock here is the client mission "
+          + "clock this file is forbidden to keep.");
     }
 
     /// <summary>

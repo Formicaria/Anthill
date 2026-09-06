@@ -1,3 +1,135 @@
+## v0.3.8.130 - the lane with nobody in front of it
+
+**`.128` CLOSED HALF A GATE AND SAID SO.** The escalation policy an operator sets on a conversation
+now governs that conversation's missions. A mission with NO conversation — scheduled, CLI, Director —
+was left running ungated, and the reasoning was written into the source and the plan: such a mission
+"has no operator policy to apply, and inventing `Ask` for it would refuse every patch the coding lane
+has ever written on the grounds that a conversation nobody started did not answer a question nobody
+asked."
+
+The mechanism in that sentence is right. The conclusion was not. **The objection was never to
+asking — it was to asking a question nobody could answer**, and the distance between those two is
+one configuration key. `autonomy_escalation_policy` is the answer, given once and in advance, so
+there is no ungoverned lane left.
+
+- **`ask`** — the default, and what every safety profile pins back — refuses the side-effecting
+  dispatch and FILES the question as a pending `ToolUse` approval, through the same `.105` path a
+  conversation's mission uses. The operator answers when they are next at the console and `.110`'s
+  resumption replays the refused step. A colony nobody has configured stops rather than writes.
+- **`auto_approve` / `bypass`** let it through and carry the standing decision that permitted it.
+  That is `.46`'s rule reaching the one lane that had no way to obey it: permission IS the record,
+  and "why was the colony allowed to do that" answers with a configuration rather than a shrug.
+- **An unrecognised spelling is `ask`.** A typo in a safety key is the one direction this parser is
+  not allowed to be lenient in.
+
+The vocabulary is parsed in `OperatorDecisions` rather than beside the setting in `AnthillRuntime`,
+because a second parser next to a config key is the two-implementations-of-one-rule shape this
+repository keeps finding in its own postmortems.
+
+**What did not change:** the escalation SET. It is `EscalationGate.SideEffecting`, read rather than
+re-decided, exactly as at `.128`. Read-only tools still never escalate, and role authorization and
+the mission's authority ceiling still run before this gate is reached.
+
+**AND THE BLAST RADIUS WAS THE TEST SUITE, WHICH IS THE POINT.** Six fixtures drive a real colony
+through a mission with no conversation — the patch lifecycles, the earned repair, role cancellation,
+the artifact bridge, the tester. Every one of them went red, because every one of them is exactly
+the shape this gate exists to stop: unattended work reaching `apply_patch` and
+`run_allowlisted_check` with nobody asked. They declare their intent now
+(`autonomy_escalation_policy = "bypass"`, restored on the way out) instead of inheriting a silence,
+and the default they were relying on is the one an operator gets. A change that closes a real hole
+should break the fixtures that were standing in it; a change that closes one and breaks nothing
+usually has not closed it.
+
+---
+
+**A GUARD THAT KNEW ONE SENTENCE SHAPE.** `DocumentCurrencyTests` refuses a current document that
+presents a superseded release as the state of things, and every phrase it knew put the version AFTER
+the claim — "Shipping release: v…", "Current version: v…". `HANDOFF.md` opened with
+`State: **v0.3.8.125 is released and tagged**` and sailed through `.126`, `.127`, `.128` and `.129`
+saying so, while also announcing that `.126` was "awaiting a test run". The rule was right and the
+reader only knew one word order. Widened where it LOOKS, not in what it accepts.
+
+And `HANDOFF.md` is a pointer again, which is what `CONTRIBUTING.md` has said it must be since it
+spent forty releases opening with "the 3.8 line is CLOSED at v0.3.8.34". A snapshot has to be
+rewritten every release to stay true and will therefore be false most of the time; the release
+record it carried is kept below the rule, as a record, because the reasoning in it is still worth
+reading.
+
+---
+
+**AND THE SMALL DEBTS, PAID.** `ConfigCatalog.ApplyKeyAliases` and `ConfigKeyAliasTests` both
+credited the alias mechanism to `.126`; it shipped in `.128` — the exact drift the guards elsewhere
+in this repository exist to catch, in the file that carries the mechanism they check. And
+`validate.ps1` / `validate.sh` ran `node --test tests/ui/`, which Node 24 on Windows resolves as a
+MODULE rather than a directory to scan: the operator's full validation failed at the console suite
+with `Cannot find module` while all eight test files sat there. It takes a glob now, which both
+shells and every Node since 21 read the same way.
+
+`docs/AUTONOMY.md` §5 and §7 carry the new key, and `docs/PLAN.md`'s account of `.128` no longer
+claims the autonomous lane is deliberately open — because it is not, any more.
+
+---
+
+**AND THE ANT PANEL SAID EVERYTHING TWICE.** `.129` put the inspector's facts back after `.127` lost
+them, and doing so made the real complaint visible: the panel was not missing information, it was
+repeating it. Above the fold, `#clb-record-meta` rendered
+`role · verifier · idle · trail 0.54 · 8✓ 5✗ · 2 workers` and a status chip reading `idle`. Below it,
+the inspector opened with the ant's name and role AGAIN — two inches under the field that renames it
+— and then spent eight rows on Status, Type, Parent, Colony, Chamber, Pheromone, Runtime, Activity
+and Task Count, several of which are one fact wearing two labels.
+
+Four pairs collapsed into four rows. **Status and Runtime** were a live state and its runtime label
+(`Idle` above `Mission Agent — Idle`); the runtime label wins, because it is the one that can also
+say why a role is unavailable. **Type and Parent** are one sentence: `worker of coder`, or `role`.
+**Colony and Chamber** are one place: `Verification · Validation Bastion`. **Activity and Task
+Count** are one number read two ways. A worker's four telemetry rows became two.
+
+**The duplicate line and chip are hidden rather than deleted**, and the distinction matters: the same
+two elements are a TRAIL RECORD's only description — type, ant, mission, task, time, and a
+verification tag with no equivalent anywhere else in the panel. Deleting the markup would have
+removed a record's whole description to tidy an ant's, which is the shape of fix that turns one
+complaint into two.
+
+**The header is emitted per host, not deleted.** In the live panel it is a duplicate of the rename
+field directly above it. In the dashboard's Ant Inspector widget it is the ONLY thing naming the ant
+— `#agent-detail` has no rename field over it — so removing it globally would have replaced a
+duplicated label with an anonymous one. One renderer still, two sinks, and the assembly moved inside
+the loop that already knew which sink it was writing to.
+
+---
+
+**AND THE COMPOSER STOPPED THROWING THE OPERATOR OUT OF THE ROOM.** Sending from the colony view
+called `go('/chat')` before the work began, every time, for both buttons. So starting a mission from
+the colony meant leaving the colony — to watch a progress bar, and then walking back to watch the
+ants do the thing the bar was counting. That round trip is the whole complaint, and it was never a
+decision: `ColonyLiveGuardTests` pinned the literal `go('/chat');` to defend "the composer does not
+run its own pipeline", and pinned "the composer always leaves" by accident, in the same line.
+
+The rule is unchanged and is now asserted in its own terms — no conversation created here, no turn
+posted here, no mission fetched here, and `api()` still restricted to `/projects`. What changed is
+the navigation, split by what each button produces. **Ask** goes to the thread, because a streamed
+answer's whole value is in the thread. **Run mission** stays, and a chip under the composer follows
+the work: `mission starting…`, then `mission running · 3/7`, then `mission complete · open it →`,
+which opens the conversation it came from.
+
+**It reads what the page already holds.** No timer and no fetch, because this file may have neither
+— a timer here is the client mission clock and a fetch here is the second pipeline, and both are
+refused by guards written before this. The chip is redrawn from `ColonyHost.onScene`, which already
+fires on every colony event, over `lastGraphData`, which the bar above it already reads. What is new
+is a FILTER: the tasks of the mission the composer was handed, so the chip describes the work the
+operator asked for rather than whatever the colony is doing.
+
+**The mission id was on the wire and being thrown away.** `POST /conversations/{id}/turns` has
+returned `mission_id` since the route existed; `chatSend` read `started` and `summary` and discarded
+the rest, and returned nothing at all. It hands back `{conversationId, missionId}` now — which is
+what makes the filter possible, and what makes the finished chip able to open the right thread.
+
+**AN EMPTY TASK LIST IS NOT A FINISHED MISSION**, and this is the one thing in it worth guarding. A
+plan takes a moment to reach the graph, and "every task is terminal" is trivially true of no tasks.
+Treating that as complete would hand the operator a finished chip, with a link, over work that had
+not started — the vacuity failure this repository keeps finding, arriving in a progress indicator.
+The chip requires at least one task before it can be ready, and a guard requires the chip to.
+
 ## v0.3.8.129 - the panel that was never opening, and a check that reported its own plumbing
 
 **CLICKING AN ANT OPENED NOTHING, AND THE REASON WAS ONE LINE THAT WAS NEVER DELETED.** `.127`

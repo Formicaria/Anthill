@@ -15,7 +15,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "0.3.8.129";
+    public const string Version = "0.3.8.130";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -581,6 +581,14 @@ public static class AnthillRuntime
     public static bool AutonomyOneShotCompletion = true;
     // ---- Phase 5: gated auto-apply -----------------------------------------
     /// <summary>Master switch: the Director may auto-approve+apply allowlisted patches that verify green. Fail-closed OFF.</summary>
+    /// <summary>
+    /// The escalation policy applied to missions with no conversation. Held as the operator's own
+    /// spelling rather than a parsed enum: this layer has no dependency on
+    /// <c>Anthill.Core.Conversations</c>, and the one consumer that does parses it there, so the
+    /// vocabulary lives in one place instead of two that eventually disagree.
+    /// </summary>
+    public static string AutonomyEscalationPolicy = "ask";
+
     public static bool AutonomyAutoApplyEnabled = false;
     /// <summary>Workspace-relative globs a patch file_path must match to be auto-appliable. Empty = nothing eligible.</summary>
     public static List<string> AutonomyAutoApplyPaths = new();
@@ -1277,6 +1285,7 @@ public static class AnthillRuntime
         AutonomyRetireScoreThreshold = Math.Clamp(config.AutonomyRetireScoreThreshold, 0.0, 1.0);
         AutonomyLoopWindow = Math.Clamp(config.AutonomyLoopWindow, 0, 20);
         AutonomyOneShotCompletion = config.AutonomyOneShotCompletion;
+        AutonomyEscalationPolicy = config.AutonomyEscalationPolicy;
         AutonomyAutoApplyEnabled = config.AutonomyAutoApplyEnabled;
         AutonomyAutoApplyPaths = (config.AutonomyAutoApplyPaths ?? new())
             .Select(p => (p ?? "").Trim()).Where(p => p.Length > 0).ToList();
@@ -1634,6 +1643,7 @@ public static class AnthillRuntime
         ["autonomy_retire_score_threshold"] = AutonomyRetireScoreThreshold,
         ["autonomy_loop_window"] = AutonomyLoopWindow,
         ["autonomy_oneshot_completion"] = AutonomyOneShotCompletion,
+        ["autonomy_escalation_policy"] = AutonomyEscalationPolicy,
         ["autonomy_autoapply_enabled"] = AutonomyAutoApplyEnabled,
         ["autonomy_autoapply_paths"] = AutonomyAutoApplyPaths.ToList(),
         ["autonomy_autoapply_max_lines"] = AutonomyAutoApplyMaxLines,

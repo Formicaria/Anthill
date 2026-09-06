@@ -4,15 +4,33 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: **v0.3.8.125 is released and tagged** (`5e7db4d`). **v0.3.8.126 is complete and awaiting a
-test run**, on `fix/v0.3.8.126-worker-routing` (`ca323d4`).
+Shipping release: **v0.3.8.130**. Everything below the rule is a record, not a state.
 
-Four releases shipped since this file last said anything: `.123` (micromound authoring, colony-live
-fixes, planner evidence-grounding), `.124` (routing became a project's decision, the Ant Inspector
-page retired, Tools › Knowledge got a switch), `.125` (the classic canvas deleted), and `.126`
-(pending). What follows is what a fresh session needs, newest first.
+**This file is a POINTER, and the reason is written into `CONTRIBUTING.md`: a snapshot has to be
+rewritten every release to stay true, and will therefore be false most of the time.** It spent forty
+releases opening with "the 3.8 line is CLOSED at v0.3.8.34" while `.74` was shipping, and then spent
+four more saying `.126` was awaiting a test run while `.127`, `.128` and `.129` shipped past it. So
+it stopped claiming to be the state of things:
 
-## `.126` — a word is not its letters (PENDING TEST)
+| Question | Where the answer actually lives |
+|---|---|
+| What is done, what is left, in what order | `docs/PLAN.md` — §1 current state, §2e what comes next |
+| What shipped, and why | `CHANGELOG.md`, newest first |
+| Which release is current | `AnthillRuntime.Version`, mirrored in three more markers that tests pin equal |
+| What an outside review found, and which of it is real | `docs/PLAN.md` §2e, verified against the tree rather than adopted |
+| How a guard must be written | `docs/GUARDS.md`, enforced by `GuardHierarchyTests` |
+
+**The last four releases, in one line each.** `.126` word-bounded the routing lanes; `.127` gave
+settings one row of tabs and the ant panel one editor; `.128` renamed the homelab subsystem to
+Infrastructure and stopped a conversation's policy lapsing when its work became a mission; `.129`
+restored the ant inspector, quieted the update check, and put the verified external review into the
+plan. `.130` closes the other half of `.128`'s gate — see `docs/AUTONOMY.md` §5.
+
+---
+
+## Release record — kept because the reasoning is worth reading, not because it is current
+
+## `.126` — a word is not its letters
 
 **Routing matched raw substrings.** `AntRegistry.ResolveWorker` chose the UI lane with
 `text.Contains("ui")`, so a mission saying "requiring the user" went to `coder.ui_coder` — and
