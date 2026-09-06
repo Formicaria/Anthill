@@ -44,6 +44,10 @@ sitting where the route editor had been. The caste editor is gone, with `inspect
 and its delegated dispatch. What remains in its place is **information**: which provider and model
 this ant runs on, and where that is set. A read-only fact does not compete with the editor above it.
 
+The section header above it is **Model**, not Configure. The heading outlived what it labelled by
+one commit — a heading promising a control that was removed is the same defect one layer up from the
+one this release is about.
+
 **Caste-wide rename is removed, not moved**, and that is the honest description: it had no other
 home. **Names already on disk are still read** — `casteName` and `casteColor` still consult
 `uiState.castes`, and the document still carries the key — because removing the ability to CHANGE a
