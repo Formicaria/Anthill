@@ -117,9 +117,11 @@ becomes `Unknown` and renders as `UNKNOWN SUPPORT`, not as a fact.
 
 ## 4. Configuration
 
-All keys are `FileOnly` — not console-writable. `knowledge_forager_endpoint` names the service the
-colony trusts as its source of fact, and `knowledge_project_map` decides which knowledge a mission
-may read; neither should be reachable from a compromised console.
+Every key here is `FileOnly` **except the on/off switch**. `knowledge_forager_endpoint` names the
+service the colony trusts as its source of fact, and `knowledge_project_map` decides which knowledge
+a mission may read; neither should be reachable from a compromised console. `knowledge_enabled` only
+decides whether the colony uses what the file already configured, which is why it — and only it —
+is console-writable.
 
 Full table in [`CONFIGURATION.md`](CONFIGURATION.md). The load-bearing ones:
 
