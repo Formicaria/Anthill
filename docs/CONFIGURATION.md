@@ -39,14 +39,14 @@ directory. `anthill --config` prints the active path.
 | `operator_shell_enabled` | bool | `false` | yes | — | **changes what the colony may do** |
 | `setup_token_required` | bool | `false` | no | `ANTHILL_REQUIRE_SETUP_TOKEN` | **changes what the colony may do** |
 | `operator_shell_dir` | string | `""` | yes | — |  |
-| `infrastructure_enabled` | bool | `false` | yes | — |  |
-| `infrastructure_scheduler_enabled` | bool | `false` | yes | — |  |
-| `infrastructure_mock_providers_enabled` | bool | `false` | yes | — |  |
-| `infrastructure_max_concurrent_checks` | int | `2` | yes | — |  |
-| `infrastructure_health_interval_seconds` | int | `60` | yes | — |  |
-| `infrastructure_health_timeout_ms` | int | `5000` | yes | — |  |
-| `infrastructure_notifications_enabled` | bool | `false` | yes | — |  |
-| `infrastructure_automation_enabled` | bool | `false` | no | — |  |
+| `infrastructure_enabled` | bool | `false` | yes | — | was: homelab_enabled |
+| `infrastructure_scheduler_enabled` | bool | `false` | yes | — | was: homelab_scheduler_enabled |
+| `infrastructure_mock_providers_enabled` | bool | `false` | yes | — | was: homelab_mock_providers_enabled |
+| `infrastructure_max_concurrent_checks` | int | `2` | yes | — | was: homelab_max_concurrent_checks |
+| `infrastructure_health_interval_seconds` | int | `60` | yes | — | was: homelab_health_interval_seconds |
+| `infrastructure_health_timeout_ms` | int | `5000` | yes | — | was: homelab_health_timeout_ms |
+| `infrastructure_notifications_enabled` | bool | `false` | yes | — | was: homelab_notifications_enabled |
+| `infrastructure_automation_enabled` | bool | `false` | no | — | was: homelab_automation_enabled |
 | `dashboard_workspace_enabled` | bool | `null` | no | — |  |
 | `answer_synthesis_enabled` | bool | `true` | yes | — |  |
 | `sandbox_execution_enabled` | bool | `false` | no | — | **changes what the colony may do** |
@@ -61,38 +61,38 @@ directory. `anthill --config` prints the active path.
 | `external_destinations` | object | `{}` | no | — | **changes what the colony may do** |
 | `ui_cartographer_ant_enabled` | bool | `false` | no | — | **changes what the colony may do** |
 | `scribe_ant_enabled` | bool | `false` | no | — | **changes what the colony may do** |
-| `infrastructure_slack_webhook` | string | _(secret)_ | yes | — |  |
-| `infrastructure_discord_webhook` | string | _(secret)_ | yes | — |  |
-| `infrastructure_generic_webhook` | string | _(secret)_ | yes | — |  |
-| `infrastructure_proxmox_enabled` | bool | `false` | yes | — |  |
-| `infrastructure_proxmox_host` | string | `""` | yes | — |  |
-| `infrastructure_proxmox_port` | int | `8006` | yes | — |  |
-| `infrastructure_proxmox_credential_id` | string | `"proxmox-main"` | yes | — |  |
-| `infrastructure_proxmox_insecure_tls` | bool | `false` | yes | — | **changes what the colony may do** |
-| `infrastructure_proxmox_protocol` | string | `"https"` | yes | — |  |
-| `infrastructure_proxmox_write_actions_enabled` | bool | `false` | no | — | **changes what the colony may do** |
-| `infrastructure_proxmox_sync_interval_seconds` | int | `300` | yes | — |  |
-| `infrastructure_arr_sync_interval_seconds` | int | `300` | no | — |  |
-| `infrastructure_esxi_enabled` | bool | `false` | yes | — |  |
-| `infrastructure_esxi_host` | string | `""` | yes | — |  |
-| `infrastructure_esxi_port` | int | `443` | yes | — |  |
-| `infrastructure_esxi_credential_id` | string | `"esxi-main"` | yes | — |  |
-| `infrastructure_esxi_insecure_tls` | bool | `false` | yes | — | **changes what the colony may do** |
-| `infrastructure_esxi_sync_interval_seconds` | int | `300` | yes | — |  |
-| `infrastructure_docker_enabled` | bool | `false` | yes | — |  |
-| `infrastructure_docker_host` | string | `""` | yes | — |  |
-| `infrastructure_docker_port` | int | `2376` | yes | — |  |
-| `infrastructure_docker_credential_id` | string | `"docker-main"` | yes | — |  |
-| `infrastructure_docker_insecure_tls` | bool | `false` | yes | — | **changes what the colony may do** |
-| `infrastructure_docker_sync_interval_seconds` | int | `300` | yes | — |  |
-| `infrastructure_hyperv_enabled` | bool | `false` | yes | — |  |
-| `infrastructure_hyperv_host` | string | `""` | yes | — |  |
-| `infrastructure_hyperv_port` | int | `5986` | yes | — |  |
-| `infrastructure_hyperv_credential_id` | string | `"hyperv-main"` | yes | — |  |
-| `infrastructure_hyperv_insecure_tls` | bool | `false` | yes | — | **changes what the colony may do** |
-| `infrastructure_hyperv_sync_interval_seconds` | int | `300` | yes | — |  |
-| `infrastructure_risk_interval_seconds` | int | `3600` | yes | — |  |
-| `infrastructure_incident_sweep_seconds` | int | `300` | yes | — |  |
+| `infrastructure_slack_webhook` | string | _(secret)_ | yes | — | was: homelab_slack_webhook |
+| `infrastructure_discord_webhook` | string | _(secret)_ | yes | — | was: homelab_discord_webhook |
+| `infrastructure_generic_webhook` | string | _(secret)_ | yes | — | was: homelab_generic_webhook |
+| `infrastructure_proxmox_enabled` | bool | `false` | yes | — | was: homelab_proxmox_enabled |
+| `infrastructure_proxmox_host` | string | `""` | yes | — | was: homelab_proxmox_host |
+| `infrastructure_proxmox_port` | int | `8006` | yes | — | was: homelab_proxmox_port |
+| `infrastructure_proxmox_credential_id` | string | `"proxmox-main"` | yes | — | was: homelab_proxmox_credential_id |
+| `infrastructure_proxmox_insecure_tls` | bool | `false` | yes | — | **changes what the colony may do**; was: homelab_proxmox_insecure_tls |
+| `infrastructure_proxmox_protocol` | string | `"https"` | yes | — | was: homelab_proxmox_protocol |
+| `infrastructure_proxmox_write_actions_enabled` | bool | `false` | no | — | **changes what the colony may do**; was: homelab_proxmox_write_actions_enabled |
+| `infrastructure_proxmox_sync_interval_seconds` | int | `300` | yes | — | was: homelab_proxmox_sync_interval_seconds |
+| `infrastructure_arr_sync_interval_seconds` | int | `300` | no | — | was: homelab_arr_sync_interval_seconds |
+| `infrastructure_esxi_enabled` | bool | `false` | yes | — | was: homelab_esxi_enabled |
+| `infrastructure_esxi_host` | string | `""` | yes | — | was: homelab_esxi_host |
+| `infrastructure_esxi_port` | int | `443` | yes | — | was: homelab_esxi_port |
+| `infrastructure_esxi_credential_id` | string | `"esxi-main"` | yes | — | was: homelab_esxi_credential_id |
+| `infrastructure_esxi_insecure_tls` | bool | `false` | yes | — | **changes what the colony may do**; was: homelab_esxi_insecure_tls |
+| `infrastructure_esxi_sync_interval_seconds` | int | `300` | yes | — | was: homelab_esxi_sync_interval_seconds |
+| `infrastructure_docker_enabled` | bool | `false` | yes | — | was: homelab_docker_enabled |
+| `infrastructure_docker_host` | string | `""` | yes | — | was: homelab_docker_host |
+| `infrastructure_docker_port` | int | `2376` | yes | — | was: homelab_docker_port |
+| `infrastructure_docker_credential_id` | string | `"docker-main"` | yes | — | was: homelab_docker_credential_id |
+| `infrastructure_docker_insecure_tls` | bool | `false` | yes | — | **changes what the colony may do**; was: homelab_docker_insecure_tls |
+| `infrastructure_docker_sync_interval_seconds` | int | `300` | yes | — | was: homelab_docker_sync_interval_seconds |
+| `infrastructure_hyperv_enabled` | bool | `false` | yes | — | was: homelab_hyperv_enabled |
+| `infrastructure_hyperv_host` | string | `""` | yes | — | was: homelab_hyperv_host |
+| `infrastructure_hyperv_port` | int | `5986` | yes | — | was: homelab_hyperv_port |
+| `infrastructure_hyperv_credential_id` | string | `"hyperv-main"` | yes | — | was: homelab_hyperv_credential_id |
+| `infrastructure_hyperv_insecure_tls` | bool | `false` | yes | — | **changes what the colony may do**; was: homelab_hyperv_insecure_tls |
+| `infrastructure_hyperv_sync_interval_seconds` | int | `300` | yes | — | was: homelab_hyperv_sync_interval_seconds |
+| `infrastructure_risk_interval_seconds` | int | `3600` | yes | — | was: homelab_risk_interval_seconds |
+| `infrastructure_incident_sweep_seconds` | int | `300` | yes | — | was: homelab_incident_sweep_seconds |
 | `parallel_execution_enabled` | bool | `true` | yes | — |  |
 | `max_parallel_workers` | int | `3` | yes | — |  |
 | `max_web_searches_per_mission` | int | `3` | yes | — |  |
