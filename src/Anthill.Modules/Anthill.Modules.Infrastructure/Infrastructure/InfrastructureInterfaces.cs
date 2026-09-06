@@ -1,0 +1,140 @@
+namespace Anthill.Modules.Infrastructure;
+
+/// <summary>
+/// Infrastructure foundation interfaces (v1.9.0, NORTH_STAR Phase 4). Every future integration
+/// (Proxmox, DNS, DHCP, firewall, health) implements these so v1.9.1's shared mock-provider
+/// harness can test them all the same way. All implementations must be deterministic C# —
+/// polling never routes through the model router (NORTH_STAR §3.2 rule 5).
+/// </summary>
+public sealed record InfrastructureProviderResult(bool Ok, string Message, int ItemCount = 0)
+{
+    public static InfrastructureProviderResult Success(string message = "ok", int itemCount = 0) => new(true, message, itemCount);
+    public static InfrastructureProviderResult Failure(string message) => new(false, message);
+}
+
+/// <summary>Collects inventory (nodes, VMs, containers, storage) from one source, read-only.</summary>
+public interface IInventoryProvider
+{
+    string Name { get; }
+    System.Threading.Tasks.Task<InfrastructureProviderResult> SyncInventoryAsync(CancellationToken ct);
+}
+
+/// <summary>Runs one kind of health check (ping/http/tcp/...), read-only, with strict timeouts.</summary>
+public interface IHealthCheckProvider
+{
+    string Name { get; }
+    System.Threading.Tasks.Task<HealthCheckResult> CheckAsync(string target, CancellationToken ct);
+}
+
+/// <summary>Secret-free status for one integration, surfaced on the summary endpoint and UI.</summary>
+public interface IIntegrationStatusProvider
+{
+    IntegrationStatus GetStatus();
+}
+
+/// <summary>
+/// Decides whether a deterministic infrastructure provider may contact a target host. Backed by the
+/// operator-maintained infrastructure_target_allowlist table. This is intentionally SEPARATE from the
+/// general SSRF guard (UrlSafety): allowlisting a private host here must never loosen what
+/// LLM-directed web tools may reach.
+/// </summary>
+public interface IInfrastructureTargetGuard
+{
+    bool IsAllowed(string hostOrIp);
+}
+
+/// <summary>
+/// Typed credential access for infrastructure providers. Secrets are write-only through the API:
+/// SaveCredential stores encrypted, GetSecret is for deterministic providers only and audits
+/// every use, and ListStatuses never contains secret material.
+/// </summary>
+public interface ICredentialProvider
+{
+    void SaveCredential(string id, string kind, string targetHost, string secret, string savedBy);
+    string? GetSecret(string id, string usedBy);
+    void MarkVerified(string id);
+    void RemoveCredential(string id, string removedBy);
+    IReadOnlyList<CredentialRecord> ListStatuses();
+}
+
+/// <summary>
+/// Persistence for the infrastructure foundation tables. One SQLite home (the existing colony DB) so
+/// memory, missions, and infrastructure knowledge can be linked and searched together.
+/// </summary>
+public interface IInfrastructureRepository
+{
+    /// <summary>
+    /// The infrastructure's own audit stream, persisted here and additionally published to the colony bus
+    /// by the implementation (v3.8.7, phase 4a).
+    ///
+    /// v3.8.17 (phase 7) — this was a separate one-member <c>IInfrastructureEventSink</c> that only this
+    /// interface ever derived from and only this interface's implementer ever satisfied. The plan
+    /// recorded it as DELETED in phase 4b, on the correct reasoning that once events reach
+    /// <c>IEventBus</c> the sink is only persistence and the repository already carries that. It was
+    /// not actually deleted — it survived as a base interface, which is how a plan and a codebase
+    /// come to disagree quietly. Now the record is true.
+    /// </summary>
+    void RecordEvent(InfrastructureEvent evt);
+
+    void UpsertNode(InfrastructureNode node, string changedBy);
+    IReadOnlyList<InfrastructureNode> ListNodes();
+    void UpsertService(ServiceRecord service, string changedBy);
+    IReadOnlyList<ServiceRecord> ListServices();
+
+    // Virtualization + storage inventory (v1.12.0, filled by the Proxmox read-only sync)
+    // v2.4.1: per-node resource metrics captured during the same sync (deck CPU/RAM/disk bars).
+    void UpsertNodeMetric(NodeMetricRecord metric);
+    IReadOnlyList<NodeMetricRecord> ListNodeMetrics();
+    void UpsertVm(VmRecord vm);
+    IReadOnlyList<VmRecord> ListVms();
+    void UpsertContainer(ContainerRecord container);
+    IReadOnlyList<ContainerRecord> ListContainers();
+    void UpsertStoragePool(StoragePoolRecord pool);
+    IReadOnlyList<StoragePoolRecord> ListStoragePools();
+
+    // Network devices + risk findings (v1.13.0, NORTH_STAR Phase 9 — awareness only, no scanning)
+    void UpsertNetworkDevice(NetworkDevice device, string changedBy);
+    void RemoveNetworkDevice(string id, string removedBy);
+    IReadOnlyList<NetworkDevice> ListNetworkDevices();
+    void UpsertRiskRecord(RiskRecord record);
+    void SetRiskStatus(string id, string status, string changedBy);
+    IReadOnlyList<RiskRecord> ListRiskRecords();
+
+    // Incident + change memory (v1.14.0, NORTH_STAR Phase 10)
+    void OpenIncident(IncidentRecord incident, string openedBy);
+    IncidentRecord? GetIncident(string id);
+    void SetIncidentStatus(string id, string status, string rootCause, string changedBy);
+    IReadOnlyList<IncidentRecord> ListIncidents();
+    IReadOnlyList<InfrastructureEvent> RecentEvents(int limit = 50);
+    void RecordChange(ChangeRecord change);
+    IReadOnlyList<ChangeRecord> RecentChanges(int limit = 50);
+    void SaveHealthResult(HealthCheckResult result);
+    IReadOnlyList<HealthCheckResult> RecentHealthResults(int limit = 50);
+
+    // Health-check schedules + per-target history (v1.11.0, NORTH_STAR Phase 7)
+    IReadOnlyList<HealthCheckResult> RecentHealthResultsForTarget(string target, int limit = 10);
+    void UpsertHealthSchedule(Anthill.Modules.Infrastructure.Health.HealthCheckSchedule schedule, string changedBy);
+    void RemoveHealthSchedule(string id, string removedBy);
+    IReadOnlyList<Anthill.Modules.Infrastructure.Health.HealthCheckSchedule> ListHealthSchedules();
+
+    // Dependency mapping (v1.10.0): "what runs where?" / "what depends on this?"
+    void UpsertDependency(DependencyRecord dependency, string changedBy);
+    void RemoveDependency(string id, string removedBy);
+    IReadOnlyList<DependencyRecord> ListDependencies();
+
+    // Inventory import/export (v1.10.0) — nodes + services + dependencies, never secrets.
+    InfrastructureInventoryExport ExportInventory();
+    (int Nodes, int Services, int Dependencies) ImportInventory(InfrastructureInventoryExport bundle, string importedBy);
+
+    // Target allowlist (D1)
+    void AddAllowlistEntry(TargetAllowlistRecord entry);
+    void RemoveAllowlistEntry(string id, string removedBy);
+    IReadOnlyList<TargetAllowlistRecord> ListAllowlist();
+
+    // Scheduler job state (D4): last-run/last-result must survive restart.
+    void RecordJobRun(string jobName, bool ok, string message);
+    (string LastRun, string LastResult)? GetJobState(string jobName);
+
+    /// <summary>Row counts for every infrastructure table — summary endpoint + migration tests.</summary>
+    Dictionary<string, long> TableCounts();
+}

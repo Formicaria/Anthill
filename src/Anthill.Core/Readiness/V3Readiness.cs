@@ -103,7 +103,7 @@ public static class V3Readiness
             new(Ids.UnverifiedSuccess, "Zero unverified outcomes counted as success",
                 CheckKind.Attested, false, Att(Ids.UnverifiedSuccess).Satisfied,
                 "Structurally enforced since v2.19.0: only completed_verified is positive, verdicts fail "
-                + "closed, and v2.25.0 extended this to homelab actions (a failed verify is canonically "
+                + "closed, and v2.25.0 extended this to infrastructure actions (a failed verify is canonically "
                 + "failed). The operator certifies the guard suites ran green. " + Att(Ids.UnverifiedSuccess).Note),
 
             new(Ids.PolicyAndCredentials, "Zero critical policy bypasses; zero credentials exposed",
@@ -153,7 +153,7 @@ public static class V3Readiness
 
             new(Ids.KillSwitch, "The operator can disable all autonomous execution immediately",
                 CheckKind.Attested, false, Att(Ids.KillSwitch).Satisfied,
-                "STOP and HOMELAB_STOP sentinels + in-process flags exist and are checked first in every execution "
+                "STOP and INFRASTRUCTURE_STOP sentinels + in-process flags exist and are checked first in every execution "
                 + "path (pinned by tests). The operator certifies having actually pulled the switch and watched "
                 + "execution halt. " + Att(Ids.KillSwitch).Note),
         };

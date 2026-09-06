@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.127**.
+Shipping release: **v0.3.8.128**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -89,12 +89,12 @@ Change intent plus a Service target — the first class under Modify authority, 
 dimension's first resolver since `.98` declared it — the planner ensures the operation step, and
 the TESTER's new operation lane (twelve roles is a load-bearing constant; twenty-seven guards
 refused the thirteenth-role draft, and they were right about the design — §2c tells the story)
-reaches the homelab's own approval pipeline through two SDK-named spine tools. Propose captures
+reaches the infrastructure's own approval pipeline through two SDK-named spine tools. Propose captures
 the before-state from the runner's dry-run behind a mandatory rollback note; execute sits in the
 escalation gate's side-effecting set, so the operator's conversation-scoped decision is demanded
 at the dispatch chokepoint and stamped into the record as the approver — the lane's identity,
 never the model's. `OperationIntegrity` refuses each absent piece by name. What is NOT claimed:
-general local-system operations outside the homelab catalog, multi-operation missions, typed
+general local-system operations outside the infrastructure catalog, multi-operation missions, typed
 state snapshots per runner, and anything live. Five of the seven classes are now served; external
 missions are untouched, and everything unserved still resolves `not_applicable` at the
 deliverable layer exactly as before.
@@ -213,8 +213,8 @@ through the real application. **Ext.** = requires an external adapter, connectio
 | Artifact/document creation | yes | yes | **yes** | no | a creation-typed task must leave a `created_artifact` whose content exists, requirements trace or stand unmet, inputs resolve (.100) |
 | Data analysis | yes | yes | **yes** | no | input identity (id + content hash from the store) and a transformation account, or the mission is refused (.100) |
 | Troubleshooting / diagnosis | yes | yes | **yes** | no | a symptom reproduced by executed checks, diagnosed with receipts cited by name, boundary enforced both ways (.101) |
-| Local system actions | partial | no | partial | no | homelab-catalog operations shipped (.102); a general local-system lane outside the catalog is not claimed |
-| Homelab/infrastructure actions | yes | no | **yes** | no | on the mission spine: propose → operator decision → execute → verify, recorded as a reversible operation (.102) |
+| Local system actions | partial | no | partial | no | infrastructure-catalog operations shipped (.102); a general local-system lane outside the catalog is not claimed |
+| Infrastructure/infrastructure actions | yes | no | **yes** | no | on the mission spine: propose → operator decision → execute → verify, recorded as a reversible operation (.102) |
 | External actions (approval-gated) | yes | **no destinations configured** | **yes** | no | Ext. — the class, record, ceiling, gate AND a `ConfiguredWebhookAdapter` composed by the API host. `external_destinations` is empty by default and IS the allowlist, so a fresh install resolves nothing and refuses by name |
 | Mission authority ceiling | yes | yes | **yes** | no | `.104`: read at the dispatch chokepoint, from the mission's recorded contract, for recognized classes only — `General` defaults to Observe and means "unclassified", not "read-only" |
 | Mission contract (persisted) | yes | yes | **yes** | no | `.104`: written once at intake, read by every stage; an intake rule change cannot reclassify a mission that already ran |
@@ -1367,7 +1367,7 @@ Everything above, pointed at a real repository with a real pull request at the e
   was a test that built both sides itself.
 - ◻ **The `Capability` vocabulary is half-unwired, and now says so.** Seven of the fourteen names are
   granted by nothing and required by nobody. `repo.patch.apply` is withheld on purpose and always
-  was; the Proxmox, homelab and credential names belong to a module surface that authorizes through
+  was; the Proxmox, infrastructure and credential names belong to a module surface that authorizes through
   `ActionExecutor` instead. Each is recorded in `CapabilityGrant.DeliberatelyUngranted` with its
   reason, and a new capability can no longer join the vocabulary and quietly reach nobody. Wiring or
   removing them is R6/R10 work, not cleanup.

@@ -37,12 +37,12 @@
     { id: 'valid', label: 'VALIDATION', color: '#c25f6e', core: '#d98a96', pos: [310, -20, 50], R: 58, n: 230, rot: .000045 },
     { id: 'memory', label: 'MEMORY', color: '#d9b054', core: '#ecd39a', pos: [210, 180, -40], R: 60, n: 250, rot: -.00003 },
     { id: 'output', label: 'OUTPUT', color: '#8f78c9', core: '#b3a0e0', pos: [-180, 200, -70], R: 56, n: 220, rot: .00004 },
-    { id: 'homelab', label: 'INFRASTRUCTURE', mound: true, color: '#5aa07a', core: '#9ad4b0', pos: [-330, 90, -40], R: 48, n: 0, rot: .00004 },
+    { id: 'infrastructure', label: 'INFRASTRUCTURE', mound: true, color: '#5aa07a', core: '#9ad4b0', pos: [-330, 90, -40], R: 48, n: 0, rot: .00004 },
     { id: 'mound', label: 'MICROMOUND', mound: true, color: '#a55a7e', core: '#c9cfdc', pos: [-95, 265, 70], R: 34, n: 110, rot: .00006 }
   ];
   // Ids are the server's (ColonySectors); labels are its DEFAULTS, overridable per operator in the
   // persisted layout. Positions are constants — a stable spatial grammar — until the operator drags.
-  var SECTOR_ORDER = ['queen', 'intel', 'forge', 'valid', 'memory', 'output', 'homelab', 'mound'];
+  var SECTOR_ORDER = ['queen', 'intel', 'forge', 'valid', 'memory', 'output', 'infrastructure', 'mound'];
   // One strand per root. The Queen's spokes are always drawn (faint); the inter-sector roots exist
   // for the mission circuit and evidence return to travel along and are drawn ONLY when they carry
   // flow — an idle colony shows no lines that mean nothing.
@@ -567,7 +567,7 @@
        y flipped, applied to this world's home seat, then written back as schema 3 so it happens
        once. Schema 1 (the `.115` world, factor never recorded) still resets — a guessed factor
        would be a fiction dressed as a migration. */
-    var SCHEMA2_HOME = { queen: [0, 0, 0], intel: [-16.5, 0, 16.5], forge: [16.5, 0, 16.5], valid: [16.5, 0, -16.5], memory: [-16.5, 0, -16.5], output: [0, 17, 0], mound: [0, -17, 0], homelab: [33, 0, 0] };
+    var SCHEMA2_HOME = { queen: [0, 0, 0], intel: [-16.5, 0, 16.5], forge: [16.5, 0, 16.5], valid: [16.5, 0, -16.5], memory: [-16.5, 0, -16.5], output: [0, 17, 0], mound: [0, -17, 0], infrastructure: [33, 0, 0] };
     var SCHEMA2_SCALE = 10;
     function migrateSchema2(l) {
       var positions = {}, any = false;
@@ -579,7 +579,32 @@
       });
       return any ? { schema: LAYOUT_SCHEMA, positions: positions, names: {}, migratedFrom: 2 } : null;
     }
+    /* THE SECTOR THIS COLONY USED TO CALL `homelab`. v0.3.8.128.
+
+       The id was renamed with the rest of the subsystem, and a saved layout is keyed on ids — so
+       without this, every operator who had dragged, renamed or recoloured the infrastructure
+       chamber would open the colony and find it back at its default position with its default name,
+       with nothing saying why. v0.3.8.122 refused to rename this id for exactly that reason; the
+       rename is only safe because the read now understands both spellings.
+
+       Rewritten on READ, not by a migration pass: `applyLayout` is the single door every saved
+       layout comes through, and the next `saveLayout` writes the new id, so the old one ages out on
+       its own. A layout carrying BOTH is left alone — the operator has already been through this
+       release once, and the current id is the one they arranged most recently. */
+    function migrateLegacySectorId(l) {
+      if (!l || typeof l !== 'object') return l;
+      ['positions', 'names', 'styles'].forEach(function (bag) {
+        var b = l[bag];
+        if (b && typeof b === 'object' && b.homelab !== undefined && b.infrastructure === undefined) {
+          b.infrastructure = b.homelab;
+        }
+        if (b && typeof b === 'object') delete b.homelab;
+      });
+      return l;
+    }
+
     function applyLayout(l) {
+      l = migrateLegacySectorId(l);
       if (l && l.schema === 2 && l.sectors) { var m2 = migrateSchema2(l); if (!m2) return false; var ok2 = applyLayout(m2); if (ok2) saveLayout(); return ok2; }
       if (!l || l.schema !== LAYOUT_SCHEMA) return false;   // schema 1 or unknown: reset, not guessed
       SEC.forEach(function (s) {

@@ -14,7 +14,7 @@ namespace Anthill.Tests;
 /// as a module with zero Core edits." v3.8.18.
 ///
 /// It sat "partial" through the whole refactor because every module so far was an EXTRACTION —
-/// reasoning, homelab, tools all came OUT of the core, so none of them tested whether something new
+/// reasoning, infrastructure, tools all came OUT of the core, so none of them tested whether something new
 /// can go IN. An external review called that out as the difference between implementation complete
 /// and acceptance complete, and it was right.
 ///

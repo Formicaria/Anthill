@@ -1442,7 +1442,7 @@ public class UiShellTests
     /// v0.3.8.42 (§7): one home per concept. The Monitoring domain was a second door to five
     /// concepts that already had homes — its Activity/Events/Results moved in with Missions, its
     /// Changes tab duplicated Changes &amp; Approvals, "Autonomous Runs" opened the Director page
-    /// under a second name, and the two homelab views went home to Infrastructure. Dissolving a
+    /// under a second name, and the two infrastructure views went home to Infrastructure. Dissolving a
     /// domain must not break a bookmark: every route that lived there resolves through
     /// ROUTE_ALIAS, and both route consumers consult it.
     /// </summary>

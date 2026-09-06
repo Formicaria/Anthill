@@ -39,7 +39,7 @@ public sealed class MicromoundModule : IAnthillModule
 
     /// <summary>
     /// Configuration only, per the <see cref="IAnthillModule"/> contract — and the rule matters
-    /// here for a reason the homelab does not have. A mound is a device that may be asleep, on a
+    /// here for a reason the infrastructure does not have. A mound is a device that may be asleep, on a
     /// dead battery, or physically absent. A colony that dialled one during registration would be
     /// a colony that refuses to boot because a Pi in a shed is off, which is the worst possible
     /// coupling to hand a system whose entire premise is that disconnection is normal.

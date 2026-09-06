@@ -7,7 +7,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Anthill.SDK", "src\Anthill.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Anthill.Modules.Reasoning", "src\Anthill.Modules\Anthill.Modules.Reasoning\Anthill.Modules.Reasoning.csproj", "{F6666666-6666-6666-6666-666666666666}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Anthill.Modules.Homelab", "src\Anthill.Modules\Anthill.Modules.Homelab\Anthill.Modules.Homelab.csproj", "{A7777777-7777-7777-7777-777777777777}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Anthill.Modules.Infrastructure", "src\Anthill.Modules\Anthill.Modules.Infrastructure\Anthill.Modules.Infrastructure.csproj", "{A7777777-7777-7777-7777-777777777777}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Anthill.Modules.Tools", "src\Anthill.Modules\Anthill.Modules.Tools\Anthill.Modules.Tools.csproj", "{B8888888-8888-8888-8888-888888888888}"
 EndProject
@@ -23,7 +23,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Anthill.Tests", "tests\Anth
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Anthill.Tests.Homelab", "tests\Anthill.Tests.Homelab\Anthill.Tests.Homelab.csproj", "{6604B0BF-B2FB-4A09-8FC4-0AB1052CAA16}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Anthill.Tests.Infrastructure", "tests\Anthill.Tests.Infrastructure\Anthill.Tests.Infrastructure.csproj", "{6604B0BF-B2FB-4A09-8FC4-0AB1052CAA16}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

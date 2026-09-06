@@ -1,3 +1,51 @@
+## v0.3.8.128 - the subsystem is called Infrastructure
+
+**THE LABEL CHANGED TWICE AND THE IDS DID NOT.** v2.6 renamed Homelab to Infrastructure in the
+sidebar; `.122` renamed the colony chamber and said plainly why the id stayed: "the sector id and its
+eight roles do not, so saved layouts survive." This release renames the ids too — 208 files, 40
+config keys, 4 permissions, a role, 5 tables, the module assembly, its namespaces, 69 routes and the
+console. Which means the argument that stopped it twice had to be answered rather than overruled.
+
+**IT IS ANSWERED IN FIVE PLACES, AND EVERY ONE IS A READ THAT UNDERSTANDS THE OLD SPELLING** rather
+than a migration pass that rewrites and hopes:
+
+- **`users.role`** — `UserRoles.Normalize` is consulted on every role read, so an account stored as
+  `homelab_operator` simply is an infrastructure operator. No UPDATE, no schema version, no window
+  where a signed-in operator loses their permissions because a release renamed their role.
+- **The colony-live layout** — rewritten as it is applied, saved back under the new id. Without it,
+  everyone who had dragged, renamed or recoloured the infrastructure chamber would open the colony
+  to find it at its default position with nothing saying why.
+- **The dashboard widget zone** — rewritten before the zone is read. The CHANGELOG records this
+  exact hazard for the Agent Inspector's widget id and declined the rename then.
+- **The module's five tables** — `ALTER TABLE ... RENAME TO`, and the ORDER is the whole correctness
+  argument. `CREATE TABLE IF NOT EXISTS` is idempotent in the worst possible way here: run first
+  against an existing database and SQLite creates five EMPTY `infrastructure_*` tables beside five
+  populated `homelab_*` ones, the rename finds its destination occupied and declines, and the colony
+  comes up with an empty inventory, credential store and allowlist. Nothing errors. The operator's
+  hosts are simply gone.
+- **The kill-switch sentinel** — and this is the one that would have been worst. `HOMELAB_STOP` is a
+  file an operator creates BY HAND to halt a misbehaving colony. Reading only the new name would
+  mean a release silently resuming actions somebody had stopped: a kill switch failing OPEN, and
+  saying nothing. Both names are honoured, and `Resume` deletes both — clearing only the new one
+  fails the other way, leaving a colony that reports itself resumed and refuses every action.
+
+**THE FORTY CONFIG KEYS NEEDED A MECHANISM THAT DID NOT EXIST.** `ConfigKeyAttribute.Aliases` has
+been declared since v0.3.8.91 with a doc comment saying "the migration reads these", and nothing
+read them — the only consumer was the docs renderer printing "was: old_name". A renamed key was
+DOCUMENTED as renamed and then silently dropped on load, because `System.Text.Json` binds on
+`[JsonPropertyName]` and nothing else. It cost nothing for thirty-five releases because no key had
+ever declared an alias. Forty at once would have made every existing `config.json` parse cleanly,
+report no error, and revert forty settings to their defaults — safety gates included.
+
+The mechanism is real now, with two rules: an alias is read only when the current spelling is
+ABSENT (a file with both has already been migrated, and preferring the leftover would make an edit
+to the new key silently do nothing), and every rename is reported per key at startup. Two collision
+guards run against the real catalog: no former name may be another setting's current name, and no
+two settings may claim the same former name.
+
+**What did NOT move:** the nineteen tables in that module which never carried the prefix, and the
+CHANGELOG and `docs/archive/**`, which are records of their own moment.
+
 ## v0.3.8.127 - one row, one editor
 
 **THREE OPERATOR REPORTS, ONE SHAPE.** The console kept offering the same choice in two places, and

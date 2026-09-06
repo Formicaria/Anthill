@@ -2,7 +2,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Anthill.Core.Configuration;
-using Anthill.Modules.Homelab.Integrations;
+using Anthill.Modules.Infrastructure.Integrations;
 using Anthill.Modules.Micromound;
 using Micromound.Protocol;
 // TWO TYPES, NOT THE NAMESPACE. `using Anthill.Core.Domain;` drags in `Anthill.Core.Domain.Task`,
@@ -53,7 +53,7 @@ public static partial class ApiHost
     private static MicromoundResolver MicromoundResolve = null!;
 
     /// <summary>
-    /// After InitHomelab (the integration catalog convention lives there) and after module load
+    /// After InitInfrastructure (the integration catalog convention lives there) and after module load
     /// (MicromoundRuntime must already be configured — the store resolves its database path and
     /// cipher from it).
     ///

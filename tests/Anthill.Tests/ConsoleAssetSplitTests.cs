@@ -15,7 +15,7 @@ namespace Anthill.Tests;
 ///   the nastiest of the three — it appears only in the shipped artifact.</item>
 /// <item>The file is not served by a route, or not referenced by index.html, so it never loads.</item>
 /// <item>It loads in the WRONG ORDER, so a load-time statement runs before what it depends on
-///   exists. homelab.js registers PAGE_ENTER['homelab'] at load and PAGE_ENTER lives in app.js.</item>
+///   exists. infrastructure.js registers PAGE_ENTER['infrastructure'] at load and PAGE_ENTER lives in app.js.</item>
 /// </list>
 ///
 /// These tests are the standing contract for every future extraction, not just the first one. They
@@ -126,7 +126,7 @@ public class ConsoleAssetSplitTests
 
         Assert.True(appLines < 10_000,
             $"app.js is {appLines} lines. The v0.3.8.52 split brought it under 10,000 by moving the "
-            + "homelab domain out; a regression past that means a domain came back in.");
+            + "infrastructure domain out; a regression past that means a domain came back in.");
         Assert.True(ConsoleScripts().Count() >= 4,
             "the console should be more than one script plus its two pre-split helpers.");
     }

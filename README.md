@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Formicaria/Anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/Formicaria/Anthill/actions/workflows/ci.yml)
 
-**Current version:** v0.3.8.127
+**Current version:** v0.3.8.128
 
 **Runs on:** Windows or Linux
 
@@ -308,7 +308,7 @@ These are the fresh-install defaults that matter most:
 | Local model | Unchosen; the only installed Ollama model is selected automatically, otherwise ANTHILL asks |
 | File access | Read tools are on, limited to `.anthill/workspace` until you choose another boundary |
 | Web, AI shell, writes, and patch application | Off |
-| Autonomy, auto-apply, homelab, and container execution | Off |
+| Autonomy, auto-apply, infrastructure, and container execution | Off |
 | Organizational knowledge (FORAGER) | Off — see [Organizational knowledge](#organizational-knowledge-forager) |
 | Operator Shell | On for administrators; disable it under **Security** if you do not need a host terminal |
 | Network bind | `0.0.0.0` by default; the desktop commands in this guide override it to `127.0.0.1` |
@@ -680,7 +680,7 @@ dotnet test Anthill.sln -c Release
 src/Anthill.Cli/          Command-line entry point
 src/Anthill.Api/          Web API and runtime host
 src/Anthill.Core/         Queen, mission flow, memory, policy, and domain logic
-src/Anthill.Modules/      Reasoning, tools, and homelab integrations
+src/Anthill.Modules/      Reasoning, tools, and infrastructure integrations
 src/Anthill.SDK/          Shared contracts for modules and tools
 src/Anthill.UI/           Browser interface
 tests/                    Automated test projects

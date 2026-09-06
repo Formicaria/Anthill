@@ -476,7 +476,7 @@ public static class EventTypes
     public const string RiskAnalysis = "risk_analysis";
     public const string CredentialUsed = "credential_used";
     public const string ProxmoxTaskFailed = "proxmox_task_failed";
-    public const string HomelabStopEngaged = "homelab_stop_engaged";
+    public const string InfrastructureStopEngaged = "infrastructure_stop_engaged";
     public const string BackupRecordUpserted = "backup_record_upserted";
     public const string MissionLearningRecorded = "mission_learning_recorded";
     public const string MissionArchivistRecorded = "mission_archivist_recorded";

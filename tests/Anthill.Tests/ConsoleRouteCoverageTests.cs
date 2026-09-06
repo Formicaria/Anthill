@@ -30,7 +30,7 @@ public class ConsoleRouteCoverageTests
     /// Every served console asset, concatenated.
     ///
     /// v0.3.8.52 replaced a hardcoded four-name list with an enumeration of the directory, because
-    /// the list was wrong the moment app.js was split: ~1,600 lines of homelab moved to homelab.js
+    /// the list was wrong the moment app.js was split: ~1,600 lines of infrastructure moved to infrastructure.js
     /// and every route those lines call instantly looked unreferenced, failing this test for a
     /// change that touched no routes at all. A test whose input is a manually maintained file list
     /// reports on the list, not on the console — and the same shape of staleness had already let
@@ -67,13 +67,13 @@ public class ConsoleRouteCoverageTests
         ["/providers/capabilities"] = "the console reads /ollama/models and /providers for the same decision",
         ["/colony/workers/telemetry"] = "worker_telemetry is already embedded in /colony/registry",
 
-        // --- homelab subsystem: its own console area, separately scoped ---------------------------
-        ["/homelab/providers"] = "homelab virtualisation providers; surfaced through the homelab deck",
-        ["/homelab/proxmox/status"] = "homelab; the deck reads the aggregate service view",
-        ["/homelab/proxmox/test"] = "homelab connection test invoked from the virt settings block",
-        ["/homelab/backups"] = "homelab backups; no console area yet",
-        ["/homelab/backup/impact/*"] = "homelab backup impact; no console area yet",
-        ["/homelab/graph/dependents/*"] = "homelab dependency graph; the deck renders the graph itself",
+        // --- infrastructure subsystem: its own console area, separately scoped ---------------------------
+        ["/infrastructure/providers"] = "infrastructure virtualisation providers; surfaced through the infrastructure deck",
+        ["/infrastructure/proxmox/status"] = "infrastructure; the deck reads the aggregate service view",
+        ["/infrastructure/proxmox/test"] = "infrastructure connection test invoked from the virt settings block",
+        ["/infrastructure/backups"] = "infrastructure backups; no console area yet",
+        ["/infrastructure/backup/impact/*"] = "infrastructure backup impact; no console area yet",
+        ["/infrastructure/graph/dependents/*"] = "infrastructure dependency graph; the deck renders the graph itself",
 
         // --- MICROMOUND: the console shipped at v0.3.8.115, and this block emptied. --------------
         //

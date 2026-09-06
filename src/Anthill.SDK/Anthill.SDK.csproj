@@ -28,7 +28,7 @@
     -->
     <InternalsVisibleTo Include="Anthill.Core" />
     <InternalsVisibleTo Include="Anthill.Tests" />
-    <InternalsVisibleTo Include="Anthill.Tests.Homelab" />
+    <InternalsVisibleTo Include="Anthill.Tests.Infrastructure" />
   </ItemGroup>
 
 </Project>

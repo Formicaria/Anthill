@@ -87,7 +87,7 @@ public class DesktopShellTests
         var csproj = Read("src", "Anthill.Desktop", "Anthill.Desktop.csproj");
 
         // Modules are wired in the exe, never referenced by core — the CLI's exact rule.
-        foreach (var module in new[] { "Anthill.Modules.Reasoning", "Anthill.Modules.Homelab", "Anthill.Modules.Tools" })
+        foreach (var module in new[] { "Anthill.Modules.Reasoning", "Anthill.Modules.Infrastructure", "Anthill.Modules.Tools" })
             Assert.Contains(module, csproj);
         Assert.Contains("Anthill.Api", csproj);
 

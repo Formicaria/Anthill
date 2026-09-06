@@ -9,7 +9,7 @@ Deliberately. Modules are **one project per domain**, not one shared assembly:
 ```
 src/Anthill.Modules/
   Anthill.Modules.Reasoning/     # Ollama, OpenAI-compatible, Anthropic   (Phase 2, v3.8.5)
-  Anthill.Modules.Homelab/       # homelab repository + integrations      (Phase 4, v3.8.7)
+  Anthill.Modules.Infrastructure/       # infrastructure repository + integrations      (Phase 4, v3.8.7)
   Anthill.Modules.Tools/         # the file, shell, web and patch tools   (Phase 5, v3.8.16)
 ```
 
@@ -19,7 +19,7 @@ whose executor stays in the core, and the whole set is six classes in one file. 
 five — "one project per domain" means per domain, and these are one.
 
 A single shared `Anthill.Modules` assembly would defeat the point. Modules would compile against
-each other's internals for free, the homelab module would drag the reasoning providers' HTTP
+each other's internals for free, the infrastructure module would drag the reasoning providers' HTTP
 dependencies into any deployment that loaded either one, and "which module owns this?" would stop
 having a checkable answer. Separate assemblies make the dependency graph enforceable by the
 compiler rather than by discipline.

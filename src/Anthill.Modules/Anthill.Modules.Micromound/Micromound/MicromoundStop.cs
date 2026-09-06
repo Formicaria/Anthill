@@ -1,7 +1,7 @@
 namespace Anthill.Modules.Micromound;
 
 /// <summary>
-/// The global kill switch — <c>.anthill/MICROMOUND_STOP</c>, mirroring HOMELAB_STOP.
+/// The global kill switch — <c>.anthill/MICROMOUND_STOP</c>, mirroring INFRASTRUCTURE_STOP.
 ///
 /// SAFETY.md gives every stop three routes: physically at the device, per-mound from ANTHILL, and
 /// globally through this file. This is the third. While the file exists, a stop order is forced

@@ -102,7 +102,7 @@ configuration already at schema version 2 is preserved exactly. See `ConfigMigra
 | archivist | MissionAgent | yes | gated | **on** (full profile) | memory_consolidation … | emits memory candidates | positive ONLY from completed_verified |
 | quartermaster | DeterministicService | n/a | never | n/a | — | — | intentionally non-executable (no metrics contract yet) |
 | queen/director/planner/constraint | ControlPlane | yes | never | n/a | — | — | — |
-| 8 homelab roles | DeterministicService | yes | never | n/a | — | C# services/providers | never LLM-directed |
+| 8 infrastructure roles | DeterministicService | yes | never | n/a | — | C# services/providers | never LLM-directed |
 
 ## Where a check comes from — v0.3.8.73
 

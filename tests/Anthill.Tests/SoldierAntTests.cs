@@ -71,7 +71,7 @@ public class SoldierAntTests
     [Fact]
     public void ScopeMismatch_PathOutsideApprovedScope_IsBlocking()
     {
-        var o = Run("approved_scope: docs/\nchanges docs/HOMELAB.md and src/Anthill.Core/Queen.cs");
+        var o = Run("approved_scope: docs/\nchanges docs/INFRASTRUCTURE.md and src/Anthill.Core/Queen.cs");
         Assert.Contains("scope_mismatch", Recorded(o));
         Assert.Contains("BLOCKING", Recorded(o));
     }
@@ -94,7 +94,7 @@ public class SoldierAntTests
     [Fact]
     public void CleanDocsChange_PassesWithVerifierHandoff()
     {
-        var o = Run("approved_scope: docs/\nupdates docs/HOMELAB.md wording only");
+        var o = Run("approved_scope: docs/\nupdates docs/INFRASTRUCTURE.md wording only");
         Assert.Contains("Security review passed", o.Summary);
         AssertRoutesTo(o, "verifier");
     }

@@ -141,10 +141,10 @@ public class ConfigCatalogTests
             .ToList();
 
         // THREE, and the number is small because the classification was tightened rather than
-        // scattered. The first pass classed `api_token_env` and the four `homelab_*_credential_id`
+        // scattered. The first pass classed `api_token_env` and the four `infrastructure_*_credential_id`
         // keys as Secret; neither holds one. `api_token_env` holds the NAME of an environment
         // variable, and a credential id is a REFERENCE into the credential store —
-        // `_comment_homelab_virtualization` says so in the file itself: "the secret lives in the
+        // `_comment_infrastructure_virtualization` says so in the file itself: "the secret lives in the
         // credential store (referenced by id, never here)". Classing a reference as a secret blanks
         // a useful example and teaches nobody anything.
         //

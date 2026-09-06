@@ -42,20 +42,20 @@ public class PatchApplyGateTests : IDisposable
     }
 
     [Fact]
-    public void HomelabGates_AreOperatorEditableAndInSettingsSnapshot()
+    public void InfrastructureGates_AreOperatorEditableAndInSettingsSnapshot()
     {
-        // v1.10.0: homelab toggles are editable from the console and visible in the snapshot,
-        // so the new Homelab page can be enabled without hand-editing config.json.
-        Assert.Contains("homelab_enabled", AnthillRuntime.EditableSettingKeys);
-        Assert.Contains("homelab_scheduler_enabled", AnthillRuntime.EditableSettingKeys);
-        Assert.Contains("homelab_mock_providers_enabled", AnthillRuntime.EditableSettingKeys);
-        Assert.Contains("homelab_max_concurrent_checks", AnthillRuntime.EditableSettingKeys);
+        // v1.10.0: infrastructure toggles are editable from the console and visible in the snapshot,
+        // so the new Infrastructure page can be enabled without hand-editing config.json.
+        Assert.Contains("infrastructure_enabled", AnthillRuntime.EditableSettingKeys);
+        Assert.Contains("infrastructure_scheduler_enabled", AnthillRuntime.EditableSettingKeys);
+        Assert.Contains("infrastructure_mock_providers_enabled", AnthillRuntime.EditableSettingKeys);
+        Assert.Contains("infrastructure_max_concurrent_checks", AnthillRuntime.EditableSettingKeys);
 
         var snap = AnthillRuntime.SettingsSnapshot();
-        Assert.True(snap.ContainsKey("homelab_enabled"));
-        Assert.True(snap.ContainsKey("homelab_scheduler_enabled"));
-        Assert.True(snap.ContainsKey("homelab_mock_providers_enabled"));
-        Assert.True(snap.ContainsKey("homelab_max_concurrent_checks"));
+        Assert.True(snap.ContainsKey("infrastructure_enabled"));
+        Assert.True(snap.ContainsKey("infrastructure_scheduler_enabled"));
+        Assert.True(snap.ContainsKey("infrastructure_mock_providers_enabled"));
+        Assert.True(snap.ContainsKey("infrastructure_max_concurrent_checks"));
     }
 
     /// <summary>

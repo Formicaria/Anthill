@@ -9,7 +9,7 @@
   <!-- Let the test suites exercise internal helpers (e.g. AutoApplyPolicy.GlobMatches). -->
   <ItemGroup>
     <InternalsVisibleTo Include="Anthill.Tests" />
-    <InternalsVisibleTo Include="Anthill.Tests.Homelab" />
+    <InternalsVisibleTo Include="Anthill.Tests.Infrastructure" />
   </ItemGroup>
 
   <!--

@@ -107,20 +107,20 @@ public class ToolInventoryTests
         }
 
         // v0.3.8.102 — a THIRD composition site. The system-action tools are adopted by the API
-        // host (ApiHost.Actions.cs), not by the Queen, because they wrap the homelab ActionExecutor
-        // and only exist where a homelab repository exists. Their Name properties forward the SDK
+        // host (ApiHost.Actions.cs), not by the Queen, because they wrap the infrastructure ActionExecutor
+        // and only exist where a infrastructure repository exists. Their Name properties forward the SDK
         // constants rather than holding string literals — the module may not name Core, and the
         // SDK is where shared names live — so the literal-lookup regex above cannot read them.
         // The guard instead asserts the adoption call is present and admits the two SDK names.
         var apiActionsBody = File.ReadAllText(Path.Combine(
-            Root(), "src", "Anthill.Api", "Homelab", "ApiHost.Actions.cs"));
+            Root(), "src", "Anthill.Api", "Infrastructure", "ApiHost.Actions.cs"));
         Assert.Contains("SystemActionTools.For(", apiActionsBody);
         registeredNames.Add(Anthill.SDK.Contracts.SystemActionToolNames.Propose);
         registeredNames.Add(Anthill.SDK.Contracts.SystemActionToolNames.Execute);
 
         // v0.3.8.103 — and a FOURTH: the send tools are composed by the API host itself
-        // (ApiHost.cs), beside the module tools rather than with the homelab's, because the
-        // adapter reads operator configuration rather than a homelab repository. Same reason the
+        // (ApiHost.cs), beside the module tools rather than with the infrastructure's, because the
+        // adapter reads operator configuration rather than a infrastructure repository. Same reason the
         // literal-lookup regex cannot read them: their Name properties forward the SDK constants.
         var apiHostBody = File.ReadAllText(Path.Combine(
             Root(), "src", "Anthill.Api", "ApiHost.cs"));

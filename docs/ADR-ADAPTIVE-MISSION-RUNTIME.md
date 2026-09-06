@@ -171,7 +171,7 @@ patches from failing missions. They are one release for that reason.
 Unchanged by this work: mission agents never receive `apply_patch` or unrestricted shell; a handoff
 may never grant a capability; a model may never alter policy, widen an allowlist, or raise a budget;
 replanning may not increase its own bounds; an archivist may not self-certify a skill; auto-apply
-never precedes independent verification; control-plane roles stay non-executable; homelab collectors
+never precedes independent verification; control-plane roles stay non-executable; infrastructure collectors
 remain deterministic providers and are never scheduled as LLM workers.
 
 Every runtime-added task passes the *same* authorization, contract and permission gates as an

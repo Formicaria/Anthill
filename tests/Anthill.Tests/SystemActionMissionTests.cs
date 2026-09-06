@@ -7,8 +7,8 @@ using Anthill.Core.Modules;
 using Anthill.Core.Orchestration;
 using Anthill.Core.Outcomes;
 using Anthill.Core.Security;
-using Anthill.Modules.Homelab;
-using Anthill.Modules.Homelab.Actions;
+using Anthill.Modules.Infrastructure;
+using Anthill.Modules.Infrastructure.Actions;
 using Anthill.Modules.Tools;
 using Anthill.SDK.Artifacts;
 using Anthill.SDK.Contracts;
@@ -20,11 +20,11 @@ namespace Anthill.Tests;
 
 /// <summary>
 /// A REVERSIBLE OPERATION, OR A MISSION THAT DOES NOT PASS. v0.3.8.102, PLAN.md §2b — local
-/// system and homelab/infrastructure actions, the first class to carry Modify authority.
+/// system and infrastructure/infrastructure actions, the first class to carry Modify authority.
 ///
 /// THE CLASS. An operator asks for something to be DONE to infrastructure — "restart the media
 /// container on host pve1" — and the colony answers with an OPERATION: proposed through the
-/// homelab's own approval-gated pipeline (propose → blast radius → HUMAN approval → TOCTOU-guarded
+/// infrastructure's own approval-gated pipeline (propose → blast radius → HUMAN approval → TOCTOU-guarded
 /// execute → verify → audit), never beside it. What separates an operation from a description of
 /// one is the record it leaves: a BEFORE-STATE captured before anything changed, a RECEIPT of what
 /// ran, an AFTER-STATE probed after it ran, and a ROLLBACK NOTE that existed before execution —
@@ -34,7 +34,7 @@ namespace Anthill.Tests;
 /// autonomy: the model PROPOSES (a colony-database row — the LocalActionRunner precedent), and
 /// execution passes the conversation escalation gate, where the permission IS the record — an
 /// `EscalationDecision` with an operator's answer, distinct from the proposal, persisted whatever
-/// the outcome. The homelab executor's own gates (approved-state TOCTOU re-read, mandatory
+/// the outcome. The infrastructure executor's own gates (approved-state TOCTOU re-read, mandatory
 /// rollback note, kill switch, forbidden-action catalog) all still stand underneath; this slice
 /// reaches them through the spine rather than re-implementing any of them.
 ///
@@ -118,7 +118,7 @@ public class SystemActionMissionTests : IDisposable
     [MemberData(nameof(EquivalentActionRequests))]
     public void AnApprovedOperation_LeavesBeforeState_Receipt_AndAfterState(string request)
     {
-        var lab = FakeHomelab.Create(_dir);
+        var lab = FakeInfrastructure.Create(_dir);
         var run = RunColony(request, ActionScript(), lab,
             approveExecution: true);
         using var memory = run.Memory;
@@ -150,11 +150,11 @@ public class SystemActionMissionTests : IDisposable
         // ---- 4. THE EXECUTOR'S OWN LIFECYCLE AGREES ---------------------------------------------
         //
         // The record is not the model's account of the pipeline — it must match the pipeline's own
-        // rows: the proposal exists in the homelab repository and reached the executed state
+        // rows: the proposal exists in the infrastructure repository and reached the executed state
         // through the lifecycle every prior release hardened.
         var proposal = lab.Repository.GetActionProposal(operation.ProposalId);
         Assert.True(proposal is not null,
-            $"the record names proposal '{operation.ProposalId}' and the homelab repository holds "
+            $"the record names proposal '{operation.ProposalId}' and the infrastructure repository holds "
           + "no such row" + Dump(memory, run.MissionId));
         Assert.Equal("executed", proposal!.State);
         Assert.Contains(lab.Runner.Executed, e => e.Contains(proposal.TargetId, StringComparison.OrdinalIgnoreCase));
@@ -180,7 +180,7 @@ public class SystemActionMissionTests : IDisposable
     [Fact]
     public void AnUnapprovedOperation_DoesNotExecute_AndTheMissionSaysSo()
     {
-        var lab = FakeHomelab.Create(_dir);
+        var lab = FakeInfrastructure.Create(_dir);
         var run = RunColony("Restart the media-server container on host pve1.",
             ActionScript(), lab, approveExecution: false);
         using var memory = run.Memory;
@@ -282,19 +282,19 @@ public class SystemActionMissionTests : IDisposable
     // ---- harness ---------------------------------------------------------------------------------
 
     /// <summary>
-    /// The homelab pipeline, composed for real: the actual repository, the actual executor with
+    /// The infrastructure pipeline, composed for real: the actual repository, the actual executor with
     /// every gate it ships (TOCTOU, rollback-note mandate, kill switch, catalog), and the
     /// deterministic MockActionRunner the module itself provides. Nothing here is a re-model of
     /// the pipeline — the composed mission reaches the same executor production reaches.
     /// </summary>
-    private sealed record FakeHomelab(HomelabRepository Repository, ActionExecutor Executor, MockActionRunner Runner)
+    private sealed record FakeInfrastructure(InfrastructureRepository Repository, ActionExecutor Executor, MockActionRunner Runner)
     {
-        public static FakeHomelab Create(string dir)
+        public static FakeInfrastructure Create(string dir)
         {
-            var repository = new HomelabRepository(Path.Combine(dir, $"homelab-{Guid.NewGuid():N}.db"));
+            var repository = new InfrastructureRepository(Path.Combine(dir, $"infrastructure-{Guid.NewGuid():N}.db"));
             var runner = new MockActionRunner();
-            var executor = new ActionExecutor(repository, new IHomelabActionRunner[] { runner }, isStopped: () => false);
-            return new FakeHomelab(repository, executor, runner);
+            var executor = new ActionExecutor(repository, new IInfrastructureActionRunner[] { runner }, isStopped: () => false);
+            return new FakeInfrastructure(repository, executor, runner);
         }
     }
 
@@ -350,7 +350,7 @@ public class SystemActionMissionTests : IDisposable
 
     private sealed record ColonyRun(SqliteMemory Memory, string MissionId);
 
-    private ColonyRun RunColony(string request, ScriptBook book, FakeHomelab lab, bool approveExecution)
+    private ColonyRun RunColony(string request, ScriptBook book, FakeInfrastructure lab, bool approveExecution)
     {
         AnthillRuntime.EnableSpecialistAntExecution = true;
         AnthillRuntime.ActivationTier = ActivationTier.Full;
@@ -374,7 +374,7 @@ public class SystemActionMissionTests : IDisposable
         host.Load(new ToolsModule(new WorkspacePathGuard()));
         var queen = new Queen(memory);
         queen.AdoptModuleTools(host.ContributedTools);
-        // The homelab's spine tools, over the REAL executor — same last-write-wins path. The
+        // The infrastructure's spine tools, over the REAL executor — same last-write-wins path. The
         // decision bridge is the composition's job (the module references only the SDK), and it
         // is WIRED THE WAY PRODUCTION WIRES IT: the ambient scope for conversational flows, then
         // the SAVED escalation record for mission flows — the runner records every answer as a

@@ -287,7 +287,7 @@ public static class ArtifactSchemas
 
     /// <summary>
     /// A system operation — before-state, receipt, after-state, rollback note, and the distinct
-    /// human approval, stamped from the homelab pipeline's own rows. v0.3.8.102. See
+    /// human approval, stamped from the infrastructure pipeline's own rows. v0.3.8.102. See
     /// <see cref="Artifacts.SystemOperation"/>; `OperationIntegrity` refuses each absent piece by
     /// name. Admitted to the vocabulary, the bridge and the shape table in the same change — the
     /// `.100` lesson, applied in advance rather than relearned.

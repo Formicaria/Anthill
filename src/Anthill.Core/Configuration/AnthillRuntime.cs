@@ -15,7 +15,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "0.3.8.127";
+    public const string Version = "0.3.8.128";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -100,11 +100,11 @@ public static class AnthillRuntime
         // (UserRoles) — but the FEATURE now ships off (operator_shell_enabled defaults false), so
         // the gate that matters is the runtime one. Two gates, and the outer one is closed.
         ["operator_shell"] = true,
-        // Homelab (v1.9.0, NORTH_STAR D3). Reads + integration management ship enabled. The two
+        // Infrastructure (v1.9.0, NORTH_STAR D3). Reads + integration management ship enabled. The two
         // action permissions gained their implementation in v2.3.0 (approval-gated actions) but
         // STILL ship disabled — fail closed; an operator must turn the gates on deliberately.
-        ["read_homelab"] = true, ["manage_homelab_integrations"] = true,
-        ["approve_homelab_actions"] = false, ["execute_homelab_actions"] = false,
+        ["read_infrastructure"] = true, ["manage_infrastructure_integrations"] = true,
+        ["approve_infrastructure_actions"] = false, ["execute_infrastructure_actions"] = false,
         // MICROMOUND M1 (read-only). Reads and mound management (enrollment tokens) ship enabled.
         // approve_micromound_actions gates ONLY the stop/resume pair in M1 — the command path does
         // not exist yet — and ships ENABLED for that reason: the only thing it can authorize is
@@ -389,31 +389,31 @@ public static class AnthillRuntime
     /// <summary>Sentinel file whose presence halts the autonomous Director. Lives under the workspace root.</summary>
     public static string AutonomyStopFileName = "STOP";
 
-    // ---- Homelab foundation (v1.9.0, NORTH_STAR Phase 4) -------------------
-    /// <summary>Master gate for the homelab subsystem. Off by default; read-only in the V1.9.x line.</summary>
-    public static bool EnableHomelab = false;
-    /// <summary>Gate for the HomelabScheduler background runner. Off by default; v1.9.0 registers no jobs.</summary>
-    public static bool EnableHomelabScheduler = false;
+    // ---- Infrastructure foundation (v1.9.0, NORTH_STAR Phase 4) -------------------
+    /// <summary>Master gate for the infrastructure subsystem. Off by default; read-only in the V1.9.x line.</summary>
+    public static bool EnableInfrastructure = false;
+    /// <summary>Gate for the InfrastructureScheduler background runner. Off by default; v1.9.0 registers no jobs.</summary>
+    public static bool EnableInfrastructureScheduler = false;
     /// <summary>v1.9.1: gate for the network-free mock providers. Both this AND the scheduler gate must be on for mocks to run.</summary>
-    public static bool EnableHomelabMockProviders = false;
-    /// <summary>Global cap on concurrent homelab checks/syncs (the scheduler's semaphore width).</summary>
-    public static int HomelabMaxConcurrentChecks = 2;
-    /// <summary>Sentinel file whose presence halts all homelab actions. Lives under the workspace root.</summary>
-    public static string HomelabStopFileName = "HOMELAB_STOP";
+    public static bool EnableInfrastructureMockProviders = false;
+    /// <summary>Global cap on concurrent infrastructure checks/syncs (the scheduler's semaphore width).</summary>
+    public static int InfrastructureMaxConcurrentChecks = 2;
+    /// <summary>Sentinel file whose presence halts all infrastructure actions. Lives under the workspace root.</summary>
+    public static string InfrastructureStopFileName = "INFRASTRUCTURE_STOP";
     /// <summary>MICROMOUND (optional integration): master gate, default OFF. The module also only
     /// COMPILES in when the wire-contract checkout is present — a colony without hardware carries
     /// no micromound at all, and a colony built with it still opts in explicitly.</summary>
     public static bool EnableMicromound = false;
     // ---- Health checks + notifications (v1.11.0, NORTH_STAR Phase 7) -------
     /// <summary>Cadence of the scheduler's health-check job.</summary>
-    public static int HomelabHealthIntervalSeconds = 60;
+    public static int InfrastructureHealthIntervalSeconds = 60;
     /// <summary>Global per-check timeout so a hung host can never hang the app.</summary>
-    public static int HomelabHealthTimeoutMs = 5000;
+    public static int InfrastructureHealthTimeoutMs = 5000;
     /// <summary>Master gate for webhook notifications. Off by default.</summary>
-    public static bool EnableHomelabNotifications = false;
+    public static bool EnableInfrastructureNotifications = false;
     /// <summary>v2.5.0: master gate for automation rules — default OFF, and every rule is
     /// additionally disabled by default (Phase 14 rule: nothing self-heals until opted in twice).</summary>
-    public static bool EnableHomelabAutomation = false;
+    public static bool EnableInfrastructureAutomation = false;
 
     // Execution framework Stage C: specialist-ant rollout gates. Master gate + per-role, ALL
     // default false — a specialist runs only when the framework gate AND its own gate are open
@@ -503,53 +503,53 @@ public static class AnthillRuntime
     public static bool EnableAdaptiveMissionControl = false;
     public static bool EnableUiCartographerAnt = false;
     public static bool EnableScribeAnt = false;
-    public static string HomelabSlackWebhook = "";
-    public static string HomelabDiscordWebhook = "";
-    public static string HomelabGenericWebhook = "";
+    public static string InfrastructureSlackWebhook = "";
+    public static string InfrastructureDiscordWebhook = "";
+    public static string InfrastructureGenericWebhook = "";
     // ---- Proxmox read-only integration (v1.12.0, NORTH_STAR Phase 8) -------
     /// <summary>Gate for the Proxmox read-only sync. GET-only by construction; off by default.</summary>
-    public static bool EnableHomelabProxmox = false;
-    public static string HomelabProxmoxHost = "";
-    public static int HomelabProxmoxPort = 8006;
+    public static bool EnableInfrastructureProxmox = false;
+    public static string InfrastructureProxmoxHost = "";
+    public static int InfrastructureProxmoxPort = 8006;
     /// <summary>Credential-store id holding the PVE API token ("user@realm!tokenid=secret"). Never the token itself.</summary>
-    public static string HomelabProxmoxCredentialId = "proxmox-main";
+    public static string InfrastructureProxmoxCredentialId = "proxmox-main";
     /// <summary>Skip TLS verification for self-signed PVE certs. Keep false when real certs exist.</summary>
-    public static bool HomelabProxmoxInsecureTls = false;
+    public static bool InfrastructureProxmoxInsecureTls = false;
     /// <summary>v2.2.0: "https" (default) or "http" — protocol selection, separate from TLS verification.</summary>
-    public static string HomelabProxmoxProtocol = "https";
+    public static string InfrastructureProxmoxProtocol = "https";
     /// <summary>v2.3.1: opt-in gate for the write-capable ProxmoxActionRunner. Default OFF —
     /// connecting Proxmox read-only must never silently grant power/snapshot/backup capability.</summary>
-    public static bool HomelabProxmoxWriteActionsEnabled = false;
-    public static int HomelabProxmoxSyncIntervalSeconds = 300;
+    public static bool InfrastructureProxmoxWriteActionsEnabled = false;
+    public static int InfrastructureProxmoxSyncIntervalSeconds = 300;
     /// <summary>v2.3.3: cadence of the *arr-stack app status sync (read-only).</summary>
-    public static int HomelabArrSyncIntervalSeconds = 300;
+    public static int InfrastructureArrSyncIntervalSeconds = 300;
     // ---- Read-only virtualization integrations (v2.1.0) --------------------
     // ESXi/vCenter (vSphere REST), Docker (Engine API), Hyper-V (WinRM WMI read-only). Each mirrors
     // Proxmox: no write path in the client, secret in the credential store (by id), host on the allowlist.
-    public static bool EnableHomelabEsxi = false;
-    public static string HomelabEsxiHost = "";
-    public static int HomelabEsxiPort = 443;
-    public static string HomelabEsxiCredentialId = "esxi-main";
-    public static bool HomelabEsxiInsecureTls = false;
-    public static int HomelabEsxiSyncIntervalSeconds = 300;
-    public static bool EnableHomelabDocker = false;
-    public static string HomelabDockerHost = "";
-    public static int HomelabDockerPort = 2376;
-    public static string HomelabDockerCredentialId = "docker-main";
-    public static bool HomelabDockerInsecureTls = false;
-    public static int HomelabDockerSyncIntervalSeconds = 300;
-    public static bool EnableHomelabHyperv = false;
-    public static string HomelabHypervHost = "";
-    public static int HomelabHypervPort = 5986;
-    public static string HomelabHypervCredentialId = "hyperv-main";
-    public static bool HomelabHypervInsecureTls = false;
-    public static int HomelabHypervSyncIntervalSeconds = 300;
+    public static bool EnableInfrastructureEsxi = false;
+    public static string InfrastructureEsxiHost = "";
+    public static int InfrastructureEsxiPort = 443;
+    public static string InfrastructureEsxiCredentialId = "esxi-main";
+    public static bool InfrastructureEsxiInsecureTls = false;
+    public static int InfrastructureEsxiSyncIntervalSeconds = 300;
+    public static bool EnableInfrastructureDocker = false;
+    public static string InfrastructureDockerHost = "";
+    public static int InfrastructureDockerPort = 2376;
+    public static string InfrastructureDockerCredentialId = "docker-main";
+    public static bool InfrastructureDockerInsecureTls = false;
+    public static int InfrastructureDockerSyncIntervalSeconds = 300;
+    public static bool EnableInfrastructureHyperv = false;
+    public static string InfrastructureHypervHost = "";
+    public static int InfrastructureHypervPort = 5986;
+    public static string InfrastructureHypervCredentialId = "hyperv-main";
+    public static bool InfrastructureHypervInsecureTls = false;
+    public static int InfrastructureHypervSyncIntervalSeconds = 300;
     // ---- Network + security awareness (v1.13.0, NORTH_STAR Phase 9) --------
     /// <summary>Cadence of the deterministic risk analysis (repo-only, zero network I/O).</summary>
-    public static int HomelabRiskIntervalSeconds = 3600;
+    public static int InfrastructureRiskIntervalSeconds = 3600;
     // ---- Incident + change memory (v1.14.0, NORTH_STAR Phase 10) -----------
     /// <summary>Cadence of the incident sweep (candidate events → deduped incidents; repo-only).</summary>
-    public static int HomelabIncidentSweepSeconds = 300;
+    public static int InfrastructureIncidentSweepSeconds = 300;
     // ---- Phase 2: Strategist (self-generated missions) --------------------
     /// <summary>Keyword-overlap ratio (0.1) above which a generated goal is rejected as a near-duplicate of recent work.</summary>
     public static double AutonomyDedupeSimilarity = 0.8;
@@ -1036,10 +1036,10 @@ public static class AnthillRuntime
         // null, so the empty string won and produced an empty host, model or bind address. The docs
         // promise "highest precedence"; the code delivered "highest precedence, including for a
         // value the operator did not set". `Env` treats blank as absent, which is what the
-        // neighbouring homelab settings already do.
+        // neighbouring infrastructure settings already do.
         ApiHost = Env("ANTHILL_HOST") ?? config.ApiHost;
 
-        // And a port outside the legal range is refused rather than bound. The homelab ports are all
+        // And a port outside the legal range is refused rather than bound. The infrastructure ports are all
         // clamped; this one was not, so ANTHILL_PORT=0 or 70000 reached Kestrel as-is. An
         // unparseable value still falls back to the file, and now says so instead of doing it
         // silently — a typo in a compose file that quietly serves a different port is a bad hour.
@@ -1136,15 +1136,15 @@ public static class AnthillRuntime
         MaxDbBackups = Math.Clamp(config.MaxDbBackups, 0, 1000);
         EventRetentionDays = Math.Clamp(config.EventRetentionDays, 0, 3650);
         EnableAutonomy = config.AutonomyEnabled;
-        EnableHomelab = config.HomelabEnabled;
-        EnableHomelabScheduler = config.HomelabSchedulerEnabled;
-        EnableHomelabMockProviders = config.HomelabMockProvidersEnabled;
-        HomelabMaxConcurrentChecks = Math.Clamp(config.HomelabMaxConcurrentChecks, 1, 16);
-        HomelabHealthIntervalSeconds = Math.Clamp(config.HomelabHealthIntervalSeconds, 10, 86400);
-        HomelabHealthTimeoutMs = Math.Clamp(config.HomelabHealthTimeoutMs, 250, 60000);
-        EnableHomelabNotifications = config.HomelabNotificationsEnabled;
+        EnableInfrastructure = config.InfrastructureEnabled;
+        EnableInfrastructureScheduler = config.InfrastructureSchedulerEnabled;
+        EnableInfrastructureMockProviders = config.InfrastructureMockProvidersEnabled;
+        InfrastructureMaxConcurrentChecks = Math.Clamp(config.InfrastructureMaxConcurrentChecks, 1, 16);
+        InfrastructureHealthIntervalSeconds = Math.Clamp(config.InfrastructureHealthIntervalSeconds, 10, 86400);
+        InfrastructureHealthTimeoutMs = Math.Clamp(config.InfrastructureHealthTimeoutMs, 250, 60000);
+        EnableInfrastructureNotifications = config.InfrastructureNotificationsEnabled;
         EnableMicromound = config.MicromoundEnabled;
-        EnableHomelabAutomation = config.HomelabAutomationEnabled;
+        EnableInfrastructureAutomation = config.InfrastructureAutomationEnabled;
         // v2.15.0: unset resolves to the shipping default (on); an explicit false is respected.
         EnableDashboardWorkspace = config.DashboardWorkspaceEnabled ?? true;
         config.DashboardWorkspaceEnabled = EnableDashboardWorkspace;   // make it explicit on next save
@@ -1228,38 +1228,38 @@ public static class AnthillRuntime
             $"[roster] profile '{RosterProfile}': "
             + string.Join(", ", EffectiveRoster().Select(r => $"{r.Key}={(r.Value ? "on" : "off")}"))
             + (DisabledRoles.Count > 0 ? $" (kill switches: {string.Join(", ", DisabledRoles)})" : ""));
-        HomelabSlackWebhook = (config.HomelabSlackWebhook ?? "").Trim();
-        HomelabDiscordWebhook = (config.HomelabDiscordWebhook ?? "").Trim();
-        HomelabGenericWebhook = (config.HomelabGenericWebhook ?? "").Trim();
-        EnableHomelabProxmox = config.HomelabProxmoxEnabled;
-        HomelabProxmoxHost = (config.HomelabProxmoxHost ?? "").Trim();
-        HomelabProxmoxPort = Math.Clamp(config.HomelabProxmoxPort, 1, 65535);
-        HomelabProxmoxCredentialId = string.IsNullOrWhiteSpace(config.HomelabProxmoxCredentialId) ? "proxmox-main" : config.HomelabProxmoxCredentialId.Trim();
-        HomelabProxmoxInsecureTls = config.HomelabProxmoxInsecureTls;
-        HomelabProxmoxProtocol = string.Equals((config.HomelabProxmoxProtocol ?? "").Trim(), "http", StringComparison.OrdinalIgnoreCase) ? "http" : "https";
-        HomelabProxmoxWriteActionsEnabled = config.HomelabProxmoxWriteActionsEnabled;
-        HomelabProxmoxSyncIntervalSeconds = Math.Clamp(config.HomelabProxmoxSyncIntervalSeconds, 30, 86400);
-        HomelabArrSyncIntervalSeconds = Math.Clamp(config.HomelabArrSyncIntervalSeconds, 30, 86400);
-        EnableHomelabEsxi = config.HomelabEsxiEnabled;
-        HomelabEsxiHost = (config.HomelabEsxiHost ?? "").Trim();
-        HomelabEsxiPort = Math.Clamp(config.HomelabEsxiPort, 1, 65535);
-        HomelabEsxiCredentialId = string.IsNullOrWhiteSpace(config.HomelabEsxiCredentialId) ? "esxi-main" : config.HomelabEsxiCredentialId.Trim();
-        HomelabEsxiInsecureTls = config.HomelabEsxiInsecureTls;
-        HomelabEsxiSyncIntervalSeconds = Math.Clamp(config.HomelabEsxiSyncIntervalSeconds, 30, 86400);
-        EnableHomelabDocker = config.HomelabDockerEnabled;
-        HomelabDockerHost = (config.HomelabDockerHost ?? "").Trim();
-        HomelabDockerPort = Math.Clamp(config.HomelabDockerPort, 1, 65535);
-        HomelabDockerCredentialId = string.IsNullOrWhiteSpace(config.HomelabDockerCredentialId) ? "docker-main" : config.HomelabDockerCredentialId.Trim();
-        HomelabDockerInsecureTls = config.HomelabDockerInsecureTls;
-        HomelabDockerSyncIntervalSeconds = Math.Clamp(config.HomelabDockerSyncIntervalSeconds, 30, 86400);
-        EnableHomelabHyperv = config.HomelabHypervEnabled;
-        HomelabHypervHost = (config.HomelabHypervHost ?? "").Trim();
-        HomelabHypervPort = Math.Clamp(config.HomelabHypervPort, 1, 65535);
-        HomelabHypervCredentialId = string.IsNullOrWhiteSpace(config.HomelabHypervCredentialId) ? "hyperv-main" : config.HomelabHypervCredentialId.Trim();
-        HomelabHypervInsecureTls = config.HomelabHypervInsecureTls;
-        HomelabHypervSyncIntervalSeconds = Math.Clamp(config.HomelabHypervSyncIntervalSeconds, 30, 86400);
-        HomelabRiskIntervalSeconds = Math.Clamp(config.HomelabRiskIntervalSeconds, 60, 86400);
-        HomelabIncidentSweepSeconds = Math.Clamp(config.HomelabIncidentSweepSeconds, 30, 86400);
+        InfrastructureSlackWebhook = (config.InfrastructureSlackWebhook ?? "").Trim();
+        InfrastructureDiscordWebhook = (config.InfrastructureDiscordWebhook ?? "").Trim();
+        InfrastructureGenericWebhook = (config.InfrastructureGenericWebhook ?? "").Trim();
+        EnableInfrastructureProxmox = config.InfrastructureProxmoxEnabled;
+        InfrastructureProxmoxHost = (config.InfrastructureProxmoxHost ?? "").Trim();
+        InfrastructureProxmoxPort = Math.Clamp(config.InfrastructureProxmoxPort, 1, 65535);
+        InfrastructureProxmoxCredentialId = string.IsNullOrWhiteSpace(config.InfrastructureProxmoxCredentialId) ? "proxmox-main" : config.InfrastructureProxmoxCredentialId.Trim();
+        InfrastructureProxmoxInsecureTls = config.InfrastructureProxmoxInsecureTls;
+        InfrastructureProxmoxProtocol = string.Equals((config.InfrastructureProxmoxProtocol ?? "").Trim(), "http", StringComparison.OrdinalIgnoreCase) ? "http" : "https";
+        InfrastructureProxmoxWriteActionsEnabled = config.InfrastructureProxmoxWriteActionsEnabled;
+        InfrastructureProxmoxSyncIntervalSeconds = Math.Clamp(config.InfrastructureProxmoxSyncIntervalSeconds, 30, 86400);
+        InfrastructureArrSyncIntervalSeconds = Math.Clamp(config.InfrastructureArrSyncIntervalSeconds, 30, 86400);
+        EnableInfrastructureEsxi = config.InfrastructureEsxiEnabled;
+        InfrastructureEsxiHost = (config.InfrastructureEsxiHost ?? "").Trim();
+        InfrastructureEsxiPort = Math.Clamp(config.InfrastructureEsxiPort, 1, 65535);
+        InfrastructureEsxiCredentialId = string.IsNullOrWhiteSpace(config.InfrastructureEsxiCredentialId) ? "esxi-main" : config.InfrastructureEsxiCredentialId.Trim();
+        InfrastructureEsxiInsecureTls = config.InfrastructureEsxiInsecureTls;
+        InfrastructureEsxiSyncIntervalSeconds = Math.Clamp(config.InfrastructureEsxiSyncIntervalSeconds, 30, 86400);
+        EnableInfrastructureDocker = config.InfrastructureDockerEnabled;
+        InfrastructureDockerHost = (config.InfrastructureDockerHost ?? "").Trim();
+        InfrastructureDockerPort = Math.Clamp(config.InfrastructureDockerPort, 1, 65535);
+        InfrastructureDockerCredentialId = string.IsNullOrWhiteSpace(config.InfrastructureDockerCredentialId) ? "docker-main" : config.InfrastructureDockerCredentialId.Trim();
+        InfrastructureDockerInsecureTls = config.InfrastructureDockerInsecureTls;
+        InfrastructureDockerSyncIntervalSeconds = Math.Clamp(config.InfrastructureDockerSyncIntervalSeconds, 30, 86400);
+        EnableInfrastructureHyperv = config.InfrastructureHypervEnabled;
+        InfrastructureHypervHost = (config.InfrastructureHypervHost ?? "").Trim();
+        InfrastructureHypervPort = Math.Clamp(config.InfrastructureHypervPort, 1, 65535);
+        InfrastructureHypervCredentialId = string.IsNullOrWhiteSpace(config.InfrastructureHypervCredentialId) ? "hyperv-main" : config.InfrastructureHypervCredentialId.Trim();
+        InfrastructureHypervInsecureTls = config.InfrastructureHypervInsecureTls;
+        InfrastructureHypervSyncIntervalSeconds = Math.Clamp(config.InfrastructureHypervSyncIntervalSeconds, 30, 86400);
+        InfrastructureRiskIntervalSeconds = Math.Clamp(config.InfrastructureRiskIntervalSeconds, 60, 86400);
+        InfrastructureIncidentSweepSeconds = Math.Clamp(config.InfrastructureIncidentSweepSeconds, 30, 86400);
         AutonomyPollSeconds = Math.Clamp(config.AutonomyPollSeconds, 5, 3600);
         AutonomyMaxMissionsPerHour = Math.Max(1, config.AutonomyMaxMissionsPerHour);
         AutonomyMaxMissionsPerDay = Math.Max(1, config.AutonomyMaxMissionsPerDay);
@@ -1551,44 +1551,44 @@ public static class AnthillRuntime
         ["web_search_enabled"] = EnableWebSearch,
         ["patch_application_enabled"] = EnablePatchApplication,
         ["acting_coder_enabled"] = EnableActingCoder,
-        ["homelab_enabled"] = EnableHomelab,
-        ["homelab_scheduler_enabled"] = EnableHomelabScheduler,
-        ["homelab_mock_providers_enabled"] = EnableHomelabMockProviders,
-        ["homelab_max_concurrent_checks"] = HomelabMaxConcurrentChecks,
-        ["homelab_health_interval_seconds"] = HomelabHealthIntervalSeconds,
-        ["homelab_health_timeout_ms"] = HomelabHealthTimeoutMs,
-        ["homelab_notifications_enabled"] = EnableHomelabNotifications,
-        ["homelab_slack_webhook"] = HomelabSlackWebhook,
-        ["homelab_discord_webhook"] = HomelabDiscordWebhook,
-        ["homelab_generic_webhook"] = HomelabGenericWebhook,
-        ["homelab_proxmox_enabled"] = EnableHomelabProxmox,
-        ["homelab_proxmox_host"] = HomelabProxmoxHost,
-        ["homelab_proxmox_port"] = HomelabProxmoxPort,
-        ["homelab_proxmox_credential_id"] = HomelabProxmoxCredentialId,
-        ["homelab_proxmox_insecure_tls"] = HomelabProxmoxInsecureTls,
-        ["homelab_proxmox_protocol"] = HomelabProxmoxProtocol,
-        ["homelab_proxmox_sync_interval_seconds"] = HomelabProxmoxSyncIntervalSeconds,
-        ["homelab_arr_sync_interval_seconds"] = HomelabArrSyncIntervalSeconds,
-        ["homelab_esxi_enabled"] = EnableHomelabEsxi,
-        ["homelab_esxi_host"] = HomelabEsxiHost,
-        ["homelab_esxi_port"] = HomelabEsxiPort,
-        ["homelab_esxi_credential_id"] = HomelabEsxiCredentialId,
-        ["homelab_esxi_insecure_tls"] = HomelabEsxiInsecureTls,
-        ["homelab_esxi_sync_interval_seconds"] = HomelabEsxiSyncIntervalSeconds,
-        ["homelab_docker_enabled"] = EnableHomelabDocker,
-        ["homelab_docker_host"] = HomelabDockerHost,
-        ["homelab_docker_port"] = HomelabDockerPort,
-        ["homelab_docker_credential_id"] = HomelabDockerCredentialId,
-        ["homelab_docker_insecure_tls"] = HomelabDockerInsecureTls,
-        ["homelab_docker_sync_interval_seconds"] = HomelabDockerSyncIntervalSeconds,
-        ["homelab_hyperv_enabled"] = EnableHomelabHyperv,
-        ["homelab_hyperv_host"] = HomelabHypervHost,
-        ["homelab_hyperv_port"] = HomelabHypervPort,
-        ["homelab_hyperv_credential_id"] = HomelabHypervCredentialId,
-        ["homelab_hyperv_insecure_tls"] = HomelabHypervInsecureTls,
-        ["homelab_hyperv_sync_interval_seconds"] = HomelabHypervSyncIntervalSeconds,
-        ["homelab_risk_interval_seconds"] = HomelabRiskIntervalSeconds,
-        ["homelab_incident_sweep_seconds"] = HomelabIncidentSweepSeconds,
+        ["infrastructure_enabled"] = EnableInfrastructure,
+        ["infrastructure_scheduler_enabled"] = EnableInfrastructureScheduler,
+        ["infrastructure_mock_providers_enabled"] = EnableInfrastructureMockProviders,
+        ["infrastructure_max_concurrent_checks"] = InfrastructureMaxConcurrentChecks,
+        ["infrastructure_health_interval_seconds"] = InfrastructureHealthIntervalSeconds,
+        ["infrastructure_health_timeout_ms"] = InfrastructureHealthTimeoutMs,
+        ["infrastructure_notifications_enabled"] = EnableInfrastructureNotifications,
+        ["infrastructure_slack_webhook"] = InfrastructureSlackWebhook,
+        ["infrastructure_discord_webhook"] = InfrastructureDiscordWebhook,
+        ["infrastructure_generic_webhook"] = InfrastructureGenericWebhook,
+        ["infrastructure_proxmox_enabled"] = EnableInfrastructureProxmox,
+        ["infrastructure_proxmox_host"] = InfrastructureProxmoxHost,
+        ["infrastructure_proxmox_port"] = InfrastructureProxmoxPort,
+        ["infrastructure_proxmox_credential_id"] = InfrastructureProxmoxCredentialId,
+        ["infrastructure_proxmox_insecure_tls"] = InfrastructureProxmoxInsecureTls,
+        ["infrastructure_proxmox_protocol"] = InfrastructureProxmoxProtocol,
+        ["infrastructure_proxmox_sync_interval_seconds"] = InfrastructureProxmoxSyncIntervalSeconds,
+        ["infrastructure_arr_sync_interval_seconds"] = InfrastructureArrSyncIntervalSeconds,
+        ["infrastructure_esxi_enabled"] = EnableInfrastructureEsxi,
+        ["infrastructure_esxi_host"] = InfrastructureEsxiHost,
+        ["infrastructure_esxi_port"] = InfrastructureEsxiPort,
+        ["infrastructure_esxi_credential_id"] = InfrastructureEsxiCredentialId,
+        ["infrastructure_esxi_insecure_tls"] = InfrastructureEsxiInsecureTls,
+        ["infrastructure_esxi_sync_interval_seconds"] = InfrastructureEsxiSyncIntervalSeconds,
+        ["infrastructure_docker_enabled"] = EnableInfrastructureDocker,
+        ["infrastructure_docker_host"] = InfrastructureDockerHost,
+        ["infrastructure_docker_port"] = InfrastructureDockerPort,
+        ["infrastructure_docker_credential_id"] = InfrastructureDockerCredentialId,
+        ["infrastructure_docker_insecure_tls"] = InfrastructureDockerInsecureTls,
+        ["infrastructure_docker_sync_interval_seconds"] = InfrastructureDockerSyncIntervalSeconds,
+        ["infrastructure_hyperv_enabled"] = EnableInfrastructureHyperv,
+        ["infrastructure_hyperv_host"] = InfrastructureHypervHost,
+        ["infrastructure_hyperv_port"] = InfrastructureHypervPort,
+        ["infrastructure_hyperv_credential_id"] = InfrastructureHypervCredentialId,
+        ["infrastructure_hyperv_insecure_tls"] = InfrastructureHypervInsecureTls,
+        ["infrastructure_hyperv_sync_interval_seconds"] = InfrastructureHypervSyncIntervalSeconds,
+        ["infrastructure_risk_interval_seconds"] = InfrastructureRiskIntervalSeconds,
+        ["infrastructure_incident_sweep_seconds"] = InfrastructureIncidentSweepSeconds,
         // v0.3.8.40 — reported as the mode AND why. A mode with no stated reason is one nobody can
         // argue with when detection surprises them.
         ["docker_execute_enabled"] = DockerExecuteEnabled,

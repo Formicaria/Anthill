@@ -15,7 +15,7 @@ namespace Anthill.Tests;
 /// wrong file. A guard that reads one file of a partial class is a guard that a future split turns
 /// into decoration.
 ///
-/// So this reads EVERY <c>ApiHost*.cs</c> under <c>src/Anthill.Api</c>, including the homelab
+/// So this reads EVERY <c>ApiHost*.cs</c> under <c>src/Anthill.Api</c>, including the infrastructure
 /// partials, sorted by path so the concatenation is deterministic and slice-based assertions behave
 /// the same on every machine. Adding a partial cannot silently narrow what these guards see.
 /// </summary>
