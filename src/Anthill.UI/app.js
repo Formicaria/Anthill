@@ -1365,6 +1365,41 @@ function inspectorTrailStrength(n){
 }
 
 /**
+ * THE FACTS THE PANEL WAS STILL GATHERING AND HAD STOPPED SHOWING. v0.3.8.129.
+ *
+ * v0.3.8.127 deleted the caste editor and took this block with it, and left the CALL at its site
+ * inside `showInspector`'s template literal. A call to a function that does not exist is not a
+ * syntax error, so `node --check` passed; and the guard that sweeps app.js for undeclared symbols
+ * strips template literals whole, interpolations included, so the reference was invisible to that
+ * too. Both readers were narrower than their rule — defect class 11, twice over the same line.
+ *
+ * WHAT THE OPERATOR SAW, and why it read as a deletion rather than a bug. Every click on a registry
+ * ant threw a ReferenceError here. `colony-live`'s bus dispatched its subscribers in a bare
+ * `forEach`, so the throw in the FIRST `resident` handler took the second with it — and the second
+ * is the one that opens `#clb-record`. A missing three rows presented as no panel at all. The bus
+ * is guarded now as well, so the next missing symbol costs its own rows and nothing else.
+ *
+ * Three facts, each already loaded every poll and each with no other reader:
+ *   · chamber            — on the roster, and `UiShellTests` calls it "what the inspector reads"
+ *   · pheromone strength — `inspectorTrailStrength`, orphaned by the same deletion
+ *   · runtime status     — `runtimeStatusFor`, plus the reason when a role is not available
+ */
+function inspectorFactsHtml(n){
+  if(!n) return '';
+  const rows=[];
+  const add=(k,v,style)=>rows.push(`<div class="ad-row"><span class="ad-key">${k}</span><span class="ad-val"${style?` style="${style}"`:''}>${v}</span></div>`);
+  if(n.chamber) add('Chamber', escapeHtml(String(n.chamber)));
+  const trail=inspectorTrailStrength(n);
+  if(trail>0) add('Pheromone', trail.toFixed(2));
+  const rs=runtimeStatusFor(inspectorCasteFor(n)||n.id);
+  if(rs){
+    if(rs.status_label) add('Runtime', escapeHtml(String(rs.status_label)), rs.runtime_available===false?'color:var(--red)':'');
+    if(rs.runtime_available===false&&rs.unavailability_reason) add('Unavailable', escapeHtml(String(rs.unavailability_reason)));
+  }
+  return rows.join('');
+}
+
+/**
  * Whether this caste has a model route at all. Mirrors the Ant Config rule exactly so the two
  * surfaces cannot disagree about which ants are routable.
  */
@@ -2411,6 +2446,9 @@ function renderUpdateBanner(){
   if(!u){ banner.style.display='none'; if(dot) dot.style.display='none'; return; }
   if(u.update_available){
     banner.style.display='block';
+    banner.style.background='rgba(var(--queen-rgb),.08)';
+    banner.style.border='1px solid var(--queen)';
+    banner.style.color='var(--queen)';
     banner.innerHTML=`? Update available: <b>v${escapeHtml(u.latest)}</b> (you have v${escapeHtml(u.current)}). `+
       (u.release_url?`<a href="${escapeHtml(u.release_url)}" target="_blank" rel="noopener" style="color:var(--queen);text-decoration:underline;">Release notes</a> · `:'')+
       `On the LXC: <span style="font-family:var(--mono)">cd /opt/anthill/src && git pull && bash deploy/lxc/setup.sh</span>`;
@@ -2418,7 +2456,15 @@ function renderUpdateBanner(){
   } else {
     if(dot) dot.style.display='none';
     banner.style.display=u.status==='unknown'?'block':'none';
-    if(u.status==='unknown') banner.innerHTML=`<span style="color:var(--dim)">Update check unavailable (${escapeHtml(u.reason||'offline')}). You have v${escapeHtml(u.current)}.</span>`;
+    if(u.status==='unknown'){
+      // v0.3.8.129: NOT an alert. "we could not ask" is the check reporting on itself, and it was
+      // wearing the same red-bordered box as "your colony is out of date" — the one state in this
+      // panel an operator must act on. A failed reach is a note.
+      banner.style.background='transparent';
+      banner.style.border='1px solid rgba(255,255,255,.1)';
+      banner.style.color='var(--dim)';
+      banner.innerHTML=`<span style="color:var(--dim)">Update check unavailable — ${escapeHtml(u.reason||'offline')}. You have v${escapeHtml(u.current)}.</span>`;
+    }
   }
 }
 

@@ -1,3 +1,77 @@
+## v0.3.8.129 - the panel that was never opening, and a check that reported its own plumbing
+
+**CLICKING AN ANT OPENED NOTHING, AND THE REASON WAS ONE LINE THAT WAS NEVER DELETED.** `.127`
+removed the caste editor from the inspector and took a block of markup with it. It did not take the
+CALL: `${inspectorFactsHtml(n)}` stayed in `showInspector`'s template literal, naming a function that
+no longer existed anywhere in the tree.
+
+**NEITHER READER COULD SEE IT.** `node --check` parses an interpolation without resolving what it
+names, so the console asset was syntactically perfect. And
+`RegressionGuardTests.UiIntegrity_ColonyAndChamberSymbolsAreDeclared` — the guard that exists for
+precisely this, whose own failure message says "throws a ReferenceError at runtime while
+`node --check` still passes" — strips template literals WHOLE before it looks, interpolations
+included. The one place the reference lived is the one place that guard blanks. Its rule was right
+and its reader could not reach the site: defect class 11, in the guard written to catch class 11.
+
+**WHY IT PRESENTED AS A DELETED FEATURE RATHER THAN A BROKEN ROW.** Nothing was unwired. The click
+still fires, both subscribers are still registered, `#clb-record` still contains the name field, the
+colour picker, the telemetry block and the inspector host. But `colony-live`'s event bus dispatched
+its subscribers in a bare `forEach`, and the ReferenceError landed in the FIRST of the two `resident`
+handlers — so the second, the one that makes the panel visible, never ran. Three missing rows
+presented as no panel at all. The asymmetry was visible the whole time and nobody had a reason to
+look at it: a MOUND ant still opened the panel, because the first handler returns early for one.
+
+The block is back, and it renders the three facts the panel was still loading every poll and had
+stopped showing — chamber, pheromone strength, and runtime status with its unavailability reason.
+Both of its helpers had been sitting orphaned since `.127`, which is the fingerprint that says what
+was deleted. The bus is guarded now as well, so the next missing symbol costs its own rows and
+nothing else.
+
+**AND A NEW GUARD LOOKS WHERE THE OLD ONE BLANKS.** `ConsoleInterpolationTests` resolves every
+`${name(` in every console asset against every declaration in every console asset — 566 call sites
+today, with a vacuity floor and both regexes proved against the exact line that got past. It is
+deliberately not a general "is every identifier declared" sweep, which is a type checker and a bad
+one in regex. An interpolated call is the narrow case that is silent at parse time and fatal at
+click time. **Widened where it LOOKS, not what it ACCEPTS**: a name the browser genuinely supplies
+is listed by name.
+
+---
+
+**THE UPDATE CHECK WAS REPORTING ON ITSELF, IN RED.** The System Status panel showed
+`Update check unavailable (The request was canceled due to the configured HttpClient.Timeout of 6
+seconds elapsing.)` in the same red-bordered box the panel uses for "your colony is out of date" —
+the one state in it an operator must act on.
+
+Three things were wrong and each is small. **Six seconds is a bet, not a timeout** — that the first
+TLS handshake of the session to `api.github.com` completes faster than most home connections manage;
+it is twenty now. **A failure was cached like an answer**: thirty minutes, so one blocked poll pinned
+"unavailable" in the header long after the network came back; a failed check is forgiven after five.
+And **the operator was shown the exception's own sentence about this class's own field** — a string
+that names no cause they own and no action they can take. The check could not reach GitHub. That is
+the fact, and it is what the panel says, in the muted style a note gets rather than the border an
+alert gets.
+
+---
+
+**THE EXTERNAL WORKFLOW REVIEW IS IN THE PLAN, VERIFIED RATHER THAN ADOPTED.** A colony-wide review
+of the mission workflow arrived against `.125`. Every claim was re-checked against this tree before
+any of it entered `docs/PLAN.md` §2e, and the result is not the document that was handed over.
+
+Its LEAD finding — the coder resolver selecting `ui_coder` on a bare `text.Contains("ui")`, so that
+"req·ui·ring" routed backend work to the UI worker — was **already fixed at `.126`**, with a source
+guard that fails if any routing branch decides on a bare substring again. Its logs predate the fix.
+
+Eight findings verified, ranked, each recorded with where it lives and whether a test currently pins
+the WRONG behaviour — which three of them do, and one of those is worse than pinned: the schedule
+test's fake mission runner is synchronous, so "the mission started" and "the mission finished" are
+the same moment and the defect cannot be observed by the harness at all. Three further findings are
+accurate readings of decisions this repository made on purpose, and the plan says so rather than
+queueing them: the spec-ingestion length gate, the structural/verification split `.122` attempted and
+withdrew, and the tester's tree identity, which is R6/R7 work.
+
+Nothing is repaired here. A verified ranking is not a fix, and a release that claimed otherwise would
+be the defect class this plan section was written about.
+
 ## v0.3.8.128 - Infrastructure, and the gate that was never asked
 
 **THE LABEL CHANGED TWICE AND THE IDS DID NOT.** v2.6 renamed Homelab to Infrastructure in the
