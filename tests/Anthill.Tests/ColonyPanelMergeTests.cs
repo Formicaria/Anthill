@@ -137,10 +137,15 @@ public class ColonyPanelMergeTests
         var js = Ui("app.js");
         var body = SourceText.MemberBody(js, js.IndexOf("function showInspector(n)", StringComparison.Ordinal));
 
-        foreach (var section in new[] { "Purpose", "Permissions", "Tools", "Live Task Load", "Configure" })
+        // v0.3.8.127: "Configure" became "Model". The header outlived what it labelled — the block
+        // under it is a read-only statement of which provider and model this ant runs on, and a
+        // heading promising a control that was removed is the same defect one layer up.
+        foreach (var section in new[] { "Purpose", "Permissions", "Tools", "Live Task Load", "Model" })
             Assert.Contains(section, body, StringComparison.Ordinal);
 
-        // The customization is still editable, not merely displayed.
+        // The model block is still reached from here — read-only since v0.3.8.127, but present:
+        // an ant whose panel stopped saying which model it runs on would be a quieter regression
+        // than one that stopped saying its permissions.
         Assert.Contains("inspectorEditorHtml(n)", body, StringComparison.Ordinal);
         Assert.Contains("Running", body, StringComparison.Ordinal);
         Assert.Contains("Completed", body, StringComparison.Ordinal);
