@@ -49,6 +49,17 @@ Also fixed on the way: the delegated Save handler bound `addEventListener` to th
 `getElementById('agent-detail')` with no guard, which throws the moment that element is not in the
 page — as it was not, after this change. It delegates from `document` now.
 
+**Documentation caught up too.** `docs/HANDOFF.md` — the file whose entire purpose is to be pasted
+into a fresh session — still said `.122` was handed over and `.123` was "complete in the working
+tree", four releases behind, which is precisely the failure `DocumentCurrencyTests` was written
+about and precisely the shape its guard cannot see (it looks for "shipping release: vX", and this
+was prose). It now covers `.123` through `.126` newest-first, including what is still open.
+`docs/PLAN.md`'s forward-plan section was titled "the shape of v0.3.8.123 and after";
+`docs/TRAINING_MISSIONS.md` still named `inspector-routing.js`, renamed in `.124`, and listed four
+of the console's thirteen scripts. The README gained a **Organizational knowledge (FORAGER)**
+section — the integration has shipped since `.121` with five design documents and nothing telling an
+operator how to switch it on.
+
 **Still open, deliberately.** The operator also reported missions executing while patches sit
 `pending`. That is real and it is not in this release: `ToolRegistry.RunTool`'s escalation check
 reads the ambient `ConversationScope`, which is null for every mission entry that is not a chat
