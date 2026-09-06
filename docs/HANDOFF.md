@@ -4,127 +4,99 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-State: **v0.3.8.122 was handed to the operator for release** (`57b33c9` — the colony has no floor,
-and a decision nobody recorded is a decision nobody made). **v0.3.8.123 is complete in the working
-tree**, on `feat/v0.3.8.123-authoring`.
+State: **v0.3.8.125 is released and tagged** (`5e7db4d`). **v0.3.8.126 is complete and awaiting a
+test run**, on `fix/v0.3.8.126-worker-routing` (`ca323d4`).
 
-`.123` is one large operator batch and one correctness fix that arrived with it.
+Four releases shipped since this file last said anything: `.123` (micromound authoring, colony-live
+fixes, planner evidence-grounding), `.124` (routing became a project's decision, the Ant Inspector
+page retired, Tools › Knowledge got a switch), `.125` (the classic canvas deleted), and `.126`
+(pending). What follows is what a fresh session needs, newest first.
 
-**The Micromound settings page stopped being a JSON file.** `MicromoundAuthoring` compiles plain
-answers — what the mound is wired to, how far it may go, who decides, how often it checks in — into
-exactly the `CharterRequest` and `ConfigurationRequest` the existing services already take. It is a
-TRANSLATION: no ceiling, limit or policy is decided in the browser or in the authoring layer, both
-protocol validators still run, and the mound is still the authority that can refuse either document.
-Four decisions are written into its own header and are the things to read before changing it — limits
-go in the manifest and not the charter; the evidence policy can only get stricter; there is no
-"what should it do offline?" question because `offline_behaviour` is a field on a worker the friendly
-form does not author; and a save from the simple page carries through everything it cannot author,
-AND names it, because carrying silently and losing silently are one bug apart. The raw forms are
-folded behind Advanced rather than deleted, and a live preview shows the two documents a save writes.
+## `.126` — a word is not its letters (PENDING TEST)
 
-**Every mound now hangs off the Queen.** There was one hard-coded `queen → mound` conduit, so
-INFRASTRUCTURE and every operator-added chamber floated unattached. The strands are derived from the
-sector table now.
+**Routing matched raw substrings.** `AntRegistry.ResolveWorker` chose the UI lane with
+`text.Contains("ui")`, so a mission saying "requiring the user" went to `coder.ui_coder` — and
+"b·ui·ld" is in the title of a task in every plan this colony writes, concatenated into every task's
+routing text by `WorkerResolution`. The wrong pick was unappealable: `Pick(true, …)` marks it
+`WorkerDecisionBasis.Keyword` and `PlanningService` treats a keyword basis as final.
 
-**A `+ Mound` chamber came up with no ants in it**, because seven presentation labels were served
-from inside `#if MICROMOUND`, behind `read_micromound`, fetched from inside the fleet listing's own
-`.then`. The roster moved to `Anthill.SDK.Modules.MoundRoster` and `/colony/mound-roster`, always
-mapped. Still one store — `MicromoundRoster` forwards to it and the runtime projection test still
-covers the chain.
+**`UiChangeGate` had already fixed exactly this at `.96`** with `\bui\b`, and the fix never reached
+the resolver that actually picks the worker — one rule, two implementations, one corrected. Both now
+call `SDK.Common.RoutingWords`, which offers two modes chosen per keyword: `Word` (`\bui\b`) for
+short keywords that hide inside English, `Prefix` (`\bread`) for stems whose inflections are the
+same signal. Every branch moved, which also fixed the file lane (`al·read·y`), the builder lane
+(`meta·data`), the web lane (`re·search`), the planner's code-lane list (`add`, `change`, `class`)
+and the workspace-inspection injector (`repo·rt`, `path·ological`).
 
-**The mound registry's Delete button had no listener.** `onAct` was bound to `#page-colony` and the
-registry lives in `#page-mounds`. Not a broken handler — an unlistened one. Worth remembering as a
-shape: a whole page can be inert and look like a logic bug.
+**The researcher lane was never routing on intent at all** — it keyed on the bare word "mission",
+which is in the scaffolding of every composed goal, so it always chose the same worker.
 
-**Memory holds the colony's stored rows now**, whoever wrote them, and the unattributable-record
-fallback moved there from the Queen's Core — an authority chamber should not be where rows land whose
-author is precisely what could not be resolved. **The Queen sits at the centre of her own chamber**,
-the seat jitter is gone, record radii are quantised into three shells, **labels are one setting** that
-names every clickable dot once you have zoomed in, and **light mode inverts its highlights** instead
-of piling white on white.
+**The Ant Inspector was blank for every ant, and `.125` caused it.** That release merged the panels
+by MOVING `#agent-detail` into the live panel, reasoning that the colony canvas area is re-parented
+between hosts the same way. The canvas survives that because one host wants it at a time; the
+dashboard's Ant Inspector widget re-parents `#agent-detail` into itself and keeps it. Each host owns
+its element now and `showInspector` writes every host that exists.
 
-**A mission that asks for evidence gets a step that reads it.** `IsLongInput` fires on goal length
-alone, so a carefully worded "inspect the repository and report what the code actually does" was cut
-into `section_analysis` tasks that paraphrased the operator's own sentences, completed, and graded
-green. The class gates cannot catch it — the length gate is taken first and a `general` mission has no
-branch. A conservative detector now guarantees a read-only inspection ahead of every synthesis, on
-every planning path.
+**Still open, and next:** missions execute while patches are `pending`. `ToolRegistry.RunTool`'s
+escalation check reads the ambient `ConversationScope`, which is null for every mission entry that
+is not a chat turn, and never falls back to `OperatorDecisions.ForMission` — the type built for
+exactly this, with two call sites, both wired for one tool each. `apply_patch`, `write_text_file`,
+`shell_command` and `run_allowlisted_check` have no durable approval read anywhere on the dispatch
+path. Sharpest case: `Queen.ResumeMission` replays refused tasks with no scope entered, so approving
+one action authorizes the others. **Closing it means changing
+`ConversationScopeTests.OutsideAConversation_NothingIsGated`**, which currently asserts the gap as
+intended behaviour — a deliberate change to a stated contract, not a patch.
 
-**And a citation has to trace.** `recall_set` rows carry `mission:<id>`, and a claim citing one
-resolved because the recall HAPPENED. An unsupported assertion in mission A therefore became a
-sourced citation in mission B, and C could cite B — every step TRUE, the chain attached to nothing.
-`CitationIntegrity.Resolvable` now walks past the recall to what that mission itself consulted,
-depth-limited and cycle-safe, and an untraceable recall is simply unresolved rather than a new state.
+## `.125` — one colony, one renderer, one panel
 
-Behind that: main carried **v0.3.8.119** (the Colony Live re-port, PR #87) plus the colony polish
-batch (PR #89, rebase-merged), and **`release/v0.3.8.120` is the release commit for it.** The Colony Live UI
-runs on the approved read model — the WebGL renderer, its HUD and the vendored three.js went with the
-review that rejected them; the canvas-2D formicarium consumes `.115`'s reducer and endpoints unchanged
-(`/colony/live/snapshot`, `/colony/live/records`, the stream watermark, `/ui/state` layout
-persistence, the fleet listing, per-mound stop). A chamber's grains are its records, its orbs are its
-residents, and nothing is seeded.
+**The classic force-graph canvas is deleted**: 853 lines out of `app.js` (render loop, every draw
+function, particles, camera, six pointer handlers, chamber geometry, rename popover, caste legend,
+four view modes) plus the view bar, HUD, zoom hint and six overlay slots out of `index.html`.
 
-`.120` is the operator's pass over that page: symmetric 96-slot record seats inside a glow that
-contains them, residents drawn and inspectable as ants (display name and colour, persisted with the
-layout), stylable chambers and conduits, a Labels: None option, `+ Mound` beside a greyed `Mounds`,
-and a light sky that is designed for paper rather than inverted from the dark one. It also carries the
-defect that pass uncovered: **Colony Live enables at `DOMContentLoaded`, which on a fresh session is
-the sign-in screen** — both bounded reads were refused, nothing retried them, and signing in left an
-empty sky. Hydration is now re-attempted on page entry and on the first stream event, idempotent and
-never on a clock, and a guard pins it.
+**Neither renderer ever used WebGL.** "Live 3D" is a software projection through a 2D context. There
+was never a fallback for a machine that cannot draw 3D — the fallback existed for a failed MOUNT,
+and with one renderer that answer stopped existing, so a failure now renders a visible error state
+with a Retry where the colony would have been. The stored `anthill.colony.view3d` preference is no
+longer read: an operator who once chose Classic 2D would otherwise boot into a page that renders
+nothing.
 
-CI WAS RED FOR THREE RELEASES AND NOBODY FOUND OUT. Anthill compiles against the micromound wire
-contract by `ProjectReference`, so every .NET job clones `Formicaria/micromound` first — and that
-repository had been made private, which the default `GITHUB_TOKEN` cannot read. Exit 128,
-"Repository not found". It is public again and that is the whole fix.
+`buildNodes()` survives as what it always half was — an INDEX, not a layout. Colony Live keeps its
+own spatial grammar and saved layout and asks this list one question: who is `coder_2`, so the
+inspector can open. Geometry gone; identity, purpose, permissions, tools and parentage stay.
 
-**A GITHUB PUSH THAT TIMES OUT WHILE `api.github.com` ANSWERS MAY BE NOTHING AT ALL. RETRY FIRST.**
-v0.3.8.123 lost about forty minutes to this and never did find a cause. `git push` to
-`github.com:443` timed out repeatedly while `gh` reached the API fine, `ssh.github.com` connected,
-and of GitHub's addresses `140.82.114.4` and `.5` timed out while `.6` and `.36` answered. That
-pattern reads convincingly as destination filtering. An hour later all ten addresses answered, with
-nothing changed on the machine or the network.
+Also: topology overlays retired server-side and client (an old `topology_overlays` key is simply not
+a property any more, so it drops on the next round trip); the empty built-in `mound` registry row
+hidden; and the chamber shimmer fixed — a specular highlight gated on a BOOLEAN (`q.zc < pr.zc`)
+that flipped between frames as the camera orbited, at the light's grazing angle. Smoothstepped
+facing term now.
 
-A `codex_sandbox_offline_block_outbound` Windows Firewall rule was found while looking and was
-briefly believed to be the cause — `Direction Outbound`, `Action Block`, `Program Any`,
-`Profile Any`. It was not: its `LocalUser` SDDL scopes it to a single SID (`…-1004`, Codex's own
-sandbox account) and the operator is `…-1001`, so the rule never applied to the shell that was
-failing. **Recorded because the wrong explanation was more persuasive than the right one**, and a
-later session finding that rule will reach for it the same way. Check the security filter before
-believing it:
+**Two guards would have gone vacuously green under that deletion** rather than failing: the
+one-renderer test counted canvases and loop bootstraps, and the control-handler test skipped any
+attribute with no occurrences. Both rewritten with the floor stated. And three guards failed on
+their own explanatory comments — each absence assertion tripped on the prose describing what had
+been deleted, because a scan that resolves a NAME matches that name in a comment too.
 
-```powershell
-Get-NetFirewallRule -DisplayName "codex_sandbox_*" | Get-NetFirewallSecurityFilter | Format-List LocalUser
-whoami /user
-```
+## `.124` — which model does this work is a question about a project
 
-The order that would have cost five minutes instead of forty: **retry**, then a second network
-(hotspot), then look for a local cause. All three GitHub-connectivity incidents in this arc had a
-plausible explanation in the wrong layer — a private repo reading as a missing one at `.119`–`.121`,
-an unquoted bundle path reading as a git failure at `.123`, and a transient route reading as a
-firewall rule an hour later.
+Routing became per-project. `Project.DefaultProvider`/`DefaultModel` had been persisted, writable and
+**read by nothing** since `.48`; this connects them, adds `project_model_routes`, and resolves both
+through `ProjectRoutingScope` — ambient (AsyncLocal), for the reason `ConversationScope` is.
+Precedence: project priority → project role route → colony priority → colony role route → colony
+fallback. Outside a scope nothing moves.
 
-**TAKING micromound PRIVATE STOPS ANTHILL'S CI, AND NOTHING IN ANTHILL SAYS SO.** When that step
-fails, ask in this order: (1) `gh api repos/Formicaria/micromound --jq .private`, (2) does the
-`token:` secret exist if one is configured, (3) `MICROMOUND_REF` — and the pin has never once been
-the answer. `v0.9.10` has been on the remote throughout. The error string is identical to a missing
-repository, which is exactly what sends every reader to the pin first.
+The Ant Inspector PAGE is gone: its telemetry is the ant tab in Colony Live, its routing is the
+project workspace's Settings tab. Windows quick actions stopped targeting a Windows service that has
+never existed. Tools › Knowledge got a real on/off switch — `knowledge_enabled` became the one
+console-writable key in that section, and the alias/env-pin reasoning is in its own header.
 
-AND THE REASON IT WENT UNNOTICED: `.119`, `.120` and `.121` reached `main` as plain commits with no
-`(#NN)` squash suffix, so none of them passed through a PR. `.118` (`#86`) is the last commit CI
-verified. A gate that only runs on a path releases have stopped taking is not a gate.
+## `.123` — settings you can answer, and a citation that has to trace
 
-MAIN IS PR-PROTECTED. A bare `git push` to main is rejected by a repository rule (GH013) — every
-change goes through a branch and a PR, including a one-commit docs fix. Paid at `.115`.
-
-NOTE ON HISTORY: every commit SHA changed on 2026-09-01 when authorship was folded to three
-contributors. Anything quoting a SHA from before that date is dead. See the "anthill" project doc
-`history-rewrite-2026-09-01.md`.
-
-TWO PEOPLE LAND ON `main` NOW. `.111` (Colony Live) arrived from xchronusx while `.112` was being
-built. Every release block must `git fetch` and verify HEAD before applying a patch.
-
----
+Micromound settings stopped being a JSON file: `MicromoundAuthoring` compiles plain answers into the
+`CharterRequest` and `ConfigurationRequest` the existing services already take. It is a TRANSLATION —
+no ceiling, limit or policy is decided in the browser, both protocol validators still run, and the
+mound can still refuse either document. Limits go in the manifest, not the charter; the evidence
+policy can only get stricter; there is no "what should it do offline?" question because
+`offline_behaviour` is a field on a worker; a save from the simple page never deletes advanced work.
 
 ## `.122` — the floor, the free camera, and three unrecorded decisions
 
