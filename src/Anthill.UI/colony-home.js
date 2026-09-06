@@ -277,7 +277,7 @@
     box.style.display = '';
     // THE INSPECTOR IS HERE NOW. v0.3.8.124 moved the ant's telemetry into this panel; v0.3.8.125
     // moved the rest of it — purpose, permissions, tools, runtime facts, live task load — by
-    // relocating the `#agent-detail` element itself rather than growing a second copy here.
+    // giving this panel its own inspector host and having app.js render the same markup into it.
     //
     // `showInspector` is app.js's, and it is reached the way it always was: colony-host.js resolves
     // the clicked resident against the roster and calls it. What this file does is make sure the
@@ -297,17 +297,33 @@
      what a mound's ants have always had. This says which half applies and why, instead of leaving
      an empty panel to be interpreted. */
   function showAntDetail(res) {
-    var host = $('agent-detail'); if (!host) return;
+    var host = $('clb-ant-detail'); if (!host) return;
     host.style.display = '';
-    var known = typeof nodes !== 'undefined' && nodes.some(function (n) {
-      var who = String(res.roleId || '').toLowerCase();
-      return n.ant === who || n.worker === who || n.id === who;
-    });
-    if (!known) {
-      host.innerHTML = '<div class="ad-empty">This ant belongs to a mound, not to the colony '
-        + 'registry — it has no purpose, permissions or tools of its own. Its name and colour are '
-        + 'yours to set above.</div>';
-    }
+
+    /* RENDERED HERE, NOT HOPED FOR. v0.3.8.126.
+
+       `.125` left this to colony-host.js, which has its own `resident` listener that resolves the
+       clicked ant against `nodes` and calls `showInspector`. Two independent listeners for one
+       event, with this one's outcome depending on the other having already run and having resolved
+       — and when it had not, the panel simply showed nothing, with no error and nothing to read.
+
+       The panel that names the ant renders the ant. `showInspector` is still app.js's, and still
+       the only implementation; what changed is that this asks for it rather than assuming somebody
+       else did. */
+    var who = String(res.roleId || '').toLowerCase();
+    var n = (typeof nodes !== 'undefined')
+      ? nodes.find(function (x) { return x.worker === who || x.ant === who || x.id === who; })
+      : null;
+
+    if (n && typeof showInspector === 'function') { showInspector(n); return; }
+
+    /* A resident the roster does not contain. A micromound's ants come from the mound roster, not
+       from /colony/registry, so there is no registry role behind them and nothing for the inspector
+       to show — which is a fact about the ant, not a failure, and reads as a broken panel unless it
+       is said. Their name and colour are the renderer's and work exactly as every other ant's do. */
+    host.innerHTML = '<div class="ad-empty">This ant belongs to a mound, not to the colony '
+      + 'registry — it has no role, purpose, permissions or tools of its own. Its name and colour '
+      + 'are yours to set above.</div>';
   }
 
   /* ── The ant's own telemetry, in the panel that named it ────────────────────────────────────
@@ -383,7 +399,7 @@
     var rec = r.record || {}; recordAnt = String(rec.ant || '').toLowerCase(); antId = null;
     var edit = $('clb-ant-edit'); if (edit) edit.style.display = 'none';
     var stats = $('clb-ant-stats'); if (stats) { stats.style.display = 'none'; stats.innerHTML = ''; }
-    var det = $('agent-detail'); if (det) det.style.display = 'none';
+    var det = $('clb-ant-detail'); if (det) det.style.display = 'none';
     $('clb-record-title').textContent = rec.title || rec.type || 'record';
     $('clb-record-meta').textContent = [rec.type, rec.ant, rec.mission && ('mission ' + String(rec.mission).slice(0, 8)), rec.taskId && ('task ' + String(rec.taskId).slice(0, 8)), rec.time].filter(Boolean).join(' · ');
     var v = rec.verif || 'not_scanned', tag = $('clb-record-verif');

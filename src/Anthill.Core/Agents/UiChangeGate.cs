@@ -46,9 +46,16 @@ public static class UiChangeGate
     private static readonly string[] GoalWords =
         { "frontend", "page", "css", "html", "javascript", "dashboard", "canvas" };
 
-    /// <summary>"ui" as a WORD — <c>\bui\b</c> — never as two letters inside another word.</summary>
-    private static readonly Regex UiWord = new(@"\bui\b",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    /// <summary>
+    /// "ui" as a WORD — never as two letters inside another word.
+    ///
+    /// v0.3.8.126: this was a private <c>\bui\b</c> regex here, and `AntRegistry.ResolveWorker`
+    /// decided the same thing with a bare <c>Contains("ui")</c> — so the gate had been fixed since
+    /// v0.3.8.96 while the code that actually picks the worker had not, and a mission saying
+    /// "requiring the user" was routed to `coder.ui_coder`. One rule with two implementations, one
+    /// of them fixed, is the shape this repository names defect #5. Both now call the same matcher.
+    /// </summary>
+    private static bool IsUiWord(string text) => SDK.Common.RoutingWords.Word(text, "ui");
 
     /// <summary>
     /// The PATH signal, which is the half that was missing. Matches paths a task names in its title
@@ -94,7 +101,7 @@ public static class UiChangeGate
     {
         var lowered = OperatorAskOnly(goal ?? "").ToLowerInvariant();
         if (GoalWords.Any(lowered.Contains)) return true;
-        if (UiWord.IsMatch(lowered)) return true;
+        if (IsUiWord(lowered)) return true;
 
         var text = taskText ?? "";
         return UiPath.IsMatch(text);

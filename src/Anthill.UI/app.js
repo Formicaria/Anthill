@@ -1421,17 +1421,33 @@ async function inspectorSave(caste){
 
 // CSP-safe delegated dispatch: the inspector body is re-rendered constantly, so the listener
 // lives on the stable container rather than on the controls themselves.
-document.getElementById('agent-detail').addEventListener('click',e=>{
-  const btn=e.target.closest('[data-insact="save"]');
+/* CSP-safe delegated dispatch. The inspector body is re-rendered constantly, so the listener lives
+   on a stable container rather than on the controls themselves — and since v0.3.8.126 there are two
+   such containers, either of which may be absent. Delegating from `document` is the one binding
+   that is correct for both and cannot throw on a host that is not in the page: the previous form
+   called addEventListener on the result of getElementById, which is null the moment the element it
+   named is not there. */
+document.addEventListener('click',e=>{
+  const btn=e.target.closest?.('[data-insact="save"]');
   if(btn) inspectorSave(btn.dataset.caste);
 });
 
 function showInspector(n){
-  // v0.3.8.61 (caught live): the inspector pane is the Agent Inspector WIDGET's body now, and a
-  // hidden widget's frame is detached — getElementById returns null and every canvas click threw.
-  // Selection state still updates so the pane is correct the moment the widget is shown again.
+  // v0.3.8.61 (caught live): a hidden widget's frame is detached — getElementById returns null and
+  // every click threw. Selection state still updates so the pane is correct the moment a host
+  // appears again.
+  //
+  // v0.3.8.126 — TWO SINKS, ONE RENDERER. There are two places an operator can be looking at an
+  // ant: the live colony panel and the dashboard's Ant Inspector widget. `.125` served both by
+  // MOVING one element between them, which is how the colony canvas area works — and it broke,
+  // because the canvas has exactly one host wanting it at a time and this does not. The widget
+  // re-parents `#agent-detail` into itself and never gives it back, so after one visit to the
+  // dashboard the colony panel had no element to render into and every ant came up blank.
+  //
+  // So the markup is built ONCE and written to every host that exists. Not two implementations —
+  // one string, however many sinks. An absent host is the ordinary case, not an error.
   selectedNode=n;
-  if(!document.getElementById('agent-detail')) return;
+  if(!inspectorHosts().length) return;
   // The model catalog is only needed once an ant is actually inspected. Re-render exactly once
   // when it lands, and only if this same node is still the selection.
   if(!antRouteCatalogReady) ensureAntRouteCatalog().then(()=>{ if(selectedNode===n) showInspector(n); });
@@ -1456,7 +1472,7 @@ function showInspector(n){
   const auditCount=audit.audit_count??audit.auditCount??audit.AuditCount??0;
   const metricCount=metric.metric_count??metric.metricCount??metric.MetricCount??0;
   const avgElapsed=usage.avg_elapsed_seconds??usage.avgElapsedSeconds??usage.AvgElapsedSeconds??0;
-  document.getElementById('agent-detail').innerHTML=`
+  const inspectorHtml=`
     <div class="ad-name">${escapeHtml(n.label)}</div>
     <div class="ad-type" style="color:${cssColor(n.color)}">${escapeHtml(n.role)} · ${escapeHtml(n.worker||n.ant||'queen')}</div>
     <div class="ad-row"><span class="ad-key">Status</span><span class="ad-val ${colonyRunning&&act>0?'active':'idle'}">${statusLine}</span></div>
@@ -1496,6 +1512,23 @@ function showInspector(n){
         <div style="font-size:9px;color:var(--dim);margin-bottom:2px">${escapeHtml(t.assigned_worker||t.assigned_ant)} · ${escapeHtml(t.task_type||'task')} · <span style="color:${cssColor(statusColor(t.status))}">${escapeHtml(t.status)}</span></div>
         <div style="font-size:10px;color:var(--muted)">${escapeHtml((t.title||'').substring(0,55))}</div>
       </div>`).join('')||''}`;
+
+  inspectorHosts().forEach(host=>{ host.innerHTML=inspectorHtml; host.style.display=''; });
+}
+
+/**
+ * Every element currently showing the Ant Inspector.
+ *
+ * `#clb-ant-detail` is the live colony panel's own, and `#agent-detail` is the dashboard widget's —
+ * the widget re-parents that one into itself and keeps it, which is exactly why the panel stopped
+ * having one in v0.3.8.125. Both, either, or neither may be in the document at any moment; an
+ * absent host is the ordinary case (a collapsed widget, a page that is not the colony) and not a
+ * condition worth reporting.
+ */
+function inspectorHosts(){
+  return ['clb-ant-detail','agent-detail']
+    .map(id=>document.getElementById(id))
+    .filter(Boolean);
 }
 
 // -- Render Loop ---------------------------------------------------------------

@@ -531,8 +531,12 @@ Required JSON:
             t.DependsOn = t.DependsOn.Where(d => !removedIds.Contains(d)).ToList();
 
         // Guarantee the mission still inspects the workspace if it names files/code/paths.
-        var mentionsFiles = new[] { "file", "code", "repo", "path", "folder", "directory", ".cs", ".md", ".json", "config" }
-            .Any(k => goal.ToLowerInvariant().Contains(k));
+        // v0.3.8.126: prefixes, not substrings — "repo" was matching "repo·rt", "path" was
+        // matching "path·ological", and "code" was matching "en·code·d", each of which inserted a
+        // workspace-inspection task into a mission that named no files at all.
+        var loweredGoal = goal.ToLowerInvariant();
+        var mentionsFiles = SDK.Common.RoutingWords.AnyPrefix(loweredGoal, "file", "code", "repo", "path", "folder", "directory", "config")
+                         || new[] { ".cs", ".md", ".json" }.Any(loweredGoal.Contains);
         if (mentionsFiles && !kept.Any(t => t.AssignedAnt == "file"))
             kept.Insert(0, new Task
             {
@@ -1390,8 +1394,19 @@ Required JSON:
     private static List<Task> FallbackTasks(string goal)
     {
         var lowered = goal.ToLowerInvariant();
-        var codeKeywords = new[] { "code", "script", "python", "bug", "debug", "review", "refactor", "function", "class", "repo", "repository", "file", "folder", "directory", "patch", "modify", "change", "create", "add", "write", "edit", "document", "docs/", ".md", ".cs", ".json", "ui", "frontend", "canvas", "css", "html", "javascript", "visualization", "dashboard" };
-        var isCodeGoal = codeKeywords.Any(lowered.Contains);
+        /* v0.3.8.126: word-bounded, for the reason `RoutingWords` records. As bare substrings
+           these decided the CODE lane on "req·ui·ring" ("ui"), "addr·ess" ("add"),
+           "un·change·d" ("change") and "class·ification" ("class") — the same defect that sent a
+           mission to `coder.ui_coder`, one layer up and choosing the whole lane rather than the
+           worker. `.md` / `.cs` / `.json` / `docs/` stay literal: they are not words, and a
+           boundary before a dot is not where a filename starts. */
+        var codeWords = new[] { "code", "script", "python", "bug", "debug", "review", "refactor",
+            "function", "class", "repo", "repository", "file", "folder", "directory", "patch",
+            "modify", "change", "create", "add", "write", "edit", "document", "frontend", "canvas",
+            "css", "html", "javascript", "visualization", "dashboard" };
+        var isCodeGoal = SDK.Common.RoutingWords.AnyPrefix(lowered, codeWords)
+                      || SDK.Common.RoutingWords.Word(lowered, "ui")
+                      || new[] { "docs/", ".md", ".cs", ".json" }.Any(lowered.Contains);
 
         // A goal that creates/edits a file must reach the coder — check it BEFORE the web branch,
         // so "create a docs file" produces a patch rather than a research answer that never lands.
