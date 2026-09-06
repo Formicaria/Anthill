@@ -1478,7 +1478,7 @@ function showInspector(n){
     <div class="ad-row"><span class="ad-key">Audits</span><span class="ad-val">${auditCount}</span></div>
     <div class="ad-row"><span class="ad-key">Metrics</span><span class="ad-val">${metricCount}</span></div>
     <div class="ad-row"><span class="ad-key">Avg Time</span><span class="ad-val">${avgElapsed}s</span></div>`:''}
-    <div class="ad-section">Configure</div>
+    <div class="ad-section">Model</div>
     ${inspectorEditorHtml(n)}
     ${n.purpose?`<div class="ad-section">Purpose</div><div style="font-size:10px;line-height:1.5;color:var(--muted)">${escapeHtml(n.purpose)}</div>`:''}
     <div class="ad-section">Permissions</div>
