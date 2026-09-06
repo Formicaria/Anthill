@@ -678,7 +678,7 @@ public class ColonyLiveGuardTests
         // AND THE ASSETS-MISSING CASE GETS THE SAME TREATMENT. If colony-live.js or
         // colony-topology.js never loaded there is no renderer to throw, and the old code's answer
         // — a console.warn and the classic canvas — has no second half any more.
-        Assert.Contains("renderMountFailure(area, 'the colony renderer did not load');", host);
+        Assert.Contains("renderMountFailure(area, 'the colony renderer did not load');", raw);
     }
 
     /// <summary>
@@ -700,7 +700,12 @@ public class ColonyLiveGuardTests
 
         Assert.DoesNotContain("anthill.colony.view3d", host);
         Assert.DoesNotContain("VIEW_KEY", host);
-        Assert.Contains("document.addEventListener('DOMContentLoaded', function () { mount(); });", host);
+        // Against RAW rather than Code(): `Code()` blanks string BODIES so a guard reads code, and
+        // this assertion is about a line whose meaning is carried by its string literal.
+        Assert.Contains("document.addEventListener('DOMContentLoaded', function () { mount(); });",
+            Raw("colony-host.js"));
+        // And the mount is unconditional — no preference consulted on the way in.
+        Assert.DoesNotContain("localStorage.getItem", host);
 
         // And the toggle that flipped between them is gone from the page chrome, rather than left
         // as a button pointing at a renderer that is not there.
