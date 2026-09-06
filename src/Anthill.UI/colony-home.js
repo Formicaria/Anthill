@@ -102,9 +102,18 @@
   var watching = null;
 
   function beginWatch(handed) {
-    watching = handed && (handed.missionId || handed.conversationId)
-      ? { missionId: handed.missionId || null, conversationId: handed.conversationId || null, ready: false }
-      : null;
+    if (!handed || !handed.conversationId) { watching = null; renderWatch(); return; }
+    // NO MISSION ID MEANS NO MISSION. The turn was refused, or it stopped at the approval gate
+    // before anything was created. Saying "starting…" forever is the chip describing a mission
+    // that does not exist — so it says what happened and stays clickable, because the reason is
+    // in the thread and the thread is one click away.
+    watching = {
+      missionId: handed.missionId || null,
+      conversationId: handed.conversationId,
+      note: handed.note || '',
+      blocked: !handed.missionId,
+      ready: !handed.missionId,
+    };
     renderWatch();
   }
 
@@ -118,6 +127,13 @@
   function renderWatch() {
     var b = $('ccp-watch'); if (!b) return;
     if (!watching) { b.style.display = 'none'; b.className = 'ccp-watch'; return; }
+    if (watching.blocked) {
+      b.style.display = '';
+      b.className = 'ccp-watch ready';
+      b.textContent = 'no mission started · open it →';
+      b.title = watching.note || 'The turn did not start a mission. Open the conversation to see why.';
+      return;
+    }
     var tasks = watchTasks();
     var done = tasks.filter(function (t) { return /complete/.test(t.status || ''); }).length;
     var failed = tasks.filter(function (t) { return /fail/.test(t.status || ''); }).length;
@@ -554,6 +570,13 @@
       // thread, so it goes there. `Run mission` starts work that takes minutes, and sending the
       // operator away from the colony to watch a progress bar — then back to the colony to watch
       // the ants — is the back-and-forth this release exists to end.
+      // v0.3.8.130 — THE GATE, CHOSEN HERE. `chatPendingPolicy` is the hand-off Chat already
+      // honours for a conversation that does not exist yet (v0.3.8.53), so the composer sets it
+      // rather than inventing a second policy path. Without it every mission started from the
+      // colony inherited `ask`, stopped at the first side effect, and the operator had no control
+      // on this screen to say otherwise — which is what "the mission never starts" actually was.
+      var pol = $('ccp-policy');
+      if (pol && pol.value) chatPendingPolicy = pol.value;
       var watched = (mode === 'mission');
       if (!watched) go('/chat');
       var el = $('chat-input'); if (!el) throw new Error('Chat composer missing.');
@@ -586,7 +609,7 @@
     if (act === 'focus') setFocus(!focusOn());
     else if (act === 'needs') go('/chat');
     else if (act === 'openwatch') {
-      if (watching && watching.ready) {
+      if (watching && (watching.ready || watching.blocked)) {
         var cid = watching.conversationId;
         go('/chat');
         if (cid && typeof chatOpen === 'function') { chatComposingNew = false; chatOpen(cid); }
