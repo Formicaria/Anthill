@@ -550,7 +550,17 @@ public class TroubleshootingMissionTests : IDisposable
             });
 
         runner.Run(conversation, request, ConversationMode.Mission,
-            answers: new Dictionary<string, string> { [ConversationRunner.StartMissionAction] = "approve" });
+            answers: new Dictionary<string, string>
+            {
+                [ConversationRunner.StartMissionAction] = "approve",
+                // v0.3.8.128: the mission lane reads the operator's escalation policy now, and this
+                // conversation is on `Ask`. Approving the mission is no longer approving what the
+                // mission DOES -- a check is side-effecting, so the operator is asked about it by
+                // name. Answered rather than bypassed on purpose: `Bypass` would prove the colony
+                // works when nobody is gating it, and the property under test is that a mission
+                // reaches a diagnosis when the operator says yes.
+                ["run_allowlisted_check"] = "approve",
+            });
 
         Assert.True(settled.Wait(TimeSpan.FromMinutes(2)),
             "the troubleshooting mission did not settle within two minutes.");

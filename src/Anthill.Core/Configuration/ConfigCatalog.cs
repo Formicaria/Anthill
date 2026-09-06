@@ -312,8 +312,17 @@ public static class ConfigCatalog
         foreach (var declaration in declarations)
         {
             if (declaration.Aliases.Count == 0) continue;
-            // Rule 1: the canonical spelling, present at all, ends the question for this key.
-            if (raw.ContainsKey(declaration.Key)) continue;
+            // Rule 1: the canonical spelling, present at all, ends the question for this key --
+            // AND THE LEFTOVERS GO WITH IT. A document carrying both names has already been
+            // migrated, by hand or by a settings save that rewrote it, so the former spelling is a
+            // leftover rather than an answer. Leaving it in place keeps a value the operator has
+            // already replaced sitting in their file looking live and doing nothing, which is the
+            // same confusion this mechanism exists to remove, one release later.
+            if (raw.ContainsKey(declaration.Key))
+            {
+                foreach (var stale in declaration.Aliases) raw.Remove(stale);
+                continue;
+            }
 
             foreach (var alias in declaration.Aliases)
             {

@@ -94,6 +94,32 @@ and a new guard makes the map total in BOTH directions: no colony without a cham
 without a colony that can fill it. Nothing changes for an operator who has mounds; an operator who
 has none stops being shown the outline of one.
 
+---
+
+**THREE THINGS THE RENAME'S OWN TEST RUN FOUND.** Each is small, and each is a shape this repository
+keeps finding.
+
+**AN ALIAS WAS READ AND ITS LEFTOVER WAS LEFT BEHIND.** A `config.json` carrying both spellings kept
+the former one sitting beside the current one, reading as a live setting and feeding nothing. The
+rule that the current spelling wins was right; the implementation answered it by returning early,
+and returning early also skipped the cleanup. Both names go in, one comes out.
+
+**`escalation_allowed` WAS EMITTED AND NEVER DECLARED** — the approval half of `escalation_refused`,
+logged by the chokepoint above, absent from `EventTypes`. An audit that can filter every refusal and
+no approval is reading half a ledger. `infrastructure_resumed` and `infrastructure_resume_failed`
+were undeclared too, and the vocabulary sweep could not see either: both are written as a ternary,
+and the reader matches a quote that follows the `=` directly. Defect class 11 inside the guard built
+to catch it. All three are declared; the reader's blind spot is named at the declaration so the next
+release finds it rather than rediscovering it.
+
+**AND A FROZEN CHANGELOG ENTRY CANNOT BE CORRECTED.** `## v1.9.0` announced the old `HOMELAB.md`,
+which this release renames, so the every-link-resolves guard began demanding an edit to a shipped
+entry —
+which this repository's own rule forbids, and which would edit the historical record to satisfy a
+test. A shipped entry is a record of its own moment, exactly like `docs/archive/**`, and is scoped
+out for the same stated reason. The TOP entry stays in scope, because it is the only one whose links
+the release being written can still get right.
+
 ## v0.3.8.127 - one row, one editor
 
 **THREE OPERATOR REPORTS, ONE SHAPE.** The console kept offering the same choice in two places, and

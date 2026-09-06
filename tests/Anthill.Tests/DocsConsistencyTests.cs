@@ -66,6 +66,20 @@ public class DocsConsistencyTests
         foreach (var file in markdown.Where(f => File.Exists(Path.Combine(root, f.Replace('/', Path.DirectorySeparatorChar)))))
         {
             var text = File.ReadAllText(Path.Combine(root, file.Replace('/', Path.DirectorySeparatorChar)));
+
+            // A SHIPPED CHANGELOG ENTRY IS A RECORD OF ITS OWN MOMENT, exactly like
+            // `docs/archive/**` above. `## v1.9.0` announcing "new `docs/HOMELAB.md`" was true on
+            // the day it shipped, and v0.3.8.128 renamed that document precisely because the
+            // subsystem is called Infrastructure now. A shipped entry is FROZEN -- corrections go
+            // in the next entry, never by editing the old one -- so a link inside one cannot be
+            // updated, and a guard demanding it would be demanding an edit the repository's own
+            // rule forbids. Only the TOP entry stays in scope, which is also the only one whose
+            // links the release being written can still get right.
+            if (file.Equals("CHANGELOG.md", StringComparison.Ordinal))
+            {
+                var shipped = Regex.Matches(text, @"(?m)^## v").Skip(1).FirstOrDefault();
+                if (shipped is not null) text = text[..shipped.Index];
+            }
             foreach (Match m in Regex.Matches(text, @"docs/[A-Za-z0-9_./-]+\.md"))
             {
                 var target = m.Value;

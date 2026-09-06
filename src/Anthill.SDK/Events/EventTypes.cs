@@ -178,6 +178,17 @@ public static class EventTypes
     public const string EscalationRefused = "escalation_refused";
 
     /// <summary>
+    /// The allowed half of <see cref="EscalationRefused"/>. v0.3.8.128.
+    ///
+    /// Emitted since the mission lane learned to read a standing permission, and declared here the
+    /// same release: an event the runtime logs and the vocabulary does not carry is one an
+    /// operator's console can never filter on, which is the whole reason this file exists. It is
+    /// the record of whose authority let a side-effecting action through, and an audit that can see
+    /// every refusal and no approval is reading half a ledger.
+    /// </summary>
+    public const string EscalationAllowed = "escalation_allowed";
+
+    /// <summary>
     /// The other end of <see cref="EscalationRefused"/>. v0.3.8.110.
     ///
     /// Every prior release, a refusal was the last thing a paused mission ever said about the
@@ -477,6 +488,19 @@ public static class EventTypes
     public const string CredentialUsed = "credential_used";
     public const string ProxmoxTaskFailed = "proxmox_task_failed";
     public const string InfrastructureStopEngaged = "infrastructure_stop_engaged";
+
+    /// <summary>
+    /// Clearing the kill switch, and failing to. v0.3.8.128.
+    ///
+    /// Both were emitted before this release and neither was declared, because the call site writes
+    /// them as a ternary -- `EventType = still ? "..." : "..."` -- and the vocabulary sweep reads a
+    /// quote that follows the `=` directly. The rule was right and the reader could not see the
+    /// site: defect class 11, in the guard that exists to catch exactly this.
+    /// </summary>
+    public const string InfrastructureResumed = "infrastructure_resumed";
+
+    /// <summary>The half of <see cref="InfrastructureResumed"/> where the sentinel outlived the resume.</summary>
+    public const string InfrastructureResumeFailed = "infrastructure_resume_failed";
     public const string BackupRecordUpserted = "backup_record_upserted";
     public const string MissionLearningRecorded = "mission_learning_recorded";
     public const string MissionArchivistRecorded = "mission_archivist_recorded";
