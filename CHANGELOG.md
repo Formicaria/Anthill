@@ -1,3 +1,62 @@
+## v0.3.8.126 - a word is not its letters
+
+**"REQUIRING" CONTAINS "UI".** A mission was routed to `coder.ui_coder` because
+`AntRegistry.ResolveWorker` decided the UI lane with `text.Contains("ui")`, and those two letters
+sit inside `req·ui·ring`. They also sit inside `b·ui·ld`, `g·ui·de`, `q·ui·te`, `s·ui·te` and
+`fl·ui·d` — and "Build final response" is the title of a task in **every plan this colony writes**,
+concatenated into the routing text of every task in it. The wrong worker was then unappealable:
+`Pick(true, …)` marks the choice `WorkerDecisionBasis.Keyword`, and `PlanningService` treats a
+keyword basis as final, so no pheromone evidence could route the task back.
+
+**This repository had already fixed it once, in the wrong place.** `UiChangeGate` hit the identical
+defect at `.96` — its comment records "found live, twice, with two different planners, before the
+substring was suspected" — and the fix there was `\bui\b`. It never reached the resolver that
+actually picks the worker. One rule, two implementations, one of them corrected: defect class #5.
+They now call one matcher, and a test asserts they agree on the cases that used to separate them.
+
+Every routing branch was the same shape, so every one moved to word matching, in one of two modes
+chosen per keyword. **Word** (`\bui\b`) for short keywords that hide inside common English.
+**Prefix** (`\bread`) for stems whose inflections are the same signal — "read" must still catch
+"readme" and "reading" without catching `al·read·y`, `th·read` and `sp·read`; "data" keeps
+"database" and drops `meta·data`. What went with them:
+
+- **the file lane** stopped sending anything mentioning "already" to the reader
+- **the builder lane** stopped routing on `meta·data`, which is in the goal of anything touching artifacts
+- **the web lane** stopped matching "search" inside `re·search`, so a goal about research no longer takes the web branch whatever it asked for
+- **the planner's code-lane list** stopped deciding on `addr·ess` ("add"), `un·change·d` ("change") and `class·ification` ("class")
+- **the workspace-inspection injector** stopped firing on `repo·rt`, `path·ological` and `en·code·d`
+
+**And the researcher lane was never routing on intent at all.** It keyed on the bare word
+"mission" — which is in the scaffolding of every composed goal — so it always chose the mission
+researcher. It needs the phrase now, which is what an operator asking about past runs writes.
+
+**THE ANT INSPECTOR WAS BLANK FOR EVERY ANT, and `.125` did that.** That release merged the two
+panels by MOVING `#agent-detail` into the live colony panel, reasoning that the colony canvas area
+is re-parented between hosts the same way. The canvas survives that because exactly one host wants
+it at a time. Two panels that both want to be showing the same ant do not: the dashboard's Ant
+Inspector widget re-parents `#agent-detail` into itself and does not give it back, so after one
+visit to the dashboard the live panel had no element to render into and every ant came up empty —
+no inspector, no message, no error.
+
+Each host owns its own element now, and `showInspector` builds the markup once and writes it to
+every host that exists. One renderer, two sinks — which is what the merge was reaching for, and
+the reason a second copy in `colony-home.js` was never the answer either. The panel also renders
+the ant **itself** rather than depending on `colony-host.js`'s separate listener having run and
+resolved; two independent listeners for one event, with one silently depending on the other, is how
+the panel came to show nothing rather than something wrong.
+
+Also fixed on the way: the delegated Save handler bound `addEventListener` to the result of
+`getElementById('agent-detail')` with no guard, which throws the moment that element is not in the
+page — as it was not, after this change. It delegates from `document` now.
+
+**Still open, deliberately.** The operator also reported missions executing while patches sit
+`pending`. That is real and it is not in this release: `ToolRegistry.RunTool`'s escalation check
+reads the ambient `ConversationScope`, which is null for every mission entry that is not a chat
+turn, and never falls back to the durable approval ledger `OperatorDecisions.ForMission` was built
+for. Closing it means changing `ConversationScopeTests.OutsideAConversation_NothingIsGated`, which
+currently asserts the gap as intended behaviour — so it is a deliberate change to a stated contract,
+not a patch, and it gets its own release rather than riding along with a keyword fix.
+
 ## v0.3.8.125 - one colony, one renderer, one panel
 
 **THE CLASSIC CANVAS IS GONE.** Colony Live has been the default since `.117` and the only view

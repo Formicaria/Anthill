@@ -162,7 +162,12 @@ public static partial class TextUtil
     {
         var lowered = (goal ?? "").ToLowerInvariant();
         var keywords = (options ?? SafetyPolicy.ToolOptions)?.WebSearchKeywords ?? DefaultWebSearchKeywords;
-        return keywords.Any(k => lowered.Contains(k));
+        /* v0.3.8.126: word-start matching, not substring. "search" was matching inside
+           "re·search", so any goal mentioning research took the web lane whatever it actually
+           asked for. A PREFIX rather than a whole word because these are stems an operator
+           inflects: "search" must still catch "searching", "price" must catch "prices".
+           Multi-word entries like "look up" match the same way, anchored at their start. */
+        return keywords.Any(k => RoutingWords.Prefix(lowered, k));
     }
 
     // Mirrors AnthillRuntime.WebSearchKeywords as declared, so an unconfigured process behaves as a

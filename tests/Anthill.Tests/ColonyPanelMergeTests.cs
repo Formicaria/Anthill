@@ -12,12 +12,20 @@ namespace Anthill.Tests;
 /// had to read both — which is defect class #5 wearing a layout: two implementations of one rule,
 /// where the rule is "tell me about this ant".
 ///
-/// THE MERGE IS A MOVE, NOT A COPY, and that distinction is what these guards are for. `#agent-detail`
-/// is one element with two hosts — the colony page and the dashboard's Ant Inspector widget, which
-/// re-parents it exactly as the colony canvas area is re-parented. Rebuilding its markup inside
-/// colony-home.js would have produced a second inspector that drifts from the first and a dashboard
-/// widget pointing at an element that no longer exists. So the element moved, and `showInspector`
-/// is untouched.
+/// ONE RENDERER, TWO SINKS — and v0.3.8.126 is the correction that made that true.
+///
+/// `.125` merged the two panels by MOVING `#agent-detail` into the live panel, reasoning that the
+/// colony canvas area is re-parented between hosts the same way. That reasoning was wrong, and
+/// wrong in a way that only appears after visiting the dashboard: the Ant Inspector WIDGET
+/// re-parents `#agent-detail` into itself and does not give it back, so the live panel was left
+/// with no element to render into and every ant came up blank. The canvas survives re-parenting
+/// because exactly one host wants it at a time; two panels that both want to show the same ant do
+/// not.
+///
+/// So each host owns its own element and `showInspector` writes the SAME markup to every host that
+/// exists. Still one implementation — one string, however many sinks — which is the property the
+/// original design was reaching for and the reason a second copy in colony-home.js was never the
+/// answer either.
 /// </summary>
 public class ColonyPanelMergeTests
 {
@@ -25,34 +33,82 @@ public class ColonyPanelMergeTests
         File.ReadAllText(Path.Combine(SourceText.RepoRoot(), "src", "Anthill.UI", file));
 
     /// <summary>
-    /// THE INSPECTOR ELEMENT LIVES IN THE LIVE PANEL, AND THERE IS EXACTLY ONE OF IT.
+    /// EACH HOST OWNS ITS OWN ELEMENT, and there is exactly one of each.
     ///
-    /// The count is the load-bearing half. A second `#agent-detail` is not a visible bug — both
-    /// would render, `getElementById` would silently pick the first, and the operator would watch
-    /// one of the two panels never update.
+    /// The live panel renders into `#clb-ant-detail`; the dashboard widget adopts `#agent-detail`.
+    /// Two ids, one apiece — because the widget takes its element and keeps it, and a panel whose
+    /// host has been adopted away renders nowhere with nothing to read.
+    ///
+    /// The counts are the load-bearing half. A duplicate id is not a visible bug: both render,
+    /// `getElementById` silently picks the first, and the operator watches one panel never update.
     /// </summary>
     [Fact]
-    public void TheAntInspector_IsOneElement_InsideTheLivePanel()
+    public void EachInspectorHost_ExistsExactlyOnce_AndIsNotShared()
     {
         var html = Ui("index.html");
 
-        var count = System.Text.RegularExpressions.Regex.Matches(html, "id=\"agent-detail\"").Count;
-        Assert.True(count == 1,
-            $"expected exactly one #agent-detail element, found {count}. The dashboard's Ant "
-          + "Inspector widget re-parents this node rather than building its own, so a second one "
-          + "means getElementById silently picks a winner and the other panel goes stale.");
+        foreach (var id in new[] { "agent-detail", "clb-ant-detail" })
+        {
+            var count = System.Text.RegularExpressions.Regex.Matches(html, $"id=\"{id}\"").Count;
+            Assert.True(count == 1, $"expected exactly one #{id} element, found {count}.");
+        }
 
-        // It sits inside the live panel — after the counters it now follows, and before that
-        // panel closes. Asserted by ORDER rather than by nesting, because the markup is flat text
-        // here and an assertion about nesting would be a lie about what was checked.
-        var stats = html.IndexOf("id=\"clb-ant-stats\"", StringComparison.Ordinal);
-        var detail = html.IndexOf("id=\"agent-detail\"", StringComparison.Ordinal);
+        // The live panel's host sits inside the live record panel, after the counters it follows.
+        // Asserted by ORDER rather than by nesting: the markup is flat text here, and an assertion
+        // about nesting would be a lie about what was actually checked.
         var record = html.IndexOf("id=\"clb-record\"", StringComparison.Ordinal);
+        var stats = html.IndexOf("id=\"clb-ant-stats\"", StringComparison.Ordinal);
+        var detail = html.IndexOf("id=\"clb-ant-detail\"", StringComparison.Ordinal);
         Assert.True(record >= 0 && stats > record, "the counters are not inside the live record panel");
         Assert.True(detail > stats, "the inspector must follow the counters inside the live panel");
 
-        // And the card that used to hold it in the right sidebar is gone, rather than left empty.
+        // And the card that used to hold the inspector in the colony's right sidebar is still gone.
         Assert.DoesNotContain("id=\"card-inspector\"", html);
+    }
+
+    /// <summary>
+    /// THE MARKUP IS BUILT ONCE AND WRITTEN TO EVERY HOST THAT EXISTS.
+    ///
+    /// The property that keeps "two sinks" from becoming two implementations. `showInspector` must
+    /// assemble one string and fan it out — not branch per host, and not write to a single
+    /// hard-coded id, which is what left the live panel blank in v0.3.8.125.
+    /// </summary>
+    [Fact]
+    public void TheInspector_RendersIntoEveryHost_RatherThanOneHardCodedId()
+    {
+        var js = Ui("app.js");
+        var body = SourceText.MemberBody(js, js.IndexOf("function showInspector(n)", StringComparison.Ordinal));
+
+        Assert.Contains("inspectorHosts().forEach(", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("getElementById('agent-detail').innerHTML", body, StringComparison.Ordinal);
+
+        var hosts = SourceText.MemberBody(js, js.IndexOf("function inspectorHosts()", StringComparison.Ordinal));
+        Assert.Contains("clb-ant-detail", hosts, StringComparison.Ordinal);
+        Assert.Contains("agent-detail", hosts, StringComparison.Ordinal);
+
+        // An absent host is ordinary — a collapsed widget, a page that is not the colony — so the
+        // dispatch that reaches the editor inside the panel may not bind to a specific element.
+        // v0.3.8.125 bound it to `#agent-detail` directly, which threw at load once that id moved.
+        Assert.DoesNotContain("getElementById('agent-detail').addEventListener", js, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// AND THE PANEL RENDERS THE ANT ITSELF rather than depending on another listener having run.
+    ///
+    /// Two files subscribe to the renderer's `resident` event. In `.125` only colony-host.js
+    /// rendered the inspector, and colony-home.js — the file that owns the panel — assumed it had.
+    /// When the lookup there did not resolve, the panel showed nothing at all: no inspector, no
+    /// message, no error.
+    /// </summary>
+    [Fact]
+    public void ThePanelThatNamesTheAnt_RendersIt()
+    {
+        var home = Ui("colony-home.js");
+        var detail = home[home.IndexOf("function showAntDetail(res)", StringComparison.Ordinal)..];
+        detail = detail[..detail.IndexOf("\n  }", StringComparison.Ordinal)];
+
+        Assert.Contains("showInspector(n)", detail, StringComparison.Ordinal);
+        Assert.Contains("nodes.find(", detail, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -60,9 +116,13 @@ public class ColonyPanelMergeTests
     /// body; moving the element without checking this is how a widget comes up permanently blank.
     /// </summary>
     [Fact]
-    public void TheDashboardWidget_StillNamesTheElementItReParents()
+    public void TheDashboardWidget_StillHasAnElementToAdopt()
     {
         Assert.Contains("body:'agent-detail'", Ui("app.js").Replace(" ", ""), StringComparison.Ordinal);
+        // ...and that element is in the markup for it to find. Naming a body id that no element
+        // carries gives a permanently empty widget, which is what the widget had after v0.3.8.125
+        // moved its element into the colony panel.
+        Assert.Contains("id=\"agent-detail\"", Ui("index.html"), StringComparison.Ordinal);
     }
 
     /// <summary>

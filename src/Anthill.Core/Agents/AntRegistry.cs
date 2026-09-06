@@ -227,27 +227,49 @@ public static class AntRegistry
         var text = $"{taskType} {goal}".ToLowerInvariant();
 
         (AntWorkerDefinition? Worker, bool KeywordDecided) Pick(bool decided, string suffix) =>
-            (role.Workers.FirstOrDefault(w => w.WorkerId.EndsWith(suffix)), decided);
+            (role.Workers.FirstOrDefault(w => w.WorkerId.EndsWith(suffix, StringComparison.Ordinal)), decided);
 
+        /* EVERY BRANCH MATCHES WORDS. v0.3.8.126 — see `RoutingWords` for what this cost.
+           Each keyword is deliberately Word (whole word) or Prefix (start of a word); a bare
+           substring is neither, and a bare substring is what every one of these used to be. */
         return role.RoleId switch
         {
-            "researcher" => text.Contains("mission") || text.Contains("history")
+            // "mission" alone is in the scaffolding of every composed goal this colony builds
+            // (`WorkerResolution` concatenates the mission goal into each task's routing text), so
+            // as a bare keyword it sent EVERY researcher task to the mission researcher. The signal
+            // is the phrase, which is what an operator asking about past runs actually writes.
+            "researcher" => SDK.Common.RoutingWords.Phrase(text, "mission history")
+                         || SDK.Common.RoutingWords.Phrase(text, "past missions")
+                         || SDK.Common.RoutingWords.Prefix(text, "history")
                 ? Pick(true, "mission_researcher") : Pick(false, "repo_researcher"),
-            "web" => text.Contains("verify") || text.Contains("source quality")
+
+            "web" => SDK.Common.RoutingWords.Prefix(text, "verify") || SDK.Common.RoutingWords.Phrase(text, "source quality")
                 ? Pick(true, "source_verifier") : Pick(false, "source_finder"),
-            "file" => text.Contains("read") || text.Contains("snippet")
+
+            // Prefix, not substring: "read" must catch "readme" and "reading" without catching
+            // "al·read·y", "th·read" and "sp·read" — all three ordinary in a task description.
+            "file" => SDK.Common.RoutingWords.AnyPrefix(text, "read", "snippet")
                 ? Pick(true, "file_reader") : Pick(false, "file_scout"),
+
+            // THE ONE THIS RELEASE IS ABOUT. `ui` is a WORD — the same `\bui\b` `UiChangeGate` has
+            // used since v0.3.8.96 — because as two letters it lives inside "req·ui·ring",
+            // "b·ui·ld", "g·ui·de", "q·ui·te" and "s·ui·te".
             "coder" =>
-                text.Contains("ui") || text.Contains("frontend") || text.Contains("canvas")
-                    || text.Contains("html") || text.Contains("css") || text.Contains("javascript")
+                SDK.Common.RoutingWords.Word(text, "ui")
+                    || SDK.Common.RoutingWords.AnyPrefix(text, "frontend", "canvas", "html", "css", "javascript")
                 ? Pick(true, "ui_coder")
-                : text.Contains("doc") || text.Contains("readme") || text.Contains("changelog") || text.Contains(".md")
+                : SDK.Common.RoutingWords.AnyPrefix(text, "doc", "readme", "changelog") || text.Contains(".md")
                 ? Pick(true, "docs_coder")
                 : Pick(false, "backend_coder"),
-            "builder" => text.Contains("compile") || text.Contains("data")
+
+            // "data" as a prefix keeps "database" and "dataset" and drops "meta·data", which
+            // appears in the goal of anything touching artifacts.
+            "builder" => SDK.Common.RoutingWords.AnyPrefix(text, "compile", "data")
                 ? Pick(true, "result_compiler") : Pick(false, "response_builder"),
-            "verifier" => text.Contains("safety") || text.Contains("risk")
+
+            "verifier" => SDK.Common.RoutingWords.AnyPrefix(text, "safety", "risk")
                 ? Pick(true, "safety_verifier") : Pick(false, "result_verifier"),
+
             _ => (role.Workers.FirstOrDefault(), false),
         };
     }

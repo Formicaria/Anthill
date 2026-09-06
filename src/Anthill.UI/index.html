@@ -1959,6 +1959,22 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div id="hud-attn-list"><div class="hud-state"><div class="hud-spinner"></div>Scanning colony…</div></div>
           </div>
 
+          <!-- The dashboard's Ant Inspector body. v0.3.8.126.
+
+               It needs to live somewhere in the markup for the widget registry to find and adopt
+               it (`body:'agent-detail'`), and before v0.3.8.125 that somewhere was a card in the
+               colony page's right sidebar — which that release deleted, taking this element with
+               it into the live panel. The widget then re-parented it out of the live panel and kept
+               it, so the panel went blank for every ant.
+
+               It lives on the Overview page now, beside the other widget bodies, which is where a
+               widget body belongs. The live panel has its own (`#clb-ant-detail`) and
+               `showInspector` writes both. -->
+          <div class="ath-card hud-panel" id="agent-inspector-panel">
+            <div class="hud-hd"><span class="hud-hd-title">Ant Inspector</span></div>
+            <div id="agent-detail"><div class="ad-empty">Select an ant to inspect it</div></div>
+          </div>
+
           <div class="ath-card ov2-mission hud-panel mission-node">
             <div class="hud-hd"><span class="hud-hd-title">Mission Command</span><span class="hud-hd-sub" id="ov-mode-badge"></span></div>
             <!-- v3.1.1: wrapped so the dashboard workspace can adopt the composer as a panel. A
@@ -2293,17 +2309,27 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                  had just clicked on. The telemetry it went to fetch is now in the panel: lifetime
                  task counts, success rate, average duration, and recent activity on demand. -->
             <div id="clb-ant-stats" style="display:none"></div>
-            <!-- v0.3.8.125 — THE ANT INSPECTOR, FOLDED IN. This is the same #agent-detail element
-                 that sat in a card in the right sidebar: purpose, permissions, tools, the runtime
-                 and pheromone facts, live task load, workers, and the name/colour editor. It was a
-                 second panel describing the ant this one had already named, in a second vocabulary
-                 ("trail 0.62" here, "Pheromone 0.74" there), and an operator had to look in two
-                 places to answer one question.
+            <!-- THE ANT INSPECTOR, IN THE PANEL THAT NAMED THE ANT. v0.3.8.125, corrected in
+                 v0.3.8.126.
 
-                 MOVED, not copied: the dashboard's Ant Inspector widget re-parents this exact node
-                 (`body:'agent-detail'` in the widget registry), the same way the colony canvas area
-                 is re-parented. One element, one renderer, two hosts. -->
-            <div id="agent-detail"><div class="ad-empty">Select an ant to inspect it</div></div>
+                 Purpose, permissions, tools, the runtime and pheromone facts, live task load,
+                 workers, and the name/colour editor. It used to be a second panel describing the
+                 ant this one had already named, in a second vocabulary ("trail 0.62" here,
+                 "Pheromone 0.74" there), and an operator had to read both to answer one question.
+
+                 .125 did this by MOVING `#agent-detail` here — one element, two hosts, the way the
+                 colony canvas area is re-parented. That was wrong, and wrong in a way that only
+                 shows up after you visit the dashboard: the Ant Inspector WIDGET re-parents
+                 `#agent-detail` into itself (`body:'agent-detail'` in the widget registry), and it
+                 does not give it back. From then on this panel had no element to render into and
+                 every ant looked empty. The canvas area survives that treatment because exactly one
+                 host wants it at a time; two panels that both want to be showing the same ant do
+                 not.
+
+                 So the panel owns its own host, and `showInspector` renders the SAME markup into
+                 every host that exists. One renderer, two sinks — rather than one element both
+                 hosts fight over. -->
+            <div id="clb-ant-detail"><div class="ad-empty">Select an ant to inspect it</div></div>
           </div>
         <!-- v0.3.8.125: THE CANVAS IS THE RENDERER'S, NOT THIS FILE'S.
 
