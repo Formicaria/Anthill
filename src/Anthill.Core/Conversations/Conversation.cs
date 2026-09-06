@@ -245,7 +245,7 @@ public static class EscalationGate
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "apply_patch", "write_text_file", "shell_command", "run_allowlisted_check",
-            // v0.3.8.102: approving-and-executing a homelab action is the most literally
+            // v0.3.8.102: approving-and-executing a infrastructure action is the most literally
             // side-effecting thing this set names — it restarts real containers. The PROPOSE tool
             // is deliberately absent (a proposal is a colony-database row, the LocalActionRunner
             // precedent); execution is where the operator's recorded decision IS the permission.

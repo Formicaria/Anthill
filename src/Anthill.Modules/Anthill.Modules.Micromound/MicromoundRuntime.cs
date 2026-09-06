@@ -2,7 +2,7 @@ namespace Anthill.Modules.Micromound;
 
 /// <summary>
 /// The configuration this module was composed with, held statically for the same reason
-/// <c>HomelabRuntime</c> holds its own: what is being kept is a per-PROCESS fact, and threading it
+/// <c>InfrastructureRuntime</c> holds its own: what is being kept is a per-PROCESS fact, and threading it
 /// through every constructor would be a behavioural edit wearing a refactor's clothes.
 ///
 /// The defaults are deliberately the safe ones. A Micromound module constructed without a
@@ -27,7 +27,7 @@ public static class MicromoundRuntime
 
     /// <summary>
     /// Encrypts stored enrollment tokens. Null runs them in plaintext, which is what the colony
-    /// does by default — the same supported state the homelab credential store accepts.
+    /// does by default — the same supported state the infrastructure credential store accepts.
     /// </summary>
     public static IFieldCipher? Cipher
     {

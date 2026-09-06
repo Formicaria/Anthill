@@ -50,7 +50,7 @@ missions. Produce a concise project map covering: the solution layout (src/Anthi
 src/Anthill.Api, src/Anthill.Cli, src/Anthill.SDK, src/Anthill.Modules, tests/Anthill.Tests,
 native/anthill_kernel), the runtime flow from CLI/API entry to Queen to Planner to ants to memory,
 where the HTTP API endpoints are registered, where the embedded web UI lives (src/Anthill.UI —
-index.html plus the split console scripts app.js, themes.js, routing-controls.js, homelab.js,
+index.html plus the split console scripts app.js, themes.js, routing-controls.js, infrastructure.js,
 mission-thread.js, dashboard-grid.js, colony-topology.js, colony-live.js, colony-host.js,
 colony-home.js, knowledge.js, micromound.js), where tests live, where configuration is read (config.json,
 AnthillRuntime, AnthillConfig), the deploy options (Windows desktop, Docker, LXC), and where

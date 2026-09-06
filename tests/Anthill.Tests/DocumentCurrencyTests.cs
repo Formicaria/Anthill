@@ -44,7 +44,7 @@ public class DocumentCurrencyTests
     private static readonly string[] Current =
     {
         "PLAN.md", "ANT_EXECUTION.md", "QUALIFICATION.md", "HANDOFF.md",
-        "CONTRACTS.md", "APPROVALS.md", "DEPLOYMENT.md", "HOMELAB.md",
+        "CONTRACTS.md", "APPROVALS.md", "DEPLOYMENT.md", "INFRASTRUCTURE.md",
         "AUTONOMY.md", "TRAINING_MISSIONS.md", "QA-CHECKLIST.md",
         "ADR-ADAPTIVE-MISSION-RUNTIME.md",
         // v0.3.8.112 — the guard hierarchy. CURRENT: it describes how guards are written, which is

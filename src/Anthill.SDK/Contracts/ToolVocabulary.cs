@@ -21,7 +21,7 @@ namespace Anthill.SDK.Contracts;
 // them in a way that reads as an unrelated ambiguity error.
 
 /// <summary>
-/// The system-action tool names, spelled once. v0.3.8.102 — the homelab module REGISTERS tools by
+/// The system-action tool names, spelled once. v0.3.8.102 — the infrastructure module REGISTERS tools by
 /// these names and the core's escalation gate lists the execute name as side-effecting, and two
 /// spellings of one boundary would eventually disagree about it. In the SDK because it is the one
 /// assembly both sides may reference.
@@ -72,7 +72,7 @@ public static class Capability
     public const string RepoPatchApply = "repo.patch.apply";
     public const string ProcessExecuteReadonly = "process.execute.readonly";
     public const string NetworkHttpPublic = "network.http.public";
-    public const string NetworkHttpHomelab = "network.http.homelab";
+    public const string NetworkHttpInfrastructure = "network.http.infrastructure";
     public const string ModelInvoke = "model.invoke";
     public const string ProxmoxRead = "proxmox.read";
     public const string ProxmoxVmStart = "proxmox.vm.start";

@@ -198,28 +198,29 @@ public sealed class AnthillConfig
     [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment)]
     [JsonPropertyName("operator_shell_dir")] public string OperatorShellDir { get; set; } = "";
 
-    // Homelab foundation (v1.9.0, NORTH_STAR Phase 4): read-only subsystem, everything off by default.
-    [ConfigKey(Exposure = ConfigExposure.Editable,
-        Section = "homelab", SectionNote = """Homelab foundation (v1.9.0, NORTH_STAR Phase 4). Read-only in the V1.9.x line and everything ships OFF: homelab_enabled gates the subsystem, homelab_scheduler_enabled gates the background runner (no jobs are registered in v1.9.0), and a .anthill/HOMELAB_STOP file halts all homelab actions once actions exist (V2.1). Deterministic providers may only reach hosts on the operator-maintained target allowlist (POST /homelab/allowlist) - the general SSRF guard for AI tools is unaffected. See docs/HOMELAB.md.""")]
-    [JsonPropertyName("homelab_enabled")] public bool HomelabEnabled { get; set; } = false;
-    [ConfigKey(Exposure = ConfigExposure.Editable)]
-    [JsonPropertyName("homelab_scheduler_enabled")] public bool HomelabSchedulerEnabled { get; set; } = false;
-    [ConfigKey(Exposure = ConfigExposure.Editable)]
-    [JsonPropertyName("homelab_mock_providers_enabled")] public bool HomelabMockProvidersEnabled { get; set; } = false;
-    [ConfigKey(Exposure = ConfigExposure.Editable)]
-    [JsonPropertyName("homelab_max_concurrent_checks")] public int HomelabMaxConcurrentChecks { get; set; } = 2;
+    // Infrastructure foundation (v1.9.0, NORTH_STAR Phase 4): read-only subsystem, everything off by default.
+    [ConfigKey(Aliases = ["homelab_enabled"], Exposure = ConfigExposure.Editable,
+        Section = "infrastructure", SectionNote = """Infrastructure foundation (v1.9.0, NORTH_STAR Phase 4). Read-only in the V1.9.x line and everything ships OFF: infrastructure_enabled gates the subsystem, infrastructure_scheduler_enabled gates the background runner (no jobs are registered in v1.9.0), and a .anthill/INFRASTRUCTURE_STOP file halts all infrastructure actions once actions exist (V2.1). Deterministic providers may only reach hosts on the operator-maintained target allowlist (POST /infrastructure/allowlist) - the general SSRF guard for AI tools is unaffected. See docs/INFRASTRUCTURE.md.""")]
+    [JsonPropertyName("infrastructure_enabled")] public bool InfrastructureEnabled { get; set; } = false;
+    [ConfigKey(Aliases = ["homelab_scheduler_enabled"], Exposure = ConfigExposure.Editable)]
+    [JsonPropertyName("infrastructure_scheduler_enabled")] public bool InfrastructureSchedulerEnabled { get; set; } = false;
+    [ConfigKey(Aliases = ["homelab_mock_providers_enabled"], Exposure = ConfigExposure.Editable)]
+    [JsonPropertyName("infrastructure_mock_providers_enabled")] public bool InfrastructureMockProvidersEnabled { get; set; } = false;
+    [ConfigKey(Aliases = ["homelab_max_concurrent_checks"], Exposure = ConfigExposure.Editable)]
+    [JsonPropertyName("infrastructure_max_concurrent_checks")] public int InfrastructureMaxConcurrentChecks { get; set; } = 2;
     // Health checks + notifications (v1.11.0, NORTH_STAR Phase 7): awareness only, no auto-remediation.
-    [ConfigKey(Exposure = ConfigExposure.Editable,
-        Section = "homelab_health", SectionNote = """Health checks + notifications (v1.11.0). Checks run on the shared homelab scheduler (homelab_enabled + homelab_scheduler_enabled both true), only against allowlisted targets, under strict timeouts, and never auto-remediate. Notifications are OFF by default; set homelab_notifications_enabled=true and one or more webhook URLs to get alerts on health-check failures and incident candidates (3 consecutive failures). Webhook URLs never appear in logs or events.""")]
-    [JsonPropertyName("homelab_health_interval_seconds")] public int HomelabHealthIntervalSeconds { get; set; } = 60;
-    [ConfigKey(Exposure = ConfigExposure.Editable)]
-    [JsonPropertyName("homelab_health_timeout_ms")] public int HomelabHealthTimeoutMs { get; set; } = 5000;
-    [ConfigKey(Exposure = ConfigExposure.Editable)]
-    [JsonPropertyName("homelab_notifications_enabled")] public bool HomelabNotificationsEnabled { get; set; } = false;
+    [ConfigKey(Aliases = ["homelab_health_interval_seconds"], Exposure = ConfigExposure.Editable,
+        Section = "infrastructure_health", SectionNote = """Health checks + notifications (v1.11.0). Checks run on the shared infrastructure scheduler (infrastructure_enabled + infrastructure_scheduler_enabled both true), only against allowlisted targets, under strict timeouts, and never auto-remediate. Notifications are OFF by default; set infrastructure_notifications_enabled=true and one or more webhook URLs to get alerts on health-check failures and incident candidates (3 consecutive failures). Webhook URLs never appear in logs or events.""")]
+    [JsonPropertyName("infrastructure_health_interval_seconds")] public int InfrastructureHealthIntervalSeconds { get; set; } = 60;
+    [ConfigKey(Aliases = ["homelab_health_timeout_ms"], Exposure = ConfigExposure.Editable)]
+    [JsonPropertyName("infrastructure_health_timeout_ms")] public int InfrastructureHealthTimeoutMs { get; set; } = 5000;
+    [ConfigKey(Aliases = ["homelab_notifications_enabled"], Exposure = ConfigExposure.Editable)]
+    [JsonPropertyName("infrastructure_notifications_enabled")] public bool InfrastructureNotificationsEnabled { get; set; } = false;
     /// <summary>MICROMOUND optional integration — off unless an operator turns it on.</summary>
     [ConfigKey(Security = ConfigSecurity.Safety, UndocumentedBecause = "optional compile-time integration")]
     [JsonPropertyName("micromound_enabled")] public bool MicromoundEnabled { get; set; } = false;
-    [JsonPropertyName("homelab_automation_enabled")] public bool HomelabAutomationEnabled { get; set; } = false;
+    [ConfigKey(Aliases = ["homelab_automation_enabled"])]
+    [JsonPropertyName("infrastructure_automation_enabled")] public bool InfrastructureAutomationEnabled { get; set; } = false;
     /// <summary>
     /// v2.15.0: nullable on purpose. The default flipped from off to on, and a plain bool cannot
     /// tell "this config predates the setting" from "the operator turned it off". Null means
@@ -376,87 +377,88 @@ public sealed class AnthillConfig
     [JsonPropertyName("ui_cartographer_ant_enabled")] public bool UiCartographerAntEnabled { get; set; } = false;
     [ConfigKey(Security = ConfigSecurity.Safety)]
     [JsonPropertyName("scribe_ant_enabled")] public bool ScribeAntEnabled { get; set; } = false;
-    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Secret)]
-    [JsonPropertyName("homelab_slack_webhook")] public string HomelabSlackWebhook { get; set; } = "";
-    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Secret)]
-    [JsonPropertyName("homelab_discord_webhook")] public string HomelabDiscordWebhook { get; set; } = "";
-    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Secret)]
-    [JsonPropertyName("homelab_generic_webhook")] public string HomelabGenericWebhook { get; set; } = "";
+    [ConfigKey(Aliases = ["homelab_slack_webhook"], Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Secret)]
+    [JsonPropertyName("infrastructure_slack_webhook")] public string InfrastructureSlackWebhook { get; set; } = "";
+    [ConfigKey(Aliases = ["homelab_discord_webhook"], Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Secret)]
+    [JsonPropertyName("infrastructure_discord_webhook")] public string InfrastructureDiscordWebhook { get; set; } = "";
+    [ConfigKey(Aliases = ["homelab_generic_webhook"], Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Secret)]
+    [JsonPropertyName("infrastructure_generic_webhook")] public string InfrastructureGenericWebhook { get; set; } = "";
     // Proxmox read-only integration (v1.12.0, NORTH_STAR Phase 8). GET-only by construction; the
-    // API token lives in the homelab credential store (never here), referenced by credential id.
-    [ConfigKey(Exposure = ConfigExposure.Editable,
-        Section = "homelab_proxmox", SectionNote = """Proxmox read-only integration (v1.12.0). GET-only by construction: no start/stop/reboot/migrate/delete/clone/resize/config writes exist anywhere in the client. Setup: (1) create an API token in Proxmox (Datacenter -> Permissions -> API Tokens, PVEAuditor role is enough - read-only on purpose), (2) save it as a credential with id matching homelab_proxmox_credential_id via POST /homelab/credentials with secret 'user@realm!tokenid=SECRET', (3) add the Proxmox host to the homelab allowlist, (4) set the host below and enable. Sync rides the shared homelab scheduler. Self-signed certs: set homelab_proxmox_insecure_tls=true to skip TLS verification (homelab default reality; keep false when you have real certs).""")]
-    [JsonPropertyName("homelab_proxmox_enabled")] public bool HomelabProxmoxEnabled { get; set; } = false;
-    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment)]
-    [JsonPropertyName("homelab_proxmox_host")] public string HomelabProxmoxHost { get; set; } = "";
-    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment)]
-    [JsonPropertyName("homelab_proxmox_port")] public int HomelabProxmoxPort { get; set; } = 8006;
-    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment,
+    // API token lives in the infrastructure credential store (never here), referenced by credential id.
+    [ConfigKey(Aliases = ["homelab_proxmox_enabled"], Exposure = ConfigExposure.Editable,
+        Section = "infrastructure_proxmox", SectionNote = """Proxmox read-only integration (v1.12.0). GET-only by construction: no start/stop/reboot/migrate/delete/clone/resize/config writes exist anywhere in the client. Setup: (1) create an API token in Proxmox (Datacenter -> Permissions -> API Tokens, PVEAuditor role is enough - read-only on purpose), (2) save it as a credential with id matching infrastructure_proxmox_credential_id via POST /infrastructure/credentials with secret 'user@realm!tokenid=SECRET', (3) add the Proxmox host to the infrastructure allowlist, (4) set the host below and enable. Sync rides the shared infrastructure scheduler. Self-signed certs: set infrastructure_proxmox_insecure_tls=true to skip TLS verification (infrastructure default reality; keep false when you have real certs).""")]
+    [JsonPropertyName("infrastructure_proxmox_enabled")] public bool InfrastructureProxmoxEnabled { get; set; } = false;
+    [ConfigKey(Aliases = ["homelab_proxmox_host"], Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment)]
+    [JsonPropertyName("infrastructure_proxmox_host")] public string InfrastructureProxmoxHost { get; set; } = "";
+    [ConfigKey(Aliases = ["homelab_proxmox_port"], Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment)]
+    [JsonPropertyName("infrastructure_proxmox_port")] public int InfrastructureProxmoxPort { get; set; } = 8006;
+    [ConfigKey(Aliases = ["homelab_proxmox_credential_id"], Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment,
         ExampleJson = "\"proxmox-main\"")]
-    [JsonPropertyName("homelab_proxmox_credential_id")] public string HomelabProxmoxCredentialId { get; set; } = "proxmox-main";
-    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Safety)]
-    [JsonPropertyName("homelab_proxmox_insecure_tls")] public bool HomelabProxmoxInsecureTls { get; set; } = false;
+    [JsonPropertyName("infrastructure_proxmox_credential_id")] public string InfrastructureProxmoxCredentialId { get; set; } = "proxmox-main";
+    [ConfigKey(Aliases = ["homelab_proxmox_insecure_tls"], Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Safety)]
+    [JsonPropertyName("infrastructure_proxmox_insecure_tls")] public bool InfrastructureProxmoxInsecureTls { get; set; } = false;
     // v2.2.0: protocol is separate from TLS verification. "https" (default) or "http" for a PVE
     // reachable only over plain http; auth headers are attached identically in every mode.
-    [ConfigKey(Exposure = ConfigExposure.Editable)]
-    [JsonPropertyName("homelab_proxmox_protocol")] public string HomelabProxmoxProtocol { get; set; } = "https";
-    [ConfigKey(Security = ConfigSecurity.Safety)]
-    [JsonPropertyName("homelab_proxmox_write_actions_enabled")] public bool HomelabProxmoxWriteActionsEnabled { get; set; } = false;
-    [ConfigKey(Exposure = ConfigExposure.Editable)]
-    [JsonPropertyName("homelab_proxmox_sync_interval_seconds")] public int HomelabProxmoxSyncIntervalSeconds { get; set; } = 300;
-    [JsonPropertyName("homelab_arr_sync_interval_seconds")] public int HomelabArrSyncIntervalSeconds { get; set; } = 300;
+    [ConfigKey(Aliases = ["homelab_proxmox_protocol"], Exposure = ConfigExposure.Editable)]
+    [JsonPropertyName("infrastructure_proxmox_protocol")] public string InfrastructureProxmoxProtocol { get; set; } = "https";
+    [ConfigKey(Aliases = ["homelab_proxmox_write_actions_enabled"], Security = ConfigSecurity.Safety)]
+    [JsonPropertyName("infrastructure_proxmox_write_actions_enabled")] public bool InfrastructureProxmoxWriteActionsEnabled { get; set; } = false;
+    [ConfigKey(Aliases = ["homelab_proxmox_sync_interval_seconds"], Exposure = ConfigExposure.Editable)]
+    [JsonPropertyName("infrastructure_proxmox_sync_interval_seconds")] public int InfrastructureProxmoxSyncIntervalSeconds { get; set; } = 300;
+    [ConfigKey(Aliases = ["homelab_arr_sync_interval_seconds"])]
+    [JsonPropertyName("infrastructure_arr_sync_interval_seconds")] public int InfrastructureArrSyncIntervalSeconds { get; set; } = 300;
     // Read-only virtualization integrations (v2.1.0). Each mirrors Proxmox: no write path exists in the
     // client, the secret lives in the credential store (referenced by id, never here), and the host must
     // be on the target allowlist. ESXi/vCenter = vSphere REST; Docker = Engine API; Hyper-V = WinRM (WMI
     // read-only Enumerate). All disabled by default.
-    [ConfigKey(Exposure = ConfigExposure.Editable,
-        Section = "homelab_virtualization", SectionNote = """Read-only virtualization integrations (v2.1.0). Same discipline as Proxmox: the client has no write methods (no start/stop/delete), the secret lives in the credential store (referenced by id, never here), and the host must be on the homelab allowlist. Configure these from the UI (Homelab -> Virtualization Connections) or here. ESXi/vCenter = vSphere REST (built-in Read-only role is enough); Docker = Engine API over TLS (or a read-only socket proxy); Hyper-V = WinRM WMI read-only Enumerate (HTTPS, read-only account).""")]
-    [JsonPropertyName("homelab_esxi_enabled")] public bool HomelabEsxiEnabled { get; set; } = false;
-    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment)]
-    [JsonPropertyName("homelab_esxi_host")] public string HomelabEsxiHost { get; set; } = "";
-    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment)]
-    [JsonPropertyName("homelab_esxi_port")] public int HomelabEsxiPort { get; set; } = 443;
-    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment,
+    [ConfigKey(Aliases = ["homelab_esxi_enabled"], Exposure = ConfigExposure.Editable,
+        Section = "infrastructure_virtualization", SectionNote = """Read-only virtualization integrations (v2.1.0). Same discipline as Proxmox: the client has no write methods (no start/stop/delete), the secret lives in the credential store (referenced by id, never here), and the host must be on the infrastructure allowlist. Configure these from the UI (Infrastructure -> Virtualization Connections) or here. ESXi/vCenter = vSphere REST (built-in Read-only role is enough); Docker = Engine API over TLS (or a read-only socket proxy); Hyper-V = WinRM WMI read-only Enumerate (HTTPS, read-only account).""")]
+    [JsonPropertyName("infrastructure_esxi_enabled")] public bool InfrastructureEsxiEnabled { get; set; } = false;
+    [ConfigKey(Aliases = ["homelab_esxi_host"], Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment)]
+    [JsonPropertyName("infrastructure_esxi_host")] public string InfrastructureEsxiHost { get; set; } = "";
+    [ConfigKey(Aliases = ["homelab_esxi_port"], Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment)]
+    [JsonPropertyName("infrastructure_esxi_port")] public int InfrastructureEsxiPort { get; set; } = 443;
+    [ConfigKey(Aliases = ["homelab_esxi_credential_id"], Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment,
         ExampleJson = "\"esxi-main\"")]
-    [JsonPropertyName("homelab_esxi_credential_id")] public string HomelabEsxiCredentialId { get; set; } = "esxi-main";
-    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Safety)]
-    [JsonPropertyName("homelab_esxi_insecure_tls")] public bool HomelabEsxiInsecureTls { get; set; } = false;
-    [ConfigKey(Exposure = ConfigExposure.Editable)]
-    [JsonPropertyName("homelab_esxi_sync_interval_seconds")] public int HomelabEsxiSyncIntervalSeconds { get; set; } = 300;
-    [ConfigKey(Exposure = ConfigExposure.Editable)]
-    [JsonPropertyName("homelab_docker_enabled")] public bool HomelabDockerEnabled { get; set; } = false;
-    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment)]
-    [JsonPropertyName("homelab_docker_host")] public string HomelabDockerHost { get; set; } = "";
-    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment)]
-    [JsonPropertyName("homelab_docker_port")] public int HomelabDockerPort { get; set; } = 2376;
-    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment,
+    [JsonPropertyName("infrastructure_esxi_credential_id")] public string InfrastructureEsxiCredentialId { get; set; } = "esxi-main";
+    [ConfigKey(Aliases = ["homelab_esxi_insecure_tls"], Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Safety)]
+    [JsonPropertyName("infrastructure_esxi_insecure_tls")] public bool InfrastructureEsxiInsecureTls { get; set; } = false;
+    [ConfigKey(Aliases = ["homelab_esxi_sync_interval_seconds"], Exposure = ConfigExposure.Editable)]
+    [JsonPropertyName("infrastructure_esxi_sync_interval_seconds")] public int InfrastructureEsxiSyncIntervalSeconds { get; set; } = 300;
+    [ConfigKey(Aliases = ["homelab_docker_enabled"], Exposure = ConfigExposure.Editable)]
+    [JsonPropertyName("infrastructure_docker_enabled")] public bool InfrastructureDockerEnabled { get; set; } = false;
+    [ConfigKey(Aliases = ["homelab_docker_host"], Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment)]
+    [JsonPropertyName("infrastructure_docker_host")] public string InfrastructureDockerHost { get; set; } = "";
+    [ConfigKey(Aliases = ["homelab_docker_port"], Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment)]
+    [JsonPropertyName("infrastructure_docker_port")] public int InfrastructureDockerPort { get; set; } = 2376;
+    [ConfigKey(Aliases = ["homelab_docker_credential_id"], Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment,
         ExampleJson = "\"docker-main\"")]
-    [JsonPropertyName("homelab_docker_credential_id")] public string HomelabDockerCredentialId { get; set; } = "docker-main";
-    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Safety)]
-    [JsonPropertyName("homelab_docker_insecure_tls")] public bool HomelabDockerInsecureTls { get; set; } = false;
-    [ConfigKey(Exposure = ConfigExposure.Editable)]
-    [JsonPropertyName("homelab_docker_sync_interval_seconds")] public int HomelabDockerSyncIntervalSeconds { get; set; } = 300;
-    [ConfigKey(Exposure = ConfigExposure.Editable)]
-    [JsonPropertyName("homelab_hyperv_enabled")] public bool HomelabHypervEnabled { get; set; } = false;
-    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment)]
-    [JsonPropertyName("homelab_hyperv_host")] public string HomelabHypervHost { get; set; } = "";
-    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment)]
-    [JsonPropertyName("homelab_hyperv_port")] public int HomelabHypervPort { get; set; } = 5986;
-    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment,
+    [JsonPropertyName("infrastructure_docker_credential_id")] public string InfrastructureDockerCredentialId { get; set; } = "docker-main";
+    [ConfigKey(Aliases = ["homelab_docker_insecure_tls"], Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Safety)]
+    [JsonPropertyName("infrastructure_docker_insecure_tls")] public bool InfrastructureDockerInsecureTls { get; set; } = false;
+    [ConfigKey(Aliases = ["homelab_docker_sync_interval_seconds"], Exposure = ConfigExposure.Editable)]
+    [JsonPropertyName("infrastructure_docker_sync_interval_seconds")] public int InfrastructureDockerSyncIntervalSeconds { get; set; } = 300;
+    [ConfigKey(Aliases = ["homelab_hyperv_enabled"], Exposure = ConfigExposure.Editable)]
+    [JsonPropertyName("infrastructure_hyperv_enabled")] public bool InfrastructureHypervEnabled { get; set; } = false;
+    [ConfigKey(Aliases = ["homelab_hyperv_host"], Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment)]
+    [JsonPropertyName("infrastructure_hyperv_host")] public string InfrastructureHypervHost { get; set; } = "";
+    [ConfigKey(Aliases = ["homelab_hyperv_port"], Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment)]
+    [JsonPropertyName("infrastructure_hyperv_port")] public int InfrastructureHypervPort { get; set; } = 5986;
+    [ConfigKey(Aliases = ["homelab_hyperv_credential_id"], Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Environment,
         ExampleJson = "\"hyperv-main\"")]
-    [JsonPropertyName("homelab_hyperv_credential_id")] public string HomelabHypervCredentialId { get; set; } = "hyperv-main";
-    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Safety)]
-    [JsonPropertyName("homelab_hyperv_insecure_tls")] public bool HomelabHypervInsecureTls { get; set; } = false;
-    [ConfigKey(Exposure = ConfigExposure.Editable)]
-    [JsonPropertyName("homelab_hyperv_sync_interval_seconds")] public int HomelabHypervSyncIntervalSeconds { get; set; } = 300;
+    [JsonPropertyName("infrastructure_hyperv_credential_id")] public string InfrastructureHypervCredentialId { get; set; } = "hyperv-main";
+    [ConfigKey(Aliases = ["homelab_hyperv_insecure_tls"], Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Safety)]
+    [JsonPropertyName("infrastructure_hyperv_insecure_tls")] public bool InfrastructureHypervInsecureTls { get; set; } = false;
+    [ConfigKey(Aliases = ["homelab_hyperv_sync_interval_seconds"], Exposure = ConfigExposure.Editable)]
+    [JsonPropertyName("infrastructure_hyperv_sync_interval_seconds")] public int InfrastructureHypervSyncIntervalSeconds { get; set; } = 300;
     // Network + security awareness (v1.13.0, NORTH_STAR Phase 9): deterministic findings, no scanning.
-    [ConfigKey(Exposure = ConfigExposure.Editable,
-        Section = "homelab_risk", SectionNote = """Network + security awareness (v1.13.0). Deterministic risk findings computed from the inventory you have registered/synced - risky open ports, unknown devices, ownerless services, un-backed-up hosts, exposed dashboards, duplicate IPs, missing DNS names, unwatched services, unverified credentials. Zero network I/O: there is NO active scanning in this phase. Findings reconcile on every run (fixed problems auto-resolve; acknowledgements stick).""")]
-    [JsonPropertyName("homelab_risk_interval_seconds")] public int HomelabRiskIntervalSeconds { get; set; } = 3600;
+    [ConfigKey(Aliases = ["homelab_risk_interval_seconds"], Exposure = ConfigExposure.Editable,
+        Section = "infrastructure_risk", SectionNote = """Network + security awareness (v1.13.0). Deterministic risk findings computed from the inventory you have registered/synced - risky open ports, unknown devices, ownerless services, un-backed-up hosts, exposed dashboards, duplicate IPs, missing DNS names, unwatched services, unverified credentials. Zero network I/O: there is NO active scanning in this phase. Findings reconcile on every run (fixed problems auto-resolve; acknowledgements stick).""")]
+    [JsonPropertyName("infrastructure_risk_interval_seconds")] public int InfrastructureRiskIntervalSeconds { get; set; } = 3600;
     // Incident + change memory (v1.14.0, NORTH_STAR Phase 10): tracking + recommendations, no auto-fixes.
-    [ConfigKey(Exposure = ConfigExposure.Editable,
-        Section = "homelab_incidents", SectionNote = """Incident + change memory (v1.14.0). Health-check failure streaks auto-open deduped incidents; each incident reconstructs a timeline (suspect changes in the 24h before it broke, health results and events during it), matches similar past incidents, and surfaces their recorded root causes as 'this fixed it last time'. Tracking and recommendations only - nothing auto-remediates.""")]
-    [JsonPropertyName("homelab_incident_sweep_seconds")] public int HomelabIncidentSweepSeconds { get; set; } = 300;
+    [ConfigKey(Aliases = ["homelab_incident_sweep_seconds"], Exposure = ConfigExposure.Editable,
+        Section = "infrastructure_incidents", SectionNote = """Incident + change memory (v1.14.0). Health-check failure streaks auto-open deduped incidents; each incident reconstructs a timeline (suspect changes in the 24h before it broke, health results and events during it), matches similar past incidents, and surfaces their recorded root causes as 'this fixed it last time'. Tracking and recommendations only - nothing auto-remediates.""")]
+    [JsonPropertyName("infrastructure_incident_sweep_seconds")] public int InfrastructureIncidentSweepSeconds { get; set; } = 300;
 
     [ConfigKey(Exposure = ConfigExposure.Editable)]
     [JsonPropertyName("parallel_execution_enabled")] public bool ParallelExecutionEnabled { get; set; } = true;

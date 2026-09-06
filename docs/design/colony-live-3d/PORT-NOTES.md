@@ -221,7 +221,7 @@ names would have been the same defect with an extra way to fall out of step.
 
 ## Additions the reference does not have
 
-- **Two more chambers.** The reference has exactly seven and its README says "`HOMELAB` is not one of
+- **Two more chambers.** The reference has exactly seven and its README says "`INFRASTRUCTURE` is not one of
   them". This colony's registry has nine sectors, including `unassigned` — where an unrecognised role
   goes, and the whole point of routing it there rather than to the Queen is that an operator can SEE
   it. Both take free equatorial axes at 33, not at the diagonals' own radius of 23.33: measured, at
@@ -234,7 +234,7 @@ names would have been the same defect with an extra way to fall out of step.
 - **Label placement that also avoids other labels and the frame edge.** The reference avoids the
   chrome only, so two chambers projecting near each other print over one another, and a chamber near
   the right edge gets a label past the frame that the overlay clips away — drawn, lit and unnamed.
-  Homelab was exactly that case.
+  Infrastructure was exactly that case.
 
 ---
 

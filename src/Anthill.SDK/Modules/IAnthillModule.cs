@@ -3,7 +3,7 @@ namespace Anthill.SDK.Modules;
 /// <summary>
 /// A unit of colony capability that lives outside the core.
 ///
-/// Homelab, the reasoning providers, shell/git/filesystem tooling, vision, analytics — everything
+/// Infrastructure, the reasoning providers, shell/git/filesystem tooling, vision, analytics — everything
 /// that is not scheduling, memory or coordination. The core must never name a module type; a module
 /// reaches the colony only by implementing this and being composed in at startup.
 ///
@@ -16,7 +16,7 @@ public interface IAnthillModule
 {
     /// <summary>
     /// Stable identifier, used in configuration and in the event metadata a module publishes.
-    /// Lowercase, dotted: "homelab", "reasoning.ollama", "tools.shell".
+    /// Lowercase, dotted: "infrastructure", "reasoning.ollama", "tools.shell".
     /// </summary>
     string Name { get; }
 

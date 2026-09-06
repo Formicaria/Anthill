@@ -27,7 +27,7 @@ public sealed record PheromoneTrail(
 /// Store, retrieve, weight and decay — the pheromone memory contract.
 ///
 /// This is a core responsibility and stays in the core. It is declared here in the SDK for one
-/// reason: modules will want to reinforce trails (a homelab action that worked, a provider that
+/// reason: modules will want to reinforce trails (a infrastructure action that worked, a provider that
 /// answered reliably) and read them, and the alternative is handing modules the concrete
 /// <c>SqliteMemory</c> — a class with 177 public methods spanning jobs, users, workspaces, shadow
 /// runs and credentials. Passing that across the module boundary would make every module able to

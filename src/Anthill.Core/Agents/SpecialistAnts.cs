@@ -169,7 +169,7 @@ public sealed class TesterAnt : BaseAnt
 
         // v0.3.8.102 — THE OPERATION LANE, on the tester rather than a thirteenth role (the
         // roster's guards defended twelve with one voice, and the foundation's own test says
-        // homelab ants are never executable). The tester is the spine's deterministic
+        // infrastructure ants are never executable). The tester is the spine's deterministic
         // command-runner already; proposing an allowlisted action and executing it under the
         // operator's recorded decision is the same lane its checks live in, gated at dispatch by
         // the same escalation set its check tool already sits in.
@@ -376,7 +376,7 @@ public sealed class TesterAnt : BaseAnt
     ///
     /// THE ONE THING THIS DOES THAT ITS `.102` SIBLING DOES NOT: it writes a record even when
     /// nothing was sent. The operation lane can decline to leave an artifact when a proposal goes
-    /// unapproved, because the proposal row lives in the homelab pipeline and the class gate
+    /// unapproved, because the proposal row lives in the infrastructure pipeline and the class gate
     /// refuses the mission for the artifact's absence. Here the record is also what the ANSWER is
     /// rendered from — so no record means the builder's prose is the only account of what happened,
     /// and a builder whose tool was refused several steps upstream still writes "I've posted it to

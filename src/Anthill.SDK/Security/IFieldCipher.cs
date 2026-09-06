@@ -8,8 +8,8 @@ namespace Anthill.SDK.Security;
 /// I/O against real configuration, which is core work. What a module needs is narrower: turn a
 /// secret into stored text and back.
 ///
-/// So the homelab's credential store takes this instead of the class. That inverts the last piece
-/// of the homelab's dependency on the core: a module that constructs a cipher would need the key
+/// So the infrastructure's credential store takes this instead of the class. That inverts the last piece
+/// of the infrastructure's dependency on the core: a module that constructs a cipher would need the key
 /// resolution, and the key resolution needs the runtime.
 ///
 /// <c>Protect</c> and <c>Unprotect</c> are null-tolerant in both directions, which is not

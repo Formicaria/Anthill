@@ -303,7 +303,7 @@ public class RepeatedFailureTests : IDisposable
 
     /// <summary>
     /// AND EVERY CALLER THAT SUPPLIES NO CLASS BEHAVES EXACTLY AS BEFORE. This is what makes the
-    /// change safe to ship: `ShadowOperator` and the homelab lifecycle bridge pass no class, and
+    /// change safe to ship: `ShadowOperator` and the infrastructure lifecycle bridge pass no class, and
     /// `FailureClass.None` means "this caller has no typed class" — not "unclassified", which is a
     /// different claim with a different answer.
     /// </summary>

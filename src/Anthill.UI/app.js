@@ -20,8 +20,8 @@ function url(path){ return API_BASE ? API_BASE.replace(/\/$/,'') + path : path; 
 //   promise and a per-path TTL cache; hidden tabs serve cache instead of hitting the API.
 const API_TTL={'/status':10000,'/events/json':3000,'/jobs':5000,'/missions/json':10000,
   '/colony/registry':30000,'/pheromones/json':20000,'/autonomy/status':10000,'/objectives':15000,
-  '/patches':30000,'/homelab/dashboard':10000,'/homelab/summary':10000,'/homelab/approvals/unified':10000,
-  '/system/summary':15000,'/update/check':300000,'/homelab/integrations':15000};
+  '/patches':30000,'/infrastructure/dashboard':10000,'/infrastructure/summary':10000,'/infrastructure/approvals/unified':10000,
+  '/system/summary':15000,'/update/check':300000,'/infrastructure/integrations':15000};
 const _apiCache=new Map(), _apiInflight=new Map(); let _api429Until=0;
 function _ttlFor(path){ const base=path.split('?')[0]; let best=5000;
   for(const k in API_TTL){ if(base===k||base.startsWith(k)){ best=API_TTL[k]; } } return best; }
@@ -436,8 +436,8 @@ document.getElementById('logout-btn').addEventListener('click', async ()=>{
 // Role visibility: admins see Config section; coordinators see only colony + missions + events
 function applyRoleVisibility(){
   const admin = ROLE==='admin';
-  // v1.10.0: the Homelab page is visible to admins and homelab operators; write forms are admin-only
-  // (manage_homelab_integrations is not granted to the homelab_operator role).
+  // v1.10.0: the Infrastructure page is visible to admins and infrastructure operators; write forms are admin-only
+  // (manage_infrastructure_integrations is not granted to the infrastructure_operator role).
   // v2.6: the sidebar is config-driven; per-item visibility (all|admin|hl) is applied in buildNav().
   if(typeof buildNav==='function') buildNav();
   ['hl-host-form','hl-svc-form','hl-dep-form','hl-import-btn','hl-check-form','hl-pve-sync','hl-dev-form','hl-risk-analyze','hl-inc-form','hl-inc-resolve'].forEach(id=>{
@@ -452,7 +452,7 @@ function applyRoleVisibility(){
   const nameEl=document.getElementById('nav-user-name');
   const roleEl=document.getElementById('nav-user-role');
   if(nameEl) nameEl.textContent=USERNAME||'?';
-  if(roleEl) roleEl.textContent=admin?'Administrator':(ROLE==='homelab_operator'?'Homelab Operator':'Coordinator');
+  if(roleEl) roleEl.textContent=admin?'Administrator':(ROLE==='infrastructure_operator'?'Infrastructure Operator':'Coordinator');
   const avatarEl=document.getElementById('nav-user-avatar');
   if(avatarEl){
     const initials=(USERNAME||'AH').substring(0,2).toUpperCase();
@@ -470,7 +470,7 @@ function applyRoleVisibility(){
 const PAGE_TITLES = {
   overview:'Dashboard', colony:'Topology', missions:'Missions', results:'Mission Results',
   patches:'Changes & Approvals', objboard:'Objectives', events:'Events',
-  activity:'Activity', pheromones:'Memory & Signals', homelab:'Infrastructure',
+  activity:'Activity', pheromones:'Memory & Signals', infrastructure:'Infrastructure',
   autonomy:'Automation', security:'Security', shell:'Terminal', settings:'Settings', users:'Users',
   chat:'Chat', projects:'Projects', toolsview:'Tools',
   readiness:'Readiness', projectview:'Project', integrations:'Integrations',
@@ -532,7 +532,7 @@ const IAICON = {
   administration:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>'
 };
 
-// The information architecture. vis: 'all' | 'admin' | 'hl' (admin OR homelab_operator).
+// The information architecture. vis: 'all' | 'admin' | 'hl' (admin OR infrastructure_operator).
 //
 // v0.3.8.49 — the five-destination product IA (UI/UX pass §20). Colony, Projects, Chat, Tools,
 // Settings. Everything that describes how a Colony's ants work — the visualization, roles, models,
@@ -653,7 +653,7 @@ const DOMAIN_HOME = {};
 })();
 /* v0.3.8.124 — INFRASTRUCTURE IS A ROUTE WITHOUT A NAV ENTRY, and that is deliberate.
 
-   The page was reachable only through a card on Integrations, which is why `PAGE_HOME.homelab`
+   The page was reachable only through a card on Integrations, which is why `PAGE_HOME.infrastructure`
    pointed there. That card is gone: Infrastructure is a MOUND now, and its settings open from its
    row in the mound registry like every other mound's. A sidebar entry would be a second door and
    would make the registry's promise — "every mound, and where its settings are" — a half-truth.
@@ -661,14 +661,14 @@ const DOMAIN_HOME = {};
    Registered here rather than in `IA` because `buildNav` renders the sidebar FROM `IA`: an entry
    there is a nav item by construction. This gives the router a real destination for
    `go('/tools/infrastructure')`, for the eleven `/infrastructure/*` sub-routes the page's own
-   sub-nav drives, and for the `homelab` legacy hash — without putting a link in the rail. */
+   sub-nav drives, and for the `infrastructure` legacy hash — without putting a link in the rail. */
 ROUTE_TABLE['/tools/infrastructure']={
-  page:'homelab', hlsub:null, vis:'admin',
+  page:'infrastructure', hlsub:null, vis:'admin',
   crumb:['Colony','Mounds','Infrastructure'], domain:'colony',
   section:'/colony/mounds', tabs:null, activeTab:null,
 };
 
-// Deterministic canonical home per page (first-occurrence is ambiguous for shared pages like homelab).
+// Deterministic canonical home per page (first-occurrence is ambiguous for shared pages like infrastructure).
 Object.assign(PAGE_HOME,{
   overview:'/colony', colony:'/colony/live', missions:'/projects',
   activity:'/settings/system',
@@ -678,13 +678,13 @@ Object.assign(PAGE_HOME,{
   // v0.3.8.124: Infrastructure has its own canonical route now. It used to be homed on the
   // Integrations page because a card there was the only way in; that card is gone — the page is
   // reached from the mound registry, INFRASTRUCTURE being a mound.
-  homelab:'/tools/infrastructure',
+  infrastructure:'/tools/infrastructure',
   autonomy:'/projects', security:'/settings/security',
   shell:'/settings/terminal', settings:'/settings/connection', users:'/settings/users',
   integrations:'/tools/integrations', projectview:'/projects', readiness:'/settings/readiness',
   knowledge:'/tools/knowledge'
 });
-// Homelab in-page sub-nav (data-sub) → the canonical route that owns that sub-page, so the
+// Infrastructure in-page sub-nav (data-sub) → the canonical route that owns that sub-page, so the
 // existing #hl-subnav buttons drive breadcrumbs / sidebar / URL through the router (v2.6 Phase 2).
 const HLSUB_ROUTE={
   overview:'/infrastructure/overview', virtualization:'/infrastructure/compute',
@@ -698,7 +698,7 @@ const LEGACY_REDIRECT={
   overview:'/colony', colony:'/colony/live', missions:'/projects',
   events:'/settings/system', results:'/projects',
   patches:'/chat', objboard:'/projects',
-  pheromones:'/tools/memory', homelab:'/tools/infrastructure',
+  pheromones:'/tools/memory', infrastructure:'/tools/infrastructure',
   antconfig:'/projects', antobs:'/projects',
   autonomy:'/projects', security:'/settings/security',
   shell:'/settings/terminal', settings:'/settings/connection', users:'/settings/users'
@@ -777,7 +777,7 @@ const ROUTE_ALIAS={
 
 function canSee(vis){
   if(vis==='admin') return ROLE==='admin';
-  if(vis==='hl') return ROLE==='admin'||ROLE==='homelab_operator';
+  if(vis==='hl') return ROLE==='admin'||ROLE==='infrastructure_operator';
   return true;
 }
 
@@ -882,7 +882,7 @@ function showPage(id,o){
   const route=o.route||PAGE_HOME[id]||('/'+id);
   updateChrome(route,id);
   if(!o.noHistory){ try{ history.replaceState(null,'','#'+route); }catch{} }
-  if(id==='homelab'){
+  if(id==='infrastructure'){
     if(o.hlsub && typeof hlSubShow==='function') hlSubShow(o.hlsub,true); // chrome already set by go/showPage
     else if(typeof hlSubRestore==='function') hlSubRestore();             // reopen last sub + sync chrome
   }
@@ -2218,12 +2218,12 @@ async function doApproval(id,action,kind){
   try{
     // v2.3.0: the unified queue carries more than patches — route the decision by kind
     // (APPROVALS.md: decisions flow through each kind's own endpoints).
-    const endpoint=(kind==='homelab_action')
-      ?`/homelab/actions/${encodeURIComponent(id)}/${action==='approve'?'approve':'reject'}`
+    const endpoint=(kind==='infrastructure_action')
+      ?`/infrastructure/actions/${encodeURIComponent(id)}/${action==='approve'?'approve':'reject'}`
       :(action==='approve'?`/approve/${id}`:`/reject/${id}`);
     await fetch(url(endpoint),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
     pollApprovals(); pollStatus();
-    if(kind==='homelab_action'&&typeof loadHlActions==='function') loadHlActions();
+    if(kind==='infrastructure_action'&&typeof loadHlActions==='function') loadHlActions();
   }catch(e){console.error('Approval error',e);}
 }
 
@@ -5192,7 +5192,7 @@ PAGE_ENTER['projectview']=()=>{ if(projectViewId) loadProjectView(); };
 
 /* v0.3.8.48 — Integrations: the real catalog, honestly ordered. Configured providers first with
  * their verify state, unconfigured second as "available", installed agents as integrations (they
- * are — see the directive), and the homelab as one card into its own deck. Nothing invented. */
+ * are — see the directive), and the infrastructure as one card into its own deck. Nothing invented. */
 PAGE_ENTER['integrations']=()=>loadIntegrations();
 async function loadIntegrations(){
   const host=document.getElementById('int-body'); if(!host) return;
@@ -5285,7 +5285,7 @@ async function loadIntegrations(){
     ${!p.agent?`<div class="int-cfg-slot" data-cfg-slot="${escapeHtml(p.provider)}" hidden style="padding:0 13px 13px;"></div>`:''}
     </div>`;}).join('')
 ;
-  /* v0.3.8.124 — THE HOMELAB CARD IS GONE FROM HERE. Infrastructure is a mound now: it is drawn as
+  /* v0.3.8.124 — THE INFRASTRUCTURE CARD IS GONE FROM HERE. Infrastructure is a mound now: it is drawn as
      one in Colony Live, conduited to the Queen like one, and listed in the mound registry beside
      every other mound. Its settings open from that row. A second door on this page would have made
      the registry's listing a half-truth — "every mound, and its settings" is only true if this is
@@ -5423,16 +5423,16 @@ if(!window.__pvObjWired){ window.__pvObjWired=true;
   });
 }
 
-/* v0.3.8.48 — rules, quarantined honestly. The deterministic homelab rules predate project
+/* v0.3.8.48 — rules, quarantined honestly. The deterministic infrastructure rules predate project
  * ownership; the directive forbids silently attaching them to any project, so they appear here
- * as what they are: legacy triggers with no project owner, managed in the homelab deck until
+ * as what they are: legacy triggers with no project owner, managed in the infrastructure deck until
  * each is claimed. No global Automation domain remains. */
 async function pvRenderRules(){
   const host=document.getElementById('sch-rules'); if(!host) return;
-  const r=await api('/homelab/automation/rules').catch(()=>null);
+  const r=await api('/infrastructure/automation/rules').catch(()=>null);
   const rules=(r&&r.success&&(r.data&&r.data.rules||r.data))||[];
   host.innerHTML=(Array.isArray(rules)&&rules.length)
-    ? `<div class="sub" style="margin-bottom:6px;">Legacy rules with no project owner — quarantined, not attached. Manage them in the homelab deck until each is claimed by a project.</div>`
+    ? `<div class="sub" style="margin-bottom:6px;">Legacy rules with no project owner — quarantined, not attached. Manage them in the infrastructure deck until each is claimed by a project.</div>`
       + rules.slice(0,20).map(x=>`<div class="card" style="margin-bottom:5px;"><div style="padding:8px 12px;font-size:10px;color:var(--muted);">
           <b style="color:var(--text)">${escapeHtml(x.name||x.id||'rule')}</b>
           <span class="sch-badge" style="margin-left:6px;">${x.enabled?'enabled':'paused'}</span>
@@ -5878,15 +5878,15 @@ document.addEventListener('keydown',e=>{
   if(e.key==='g'){ gSeqAt=now; return; }
   if(gSeqAt && now-gSeqAt<900){
     const admin=ROLE==='admin';
-    const map={o:'overview',c:'colony',m:'missions',r:'results',e:'events',h:'homelab',
+    const map={o:'overview',c:'colony',m:'missions',r:'results',e:'events',h:'infrastructure',
       p:admin?'patches':null,b:admin?'objboard':null,s:admin?'settings':null,u:admin?'users':null,a:admin?'autonomy':null};
     const dest=map[e.key.toLowerCase()];
     if(dest){ e.preventDefault(); showPage(dest); }
     gSeqAt=0;
     return;
   }
-  // v2.5.3 R3: while on Homelab, 1-9 / 0 / - jump between category sub-pages.
-  if(document.getElementById('page-homelab')?.classList.contains('active')){
+  // v2.5.3 R3: while on Infrastructure, 1-9 / 0 / - jump between category sub-pages.
+  if(document.getElementById('page-infrastructure')?.classList.contains('active')){
     const subMap={'1':'overview','2':'services','3':'virtualization','4':'containers','5':'storage',
       '6':'networking','7':'monitoring','8':'automation','9':'apps','0':'alerts','-':'activity'};
     if(subMap[e.key]){ e.preventDefault(); hlSubShow(subMap[e.key]); }
@@ -6667,8 +6667,8 @@ const ACT_FACETS=[
   ['missions','Missions',t=>/^(mission|task|plan)/.test(t)],
   ['changes','Changes',t=>/^(patch|approval)/.test(t)],
   ['autonomy','Autonomy',t=>/^(autonomy|director|objective|jobs|strateg)/.test(t)],
-  ['infra','Infrastructure',t=>/^(homelab|proxmox|incident|health|action|network|integration|vm|container|storage|backup)/.test(t)],
-  ['system','System',t=>!/^(mission|task|plan|patch|approval|autonomy|director|objective|jobs|strateg|homelab|proxmox|incident|health|action|network|integration|vm|container|storage|backup)/.test(t)],
+  ['infra','Infrastructure',t=>/^(infrastructure|proxmox|incident|health|action|network|integration|vm|container|storage|backup)/.test(t)],
+  ['system','System',t=>!/^(mission|task|plan|patch|approval|autonomy|director|objective|jobs|strateg|infrastructure|proxmox|incident|health|action|network|integration|vm|container|storage|backup)/.test(t)],
 ];
 let actEvents=[], actFacet='all';
 async function loadActivity(){
@@ -7678,8 +7678,8 @@ async function userDelete(u){
   }catch(e){usersMsg('Failed: '+e.message,false);}
 }
 
-// -- Homelab: moved to homelab.js in v0.3.8.52 (the app.js split). It loads AFTER this file,
-//    because its PAGE_ENTER['homelab'] registration needs PAGE_ENTER to already exist.
+// -- Infrastructure: moved to infrastructure.js in v0.3.8.52 (the app.js split). It loads AFTER this file,
+//    because its PAGE_ENTER['infrastructure'] registration needs PAGE_ENTER to already exist.
 
 // -- V2.2 Pass A: ANTHILL design-system helpers + TopTelemetryBar --------------------
 // Role colors: THE single mapping for chambers, nodes, dots, badges, trails, legends.
@@ -7809,7 +7809,7 @@ async function pollOv2(){
   try{
     [jb,mn,ev,ap,reg]=await Promise.all([
       api('/jobs'), api('/missions/json?limit=6'), api('/events/json?limit=200'),
-      api('/homelab/approvals/unified'), api('/colony/registry'),
+      api('/infrastructure/approvals/unified'), api('/colony/registry'),
     ]);
   }catch(e){ return; }
   const jobs=Array.isArray(jb&&jb.data)?jb.data:[];
@@ -8126,7 +8126,7 @@ function renderOv2Approvals(items){
   if(!pending.length){ el.innerHTML='<div class="ov2-empty">No approvals pending.</div>'; return; }
   el.innerHTML=pending.map(a=>{
     const rc=a.risk_level==='critical'||a.risk_level==='high'?'danger':(a.risk_level==='medium'?'warn':'info');
-    const kindTag=a.kind==='homelab_action'?' '+athPill('warn','action'):'';
+    const kindTag=a.kind==='infrastructure_action'?' '+athPill('warn','action'):'';
     return '<div class="ov2-list-item"><b style="color:var(--anthill-text)">'+escapeHtml((a.title||'Approval').substring(0,48))+'</b> '+athPill(rc,a.risk_level||'?')+kindTag+
       '<div style="margin-top:4px;display:flex;gap:6px;">'+
       '<button class="ov2-approve" data-onclick="doApproval(\''+jsArg(a.source_id)+'\',\'approve\',\''+jsArg(a.kind||'patch')+'\')">✓ Approve</button>'+

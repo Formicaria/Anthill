@@ -6,7 +6,7 @@ namespace Anthill.Tests.Micromound;
 
 /// <summary>
 /// <see cref="MicromoundRuntime"/> holds per-process configuration in statics, the same shape
-/// <c>HomelabRuntime</c> uses. That is fine in a colony and hostile to parallel tests, so every
+/// <c>InfrastructureRuntime</c> uses. That is fine in a colony and hostile to parallel tests, so every
 /// class here shares one non-parallel collection rather than racing each other's workspace paths.
 /// </summary>
 [CollectionDefinition(Name, DisableParallelization = true)]

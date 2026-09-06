@@ -72,7 +72,7 @@ public static class PolicyScan
         // ANTHILL's configuration rather than in the workspace precisely so a mission cannot reach
         // it; this rule is the second lock, for the case where a mission proposes a patch against
         // the colony's own tree.
-        new("allowlist_tampering", "critical", true, Rx(@"target_allowlist|homelab_target_allowlist|workspace_checks|CheckCatalog\.Register|RoleAllowedTools"), "attempt to alter policy/allowlists"),
+        new("allowlist_tampering", "critical", true, Rx(@"target_allowlist|infrastructure_target_allowlist|workspace_checks|CheckCatalog\.Register|RoleAllowedTools"), "attempt to alter policy/allowlists"),
         new("destructive_operation", "critical", true, Rx(@"rm\s+-rf\s+/|DROP\s+TABLE|mkfs\.|wipe\s+disk|factory\s+reset", RegexOptions.IgnoreCase), "destructive operation"),
         new("auth_change", "high", false, Rx(@"RequireAuth|AuthLimiter|login|session[_-]?token", RegexOptions.IgnoreCase), "authentication surface touched — reviewer attention required"),
         new("db_migration", "medium", false, Rx(@"CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+COLUMN", RegexOptions.IgnoreCase), "schema change — migration safety review required"),

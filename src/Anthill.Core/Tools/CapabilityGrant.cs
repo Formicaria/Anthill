@@ -109,10 +109,10 @@ public static class CapabilityGrant
               + "capability is what a future grant would name. Until v0.3.8.87 ToolCatalog declared "
               + "the BUILDER as requiring it — a requirement nothing could ever satisfy, in a catalog "
               + "nothing enforced.",
-            [Capability.NetworkHttpHomelab] =
-                "homelab HTTP belongs to the Homelab module's action runners, which authorize through "
+            [Capability.NetworkHttpInfrastructure] =
+                "infrastructure HTTP belongs to the Infrastructure module's action runners, which authorize through "
               + "ActionExecutor rather than through a colony role's capability grant.",
-            [Capability.ProxmoxRead] = "Proxmox is reached by the Homelab module, not by a colony role.",
+            [Capability.ProxmoxRead] = "Proxmox is reached by the Infrastructure module, not by a colony role.",
             [Capability.ProxmoxVmStart] = "as proxmox.read — module surface, not a role capability.",
             [Capability.ProxmoxVmStop] = "as proxmox.read — module surface, not a role capability.",
             [Capability.ProxmoxSnapshotCreate] = "as proxmox.read — module surface, not a role capability.",

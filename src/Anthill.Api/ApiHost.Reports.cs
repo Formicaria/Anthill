@@ -28,7 +28,7 @@ namespace Anthill.Api;
 /// Projections: what a mission, patch, objective or readiness check looks like on the wire.
 ///
 /// v3.8.17 — split out of ApiHost.cs, which was 3,294 lines and 102 endpoints. Same class,
-/// same behaviour: ApiHost has been `public static partial` with eight files since the homelab
+/// same behaviour: ApiHost has been `public static partial` with eight files since the infrastructure
 /// moved, so this is where the file was always going to divide.
 /// </summary>
 public static partial class ApiHost
@@ -548,7 +548,7 @@ public static partial class ApiHost
     {
         var metrics = QualificationScoreboard.Compute(Queen.Memory.LoadScoreableRecommendations(500));
         var stability = Queen.Memory.FaultInjectionStability();
-        var (executed, _, unknown) = Homelab.CountExecutedActionLifecycles();
+        var (executed, _, unknown) = Infrastructure.CountExecutedActionLifecycles();
         return V3Readiness.Evaluate(new V3Readiness.Inputs(
             Shadow: metrics,
             ShadowSample: metrics.Sample,

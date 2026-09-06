@@ -104,16 +104,16 @@ public class AcceptanceGatesOneAndTwoTests : IDisposable
         queen.AdoptModuleTools(host.ContributedTools);
 
         // v0.3.8.102 — the THIRD half of the registry: the system-action tools are adopted by the
-        // API host where the homelab executor is built, so a full composition includes them the
+        // API host where the infrastructure executor is built, so a full composition includes them the
         // same way it includes the tools module. Composed here over the module's own deterministic
         // pieces (a real repository, the mock runner) — the same fixture-versus-runtime rule the
         // header states: gate 1 measures the colony production composes, not a half of it.
-        var homelab = new Anthill.Modules.Homelab.HomelabRepository(Path.Combine(dir, "gates-homelab.db"));
-        var homelabExecutor = new Anthill.Modules.Homelab.Actions.ActionExecutor(
-            homelab, new Anthill.Modules.Homelab.Actions.IHomelabActionRunner[]
-                { new Anthill.Modules.Homelab.Actions.MockActionRunner() }, isStopped: () => false);
-        queen.AdoptModuleTools(Anthill.Modules.Homelab.Actions.SystemActionTools.For(
-            homelabExecutor, _ => null));
+        var infrastructure = new Anthill.Modules.Infrastructure.InfrastructureRepository(Path.Combine(dir, "gates-infrastructure.db"));
+        var infrastructureExecutor = new Anthill.Modules.Infrastructure.Actions.ActionExecutor(
+            infrastructure, new Anthill.Modules.Infrastructure.Actions.IInfrastructureActionRunner[]
+                { new Anthill.Modules.Infrastructure.Actions.MockActionRunner() }, isStopped: () => false);
+        queen.AdoptModuleTools(Anthill.Modules.Infrastructure.Actions.SystemActionTools.For(
+            infrastructureExecutor, _ => null));
 
         // v0.3.8.103 — and the send lane, for exactly the reason the operation lane is here: gate 1
         // measures the colony PRODUCTION composes. The API host registers these beside the module

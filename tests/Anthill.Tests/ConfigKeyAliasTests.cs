@@ -153,7 +153,7 @@ public class ConfigKeyAliasTests
 
     /// <summary>
     /// AND NO TWO KEYS CLAIM THE SAME FORMER NAME. The other collision, and the one a bulk rename
-    /// produces by copy-paste: two declarations both listing `homelab_enabled` would make which
+    /// produces by copy-paste: two declarations both listing `infrastructure_enabled` would make which
     /// setting an old document fed depend on declaration order.
     /// </summary>
     [Fact]

@@ -2,11 +2,11 @@ namespace Anthill.Modules.Micromound;
 
 /// <summary>
 /// Everything the Micromound module needs from the colony's configuration, handed over rather
-/// than read — the same inversion <c>HomelabOptions</c> performs, and for the same reason: a
+/// than read — the same inversion <c>InfrastructureOptions</c> performs, and for the same reason: a
 /// module that reads <c>AnthillRuntime</c> is a module that references the core.
 /// </summary>
 /// <param name="DatabasePath">Fully resolved by the composition root.</param>
-/// <param name="StopFileName">The MICROMOUND_STOP kill switch, mirroring HOMELAB_STOP. Its
+/// <param name="StopFileName">The MICROMOUND_STOP kill switch, mirroring INFRASTRUCTURE_STOP. Its
 /// presence forces a stop order into every sync response, for every mound, with no exceptions and
 /// no per-mound override.</param>
 /// <param name="WorkspaceRootPath">Where the <c>.anthill</c> directory holding the stop file

@@ -130,7 +130,7 @@ Mark any page that errors, renders empty when it shouldn't, or shows obviously w
 | Settings → Readiness | | |
 | Settings → Terminal (a safe command like `git status` runs; **no console window flashes**) | | |
 | Status light (top right) → popover reads `● Online`/`● Offline` — no `?` anywhere | | |
-| Homelab deck (if configured) | | |
+| Infrastructure deck (if configured) | | |
 | Sidebar mark → opens formicaria.us in your real browser | | |
 | (Windows) Agent chat output | Em dashes, quotes and accents render correctly — no `â€”` mojibake | | |
 

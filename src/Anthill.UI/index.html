@@ -1593,7 +1593,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
     body.nav-collapsed #nav-scroll .nav-domain{position:relative;}
     body.nav-collapsed #nav-scroll .nav-domain:hover>.nav-children{display:flex;position:absolute;left:100%;top:0;min-width:190px;background:var(--anthill-panel,#12151c);border:1px solid rgba(255,255,255,.09);border-radius:8px;padding:6px 0;box-shadow:0 10px 28px rgba(0,0,0,.45);z-index:60;}
     body.nav-collapsed #nav-scroll .nav-domain:hover>.nav-children .nav-child{padding-left:16px;}
-    /* v2.6: the Infrastructure (Homelab) in-page category sub-nav is redundant — every sub-page is a
+    /* v2.6: the Infrastructure (Infrastructure) in-page category sub-nav is redundant — every sub-page is a
        left-sidebar entry (Infrastructure sections + Monitoring's Alerts/Activity). Hide the old row;
        hlSubShow() still drives sub-page visibility via the sidebar routes and keyboard shortcuts.
        !important overrides the element's inline display:flex. */
@@ -1801,9 +1801,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg></span>
         <span class="nav-label">Pheromones</span>
       </div>
-      <div id="nav-item-homelab" class="nav-item" data-page="homelab">
+      <div id="nav-item-infrastructure" class="nav-item" data-page="infrastructure">
         <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><line x1="6" y1="6.5" x2="6.01" y2="6.5"/><line x1="6" y1="17.5" x2="6.01" y2="17.5"/></svg></span>
-        <span class="nav-label">Homelab</span>
+        <span class="nav-label">Infrastructure</span>
       </div>
 
       <!-- Configuration (admin only) -->
@@ -2752,14 +2752,14 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <!-- --------------------------------------------------------------------
            PAGE: INTEGRATIONS (v0.3.8.48)
            What Anthill connects to: model providers, installed coding agents,
-           and the homelab. Configured first, available second, nothing that
+           and the infrastructure. Configured first, available second, nothing that
            does not exist.
       --------------------------------------------------------------------- -->
       <div class="page page-scroll" id="page-integrations">
         <div class="page-hdr">
           <div>
             <h1>Integrations</h1>
-            <div class="sub">Everything Anthill connects to — model providers, installed coding agents, and your homelab. Configured connections first.</div>
+            <div class="sub">Everything Anthill connects to — model providers, installed coding agents, and your infrastructure. Configured connections first.</div>
           </div>
           <button class="btn btn-ghost" id="int-reload">↺ Refresh</button>
         </div>
@@ -2767,12 +2767,12 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       </div><!-- /page-integrations -->
 
       <!-- --------------------------------------------------------------------
-           PAGE: HOMELAB COMMAND CENTER (v1.10.0 inventory → v2.0.0 command center)
+           PAGE: INFRASTRUCTURE COMMAND CENTER (v1.10.0 inventory → v2.0.0 command center)
       --------------------------------------------------------------------- -->
       <style id="hl-theme">
       /* V2.0 Pass 2 — ANTHILL Command Center identity layer. Centralized semantic tokens for the
-         homelab subsystems; every card/chip/graph node reads these, never hardcoded colors. */
-      #page-homelab{
+         infrastructure subsystems; every card/chip/graph node reads these, never hardcoded colors. */
+      #page-infrastructure{
         --hl-health:#3ddc97;   /* health & checks      */
         --hl-compute:#56b6f5;  /* hosts / hypervisors  */
         --hl-service:#5fd7a7;  /* services             */
@@ -2784,7 +2784,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       }
       /* Colony mesh: a low-contrast tunnel/node lattice behind the dashboard. Pure CSS, no
          assets, opacity capped so text contrast is untouched. */
-      #page-homelab::before{
+      #page-infrastructure::before{
         content:"";position:absolute;inset:0;pointer-events:none;z-index:0;opacity:.045;color:#8fa3b8;
         background-image:
           radial-gradient(circle, currentColor 1.2px, transparent 1.7px),
@@ -2794,42 +2794,42 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         background-size:96px 84px,96px 84px,auto,auto;
         background-position:0 0,48px 42px,0 0,0 0;
       }
-      #page-homelab>.card,#page-homelab>.page-hdr{position:relative;z-index:1;}
+      #page-infrastructure>.card,#page-infrastructure>.page-hdr{position:relative;z-index:1;}
       /* Subsystem accents: colored spine + dot before each section head. */
-      #page-homelab .hl-sec-health{border-left:2px solid var(--hl-health);}
-      #page-homelab .hl-sec-compute{border-left:2px solid var(--hl-compute);}
-      #page-homelab .hl-sec-storage{border-left:2px solid var(--hl-storage);}
-      #page-homelab .hl-sec-security{border-left:2px solid var(--hl-security);}
-      #page-homelab .hl-sec-incident{border-left:2px solid var(--hl-incident);}
-      #page-homelab .hl-sec-memory{border-left:2px solid var(--hl-memory);}
-      #page-homelab .hl-sec-health .section-head::before,#page-homelab .hl-sec-compute .section-head::before,
-      #page-homelab .hl-sec-storage .section-head::before,#page-homelab .hl-sec-security .section-head::before,
-      #page-homelab .hl-sec-incident .section-head::before,#page-homelab .hl-sec-memory .section-head::before{
+      #page-infrastructure .hl-sec-health{border-left:2px solid var(--hl-health);}
+      #page-infrastructure .hl-sec-compute{border-left:2px solid var(--hl-compute);}
+      #page-infrastructure .hl-sec-storage{border-left:2px solid var(--hl-storage);}
+      #page-infrastructure .hl-sec-security{border-left:2px solid var(--hl-security);}
+      #page-infrastructure .hl-sec-incident{border-left:2px solid var(--hl-incident);}
+      #page-infrastructure .hl-sec-memory{border-left:2px solid var(--hl-memory);}
+      #page-infrastructure .hl-sec-health .section-head::before,#page-infrastructure .hl-sec-compute .section-head::before,
+      #page-infrastructure .hl-sec-storage .section-head::before,#page-infrastructure .hl-sec-security .section-head::before,
+      #page-infrastructure .hl-sec-incident .section-head::before,#page-infrastructure .hl-sec-memory .section-head::before{
         content:"";display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;vertical-align:1px;}
-      #page-homelab .hl-sec-health .section-head::before{background:var(--hl-health);}
-      #page-homelab .hl-sec-compute .section-head::before{background:var(--hl-compute);}
-      #page-homelab .hl-sec-storage .section-head::before{background:var(--hl-storage);}
-      #page-homelab .hl-sec-security .section-head::before{background:var(--hl-security);}
-      #page-homelab .hl-sec-incident .section-head::before{background:var(--hl-incident);}
-      #page-homelab .hl-sec-memory .section-head::before{background:var(--hl-memory);}
+      #page-infrastructure .hl-sec-health .section-head::before{background:var(--hl-health);}
+      #page-infrastructure .hl-sec-compute .section-head::before{background:var(--hl-compute);}
+      #page-infrastructure .hl-sec-storage .section-head::before{background:var(--hl-storage);}
+      #page-infrastructure .hl-sec-security .section-head::before{background:var(--hl-security);}
+      #page-infrastructure .hl-sec-incident .section-head::before{background:var(--hl-incident);}
+      #page-infrastructure .hl-sec-memory .section-head::before{background:var(--hl-memory);}
       /* Command strip KPI chips. */
-      #page-homelab .hl-kpi{background:rgba(255,255,255,.025);border-radius:4px;white-space:nowrap;}
-      #page-homelab .hl-kpi b{font-size:13px;}
+      #page-infrastructure .hl-kpi{background:rgba(255,255,255,.025);border-radius:4px;white-space:nowrap;}
+      #page-infrastructure .hl-kpi b{font-size:13px;}
       /* Colony-link dot: green pulse only when scheduler jobs have run recently (data-derived). */
-      #page-homelab .hl-live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:-1px;}
+      #page-infrastructure .hl-live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:-1px;}
       /* Purposeful motion only: pulse on failed/incident graph nodes + the live dot; row flash for
          connection cues; hover emphasis on graph nodes. All disabled under reduced motion. */
       @keyframes hlPulse{0%,100%{opacity:1;}50%{opacity:.35;}}
-      #page-homelab .hl-pulse{animation:hlPulse 2s ease-in-out infinite;}
+      #page-infrastructure .hl-pulse{animation:hlPulse 2s ease-in-out infinite;}
       @keyframes hlFlash{0%{background:rgba(255,93,108,.22);}100%{background:transparent;}}
-      #page-homelab tr.hl-flash>td{animation:hlFlash 1.3s ease-out 2;}
-      #page-homelab .hl-node{transition:filter .15s ease;}
-      #page-homelab .hl-node:hover{filter:brightness(1.5);}
-      #page-homelab .users-table tr{cursor:default;}
-      #page-homelab #hl-hosts-tbody tr,#page-homelab #hl-svcs-tbody tr{cursor:pointer;}
+      #page-infrastructure tr.hl-flash>td{animation:hlFlash 1.3s ease-out 2;}
+      #page-infrastructure .hl-node{transition:filter .15s ease;}
+      #page-infrastructure .hl-node:hover{filter:brightness(1.5);}
+      #page-infrastructure .users-table tr{cursor:default;}
+      #page-infrastructure #hl-hosts-tbody tr,#page-infrastructure #hl-svcs-tbody tr{cursor:pointer;}
       @media (prefers-reduced-motion: reduce){
-        #page-homelab .hl-pulse,#page-homelab tr.hl-flash>td{animation:none;}
-        #page-homelab .hl-node{transition:none;}
+        #page-infrastructure .hl-pulse,#page-infrastructure tr.hl-flash>td{animation:none;}
+        #page-infrastructure .hl-node{transition:none;}
       }
       </style>
       <div class="page page-scroll" id="page-knowledge">
@@ -3120,7 +3120,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         </div>
       </div>
 
-      <div class="page page-scroll" id="page-homelab">
+      <div class="page page-scroll" id="page-infrastructure">
         <style id="hl3-theme">
           /* v2.3.2 Service Deck */
           #hl3-deck{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-top:8px;}
@@ -3188,7 +3188,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           @keyframes wgtShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
           #hl3-widget-picker{display:none;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;}
           #hl3-widget-picker.open{display:flex;}
-          /* v2.5.3 Console Refit R3 — homelab category sub-nav */
+          /* v2.5.3 Console Refit R3 — infrastructure category sub-nav */
           #hl-subnav{background:var(--bg,#0a0f16);}
           .hl-sub-btn{background:none;border:1px solid transparent;border-radius:6px;color:var(--dim,#556);font-size:11px;padding:4px 10px;cursor:pointer;font-family:inherit;}
           .hl-sub-btn:hover{color:var(--anthill-text,#dfe7ef);border-color:var(--line,#223);}
@@ -3211,11 +3211,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <button class="btn btn-ghost" data-onclick="hlExport()" title="Download nodes, services, and dependencies as JSON (never secrets)">⬇ Export</button>
             <button class="btn btn-ghost" id="hl-import-btn" data-onclick="hlImportPick()" title="Import an inventory JSON bundle (upsert by id — re-import is safe)">⬆ Import</button>
             <input type="file" id="hl-import-file" aria-label="Inventory JSON file to import" accept="application/json" style="display:none" data-onchange="hlImportFile(event)">
-            <button class="btn btn-ghost" data-onclick="loadHomelab()">↺ Reload</button>
+            <button class="btn btn-ghost" data-onclick="loadInfrastructure()">↺ Reload</button>
           </div>
         </div>
 
-        <!-- v2.5.3 Console Refit R3: category sub-pages — every homelab datum has exactly ONE home.
+        <!-- v2.5.3 Console Refit R3: category sub-pages — every infrastructure datum has exactly ONE home.
              Cards carry data-hlsub; the sub-nav filters visibility. Detail drawers and the
              + Add / Manage config drawer stay global (they open on demand from any sub-page). -->
         <div class="card" id="hl-subnav" style="padding:6px 10px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;position:sticky;top:0;z-index:5;">
@@ -3396,7 +3396,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <button class="btn btn-ghost" id="hl-act-stop-btn" data-onclick="hlActKillSwitch()">■ STOP</button>
             </span>
           </div>
-          <div style="font-size:10px;color:var(--dim);margin:4px 16px;">Propose → blast-radius score → approve → execute (separate permissions; both action gates ship off — fail closed). Nothing executes while HOMELAB_STOP is engaged, and a rollback note is required before execution.</div>
+          <div style="font-size:10px;color:var(--dim);margin:4px 16px;">Propose → blast-radius score → approve → execute (separate permissions; both action gates ship off — fail closed). Nothing executes while INFRASTRUCTURE_STOP is engaged, and a rollback note is required before execution.</div>
           <div class="form-row" style="margin:6px 16px;" id="hl-act-form">
             <div class="form-field"><label>Action</label>
               <select class="form-select" id="hl-a-type" aria-label="Integration app category"></select>
@@ -3526,7 +3526,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="form-field"><label>Target</label><input class="form-input" id="hl-c-target" type="text" placeholder="http://192.168.1.5:8096 or nas.lan:445" autocomplete="off"></div>
             <div class="form-field"><label>Timeout ms (0 = default)</label><input class="form-input" id="hl-c-timeout" aria-label="Health check timeout (seconds)" type="number" value="0" min="0" max="60000"></div>
             <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-primary" data-onclick="hlAddCheck()">Add Check</button></div>
-            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-ghost" data-onclick="hlTestNotify()" title="Send a test alert to the configured webhooks (requires homelab_notifications_enabled)">🔔 Test Notify</button></div>
+            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-ghost" data-onclick="hlTestNotify()" title="Send a test alert to the configured webhooks (requires infrastructure_notifications_enabled)">🔔 Test Notify</button></div>
           </div>
 
           <div class="section-head" style="margin:14px 0 0;">Virtualization Connections <span style="font-weight:400;color:var(--dim)">(read-only inventory — enable, set host + credential, Save, then Sync. Write actions need the separate v2.3.1 opt-in gate.)</span></div>
@@ -3610,7 +3610,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </div>
           <div id="hl3-page-body" style="padding-top:12px;"></div>
         </div>
-      </div><!-- /page-homelab -->
+      </div><!-- /page-infrastructure -->
 
       <!-- --------------------------------------------------------------------
            PAGE: ANT CONFIG
@@ -4441,11 +4441,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 <script src="/ui/colony-live.js" defer></script>
 <script src="/ui/colony-host.js" defer></script>
 <script src="/ui/colony-home.js" defer></script>
-<!-- v0.3.8.52: the homelab domain, split out of app.js. AFTER app.js on purpose — its
-     PAGE_ENTER['homelab'] registration runs at load and needs PAGE_ENTER to exist. `defer`
+<!-- v0.3.8.52: the infrastructure domain, split out of app.js. AFTER app.js on purpose — its
+     PAGE_ENTER['infrastructure'] registration runs at load and needs PAGE_ENTER to exist. `defer`
      guarantees the order (deferred scripts execute in document order), and
      ConsoleAssetSplitTests asserts it. -->
-<script src="/ui/homelab.js" defer></script>
+<script src="/ui/infrastructure.js" defer></script>
 <!-- v0.3.8.115: the Micromound console. AFTER app.js — its PAGE_ENTER registration runs at load. -->
 <script src="/ui/micromound.js" defer></script>
 <script src="/ui/knowledge.js" defer></script>

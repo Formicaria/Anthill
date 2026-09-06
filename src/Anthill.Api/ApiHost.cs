@@ -63,7 +63,7 @@ public static partial class ApiHost
     private static string UiMissionThreadJs = "";
     private static string UiGridJs = "";
     // v0.3.8.52: the app.js split — one field per domain asset.
-    private static string UiHomelabJs = "";
+    private static string UiInfrastructureJs = "";
     // v0.3.8.55: two more split assets — inspector routing and themes (the app.js size guard).
     private static string UiRoutingControlsJs = "";
     private static string UiThemesJs = "";
@@ -165,7 +165,7 @@ public static partial class ApiHost
         // wire-contract checkout exists beside the repo, and only runs when the operator has set
         // micromound_enabled. A colony without hardware carries no micromound — not a disabled
         // copy of it, none of it. Configuration only at registration, for a sharper version of
-        // the homelab's reason: a mound may be a Pi in a shed on a dead battery, and mounds dial
+        // the infrastructure's reason: a mound may be a Pi in a shed on a dead battery, and mounds dial
         // IN; the colony never reaches out.
         if (AnthillRuntime.EnableMicromound)
             Modules.LoadAll(new MicromoundModule(
@@ -180,20 +180,20 @@ public static partial class ApiHost
 #endif
         Modules.LoadAll(
             new ReasoningModule(AnthillRuntime.OllamaHost),
-            // v3.8.7: the homelab is configuration-only at registration, so an asleep Proxmox
-            // node cannot stop the colony booting. InitHomelab() below still builds the
+            // v3.8.7: the infrastructure is configuration-only at registration, so an asleep Proxmox
+            // node cannot stop the colony booting. InitInfrastructure() below still builds the
             // repository and scheduler; this only tells the module what it is running inside.
-            new HomelabModule(
-                new HomelabOptions(
+            new InfrastructureModule(
+                new InfrastructureOptions(
                     DatabasePath: Path.IsPathRooted(AnthillRuntime.DbPath)
                         ? AnthillRuntime.DbPath
                         : Path.Combine(AnthillRuntime.ScriptDir, AnthillRuntime.DbPath),
-                    StopFileName: AnthillRuntime.HomelabStopFileName,
-                    HealthTimeoutMs: AnthillRuntime.HomelabHealthTimeoutMs,
-                    NotificationsEnabled: AnthillRuntime.EnableHomelabNotifications,
-                    SlackWebhook: AnthillRuntime.HomelabSlackWebhook,
-                    DiscordWebhook: AnthillRuntime.HomelabDiscordWebhook,
-                    GenericWebhook: AnthillRuntime.HomelabGenericWebhook,
+                    StopFileName: AnthillRuntime.InfrastructureStopFileName,
+                    HealthTimeoutMs: AnthillRuntime.InfrastructureHealthTimeoutMs,
+                    NotificationsEnabled: AnthillRuntime.EnableInfrastructureNotifications,
+                    SlackWebhook: AnthillRuntime.InfrastructureSlackWebhook,
+                    DiscordWebhook: AnthillRuntime.InfrastructureDiscordWebhook,
+                    GenericWebhook: AnthillRuntime.InfrastructureGenericWebhook,
                     ColonyVersion: AnthillRuntime.Version,
                     WorkspaceRootPath: AnthillRuntime.WorkspaceRootPath),
                 FieldCipher.CreateDefault()),
@@ -203,7 +203,7 @@ public static partial class ApiHost
             new ToolsModule(new WorkspacePathGuard(AnthillRuntime.AllowedWorkspaceRoot, ToolRuntime.Live),
                 ToolRuntime.Live, SsrfRuntime.Live),
             // v0.3.8.121: organizational knowledge, from FORAGER. Configuration-only at
-            // registration, for the sharpest version of the homelab's reason — FORAGER is a separate
+            // registration, for the sharpest version of the infrastructure's reason — FORAGER is a separate
             // process over HTTP, and probing it here would make an unreachable knowledge base into a
             // colony that will not boot. Availability is discovered on first use.
             //
@@ -275,7 +275,7 @@ public static partial class ApiHost
         UiAppJs = LoadUiAsset("app.js");
         UiMissionThreadJs = LoadUiAsset("mission-thread.js");
         UiGridJs = LoadUiAsset("dashboard-grid.js");
-        UiHomelabJs = LoadUiAsset("homelab.js");
+        UiInfrastructureJs = LoadUiAsset("infrastructure.js");
         UiRoutingControlsJs = LoadUiAsset("routing-controls.js");
         UiThemesJs = LoadUiAsset("themes.js");
         UiConsoleExtrasJs = LoadUiAsset("console-extras.js");
@@ -286,7 +286,7 @@ public static partial class ApiHost
         UiMicromoundJs = LoadUiAsset("micromound.js");
         UiKnowledgeJs = LoadUiAsset("knowledge.js");
         UiGridCss = LoadUiAsset("dashboard-grid.css");
-        InitHomelab(); // v1.9.0 homelab foundation (read-only; see Homelab/ApiHost.Homelab.cs)
+        InitInfrastructure(); // v1.9.0 infrastructure foundation (read-only; see Infrastructure/ApiHost.Infrastructure.cs)
 
         // v0.3.8.62 (S4): the startup half of write durability. A batch interrupted by a crash
         // left an open journal; every one is rolled back here under the same hash rule as a live
@@ -410,7 +410,7 @@ public static partial class ApiHost
         });
 
         MapEndpoints(app);
-        MapHomelabEndpoints(app);
+        MapInfrastructureEndpoints(app);
 #if MICROMOUND
         if (AnthillRuntime.EnableMicromound) MapMicromoundEndpoints(app);
 #endif

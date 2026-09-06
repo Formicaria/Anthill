@@ -159,7 +159,7 @@ public sealed record MissionSpecification
 
     /// <summary>
     /// The infrastructure-action class v0.3.8.102 implements end to end: a change to a SERVICE
-    /// target, reached through the homelab's own approval-gated pipeline and recorded as a
+    /// target, reached through the infrastructure's own approval-gated pipeline and recorded as a
     /// reversible operation — before-state, receipt, after-state, rollback note, and a distinct
     /// human approval. The first class to carry <see cref="MissionAuthority.Modify"/>, and Modify
     /// still does not mean autonomy: the model proposes, the operator's recorded escalation

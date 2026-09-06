@@ -463,15 +463,15 @@ public static class AntRegistry
                     with { Capabilities = new[] { Missions.WorkerCapabilities.ExecuteDiagnosticChecks } },
                 // v0.3.8.102 — the operation worker, ON THE TESTER rather than a thirteenth role.
                 // The first draft added a `system_operator` role and twenty-seven guards answered
-                // with one voice: twelve roles is a load-bearing constant, and homelab ants are
-                // NEVER executable by the foundation's own test. The exit line's "existing homelab
+                // with one voice: twelve roles is a load-bearing constant, and infrastructure ants are
+                // NEVER executable by the foundation's own test. The exit line's "existing infrastructure
                 // workers reached through the mission spine" means the spine reaches the PIPELINE —
                 // whose runners are those workers — and the tester is the spine's deterministic
                 // command-runner already: proposing an allowlisted action and executing it under
                 // the operator's recorded decision is the same lane its checks live in, behind the
                 // same escalation set its check tool already sits in.
                 W("tester", "action_proposer", "ActionProposer",
-                    "Propose a reversible allowlisted homelab action with a rollback note and captured before-state; execute only under a recorded operator decision.",
+                    "Propose a reversible allowlisted infrastructure action with a rollback note and captured before-state; execute only under a recorded operator decision.",
                     Checks, new[] { Anthill.SDK.Contracts.SystemActionToolNames.Propose, Anthill.SDK.Contracts.SystemActionToolNames.Execute }, noApply)
                     with { Capabilities = new[] { Missions.WorkerCapabilities.ProposeSystemAction } },
                 // v0.3.8.103 — the SEND worker, a sibling rather than a widening of the one above.
@@ -499,19 +499,19 @@ public static class AntRegistry
                 W("scribe", "changelog_scribe", "ChangelogScribe", "Draft changelog and release note entries.", ReadWorkspace with { ReadMemory = true, WriteMemory = true, ProposePatches = true }, new[] { "read_changed_files_summary", "create_docs_patch_proposal_when_allowed" }, noApply),
                 W("scribe", "operator_scribe", "OperatorScribe", "Create concise operator-facing summaries.", WriteMemory, new[] { "read_mission_result", "read_test_summary" }, noApply)),
 
-            // ---- Homelab colony (v1.9.0, NORTH_STAR Phase 4) --------------------------------------
+            // ---- Infrastructure colony (v1.9.0, NORTH_STAR Phase 4) --------------------------------------
             // Read-only, visible-only (Executable: false — the planner can never assign them tasks in
-            // v1.9.0). Their deterministic data collection is plain C# service code (HomelabScheduler +
+            // v1.9.0). Their deterministic data collection is plain C# service code (InfrastructureScheduler +
             // providers), never routed through the model router; LLM behavior arrives later strictly
             // for explanation/summarization/recommendation (NORTH_STAR §3.2 rules 5-6).
-            R("inventory", "InventoryAnt", "Homelab", "Knows what exists: hosts, VMs, containers, storage, and services.", false, ReadMemory, new[] { "read_homelab_inventory" }, noApply),
-            R("network_scout", "NetworkScoutAnt", "Homelab", "Knows the network shape: devices, subnets, VLANs, and unknown arrivals.", false, ReadMemory, new[] { "read_network_inventory" }, noApply),
-            R("health", "HealthAnt", "Homelab", "Knows what is alive, degraded, or broken from health-check history.", false, ReadMemory, new[] { "read_health_results" }, noApply),
-            R("proxmox", "ProxmoxAnt", "Homelab", "Knows the Proxmox cluster read-only: nodes, VMs, LXCs, and their state.", false, ReadMemory, new[] { "read_proxmox_inventory" }, noApply),
-            R("storage", "StorageAnt", "Homelab", "Knows pools, disks, capacity, and SMART state.", false, ReadMemory, new[] { "read_storage_inventory" }, noApply),
-            R("backup", "BackupAnt", "Homelab", "Knows what is protected, what is stale, and what is not backed up.", false, ReadMemory, new[] { "read_backup_inventory" }, noApply),
-            R("security_scout", "SecurityScoutAnt", "Homelab", "Knows exposure and risk findings: open ports, unknown devices, exposed services.", false, ReadMemory, new[] { "read_risk_findings" }, noApply),
-            R("change_archivist", "ChangeArchivistAnt", "Homelab", "Keeps the homelab change log and links changes to incidents and missions.", false, WriteMemory, new[] { "read_change_log", "write_change_summary" }, noApply),
+            R("inventory", "InventoryAnt", "Infrastructure", "Knows what exists: hosts, VMs, containers, storage, and services.", false, ReadMemory, new[] { "read_infrastructure_inventory" }, noApply),
+            R("network_scout", "NetworkScoutAnt", "Infrastructure", "Knows the network shape: devices, subnets, VLANs, and unknown arrivals.", false, ReadMemory, new[] { "read_network_inventory" }, noApply),
+            R("health", "HealthAnt", "Infrastructure", "Knows what is alive, degraded, or broken from health-check history.", false, ReadMemory, new[] { "read_health_results" }, noApply),
+            R("proxmox", "ProxmoxAnt", "Infrastructure", "Knows the Proxmox cluster read-only: nodes, VMs, LXCs, and their state.", false, ReadMemory, new[] { "read_proxmox_inventory" }, noApply),
+            R("storage", "StorageAnt", "Infrastructure", "Knows pools, disks, capacity, and SMART state.", false, ReadMemory, new[] { "read_storage_inventory" }, noApply),
+            R("backup", "BackupAnt", "Infrastructure", "Knows what is protected, what is stale, and what is not backed up.", false, ReadMemory, new[] { "read_backup_inventory" }, noApply),
+            R("security_scout", "SecurityScoutAnt", "Infrastructure", "Knows exposure and risk findings: open ports, unknown devices, exposed services.", false, ReadMemory, new[] { "read_risk_findings" }, noApply),
+            R("change_archivist", "ChangeArchivistAnt", "Infrastructure", "Keeps the infrastructure change log and links changes to incidents and missions.", false, WriteMemory, new[] { "read_change_log", "write_change_summary" }, noApply),
         };
     }
 }

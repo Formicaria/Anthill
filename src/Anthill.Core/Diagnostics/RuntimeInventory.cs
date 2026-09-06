@@ -184,7 +184,7 @@ public static class RuntimeInventory
     ///     static gate — excluding it (as a naive whole-word lookbehind does) marks nearly every
     ///     gate dead. Only a trailing word-boundary is needed to keep `Mission` from matching
     ///     inside `MissionEvaluator`.
-    ///  2. A declaring file may also be a consumer. `HomelabRepository` declares its schema AND
+    ///  2. A declaring file may also be a consumer. `InfrastructureRepository` declares its schema AND
     ///     queries it; requiring an external file would mark every table dead. The declaring file
     ///     counts once the symbol appears more times than the declaration itself
     ///     (<paramref name="declarationOccurrences"/>), or never when that is int.MaxValue — used
@@ -285,7 +285,7 @@ public static class RuntimeInventory
     {
         foreach (var (file, text) in sources)
         {
-            foreach (Match m in Regex.Matches(text, @"new HomelabScheduledJob\(\s*""([^""]+)"""))
+            foreach (Match m in Regex.Matches(text, @"new InfrastructureScheduledJob\(\s*""([^""]+)"""))
                 yield return new InventoryEntry(Kinds_BackgroundLoop, m.Groups[1].Value,
                     $"scheduler job registered in {file}", new[] { file });
         }

@@ -13,7 +13,7 @@ assembly, so every claim about what the colony required in order to run was unfa
 
 Two claims in particular were made repeatedly and were false. "The colony runs without an AI
 provider" — it could not compile without one: `ModelRouter` named `OllamaClient`,
-`OpenAiCompatibleClient` and `AnthropicClient` in two switch statements. "The homelab is optional" —
+`OpenAiCompatibleClient` and `AnthropicClient` in two switch statements. "The infrastructure is optional" —
 it was 6,549 lines of the core, and the core's own tests loaded it.
 
 An assembly boundary is the only version of that claim a compiler can check.
@@ -28,7 +28,7 @@ Anthill.SDK        contracts and pure helpers. No I/O, no implementations, no de
 Anthill.Core       scheduling, memory, coordination: Queen, Objective→Mission→Task→Action,
                    the task queue, the event bus, worker management, pheromones, and the
                    tool REGISTRY, AUTHORIZATION and INVENTORY. References the SDK only.
-Anthill.Modules.*  capability: reasoning providers, the homelab, the tools that act on the
+Anthill.Modules.*  capability: reasoning providers, the infrastructure, the tools that act on the
                    machine. Reference the SDK. NEVER referenced by Core.
 Anthill.Api        the composition root. References Core, the SDK and every module, and is
                    the only place in the process that names a module type.
@@ -92,7 +92,7 @@ consumer.
 
 Recorded at length in `docs/archive/v3/REFACTOR-PLAN.md` §6. In short: every phase that came in smaller than
 feared did so because the coupling was counted rather than inferred from names — twenty
-`Anthill.Core.Common` imports in the homelab were two helpers; 151 `ToolResult` references were 13
+`Anthill.Core.Common` imports in the infrastructure were two helpers; 151 `ToolResult` references were 13
 edits; `ToolDefinition`'s "entanglement with `ToolAuthorization` and `ToolInventory`" was three lines.
 Every phase that surprised us did so because something was assumed.
 

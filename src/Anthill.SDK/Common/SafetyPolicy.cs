@@ -16,7 +16,7 @@ namespace Anthill.SDK.Common;
 ///
 /// WHY THE DEFAULT IS SETTABLE RATHER THAN BAKED IN. The values these guards read are mutable
 /// statics on <c>AnthillRuntime</c>, and the test suite writes to them — <c>SecurityTests</c> and
-/// <c>HomelabFoundationTests</c> both depend on a blocked host or path being observed by a later
+/// <c>InfrastructureFoundationTests</c> both depend on a blocked host or path being observed by a later
 /// call. A hard-coded copy in the SDK would have quietly stopped tracking those writes, which is
 /// precisely the failure v3.8.11 was written to avoid: a test that passes while the production path
 /// reads something else.

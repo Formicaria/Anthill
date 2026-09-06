@@ -833,7 +833,7 @@ public class ColonyLiveGuardTests
         Assert.Contains("Math.abs(n) <= 1200", live);
         // The migration: the retired renderer's home seats, verbatim, and the offset rule.
         Assert.Contains("intel: [-16.5, 0, 16.5]", live);
-        Assert.Contains("homelab: [33, 0, 0]", live);
+        Assert.Contains("infrastructure: [33, 0, 0]", live);
         Assert.Contains("var SCHEMA2_SCALE = 10;", live);
         Assert.Contains("s.defPos[1] - (p[1] - h[1]) * SCHEMA2_SCALE", live);   // y flips: three.js up is this world's −y
         Assert.Contains("if (l && l.schema === 2 && l.sectors)", live);
@@ -1167,9 +1167,9 @@ public class ColonyLiveGuardTests
 
         // Both chambers that present as mounds are flagged as such, in the sector table.
         Assert.Contains("id: 'mound', label: 'MICROMOUND', mound: true", live);
-        Assert.Contains("id: 'homelab', label: 'INFRASTRUCTURE', mound: true", live);
-        // HOMELAB is renamed at BOTH ends, and the server's label is the one that wins.
-        Assert.Contains("[Homelab] = \"INFRASTRUCTURE\"", SourceText.CodeOnly(File.ReadAllText(
+        Assert.Contains("id: 'infrastructure', label: 'INFRASTRUCTURE', mound: true", live);
+        // INFRASTRUCTURE is renamed at BOTH ends, and the server's label is the one that wins.
+        Assert.Contains("[Infrastructure] = \"INFRASTRUCTURE\"", SourceText.CodeOnly(File.ReadAllText(
             Path.Combine(SourceText.RepoRoot(), "src", "Anthill.Core", "ColonyLive", "ColonyLiveProjection.cs"))));
 
         // Customization parity is not a special case: the sector panel is generic and a mound reaches
@@ -1206,7 +1206,7 @@ public class ColonyLiveGuardTests
 
         // And the Integrations card is gone at both ends: the markup and its handler.
         Assert.DoesNotContain("data-int-hl", app);
-        Assert.DoesNotContain("showPage('homelab'", app);
+        Assert.DoesNotContain("showPage('infrastructure'", app);
 
         // VACUITY FLOOR: the registry really does list infrastructure, which is the premise the
         // whole guard rests on. `listMounds` returns every chamber flagged `mound`, not only added.

@@ -4,7 +4,7 @@ namespace Anthill.Modules.Micromound;
 
 /// <summary>
 /// Persistence for the mound registry, kept behind an interface so M1's logic is provable without
-/// a database — the same move the homelab made with its mock-provider harness, and the reason its
+/// a database — the same move the infrastructure made with its mock-provider harness, and the reason its
 /// 240 tests run network-free.
 /// </summary>
 public interface IMoundStore

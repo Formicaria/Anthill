@@ -214,7 +214,7 @@
 
          So the destination is per-row rather than per-page. `settings` names where this row goes,
          the renderer decides it, and a mound that is a device goes to the device console. */
-      var infra = m.id === 'homelab';
+      var infra = m.id === 'infrastructure';
       return '<div class="mound-row" data-mound="' + escapeHtml(m.id) + '">'
         + '<span class="mound-dot" style="background:' + escapeHtml(m.color) + '"></span>'
         + '<span class="mound-name">' + escapeHtml(m.label) + '</span>'

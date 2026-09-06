@@ -21,7 +21,7 @@ namespace Anthill.Core.Configuration;
 /// defaults, no new precedence rules, no behaviour of its own. The only thing it adds is the
 /// guarantee that a value cannot change underneath a reader.
 ///
-/// Scope note: it carries the fields the MISSION PATH consumes. Homelab, autonomy scheduling, and
+/// Scope note: it carries the fields the MISSION PATH consumes. Infrastructure, autonomy scheduling, and
 /// API-host settings still read the statics; they move behind their own options as later phases
 /// reach them. A field is added here when something starts consuming it, never speculatively —
 /// an unread option is the declaration-without-a-call-site defect this release exists to remove.

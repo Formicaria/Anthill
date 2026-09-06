@@ -20,7 +20,7 @@ namespace Anthill.Modules.Tools;
 /// the proposal is what gets approved, and the proposal already knows the url.
 ///
 /// THE MODULE REFERENCES ONLY THE SDK, so the core's escalation lane arrives as a delegate exactly
-/// the way `.102` wired the homelab's — see <see cref="OperatorDecisionSource"/>. A module that
+/// the way `.102` wired the infrastructure's — see <see cref="OperatorDecisionSource"/>. A module that
 /// reached into the core to ask whether it may act would be a module that could answer the question
 /// itself.
 /// </summary>

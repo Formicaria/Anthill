@@ -27,7 +27,7 @@ public class ModuleBoundaryTests
 
     /// <summary>
     /// The core must not reference any module. This is the one that matters: it is what makes
-    /// "the colony runs without AI" and "the colony runs without the homelab" true by construction
+    /// "the colony runs without AI" and "the colony runs without the infrastructure" true by construction
     /// rather than by testing each case.
     /// </summary>
     [Fact]
@@ -153,7 +153,7 @@ public class ModuleBoundaryTests
           + "theory ranges over this list, so a short one means the check has quietly stopped "
           + "applying — which is the defect auto-discovery replaced.");
 
-        foreach (var expected in new[] { "Anthill.Modules.Reasoning", "Anthill.Modules.Homelab", "Anthill.Modules.Tools" })
+        foreach (var expected in new[] { "Anthill.Modules.Reasoning", "Anthill.Modules.Infrastructure", "Anthill.Modules.Tools" })
             Assert.Contains(expected, found);
     }
 
@@ -193,7 +193,7 @@ public class ModuleBoundaryTests
         var refs = ReferencesOf(typeof(Anthill.Api.ApiHost).Assembly);
 
         Assert.Contains("Anthill.Modules.Reasoning", refs);
-        Assert.Contains("Anthill.Modules.Homelab", refs);
+        Assert.Contains("Anthill.Modules.Infrastructure", refs);
         Assert.Contains("Anthill.Modules.Tools", refs);
 
         // Anthill.Modules.Micromound is deliberately NOT asserted yet. The module exists and its
