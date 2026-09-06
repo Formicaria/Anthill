@@ -309,6 +309,7 @@ These are the fresh-install defaults that matter most:
 | File access | Read tools are on, limited to `.anthill/workspace` until you choose another boundary |
 | Web, AI shell, writes, and patch application | Off |
 | Autonomy, auto-apply, homelab, and container execution | Off |
+| Organizational knowledge (FORAGER) | Off — see [Organizational knowledge](#organizational-knowledge-forager) |
 | Operator Shell | On for administrators; disable it under **Security** if you do not need a host terminal |
 | Network bind | `0.0.0.0` by default; the desktop commands in this guide override it to `127.0.0.1` |
 
@@ -327,6 +328,127 @@ Before allowing repository changes:
 ANTHILL is still pre-1.0 software under active development. It has deliberate safety gates, but it
 should not be trusted with irreplaceable files or unattended production changes. The measured
 current state and known gaps are kept in [`docs/PLAN.md`](docs/PLAN.md).
+
+## Organizational knowledge (FORAGER)
+
+ANTHILL can answer from your organization's own documents — contracts, runbooks, decision records —
+instead of from the model's training. The knowledge itself lives in
+[FORAGER](https://github.com/Formicaria/Forager), a separate local application that turns documents
+into evidence-backed statements. ANTHILL never parses a document, never stores knowledge, and never
+resolves a contradiction: it asks FORAGER and presents what comes back with its support level and
+its provenance intact.
+
+**It is off on a new install, and a colony with it off is a normal colony.** No tools are
+registered, the Knowledge page says so, and nothing about missions changes. It also adds **no tables
+to ANTHILL's database**, so turning it on and off again leaves nothing behind.
+
+### 1. Run FORAGER
+
+Follow FORAGER's own install guide. It binds `127.0.0.1:8790` by default and runs in *deterministic
+mode* with no model provider configured, which is enough — extraction quality improves with a model,
+but nothing here requires one.
+
+Check it is up before going further:
+
+```bash
+curl http://127.0.0.1:8790/api/ready
+```
+
+A healthy instance answers `{"status":"ok", …}`. ANTHILL probes this same path, so if curl cannot
+reach it, neither can the colony.
+
+### 2. Point ANTHILL at it and map your projects
+
+Edit `.anthill/config.json`. Only the endpoint needs setting if FORAGER is on the default port:
+
+```json
+{
+  "knowledge_forager_endpoint": "http://127.0.0.1:8790",
+  "knowledge_project_map": {
+    "proj_acme": "acme-contracts",
+    "proj_platform": "platform-runbooks"
+  },
+  "knowledge_default_project": ""
+}
+```
+
+`knowledge_project_map` maps **your ANTHILL project id** to **a FORAGER project id**, and it is the
+scope boundary rather than a convenience. A mission whose project is not in the map retrieves
+**nothing** — it does not fall back to a default, because a mission that silently borrowed a default
+scope would be reading another tenant's knowledge. `knowledge_default_project` is only for callers
+that have no project at all, such as a direct console query; it is never a fallback for a mission.
+
+These keys are deliberately **not** editable from the console. They decide which service the colony
+trusts as its source of fact and which knowledge a mission may read, and a compromised console must
+not be able to change either.
+
+### 3. Turn it on
+
+Open **Tools › Knowledge** and press **Enable knowledge**. It takes effect on the next request — no
+restart — because the module re-reads its settings on every call.
+
+If the page shows the switch as pinned by `ANTHILL_KNOWLEDGE_ENABLED`, that environment variable
+overrides the config file; change it where the process environment is defined. You can also set
+`"knowledge_enabled": true` in the file directly.
+
+### 4. Use it
+
+The **Tools › Knowledge** page searches your knowledge base, assembles the context an agent would
+receive, looks entities up, and lists where the sources disagree. Every statement carries its
+support level — *direct fact*, *supported inference*, *uncertain inference*, *unverified claim* —
+and a control that opens the exact source excerpt behind it.
+
+Missions reach the same knowledge through tools that are registered only while the integration is
+on. Five of them are read-only — `knowledge_search`, `knowledge_retrieve` (the main retrieval path),
+`knowledge_get`, `knowledge_evidence` and `knowledge_entity` — and all five are scoped to the
+mission's project through the map above, so a mission cannot name a FORAGER project directly.
+
+The sixth, `knowledge_review`, does not change anything: it writes a **proposal** into ANTHILL's
+approval pipeline for an operator to accept or decline. Nothing a mission does can edit your
+knowledge base.
+
+Reading needs the `read_knowledge` permission; starting, cancelling and retrying ingestion needs
+`manage_knowledge`. Both are granted by default — `knowledge_enabled` is the gate that actually
+matters, and it ships closed.
+
+### Reaching a FORAGER on another machine
+
+FORAGER has **no authentication of its own** — it expects to own its loopback interface. ANTHILL
+therefore refuses a non-loopback endpoint unless you say otherwise:
+
+```json
+{
+  "knowledge_forager_endpoint": "https://forager.internal:8790",
+  "knowledge_forager_allow_remote": true,
+  "knowledge_forager_token": "…"
+}
+```
+
+Set `knowledge_forager_token` only if you have put FORAGER behind an authenticating proxy; empty is
+the normal case for a loopback install and is not a misconfiguration. `knowledge_forager_allow_remote`
+is not editable from the console on purpose — putting an unauthenticated knowledge base on your
+network is a decision to make in the file, deliberately, rather than one to inherit from a copied
+config.
+
+### When something is not working
+
+The Knowledge page distinguishes three states on purpose, and which one you are in decides what to
+check:
+
+| What it says | What it means |
+| --- | --- |
+| *Knowledge is not configured* | `knowledge_enabled` is false. Nothing is wrong. |
+| *The knowledge base is not responding* | Configured, but FORAGER did not answer. Check it is running and that the endpoint matches. |
+| Searched, and nothing found | FORAGER answered and knows nothing about that query — or the mission's project is not in `knowledge_project_map`. |
+
+A mission that cannot reach knowledge reports itself unavailable rather than answering from
+assumption, and missions continue without it.
+
+For the boundary, the retrieval pipeline, the API surface and the security model, see
+[`docs/FORAGER_INTEGRATION.md`](docs/FORAGER_INTEGRATION.md),
+[`docs/KNOWLEDGE_ARCHITECTURE.md`](docs/KNOWLEDGE_ARCHITECTURE.md),
+[`docs/KNOWLEDGE_API.md`](docs/KNOWLEDGE_API.md) and
+[`docs/KNOWLEDGE_SECURITY.md`](docs/KNOWLEDGE_SECURITY.md).
 
 ## Using Ollama on another machine
 
