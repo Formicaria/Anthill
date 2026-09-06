@@ -37,7 +37,7 @@ if command -v node >/dev/null 2>&1; then
   # "full validation" could pass green while a UI logic test was red — the exact gap between a
   # developer's evidence and CI's that this script exists to close.
   echo "==> node --test on the console test suite"
-  node --test tests/ui/
+  node --test tests/ui/*.test.js
 else
   echo "==> SKIP node --check (node not installed; CI ui-integrity job still enforces it)"
 fi

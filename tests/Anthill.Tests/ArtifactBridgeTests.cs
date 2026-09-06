@@ -1,4 +1,5 @@
 using Anthill.Core.Agents;
+using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
 using Anthill.Core.Memory;
 using Anthill.Core.Tools;
@@ -21,9 +22,16 @@ public class ArtifactBridgeTests : IDisposable
 {
     private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"anthill-bridge-{Guid.NewGuid():N}.db");
     private readonly SqliteMemory _memory;
+    // v0.3.8.130 — THIS HARNESS DRIVES A MISSION WITH NO CONVERSATION, which the mission lane now
+    // gates on `autonomy_escalation_policy`. `ask` is the shipped default and it is the right one:
+    // an unattended run that nobody configured must stop. This fixture is not testing that gate —
+    // `MissionEscalationTests` is — it is testing what happens AFTER the operator has said yes, so
+    // it says yes, in as many words, and puts the default back on the way out.
+    private readonly string _autonomyPolicyWas = AnthillRuntime.AutonomyEscalationPolicy;
 
     public ArtifactBridgeTests()
     {
+        AnthillRuntime.AutonomyEscalationPolicy = "bypass";
         _memory = new SqliteMemory(_dbPath);
         // task_results carries foreign keys to BOTH missions(id) and tasks(id), so both rows have to
         // exist before a result does.
@@ -37,6 +45,7 @@ public class ArtifactBridgeTests : IDisposable
 
     public void Dispose()
     {
+        AnthillRuntime.AutonomyEscalationPolicy = _autonomyPolicyWas;
         _memory.Dispose();
         try { File.Delete(_dbPath); } catch { }
     }

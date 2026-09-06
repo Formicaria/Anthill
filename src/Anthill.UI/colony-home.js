@@ -94,6 +94,46 @@
     if ((b = $('clb-addmound'))) b.style.display = '';
     if ((b = document.querySelector('[data-homeact="follow"]'))) { b.disabled = !running; b.title = running ? 'Ride the active mission circuit' : 'No task is running — nothing to follow'; }
   }
+  /* ── The mission this composer started, followed without leaving ─────────────────────────────
+     v0.3.8.130. No timer and no fetch, because this file may have neither: the scene already
+     arrives on every colony event, and `lastGraphData` is the same task list the bar above reads.
+     What this adds is a FILTER — the tasks of one mission — so the chip describes the work the
+     operator just asked for rather than whatever the colony happens to be doing. */
+  var watching = null;
+
+  function beginWatch(handed) {
+    watching = handed && (handed.missionId || handed.conversationId)
+      ? { missionId: handed.missionId || null, conversationId: handed.conversationId || null, ready: false }
+      : null;
+    renderWatch();
+  }
+
+  function watchTasks() {
+    var g = (typeof lastGraphData !== 'undefined') ? lastGraphData : null;
+    var all = (g && Array.isArray(g.nodes)) ? g.nodes : [];
+    if (!watching || !watching.missionId) return [];
+    return all.filter(function (t) { return t && t.mission_id === watching.missionId; });
+  }
+
+  function renderWatch() {
+    var b = $('ccp-watch'); if (!b) return;
+    if (!watching) { b.style.display = 'none'; b.className = 'ccp-watch'; return; }
+    var tasks = watchTasks();
+    var done = tasks.filter(function (t) { return /complete/.test(t.status || ''); }).length;
+    var failed = tasks.filter(function (t) { return /fail/.test(t.status || ''); }).length;
+    var live = tasks.filter(function (t) { return /running|pending|queued/.test(t.status || ''); }).length;
+    // Ready means every task this mission planned has reached a terminal state. An empty list is
+    // NOT ready: it is a mission whose plan has not landed in the graph yet, and calling that
+    // complete would hand the operator a finished-looking chip over work that never started.
+    watching.ready = tasks.length > 0 && live === 0 && (done + failed) === tasks.length;
+    b.style.display = '';
+    b.className = 'ccp-watch' + (watching.ready ? ' ready' : '');
+    b.textContent = !tasks.length ? 'mission starting…'
+      : watching.ready ? ('mission ' + (failed ? 'finished with ' + failed + ' failed' : 'complete') + ' · open it →')
+      : ('mission running · ' + done + '/' + tasks.length);
+    b.title = watching.ready ? 'Open this mission in Chat' : 'The colony is working on it';
+  }
+
   function refreshBar() {
     var dot = $('clb-dot'), goal = $('clb-goal'), fill = $('clb-prog-fill'), count = $('clb-count'), needs = $('clb-needs'), needsTxt = $('clb-needs-txt');
     if (!dot || !goal) return;
@@ -271,9 +311,17 @@
     if (edit) edit.style.display = '';
     if (nm) { nm.value = (res.name && res.name !== res.registryName) ? res.name : ''; nm.placeholder = res.registryName || res.roleId; }
     if (col && live) { var st = live.getSectorStyle(sectorId) || {}; col.value = res.color || st.color || st.defaultColor || '#c9cfdc'; }
-    var tr = res.trail && isFinite(res.trail.strength) ? res.trail : null;
-    $('clb-record-meta').textContent = [res.worker ? 'worker of ' + res.parent : 'role', res.roleId, res.status, tr ? ('trail ' + Number(tr.strength).toFixed(2) + ' · ' + (tr.successes || 0) + '✓ ' + (tr.failures || 0) + '✗') : 'no trail recorded', res.workers ? res.workers + ' worker' + (res.workers === 1 ? '' : 's') : ''].filter(Boolean).join(' · ');
-    var tag = $('clb-record-verif'); tag.textContent = res.status || 'idle'; tag.className = 'clb-record-tag' + (res.status === 'working' ? ' ok' : res.status === 'disabled' ? ' bad' : '');
+    // v0.3.8.130: the summary line and the status chip are HIDDEN for an ant. They said
+    // "role · verifier · idle · trail 0.54 · 8✓ 5✗ · 2 workers" and "idle" — every one of which the
+    // inspector below states in a labelled row, in more detail, and one of which (the chip) was the
+    // same word twice on one screen. A panel that answers a question in two places has to be read
+    // twice to find out the answers agree.
+    //
+    // Hidden and not deleted, because `showRecord` renders a TRAIL RECORD through the same two
+    // elements — type, ant, mission, task, time, and a verification tag that has no equivalent
+    // anywhere else in this panel. Removing the markup would have taken a record's only description
+    // with it, which is the shape of fix that turns one complaint into two.
+    setRecordSummary(false);
     box.style.display = '';
     // THE INSPECTOR IS HERE NOW. v0.3.8.124 moved the ant's telemetry into this panel; v0.3.8.125
     // moved the rest of it — purpose, permissions, tools, runtime facts, live task load — by
@@ -393,6 +441,13 @@
       host.innerHTML = '<div class="clb-ant-note">Telemetry unavailable: ' + escapeHtml((e && e.message) || 'unknown error') + '</div>';
     }
   }
+  /** The shared summary line + verification chip: a RECORD's only description, an ant's duplicate. */
+  function setRecordSummary(on) {
+    var meta = $('clb-record-meta'); if (meta) meta.style.display = on ? '' : 'none';
+    var tag = $('clb-record-verif');
+    if (tag && tag.parentNode) tag.parentNode.style.display = on ? '' : 'none';
+  }
+
   function showRecord(r) {
     var box = $('clb-record'); if (!box) return;
     if (!r) { box.style.display = 'none'; recordAnt = null; return; }
@@ -400,6 +455,7 @@
     var edit = $('clb-ant-edit'); if (edit) edit.style.display = 'none';
     var stats = $('clb-ant-stats'); if (stats) { stats.style.display = 'none'; stats.innerHTML = ''; }
     var det = $('clb-ant-detail'); if (det) det.style.display = 'none';
+    setRecordSummary(true);
     $('clb-record-title').textContent = rec.title || rec.type || 'record';
     $('clb-record-meta').textContent = [rec.type, rec.ant, rec.mission && ('mission ' + String(rec.mission).slice(0, 8)), rec.taskId && ('task ' + String(rec.taskId).slice(0, 8)), rec.time].filter(Boolean).join(' · ');
     var v = rec.verif || 'not_scanned', tag = $('clb-record-verif');
@@ -483,16 +539,27 @@
     var msg = (input.value || '').trim(); if (!msg) { input.focus(); return; }
     if (typeof chatSend !== 'function') { setState('Chat is not loaded.', true); return; }
     if (mode === 'mission' && $('ccp-scope') && $('ccp-scope').value === 'q') mode = 'chat';
+    watching = null; renderWatch();   // a new send replaces the mission the chip was following
     busy = true; setState(mode === 'mission' ? 'Choosing where the work runs…' : 'Sending…');
     try {
       var pid = await resolveProject();
       // The hand-off Chat already honours: a project chosen before the conversation exists, and
       // an explicit new conversation that auto-open must not override.
       chatPendingProjectId = pid; chatActiveId = null; chatComposingNew = true;
-      go('/chat');
+      // v0.3.8.130 — A MISSION IS WATCHED FROM HERE; AN ANSWER IS READ OVER THERE.
+      //
+      // Both lanes still hand their text to Chat and neither runs a pipeline of its own — that is
+      // the decision this file is held to, and it is unchanged. What changed is the NAVIGATION,
+      // which was never part of it. `Ask` produces a streamed answer whose whole value is in the
+      // thread, so it goes there. `Run mission` starts work that takes minutes, and sending the
+      // operator away from the colony to watch a progress bar — then back to the colony to watch
+      // the ants — is the back-and-forth this release exists to end.
+      var watched = (mode === 'mission');
+      if (!watched) go('/chat');
       var el = $('chat-input'); if (!el) throw new Error('Chat composer missing.');
       el.value = msg; input.value = ''; autosize(); setState('');
-      await chatSend(mode);
+      var handed = await chatSend(mode);
+      if (watched) beginWatch(handed);
     } catch (e) {
       setState((e && e.message) || 'Could not send.', true);
     } finally { busy = false; }
@@ -518,6 +585,13 @@
     var act = b.dataset.homeact;
     if (act === 'focus') setFocus(!focusOn());
     else if (act === 'needs') go('/chat');
+    else if (act === 'openwatch') {
+      if (watching && watching.ready) {
+        var cid = watching.conversationId;
+        go('/chat');
+        if (cid && typeof chatOpen === 'function') { chatComposingNew = false; chatOpen(cid); }
+      }
+    }
     else if (act === 'viewmenu') { var p = $('clb-viewpop'); popShow(p && p.style.display === 'none'); }
     else if (act === 'resetlayout') { var lv = liveApi(); if (lv) lv.resetLayout(); popShow(false); }
     else if (act === 'conduitauto') { conduitAuto = !conduitAuto; applyView(); }
@@ -595,7 +669,7 @@
     // The registry renders on entry rather than on a timer: it is a list of the operator's own
     // chambers, and it changes only when they change it.
     if (typeof PAGE_ENTER !== 'undefined') PAGE_ENTER['mounds'] = renderMounds;
-    if (window.ColonyHost) { ColonyHost.onLive(hookLive); ColonyHost.onScene(function (sc) { lastScene = sc; if (page.classList.contains('active')) refreshBar(); }); }
+    if (window.ColonyHost) { ColonyHost.onLive(hookLive); ColonyHost.onScene(function (sc) { lastScene = sc; if (page.classList.contains('active')) { refreshBar(); renderWatch(); } }); }
     refreshBar();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();

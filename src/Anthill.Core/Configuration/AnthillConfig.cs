@@ -561,6 +561,19 @@ public sealed class AnthillConfig
         Security = ConfigSecurity.Safety,
         UndocumentedBecause = "autonomy internals, console-managed")]
     [JsonPropertyName("autonomy_oneshot_completion")] public bool AutonomyOneShotCompletion { get; set; } = true;
+    // THE POLICY A MISSION WITH NOBODY IN FRONT OF IT IS HELD TO. v0.3.8.130.
+    //
+    // A conversation's missions inherit the conversation's escalation policy (v0.3.8.128). A
+    // scheduled, CLI or Director mission has no conversation, so until this key existed it had no
+    // policy either — and the mission lane read that absence as "not governed here". This is the
+    // answer to the question an unattended run cannot be asked: "ask" refuses the side-effecting
+    // action and FILES the question, so the operator answers later and the resumption path replays
+    // it; "auto_approve" and "bypass" let it through and record which standing decision permitted
+    // it. Fail-closed: "ask" is the default, and every safety profile pins it back to "ask".
+    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Safety,
+        Summary = "Escalation policy for missions with no conversation (scheduled, CLI, Director): ask | auto_approve | bypass.")]
+    [JsonPropertyName("autonomy_escalation_policy")] public string AutonomyEscalationPolicy { get; set; } = "ask";
+
     // ---- Phase 5: gated auto-apply ----
     // The Director may auto-approve + apply a coder patch WITHOUT human review, but only when the
     // patch clears a strict allowlist AND the workspace still builds + tests green afterward; a
@@ -772,6 +785,9 @@ public sealed class AnthillConfig
         // Phase 5 auto-apply is the highest-risk capability (autonomous writes) — always off in
         // every shipped profile, re-enabled only by an explicit operator edit.
         config.AutonomyAutoApplyEnabled = false;
+        // And an unattended mission asks. A profile that turned autonomy off while leaving the
+        // autonomous gate on "bypass" would be describing a safety posture it does not have.
+        config.AutonomyEscalationPolicy = "ask";
     }
 
     public static readonly JsonSerializerOptions JsonOptions = new()

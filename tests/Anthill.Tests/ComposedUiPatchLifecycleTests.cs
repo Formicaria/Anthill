@@ -71,6 +71,12 @@ public class ComposedUiPatchLifecycleTests : IDisposable
 
     private readonly string _dir;
     private readonly string _workspace;
+    // v0.3.8.130 — THIS HARNESS DRIVES A MISSION WITH NO CONVERSATION, which the mission lane now
+    // gates on `autonomy_escalation_policy`. `ask` is the shipped default and it is the right one:
+    // an unattended run that nobody configured must stop. This fixture is not testing that gate —
+    // `MissionEscalationTests` is — it is testing what happens AFTER the operator has said yes, so
+    // it says yes, in as many words, and puts the default back on the way out.
+    private readonly string _autonomyPolicyWas = AnthillRuntime.AutonomyEscalationPolicy;
     private readonly bool _useOllamaWas = AnthillRuntime.UseOllama;
     private readonly string _rootWas = AnthillRuntime.AllowedWorkspaceRoot;
     private readonly bool _sandboxWas = AnthillRuntime.EnableSandboxExecution;
@@ -85,6 +91,7 @@ public class ComposedUiPatchLifecycleTests : IDisposable
 
     public ComposedUiPatchLifecycleTests()
     {
+        AnthillRuntime.AutonomyEscalationPolicy = "bypass";
         _dir = Path.Combine(Path.GetTempPath(), "anthill-ui-" + Guid.NewGuid().ToString("N")[..10]);
         _workspace = Path.Combine(_dir, "workspace");
         Directory.CreateDirectory(Path.Combine(_workspace, "static"));
@@ -117,6 +124,7 @@ public class ComposedUiPatchLifecycleTests : IDisposable
     public void Dispose()
     {
         AnthillRuntime.UseOllama = _useOllamaWas;
+        AnthillRuntime.AutonomyEscalationPolicy = _autonomyPolicyWas;
         AnthillRuntime.AllowedWorkspaceRoot = _rootWas;
         AnthillRuntime.EnableSandboxExecution = _sandboxWas;
         AnthillRuntime.WorkspaceChecks = _checksWere;

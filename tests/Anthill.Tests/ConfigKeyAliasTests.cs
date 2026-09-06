@@ -5,7 +5,7 @@ using Xunit;
 namespace Anthill.Tests;
 
 /// <summary>
-/// A RENAMED SETTING IS STILL THE OPERATOR'S SETTING. v0.3.8.126.
+/// A RENAMED SETTING IS STILL THE OPERATOR'S SETTING. v0.3.8.128.
 ///
 /// `ConfigKeyAttribute.Aliases` has existed since v0.3.8.91, and its own doc comment says "the
 /// migration reads these". Nothing read them. The only consumer was `RenderMarkdown`, which prints
@@ -14,7 +14,7 @@ namespace Anthill.Tests;
 /// nothing else. A declaration that reaches nobody: defect class #2, inside the mechanism built to
 /// stop settings drifting away from their documentation.
 ///
-/// It cost nothing for thirty-five releases because no key had ever declared an alias. v0.3.8.126
+/// It cost nothing for thirty-five releases because no key had ever declared an alias. v0.3.8.128
 /// renames forty at once. Without this, every existing `config.json` would load, parse cleanly,
 /// report no error, and quietly revert forty settings to their defaults — including safety gates.
 /// That is the failure this file exists to make impossible, so it is tested BEFORE the rename that

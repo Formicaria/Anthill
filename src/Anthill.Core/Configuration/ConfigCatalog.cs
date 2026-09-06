@@ -263,14 +263,14 @@ public static class ConfigCatalog
     public readonly record struct ConfigKeyRename(string From, string To);
 
     /// <summary>
-    /// HONOUR <see cref="ConfigKeyAttribute.Aliases"/> AT PARSE TIME. v0.3.8.126.
+    /// HONOUR <see cref="ConfigKeyAttribute.Aliases"/> AT PARSE TIME. v0.3.8.128.
     ///
     /// The attribute has existed since v0.3.8.91 and its own doc comment said "the migration reads
     /// these". Nothing did. `Aliases` was consulted in exactly one place — the docs renderer, which
     /// prints "was: old_name" in the reference table — so a renamed key was DOCUMENTED as renamed
     /// and then silently dropped on load, because `System.Text.Json` matches on
     /// `[JsonPropertyName]` and nothing else. No key had ever declared an alias, so the gap had
-    /// never cost anything; v0.3.8.126 renames forty of them at once, and would have.
+    /// never cost anything; v0.3.8.128 renames forty of them at once, and would have.
     ///
     /// Defect class #2, in the mechanism built to prevent a different one.
     ///
