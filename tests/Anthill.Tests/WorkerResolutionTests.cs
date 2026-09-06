@@ -30,14 +30,25 @@ public class WorkerResolutionTests
     // ---- the rule ------------------------------------------------------------------------------
 
     /// <summary>
-    /// The exact live disagreement: an audit that says "missions" in passing. The keyword resolver
-    /// routes it to the mission-history researcher; the mission's declared capability routes it to
-    /// the researcher that reads the repository. Capability wins, and the basis says so.
+    /// A declared capability outranks a keyword that would route elsewhere. Capability wins, and the
+    /// basis says so.
+    ///
+    /// v0.3.8.126 CHANGED THE FIXTURE, and why is worth reading. The text was "Assess what this
+    /// colony can do today and whether its <b>missions</b> reach the right workers" — an audit that
+    /// said "missions" in passing, which the keyword resolver read as a request for mission history.
+    /// That accidental match is exactly what `.126` removed: the researcher lane keyed on the bare
+    /// word "mission", which `WorkerResolution` concatenates into every task's routing text from the
+    /// mission goal, so the lane was routing on its own scaffolding and always chose the same
+    /// worker. There is no disagreement left in that sentence to outrank.
+    ///
+    /// So the fixture asks for mission history in the words an operator actually uses, and the old
+    /// sentence is asserted BELOW as the thing that no longer mis-routes — because a fixture swapped
+    /// silently is indistinguishable from a test quietly stopping testing what it was named for.
     /// </summary>
     [Fact]
     public void ADeclaredCapability_OutranksAKeywordThatWouldRouteElsewhere()
     {
-        var text = "Assess what this colony can do today and whether its missions reach the right workers.";
+        var text = "Summarise the mission history and whether those runs reached the right workers.";
 
         var (keyword, keywordDecided) = AntRegistry.ResolveWorker("researcher", "research", text);
         Assert.True(keywordDecided);
@@ -46,6 +57,27 @@ public class WorkerResolutionTests
         var (worker, basis) = WorkerResolution.Resolve("researcher", "research", text, AuditCapabilities);
         Assert.Equal("researcher.repo_researcher", worker!.WorkerId);
         Assert.Equal(WorkerDecisionBasis.Specification, basis);
+    }
+
+    /// <summary>
+    /// AND THE SENTENCE THAT USED TO DISAGREE NO LONGER DOES.
+    ///
+    /// The other half of the fixture change above, kept as its own assertion so the reason this file
+    /// changed in v0.3.8.126 is visible from the test list rather than only from a doc comment. An
+    /// audit that mentions missions in passing is not a request for mission history, and it now
+    /// reaches the repository researcher on the keyword path alone — with `keywordDecided` false, so
+    /// pheromone evidence can still move it.
+    /// </summary>
+    [Fact]
+    public void AnAuditThatMentionsMissionsInPassing_IsNotARequestForMissionHistory()
+    {
+        var text = "Assess what this colony can do today and whether its missions reach the right workers.";
+
+        var (worker, keywordDecided) = AntRegistry.ResolveWorker("researcher", "research", text);
+
+        Assert.False(keywordDecided,
+            "nothing in that sentence asks for mission history; the choice must stay open to evidence");
+        Assert.Equal("researcher.repo_researcher", worker!.WorkerId);
     }
 
     /// <summary>

@@ -670,7 +670,7 @@ either honour it or delete it rather than let it decay into a sentence nobody ap
 
 ---
 
-## 2e. What comes next — the shape of v0.3.8.123 and after
+## 2e. What comes next — the shape of v0.3.8.127 and after
 
 The universal-workflow program closed at `.113` and R0 closed at `.114`. There is no successor
 program: what remains is R-numbered work, standing hygiene, and a small number of findings the last
