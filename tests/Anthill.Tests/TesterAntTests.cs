@@ -19,7 +19,20 @@ public class TesterAntTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "anthill_tester_" + Guid.NewGuid().ToString("N"));
     private SqliteMemory? _mem;
-    public void Dispose() { try { Directory.Delete(_dir, true); } catch { } }
+    // v0.3.8.130 — THIS HARNESS DRIVES A MISSION WITH NO CONVERSATION, which the mission lane now
+    // gates on `autonomy_escalation_policy`. `ask` is the shipped default and it is the right one:
+    // an unattended run that nobody configured must stop. This fixture is not testing that gate —
+    // `MissionEscalationTests` is — it is testing what happens AFTER the operator has said yes, so
+    // it says yes, in as many words, and puts the default back on the way out.
+    private readonly string _autonomyPolicyWas = AnthillRuntime.AutonomyEscalationPolicy;
+
+    public TesterAntTests() => AnthillRuntime.AutonomyEscalationPolicy = "bypass";
+
+    public void Dispose()
+    {
+        AnthillRuntime.AutonomyEscalationPolicy = _autonomyPolicyWas;
+        try { Directory.Delete(_dir, true); } catch { }
+    }
 
     private TesterAnt Harness()
     {

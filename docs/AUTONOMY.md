@@ -303,6 +303,14 @@ Autonomy multiplies blast radius, so rails come **first** (Phase 0), before the 
   outcome) is an event + an `autonomy_runs` row, fully replayable.
 - **Default off**: autonomy only starts with an explicit `--autonomous` flag or
   `POST /autonomy/start`; never by default.
+- **The escalation gate reaches unattended work** (v0.3.8.130). `autonomy_escalation_policy` is the
+  policy applied to any mission with no conversation — scheduled, CLI, Director. `ask` (the default,
+  and what every safety profile pins) refuses a side-effecting dispatch and FILES the question as a
+  pending `ToolUse` approval, so the operator answers later and `.110`'s resumption path replays the
+  refused step; `auto_approve` and `bypass` let it through and record the standing decision that
+  permitted it. An unrecognised spelling reads as `ask` — a typo in a safety key must never read as
+  permission. Before this key existed, an unattended mission reached `apply_patch`,
+  `write_text_file` and `shell_command` with no operator policy consulted at all.
 
 ## 6. Data model additions
 
@@ -315,6 +323,7 @@ Autonomy multiplies blast radius, so rails come **first** (Phase 0), before the 
 
 ```jsonc
 "autonomy_enabled": false,            // master switch; CLI --autonomous also required
+"autonomy_escalation_policy": "ask",  // v0.3.8.130: gate for missions with NO conversation; ask | auto_approve | bypass
 "autonomy_poll_seconds": 30,          // idle backoff between cycles
 "autonomy_max_missions_per_hour": 6,
 "autonomy_max_missions_per_day": 60,

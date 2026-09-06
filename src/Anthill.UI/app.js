@@ -1365,37 +1365,43 @@ function inspectorTrailStrength(n){
 }
 
 /**
- * THE FACTS THE PANEL WAS STILL GATHERING AND HAD STOPPED SHOWING. v0.3.8.129.
+ * THE ANT'S IDENTITY, ONCE. v0.3.8.129, condensed at v0.3.8.130.
  *
- * v0.3.8.127 deleted the caste editor and took this block with it, and left the CALL at its site
- * inside `showInspector`'s template literal. A call to a function that does not exist is not a
- * syntax error, so `node --check` passed; and the guard that sweeps app.js for undeclared symbols
- * strips template literals whole, interpolations included, so the reference was invisible to that
- * too. Both readers were narrower than their rule — defect class 11, twice over the same line.
+ * WHY THIS FUNCTION EXISTS AT ALL. `.127` deleted the caste editor and took a block of markup with
+ * it, leaving the CALL standing inside `showInspector`'s template literal. A call to a function
+ * that does not exist is not a syntax error, so `node --check` passed; and the guard that sweeps
+ * app.js for undeclared symbols strips template literals whole, interpolations included, so the one
+ * place the reference lived was the one place that guard blanks. Every click on a registry ant
+ * threw a ReferenceError, and `colony-live`'s bus dispatched subscribers in a bare `forEach`, so
+ * the throw took the handler that OPENS the panel with it. Three missing rows presented as no panel
+ * at all. `ConsoleInterpolationTests` and the guarded bus close both halves.
  *
- * WHAT THE OPERATOR SAW, and why it read as a deletion rather than a bug. Every click on a registry
- * ant threw a ReferenceError here. `colony-live`'s bus dispatched its subscribers in a bare
- * `forEach`, so the throw in the FIRST `resident` handler took the second with it — and the second
- * is the one that opens `#clb-record`. A missing three rows presented as no panel at all. The bus
- * is guarded now as well, so the next missing symbol costs its own rows and nothing else.
+ * WHY IT OWNS THE WHOLE IDENTITY BLOCK NOW. The panel said everything twice. Above it,
+ * `#clb-record-meta` rendered "role · verifier · idle · trail 0.54 · 8✓ 5✗ · 2 workers" and a status
+ * chip; below it, this inspector rendered Status, Type, Colony, Chamber, Pheromone, Runtime,
+ * Activity and Task Count as eight separate rows saying the same things in more words. Two
+ * renderers for one set of facts is the shape that eventually disagrees — so the duplicate line and
+ * chip are gone, and every identity row is built HERE, from the arguments the caller already has.
  *
- * Three facts, each already loaded every poll and each with no other reader:
- *   · chamber            — on the roster, and `UiShellTests` calls it "what the inspector reads"
- *   · pheromone strength — `inspectorTrailStrength`, orphaned by the same deletion
- *   · runtime status     — `runtimeStatusFor`, plus the reason when a role is not available
+ * Pairs that were one fact wearing two labels: Status and Runtime (a live state and its runtime
+ * label), Type and Parent, Colony and Chamber, Activity and Task Count. Each is one row now.
  */
-function inspectorFactsHtml(n){
+function inspectorFactsHtml(n, statusLine, pct, tasks){
   if(!n) return '';
   const rows=[];
   const add=(k,v,style)=>rows.push(`<div class="ad-row"><span class="ad-key">${k}</span><span class="ad-val"${style?` style="${style}"`:''}>${v}</span></div>`);
-  if(n.chamber) add('Chamber', escapeHtml(String(n.chamber)));
+  const rs=runtimeStatusFor(inspectorCasteFor(n)||n.id);
+  const unavailable=rs&&rs.runtime_available===false;
+
+  add('Status', escapeHtml(String((rs&&rs.status_label)||statusLine||'idle')), unavailable?'color:var(--red)':'');
+  if(unavailable&&rs.unavailability_reason) add('Unavailable', escapeHtml(String(rs.unavailability_reason)));
+  add('Type', n.parent?`worker of ${escapeHtml(n.parent)}`:escapeHtml(n.nodeType||'role'));
+  const where=[n.colony, n.chamber].filter(Boolean).map(v=>escapeHtml(String(v))).join(' · ');
+  if(where) add('Colony', where);
   const trail=inspectorTrailStrength(n);
   if(trail>0) add('Pheromone', trail.toFixed(2));
-  const rs=runtimeStatusFor(inspectorCasteFor(n)||n.id);
-  if(rs){
-    if(rs.status_label) add('Runtime', escapeHtml(String(rs.status_label)), rs.runtime_available===false?'color:var(--red)':'');
-    if(rs.runtime_available===false&&rs.unavailability_reason) add('Unavailable', escapeHtml(String(rs.unavailability_reason)));
-  }
+  add('Activity', `${pct}% · ${tasks} task${tasks===1?'':'s'}`);
+  if(n.enabled===false) add('Enabled', 'false', 'color:var(--red)');
   return rows.join('');
 }
 
@@ -1498,21 +1504,19 @@ function showInspector(n){
   const auditCount=audit.audit_count??audit.auditCount??audit.AuditCount??0;
   const metricCount=metric.metric_count??metric.metricCount??metric.MetricCount??0;
   const avgElapsed=usage.avg_elapsed_seconds??usage.avgElapsedSeconds??usage.AvgElapsedSeconds??0;
-  const inspectorHtml=`
+  // THE HEADER IS A DUPLICATE IN ONE HOST AND THE ONLY LABEL IN THE OTHER. The live panel already
+  // names the ant, in the field that renames it — so repeating the name and role two inches below
+  // was the panel saying the same thing twice, which is the whole complaint. The dashboard widget
+  // has no such field: `#agent-detail` sits under a widget titled "Ant Inspector", and without this
+  // block the reader gets rows of facts about an ant nobody named. So it is emitted per host rather
+  // than deleted, which is why the markup is assembled INSIDE the loop.
+  const identityHtml=`
     <div class="ad-name">${escapeHtml(n.label)}</div>
-    <div class="ad-type" style="color:${cssColor(n.color)}">${escapeHtml(n.role)} · ${escapeHtml(n.worker||n.ant||'queen')}</div>
-    <div class="ad-row"><span class="ad-key">Status</span><span class="ad-val ${colonyRunning&&act>0?'active':'idle'}">${statusLine}</span></div>
-    <div class="ad-row"><span class="ad-key">Type</span><span class="ad-val">${escapeHtml(n.nodeType||'role')}</span></div>
-    ${n.parent?`<div class="ad-row"><span class="ad-key">Parent</span><span class="ad-val">${escapeHtml(n.parent)}</span></div>`:''}
-    ${n.colony?`<div class="ad-row"><span class="ad-key">Colony</span><span class="ad-val">${escapeHtml(n.colony)}</span></div>`:''}
-    ${n.enabled===false?`<div class="ad-row"><span class="ad-key">Enabled</span><span class="ad-val" style="color:var(--red)">false</span></div>`:''}
-    ${inspectorFactsHtml(n)}
-    <div class="ad-row"><span class="ad-key">Activity</span><span class="ad-val">${pct}%</span></div>
-    <div class="ad-row"><span class="ad-key">Task Count</span><span class="ad-val">${tasks}</span></div>
-    ${n.nodeType==='worker'?`<div class="ad-row"><span class="ad-key">Runtime Tasks</span><span class="ad-val">${totalRuntimeTasks}</span></div>
-    <div class="ad-row"><span class="ad-key">Audits</span><span class="ad-val">${auditCount}</span></div>
-    <div class="ad-row"><span class="ad-key">Metrics</span><span class="ad-val">${metricCount}</span></div>
-    <div class="ad-row"><span class="ad-key">Avg Time</span><span class="ad-val">${avgElapsed}s</span></div>`:''}
+    <div class="ad-type" style="color:${cssColor(n.color)}">${escapeHtml(n.role)} · ${escapeHtml(n.worker||n.ant||'queen')}</div>`;
+  const inspectorHtml=`
+    ${inspectorFactsHtml(n, statusLine, pct, tasks)}
+    ${n.nodeType==='worker'?`<div class="ad-row"><span class="ad-key">Runtime</span><span class="ad-val">${totalRuntimeTasks} task${totalRuntimeTasks===1?'':'s'} · ${avgElapsed}s avg</span></div>
+    <div class="ad-row"><span class="ad-key">Records</span><span class="ad-val">${auditCount} audits · ${metricCount} metrics</span></div>`:''}
     <div class="ad-section">Model</div>
     ${inspectorEditorHtml(n)}
     ${n.purpose?`<div class="ad-section">Purpose</div><div style="font-size:10px;line-height:1.5;color:var(--muted)">${escapeHtml(n.purpose)}</div>`:''}
@@ -1539,7 +1543,10 @@ function showInspector(n){
         <div style="font-size:10px;color:var(--muted)">${escapeHtml((t.title||'').substring(0,55))}</div>
       </div>`).join('')||''}`;
 
-  inspectorHosts().forEach(host=>{ host.innerHTML=inspectorHtml; host.style.display=''; });
+  inspectorHosts().forEach(host=>{
+    host.innerHTML=(host.id==='clb-ant-detail'?'':identityHtml)+inspectorHtml;
+    host.style.display='';
+  });
 }
 
 /**
@@ -4109,6 +4116,11 @@ async function chatSend(mode){
   // from the conversation detail, so setting the refusal before refreshing meant the one message
   // that explains what happened was overwritten milliseconds later.
   let note='';
+  // v0.3.8.130 — WHAT IT LEARNED, HANDED BACK. `POST /conversations/{id}/turns` has always
+  // returned `mission_id`, and this function has always thrown it away, so every caller that
+  // wanted to follow the work it just started had to go and find it again. The colony composer is
+  // the first caller that needs it: it stays where it is now and watches, instead of leaving.
+  const submitted={ conversationId:null, missionId:null };
   try{
     if(!chatActiveId){
       // v0.3.8.48: a conversation lives in a project — chosen, never invented. The picker
@@ -4155,6 +4167,7 @@ async function chatSend(mode){
       }
     }else{
       const r=await api('/conversations/'+encodeURIComponent(chatActiveId)+'/turns','POST',{ message:msg, mode:mode, attachments:chatStagedFiles });
+      if(r&&r.data&&r.data.mission_id) submitted.missionId=r.data.mission_id;
       if(r&&r.success===false){
         note=r.message||'Refused';
         if(el) el.value=msg;
@@ -4173,6 +4186,8 @@ async function chatSend(mode){
     await chatOpen(chatActiveId);
     if(note) chatSetState(note);
   }
+  submitted.conversationId=chatActiveId;
+  return submitted;
 }
 
 /* While a streamed turn is in flight the send button is ■: pressing it aborts the fetch, which

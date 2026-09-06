@@ -106,13 +106,13 @@ public static class OperatorDecisions
     /// the operator saw no pending approval, which reads exactly like a mission with nothing to
     /// approve.
     ///
-    /// WHAT THIS DOES NOT DO, because the distinction is the whole safety of the change. A mission
-    /// with NO conversation — autonomous, scheduled, CLI — returns null and is unchanged. It is not
-    /// ungoverned: `ToolAuthorization` and the mission's authority ceiling both ran before this
-    /// point. It simply has no operator policy to apply, and inventing `Ask` for it would refuse
-    /// every patch the coding lane has ever written on the grounds that a conversation nobody
-    /// started did not answer a question nobody asked. The gap being closed is narrower and real:
-    /// a conversation's OWN missions escaping the conversation's OWN policy.
+    /// AND THE OTHER HALF CLOSED AT v0.3.8.130. `.128` left the autonomous lane returning null and
+    /// argued for it here: a mission with no conversation "has no operator policy to apply, and
+    /// inventing `Ask` for it would refuse every patch the coding lane has ever written." The
+    /// mechanism in that sentence was right and the conclusion was not — the objection was never to
+    /// asking, it was to asking a question nobody could answer. `autonomy_escalation_policy` is that
+    /// answer, given once and in advance, so <see cref="Autonomous"/> now decides for the scheduled,
+    /// CLI and Director lanes instead of this method declining to. There is no ungoverned lane.
     ///
     /// Under `AutoApprove` or `Bypass` this returns the standing decision — permission WITH the
     /// record of who granted it, which is `.46`'s rule and the reason the gate returns a decision
@@ -143,7 +143,7 @@ public static class OperatorDecisions
             return null;
         }
 
-        if (conversation is null) return null;
+        if (conversation is null) return Autonomous(memory, missionId!, action);
 
         var policy = conversation.EffectivePolicy;
         if (policy is EscalationPolicy.AutoApprove or EscalationPolicy.Bypass)
@@ -161,6 +161,67 @@ public static class OperatorDecisions
             Allowed: false, EscalationPolicy.Ask, EscalationDecision.Undecided, AnthillTime.NowUtc(),
             "no operator decision is recorded for this action on this mission");
     }
+
+    /// <summary>
+    /// THE OTHER HALF: A MISSION WITH NOBODY IN FRONT OF IT. v0.3.8.130.
+    ///
+    /// `.128` closed the gap for a conversation's own missions and said plainly, in this file, that
+    /// the autonomous case was being left open — "it has no operator policy to apply, and inventing
+    /// `Ask` for it would refuse every patch the coding lane has ever written." That reasoning was
+    /// right about the mechanism and wrong about the conclusion, and the distance between the two
+    /// is one config key. The objection was never to asking; it was to asking a question nobody
+    /// could answer. `autonomy_escalation_policy` is the answer, given once, in advance.
+    ///
+    /// So there is no such thing as an ungoverned lane any more. Under `auto_approve` or `bypass`
+    /// the action proceeds and carries the standing decision that permitted it — `.46`'s rule,
+    /// unchanged, and the reason this returns a DECISION rather than a bool. Under `ask` — the
+    /// default, and what every safety profile pins — the durable ledgers are read first, and their
+    /// silence files the question and refuses. The mission stops with something an operator can
+    /// answer rather than something they have to reconstruct, and `.110`'s resumption path replays
+    /// the refused step once they do.
+    ///
+    /// UNKNOWN SPELLINGS FAIL CLOSED. A typo in a safety key must not read as permission, so
+    /// anything that is not recognised is `Ask`.
+    /// </summary>
+    private static EscalationDecision? Autonomous(SqliteMemory memory, string missionId, string action)
+    {
+        var configured = Anthill.Core.Configuration.AnthillRuntime.AutonomyEscalationPolicy;
+        var policy = PolicyFromConfiguration(configured);
+
+        if (policy is EscalationPolicy.AutoApprove or EscalationPolicy.Bypass)
+            return new EscalationDecision(
+                Guid.NewGuid().ToString("N")[..12], ConversationId: "", action,
+                Allowed: true, policy, ColonyPolicy, AnthillTime.NowUtc(),
+                $"autonomy_escalation_policy is {configured}");
+
+        // `ForMission` is the durable read — both ledgers, latest answer wins — and it files the
+        // question when there is none. The same call the conversation lane makes, for the same
+        // reason: a second copy of "what has the operator said about this" is defect class 5.
+        var decided = ForMission(memory, missionId, action);
+        if (decided is not null) return decided;
+
+        return new EscalationDecision(
+            Guid.NewGuid().ToString("N")[..12], ConversationId: "", action,
+            Allowed: false, EscalationPolicy.Ask, EscalationDecision.Undecided, AnthillTime.NowUtc(),
+            "no operator decision is recorded for this action, and this mission has no conversation "
+          + "to ask through — autonomy_escalation_policy is ask");
+    }
+
+    /// <summary>Whose authority permitted an autonomous action: the operator's standing configuration.</summary>
+    public const string ColonyPolicy = "colony_policy";
+
+    /// <summary>
+    /// The operator's spelling, read as a policy. The vocabulary lives HERE rather than in
+    /// `AnthillRuntime` because this is the type that acts on it — a second parser beside the
+    /// setting is the two-implementations-of-one-rule shape this repository keeps finding.
+    /// </summary>
+    internal static EscalationPolicy PolicyFromConfiguration(string? configured) =>
+        (configured ?? "").Trim().ToLowerInvariant().Replace("-", "_") switch
+        {
+            "auto_approve" or "autoapprove" => EscalationPolicy.AutoApprove,
+            "bypass" => EscalationPolicy.Bypass,
+            _ => EscalationPolicy.Ask,
+        };
 
     /// <summary>
     /// FILE THE QUESTION THE MISSION IS STOPPING FOR. v0.3.8.105, PLAN.md §2b `.105`.

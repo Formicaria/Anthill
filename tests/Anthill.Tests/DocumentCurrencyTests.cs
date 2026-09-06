@@ -183,16 +183,29 @@ public class DocumentCurrencyTests
         // this per artifact AS OF v0.3.8.57" in QUALIFICATION.md — a historical reference inside a
         // current document, and exactly the construction that must stay legal. The guard was wrong,
         // not the document, so the pattern narrowed rather than the sentence changing.
-        var assertsCurrency = new System.Text.RegularExpressions.Regex(
-            @"(?:shipping release|current version|current release|latest release|the line is closed at)\s*[:\-—]?\s*\**v?(\d+\.\d+\.\d+(?:\.\d+)?)",
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var assertsCurrency = new[]
+        {
+            new System.Text.RegularExpressions.Regex(
+                @"(?:shipping release|current version|current release|latest release|the line is closed at)\s*[:\-—]?\s*\**v?(\d+\.\d+\.\d+(?:\.\d+)?)",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase),
+
+            // v0.3.8.130 — THE OTHER WORD ORDER, which is the one that got past. `HANDOFF.md`
+            // opened with "State: **v0.3.8.125 is released and tagged**" through three shipped
+            // releases, and every phrase this guard knew put the version AFTER the claim. The rule
+            // was right and the reader only knew one sentence shape — so it is widened where it
+            // LOOKS, not in what it accepts.
+            new System.Text.RegularExpressions.Regex(
+                @"\**v(\d+\.\d+\.\d+(?:\.\d+)?)\**\s+is\s+(?:released and tagged|the current release|the shipping release)",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase),
+        };
 
         foreach (var name in Current)
         {
             var text = File.ReadAllText(Path.Combine(SourceText.RepoRoot(), "docs", name));
-            foreach (System.Text.RegularExpressions.Match m in assertsCurrency.Matches(text))
-                if (!string.Equals(m.Groups[1].Value, shipped, StringComparison.Ordinal))
-                    offenders.Add($"{name}: \"{m.Value.Trim()}\" (shipped is {shipped})");
+            foreach (var pattern in assertsCurrency)
+                foreach (System.Text.RegularExpressions.Match m in pattern.Matches(text))
+                    if (!string.Equals(m.Groups[1].Value, shipped, StringComparison.Ordinal))
+                        offenders.Add($"{name}: \"{m.Value.Trim()}\" (shipped is {shipped})");
         }
 
         Assert.True(offenders.Count == 0,

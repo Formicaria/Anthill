@@ -50,6 +50,12 @@ namespace Anthill.Tests;
 public class RoleCancellationTests : IDisposable
 {
     private readonly string _dir;
+    // v0.3.8.130 — THIS HARNESS DRIVES A MISSION WITH NO CONVERSATION, which the mission lane now
+    // gates on `autonomy_escalation_policy`. `ask` is the shipped default and it is the right one:
+    // an unattended run that nobody configured must stop. This fixture is not testing that gate —
+    // `MissionEscalationTests` is — it is testing what happens AFTER the operator has said yes, so
+    // it says yes, in as many words, and puts the default back on the way out.
+    private readonly string _autonomyPolicyWas = AnthillRuntime.AutonomyEscalationPolicy;
     private readonly bool _useOllamaWas = AnthillRuntime.UseOllama;
     private readonly bool _webSearchWas = AnthillRuntime.EnableWebSearch;
     private readonly bool _sandboxWas = AnthillRuntime.EnableSandboxExecution;
@@ -59,6 +65,7 @@ public class RoleCancellationTests : IDisposable
 
     public RoleCancellationTests()
     {
+        AnthillRuntime.AutonomyEscalationPolicy = "bypass";
         _dir = Path.Combine(Path.GetTempPath(), "anthill-cancel-" + Guid.NewGuid().ToString("N")[..10]);
         Directory.CreateDirectory(Path.Combine(_dir, "workspace"));
     }
@@ -66,6 +73,7 @@ public class RoleCancellationTests : IDisposable
     public void Dispose()
     {
         AnthillRuntime.UseOllama = _useOllamaWas;
+        AnthillRuntime.AutonomyEscalationPolicy = _autonomyPolicyWas;
         AnthillRuntime.EnableWebSearch = _webSearchWas;
         AnthillRuntime.EnableSandboxExecution = _sandboxWas;
         AnthillRuntime.AllowedWorkspaceRoot = _rootWas;

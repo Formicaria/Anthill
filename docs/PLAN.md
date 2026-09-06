@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.129**.
+Shipping release: **v0.3.8.130**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -156,12 +156,16 @@ nothing to say, so a live answer still beats a stored one. A standing permission
 AND logs the decision that permitted it; an absent answer files the question rather than failing the
 mission.
 
-What is NOT claimed: that a mission without a conversation is gated. Autonomous, scheduled and CLI
-missions are untouched — they passed role authorization and the mission's authority ceiling before
-reaching this point, and they have no operator policy to consult. Manufacturing `Ask` for them would
-refuse every patch the coding lane has ever written on the grounds that a conversation nobody
-started did not answer a question nobody asked. Nor is the escalation SET widened: it is
-`EscalationGate.SideEffecting`, unchanged, read rather than re-decided.
+What `.128` did NOT claim, and what **v0.3.8.130** then did. `.128` left a mission WITHOUT a
+conversation ungated and argued for it: such a mission "has no operator policy to consult", and
+manufacturing `Ask` for it "would refuse every patch the coding lane has ever written on the grounds
+that a conversation nobody started did not answer a question nobody asked." The mechanism in that
+sentence was right and the conclusion was not — the objection was never to asking, it was to asking
+a question nobody could answer, and the distance between the two turned out to be one config key.
+`autonomy_escalation_policy` is the answer given once and in advance, so the scheduled, CLI and
+Director lanes are governed by the same chokepoint; `ask` is the default and every safety profile
+pins it there. Neither release widened the escalation SET: it is `EscalationGate.SideEffecting`,
+unchanged, read rather than re-decided.
 
 What is NOT claimed: that the sources are any good, or that they support what they are cited for.
 Those are semantic judgments, and a model asserting one is the evidence v2.19.0 stopped accepting.
@@ -689,7 +693,7 @@ either honour it or delete it rather than let it decay into a sentence nobody ap
 
 ---
 
-## 2e. What comes next — the shape of v0.3.8.129 and after
+## 2e. What comes next — the shape of v0.3.8.130 and after
 
 The universal-workflow program closed at `.113` and R0 closed at `.114`. There is no successor
 program: what remains is R-numbered work, standing hygiene, and a small number of findings the last

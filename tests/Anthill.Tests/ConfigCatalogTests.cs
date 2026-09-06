@@ -116,11 +116,14 @@ public class ConfigCatalogTests
     {
         var editable = ConfigCatalog.EditableKeys;
 
-        Assert.True(editable.Count == 99,
+        Assert.True(editable.Count == 100,
             $"the settings surface now exposes {editable.Count} writable keys; it exposed 98 when "
-          + "the hand-kept set was replaced by a projection at v0.3.8.114, and 99 since "
-          + "v0.3.8.124 added `knowledge_enabled`. Widening what an operator can change live "
-          + "without a restart is a decision, not a side effect — say so here and in the "
+          + "the hand-kept set was replaced by a projection at v0.3.8.114, 99 since v0.3.8.124 "
+          + "added `knowledge_enabled`, and 100 since v0.3.8.130 added "
+          + "`autonomy_escalation_policy` — the gate for missions with no conversation, which is "
+          + "editable BECAUSE an operator who wants an unattended run to proceed should not have "
+          + "to restart the colony to say so. Widening what an operator can change live without a "
+          + "restart is a decision, not a side effect — say so here and in the "
           + "changelog.\n  " + string.Join("\n  ", editable.OrderBy(k => k, StringComparer.Ordinal)));
 
         // And it agrees with the runtime's own answer, which is what ApplySettingsUpdate consults.
