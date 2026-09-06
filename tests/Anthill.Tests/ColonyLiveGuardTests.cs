@@ -639,36 +639,75 @@ public class ColonyLiveGuardTests
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// Mounting is where a renderer actually fails. When it throws, the classic canvas must come
-    /// back — not stay hidden under a renderer that never drew — and the operator is told why.
+    /// A FAILED MOUNT IS SHOWN, NOT SWALLOWED. v0.3.8.125.
+    ///
+    /// This guard's intent has never changed: a renderer that does not come up must not leave the
+    /// operator looking at nothing while the console reports success. What changed is the answer.
+    /// Until `.125` the answer was "bring the classic canvas back", which was a real answer because
+    /// there were two renderers. There is one now, so the same rule demands something that did not
+    /// exist before: a visible failure state, in the DOM, where the colony would have been.
+    ///
+    /// The assertions are about SHOWING it, deliberately. A `console.warn` and an empty panel would
+    /// satisfy "the renderer took itself down" while failing the property that sentence exists to
+    /// protect, and that is exactly the shape this test now refuses.
     /// </summary>
     [Fact]
-    public void ARendererThatFailsToMount_FallsBackInsteadOfBlankingTheView()
+    public void ARendererThatFailsToMount_SaysSoWhereTheColonyWouldHaveBeen()
     {
         var host = Code("colony-host.js");
 
         Assert.Contains("try {", host);
         Assert.Contains("live.mount(area);", host);
         Assert.Contains("live.destroy();", host);
+        Assert.Contains("renderMountFailure(area, msg);", host);
         Assert.Contains("return false;", host);
-        // enable()'s verdict decides the classic canvas's visibility; a failed mount leaves it shown.
-        Assert.Contains("if (!enable(area, classic)) on = false;", host);
-        Assert.Contains("classic.style.display = on ? 'none' : '';", host);
-        Assert.Contains("failed to mount", Raw("colony-host.js"));
+
+        // The failure state is rendered into the mount container and offers a way out. Retry is
+        // load-bearing rather than decoration: the causes are transient (a container measured 0×0
+        // mid-layout, an asset that lost a race), so without it a recoverable failure needs a
+        // page reload.
+        var raw = Raw("colony-host.js");
+        Assert.Contains("The colony view could not start", raw);
+        Assert.Contains("colony-down-retry", raw);
+        Assert.Contains("failed to mount", raw);
+
+        // The message is an exception's, so it is set as TEXT rather than interpolated into markup.
+        Assert.Contains("why.textContent =", host);
+        Assert.DoesNotContain("colony-down-why\">' + ", host);
+
+        // AND THE ASSETS-MISSING CASE GETS THE SAME TREATMENT. If colony-live.js or
+        // colony-topology.js never loaded there is no renderer to throw, and the old code's answer
+        // — a console.warn and the classic canvas — has no second half any more.
+        Assert.Contains("renderMountFailure(area, 'the colony renderer did not load');", host);
     }
 
     /// <summary>
-    /// Colony Live is the default view (`.117`): only an explicit '0' — an operator who turned it
-    /// off — keeps the classic canvas, and the switch is offered in BOTH states so the canvas is
-    /// never a one-way door.
+    /// THE LIVE VIEW IS THE ONLY VIEW, and no stored preference can turn it off.
+    ///
+    /// `.117` made Colony Live the default and kept the classic canvas as an explicit opt-out;
+    /// `.125` deleted the canvas. The dangerous leftover would have been the PREFERENCE: an
+    /// operator who had opted out once has `anthill.colony.view3d` set to '0' in localStorage, and
+    /// a mount that still consulted it would boot them into a colony page that renders nothing at
+    /// all — a first-run experience determined by a choice about a renderer that no longer exists.
+    ///
+    /// So the key is not read, and not written. Asserted as an absence because that is the whole
+    /// property; there is no positive behaviour left to check beyond `mount()` being unconditional.
     /// </summary>
     [Fact]
-    public void TheLiveView_IsTheDefault_AndTheClassicCanvasIsAnOptOutWithAWayBack()
+    public void NoStoredPreference_CanLeaveTheColonyPageWithNoRenderer()
     {
-        Assert.Contains("localStorage.getItem(VIEW_KEY) !== '0'", Code("colony-host.js"));
+        var host = Code("colony-host.js");
+
+        Assert.DoesNotContain("anthill.colony.view3d", host);
+        Assert.DoesNotContain("VIEW_KEY", host);
+        Assert.Contains("document.addEventListener('DOMContentLoaded', function () { mount(); });", host);
+
+        // And the toggle that flipped between them is gone from the page chrome, rather than left
+        // as a button pointing at a renderer that is not there.
         var home = Code("colony-home.js");
-        Assert.Contains("act === 'toggle3d'", home);
-        Assert.Contains("b.textContent = on ? 'Classic 2D' : 'Live 3D'", home);
+        Assert.DoesNotContain("toggle3d", home);
+        Assert.DoesNotContain("Classic 2D", home);
+        Assert.DoesNotContain("clb-3d", Raw("index.html"));
     }
 
     // ---------------------------------------------------------------------------------------------

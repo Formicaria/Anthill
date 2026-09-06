@@ -368,13 +368,26 @@ public class RegressionGuardTests : IDisposable
         var appJs = File.ReadAllText(Path.Combine(dir, "app.js"));
         var gridCss = File.ReadAllText(Path.Combine(dir, "dashboard-grid.css"));
 
+        // ONE RENDERER, AND IT IS NOT IN THE MARKUP. v0.3.8.125.
+        //
+        // This asserted exactly one static `<canvas>` and exactly two `requestAnimationFrame(loop)`
+        // references, which was the right shape while app.js owned a canvas declared in index.html.
+        // It no longer does: the classic force-graph projection was deleted, and Colony Live
+        // CREATES its canvas on mount. So the invariant inverts — ZERO static canvases, and no
+        // render loop in app.js at all — and it is still the same rule, that there is exactly one
+        // renderer and nobody has quietly added a second.
         var canvases = Regex.Matches(html, @"<canvas\b").Count;
-        Assert.True(canvases == 1, $"Expected exactly one <canvas> in the console markup, found {canvases}.");
+        Assert.True(canvases == 0,
+            $"Expected no static <canvas> in the console markup, found {canvases}. Colony Live "
+            + "creates its own; a second one in the HTML is a second renderer.");
 
-        var loopStarts = Regex.Matches(appJs, @"requestAnimationFrame\(loop\)").Count;
-        Assert.True(loopStarts == 2,
-            "Expected exactly two references to requestAnimationFrame(loop) — the self-schedule "
-            + $"inside loop() and the single bootstrap call — found {loopStarts}.");
+        Assert.DoesNotContain("requestAnimationFrame(loop)", appJs, StringComparison.Ordinal);
+
+        // The renderer that DOES exist still drives itself, and this is where that is stated so the
+        // deletion above cannot be read as "the colony stopped animating".
+        var liveJs = File.ReadAllText(Path.Combine(dir, "colony-live.js"));
+        Assert.Contains("requestAnimationFrame(frame)", liveJs, StringComparison.Ordinal);
+        Assert.Equal(1, Regex.Matches(liveJs, @"getContext\(").Count);
 
         // v3.3.0: .ws-root needed pointer-events:none because it was a full-page layer sitting ON
         // TOP of the topology canvas — without it the map could not be clicked through. The grid
@@ -443,13 +456,13 @@ public class RegressionGuardTests : IDisposable
             DashboardWorkspaceState.KnownPanelIds.OrderBy(x => x, StringComparer.Ordinal).ToList(),
             registered);
 
-        var overlays = Regex.Matches(appJs, @"TOPOLOGY_OVERLAYS\s*=\s*\{(.*?)\n\};", RegexOptions.Singleline);
-        Assert.True(overlays.Count == 1, "app.js must declare exactly one TOPOLOGY_OVERLAYS registry.");
-        var overlayIds = Regex.Matches(overlays[0].Groups[1].Value, @"^\s*([a-z]+)\s*:", RegexOptions.Multiline)
-            .Select(m => m.Groups[1].Value).OrderBy(x => x, StringComparer.Ordinal).ToList();
-        Assert.Equal(
-            DashboardWorkspaceState.KnownOverlayIds.OrderBy(x => x, StringComparer.Ordinal).ToList(),
-            overlayIds);
+        // The overlay half of this guard is gone with the overlays (v0.3.8.125). It compared
+        // app.js's TOPOLOGY_OVERLAYS registry against DashboardWorkspaceState.KnownOverlayIds; both
+        // sides were the classic canvas's chrome and both were deleted. Asserted as an ABSENCE
+        // rather than simply dropped, so a future re-introduction has to come back through this
+        // test and reckon with the server side at the same time — which is the property the
+        // original guard existed for.
+        Assert.DoesNotContain("TOPOLOGY_OVERLAYS", appJs, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -486,32 +499,52 @@ public class RegressionGuardTests : IDisposable
         // kept a stale copy of topology_overlays that app.js owned. There is no second holder now.
     }
 
+    /// <summary>
+    /// A COLONY CONTROL IN THE MARKUP HAS A HANDLER IN THE SCRIPT.
+    ///
+    /// v0.3.8.125 nearly turned this test into a vacuous one. It scanned `data-colonyact` and
+    /// `data-colonypref` — both of which belonged to the classic canvas's view bar — and skipped
+    /// any attribute with no occurrences, so deleting that bar would have left it iterating an
+    /// empty set and passing while proving nothing. That is defect class #11 arriving by deletion
+    /// rather than by a bad regex.
+    ///
+    /// So the attribute list moved to the ones that survive (`data-homeact`, the live bar's), the
+    /// script list moved with it, and the vacuity floor below is explicit: if the scan finds no
+    /// controls at all, something has been renamed and this test is watching nothing.
+    /// </summary>
     [Fact]
-    public void UiIntegrity_ColonyCanvasControlsHaveHandlers()
+    public void UiIntegrity_ColonyControlsHaveHandlers()
     {
         var dir = Path.Combine(RepoRoot(), "src", "Anthill.UI");
         var html = File.ReadAllText(Path.Combine(dir, "index.html"));
-        var appJs = File.ReadAllText(Path.Combine(dir, "app.js"));
+        var scripts = string.Concat(new[] { "app.js", "colony-home.js", "colony-host.js" }
+            .Select(f => File.ReadAllText(Path.Combine(dir, f))));
         var missing = new List<string>();
+        var found = 0;
 
-        foreach (var attr in new[] { "colonyact", "colonypref" })
+        foreach (var attr in new[] { "homeact", "colonyact", "colonypref" })
         {
             var values = Regex.Matches(html, "data-" + attr + "=\"([^\"]+)\"")
                               .Select(m => m.Groups[1].Value).Distinct().ToList();
             if (values.Count == 0) continue;
+            found += values.Count;
 
             // The dispatch must read the attribute at all...
-            if (!appJs.Contains("dataset." + attr) && !appJs.Contains("data-" + attr))
-                missing.Add($"data-{attr} is used in index.html but app.js never reads it");
+            if (!scripts.Contains("dataset." + attr) && !scripts.Contains("data-" + attr))
+                missing.Add($"data-{attr} is used in index.html but no console script reads it");
 
-            // ...and each distinct value must be named somewhere in app.js.
+            // ...and each distinct value must be named somewhere in the scripts that dispatch.
             foreach (var v in values)
-                if (!appJs.Contains("'" + v + "'") && !appJs.Contains("\"" + v + "\""))
-                    missing.Add($"data-{attr}=\"{v}\" has no handler in app.js");
+                if (!scripts.Contains("'" + v + "'") && !scripts.Contains("\"" + v + "\""))
+                    missing.Add($"data-{attr}=\"{v}\" has no handler");
         }
 
+        Assert.True(found > 0,
+            "no colony controls were found in the markup at all. The attributes were renamed and "
+          + "this guard is now watching nothing — point it at the new ones.");
+
         Assert.True(missing.Count == 0,
-            "Colony canvas controls exist in markup but do nothing: " + string.Join("; ", missing));
+            "Colony controls exist in markup but do nothing: " + string.Join("; ", missing));
     }
 
     [Fact]

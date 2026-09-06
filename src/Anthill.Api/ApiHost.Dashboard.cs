@@ -194,7 +194,7 @@ public static partial class ApiHost
             return ApiJson.Ok(UiStateStore.WithSanitizedWorkspace(
                 UiStateStore.Load(),
                 DashboardWorkspaceState.KnownPanelIds,
-                DashboardWorkspaceState.KnownOverlayIds, vw, vh));
+                vw, vh));
         });
 
         app.MapPut("/ui/state", async (HttpContext ctx) =>
@@ -210,7 +210,7 @@ public static partial class ApiHost
             return ApiJson.Ok(UiStateStore.WithSanitizedWorkspace(
                 saved,
                 DashboardWorkspaceState.KnownPanelIds,
-                DashboardWorkspaceState.KnownOverlayIds, vw, vh), "Console layout saved.");
+                vw, vh), "Console layout saved.");
         });
 
         // ---- Operator shell console (Configuration → Shell) — admin only ----

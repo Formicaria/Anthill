@@ -13,15 +13,13 @@ public class DashboardWorkspaceStateTests
 {
     // Deliberately arbitrary fixture ids: these tests prove the repair logic is id-AGNOSTIC, so
     // they must not be the production list. The production ids live in
-    // DashboardWorkspaceState.KnownPanelIds / KnownOverlayIds and are checked against the client's
-    // registrations by RegressionGuardTests.Workspace_CanonicalIdsMatchTheClientRegistrations.
+    // DashboardWorkspaceState.KnownPanelIds and are checked against the client's registrations by
+    // RegressionGuardTests.Workspace_CanonicalIdsMatchTheClientRegistrations.
     private static readonly string[] Panels =
         { "colony-health", "mission-command", "recent-events", "pending-approvals" };
-    private static readonly string[] Overlays =
-        { "view_controls", "legend", "inspector", "interaction_hints" };
 
     private static DashboardWorkspaceState Sane(DashboardWorkspaceState s, int w = 1600, int h = 900)
-        => s.Sanitize(Panels, Overlays, w, h);
+        => s.Sanitize(Panels, w, h);
 
     private static DashboardWorkspaceState.PanelPlacement Desktop(DashboardWorkspaceState s, string id)
         => s.Profiles["desktop"][id];
@@ -29,7 +27,7 @@ public class DashboardWorkspaceStateTests
     // ---- Defaults and shape ----------------------------------------------------------------------
 
     [Fact]
-    public void MissingState_ProducesUsableDefaults_ForEveryKnownPanelAndOverlay()
+    public void MissingState_ProducesUsableDefaults_ForEveryKnownPanel()
     {
         var s = Sane(new DashboardWorkspaceState());
         Assert.Equal(DashboardWorkspaceState.CurrentSchemaVersion, s.SchemaVersion);
@@ -37,7 +35,6 @@ public class DashboardWorkspaceStateTests
         Assert.False(s.FocusMode);
         foreach (var p in Panels) Assert.True(s.Profiles["desktop"].ContainsKey(p));
         foreach (var p in Panels) Assert.True(s.Profiles["compact"].ContainsKey(p));
-        foreach (var o in Overlays) Assert.True(s.TopologyOverlays[o].Visible);
     }
 
     [Fact]
@@ -337,28 +334,43 @@ public class DashboardWorkspaceStateTests
         Assert.True(g.Width <= 1600);
     }
 
-    // ---- Overlays -----------------------------------------------------------------------------------
+    // ---- Overlays, retired ---------------------------------------------------------------------
 
+    /// <summary>
+    /// A DOCUMENT CARRYING RETIRED OVERLAY STATE LOSES IT, AND KEEPS EVERYTHING ELSE. v0.3.8.125.
+    ///
+    /// `topology_overlays` described which pieces of the classic canvas's chrome were showing and
+    /// where they were anchored. The canvas is gone, so the key is not a property on this class any
+    /// more — which means the round trip drops it with no migration, no cleanup pass, and nothing
+    /// left validating state nobody writes.
+    ///
+    /// The half that matters is the SECOND assertion. Dropping a key on deserialize is exactly the
+    /// shape of an accident, and the way this would go wrong is by taking the operator's real
+    /// layout with it. So the panel placement in the same document is asserted to survive, in the
+    /// same test, rather than being trusted to.
+    /// </summary>
     [Fact]
-    public void InvalidOverlayAnchor_FallsBack_UnknownOverlayDropped()
+    public void ARetiredOverlayKey_IsDroppedOnRoundTrip_AndTakesNothingWithIt()
     {
-        var s = new DashboardWorkspaceState();
-        s.TopologyOverlays["legend"] = new() { Visible = false, Anchor = "outer-space" };
-        s.TopologyOverlays["not-a-real-overlay"] = new();
-        Sane(s);
-        Assert.Equal("top-left", s.TopologyOverlays["legend"].Anchor);
-        Assert.False(s.TopologyOverlays["legend"].Visible); // the operator's HIDE choice is respected
-        Assert.False(s.TopologyOverlays.ContainsKey("not-a-real-overlay"));
-    }
+        const string legacy = """
+        {
+          "schema_version": 3,
+          "locked": false,
+          "topology_overlays": { "legend": { "visible": false, "anchor": "bottom-right" } },
+          "profiles": { "desktop": { "colony-health": { "x": 120, "y": 80, "width": 400 } } }
+        }
+        """;
 
-    [Fact]
-    public void HiddenLegendPreference_SurvivesARoundTrip()
-    {
-        var s = Sane(new DashboardWorkspaceState());
-        s.TopologyOverlays["legend"].Visible = false;
-        var json = JsonSerializer.Serialize(s);
-        var back = JsonSerializer.Deserialize<DashboardWorkspaceState>(json)!.Sanitize(Panels, Overlays);
-        Assert.False(back.TopologyOverlays["legend"].Visible);
+        var back = JsonSerializer.Deserialize<DashboardWorkspaceState>(legacy)!.Sanitize(Panels);
+
+        var json = JsonSerializer.Serialize(back);
+        Assert.DoesNotContain("topology_overlays", json, StringComparison.Ordinal);
+
+        // ...and the operator's actual arrangement is untouched by the removal.
+        Assert.False(back.Locked);
+        Assert.Equal(120, Desktop(back, "colony-health").X);
+        Assert.Equal(80, Desktop(back, "colony-health").Y);
+        Assert.Equal(400, Desktop(back, "colony-health").Width);
     }
 
     // ---- Profiles: mobile must not clobber desktop ----------------------------------------------------
@@ -397,7 +409,7 @@ public class DashboardWorkspaceStateTests
             ["layout"] = new Dictionary<string, object?> { ["zoom"] = 1.4 },
             ["dashboard_workspace"] = "this is not an object at all",
         };
-        var result = DashboardWorkspaceState.SanitizeInto(ui, Panels, Overlays);
+        var result = DashboardWorkspaceState.SanitizeInto(ui, Panels);
 
         var ants = (Dictionary<string, object?>)result["ants"]!;
         var queen = (Dictionary<string, object?>)ants["queen"]!;
@@ -417,7 +429,7 @@ public class DashboardWorkspaceStateTests
             ["ants"] = new Dictionary<string, object?> { ["coder"] = new Dictionary<string, object?> { ["x"] = 12.5 } },
             ["layout"] = new Dictionary<string, object?>(),
         };
-        var result = DashboardWorkspaceState.SanitizeInto(ui, Panels, Overlays);
+        var result = DashboardWorkspaceState.SanitizeInto(ui, Panels);
         Assert.True(result.ContainsKey("ants"));
         var ws = (DashboardWorkspaceState)result["dashboard_workspace"]!;
         Assert.True(ws.Profiles["desktop"].Count > 0);
@@ -432,7 +444,7 @@ public class DashboardWorkspaceStateTests
             ["ants"] = new Dictionary<string, object?>(),
             ["some_future_feature"] = "keep me",
         };
-        var result = DashboardWorkspaceState.SanitizeInto(ui, Panels, Overlays);
+        var result = DashboardWorkspaceState.SanitizeInto(ui, Panels);
         Assert.Equal("keep me", result["some_future_feature"]);
     }
 
@@ -441,7 +453,7 @@ public class DashboardWorkspaceStateTests
     {
         var s = Sane(new DashboardWorkspaceState());
         var first = JsonSerializer.Serialize(s);
-        var second = JsonSerializer.Serialize(s.Sanitize(Panels, Overlays));
+        var second = JsonSerializer.Serialize(s.Sanitize(Panels));
         Assert.Equal(first, second);
     }
 }
