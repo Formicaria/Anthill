@@ -566,7 +566,20 @@ const IA = [
     // v0.3.8.55 (field report): Automation moved into Projects — the Director's backlog is
     // project work, and it now lives beside the projects it feeds (right-hand column there).
   ]},
-  { type:'item', id:'projects', label:'Projects', route:'/projects', page:'projects', vis:'all' },
+  /* v0.3.8.127 — PROJECTS AND AUTOMATION ARE TABS, NOT COLUMNS.
+     `.55` put the Director's panel in a right-hand column beside the project list, and the two
+     read as one page with two unrelated halves: a list of long-lived containers, and an objective
+     backlog with its own header, its own buttons and its own tables. On anything narrower than a
+     wide desktop the columns wrapped and Automation simply appeared below, which is a tab without
+     a way to choose it.
+     Sections, so this uses the same domain row Tools does rather than a second tab idiom — the
+     projects list keeps `/projects` (every deep link and PAGE_HOME entry points there), and
+     Automation gets its own route. `ptab` names which half the page shows, the way `stab` names
+     which settings pane. */
+  { type:'domain', id:'projects', label:'Projects', vis:'all', sections:[
+    { label:'Projects', route:'/projects', page:'projects', ptab:'projects', vis:'all' },
+    { label:'Automation', route:'/projects/automation', page:'projects', ptab:'automation', vis:'admin' },
+  ]},
   { type:'item', id:'chat', label:'Chat', route:'/chat', page:'chat', vis:'all' },
   { type:'domain', id:'tools', label:'Tools', vis:'all', sections:[
     { label:'Capabilities', route:'/tools', page:'toolsview', vis:'all' },
@@ -589,7 +602,21 @@ const IA = [
     { label:'Knowledge', route:'/tools/knowledge', page:'knowledge', vis:'all' },
   ]},
   { type:'domain', id:'settings', label:'Settings', vis:'admin', sections:[
-    { label:'General', route:'/settings/general', page:'settings', vis:'admin' },
+    /* v0.3.8.127 — ONE ROW OF TABS, NOT TWO.
+       `General` was a section that opened a page carrying its own second tab strip: Connection,
+       Colony, Models, System Info. An operator navigating to a setting had to learn which of two
+       rows it lived in, and the two rows meant different things — the outer one changes PAGE, the
+       inner one changes PANE — while looking identical.
+       The four panes are sections now. The machinery already existed: `stab` has been a field on
+       the route table since v2.6, carrying which settings pane a route opens, and `showPage` has
+       always clicked the matching tab. Only the declarations changed; the strip itself is hidden.
+       `System Info` is `Diagnostics` here, because the outer row already had a `System` section
+       pointing at a different page and two near-identical names in one row is the confusion this
+       change exists to remove. */
+    { label:'Connection', route:'/settings/connection', page:'settings', stab:'connection', vis:'admin' },
+    { label:'Colony', route:'/settings/colony', page:'settings', stab:'colony', vis:'admin' },
+    { label:'Models', route:'/settings/models', page:'settings', stab:'models', vis:'admin' },
+    { label:'Diagnostics', route:'/settings/diagnostics', page:'settings', stab:'info', vis:'admin' },
     // Security owns the capability/approval gates (§13) — one authoritative gate system. The gate
     // DEFINITION lives here; the approval INTERACTION happens in Chat.
     { label:'Security & Gates', route:'/settings/security', page:'security', vis:'admin' },
@@ -615,10 +642,10 @@ const DOMAIN_HOME = {};
     if(d.sections&&d.sections.length&&!DOMAIN_HOME[d.id]) DOMAIN_HOME[d.id]=d.sections[0].route;
     for(const s of (d.sections||[])){
       const tabs=s.tabs?s.tabs.map(t=>({label:t.label,route:t.route,vis:t.vis||s.vis||d.vis||'all'})):null;
-      ROUTE_TABLE[s.route]={page:s.page,hlsub:s.hlsub||null,view:s.view||null,stab:s.stab||null,vis:s.vis||d.vis||'all',crumb:[d.label,s.label],domain:d.id,section:s.route,tabs,activeTab:tabs?s.route:null};
+      ROUTE_TABLE[s.route]={page:s.page,hlsub:s.hlsub||null,view:s.view||null,stab:s.stab||null,ptab:s.ptab||null,vis:s.vis||d.vis||'all',crumb:[d.label,s.label],domain:d.id,section:s.route,tabs,activeTab:tabs?s.route:null};
       if(!PAGE_HOME[s.page]) PAGE_HOME[s.page]=s.route;
       if(s.tabs) for(const t of s.tabs){
-        ROUTE_TABLE[t.route]={page:t.page,hlsub:t.hlsub||null,view:t.view||null,stab:t.stab||null,vis:t.vis||s.vis||d.vis||'all',crumb:[d.label,s.label,t.label],domain:d.id,section:s.route,tabs,activeTab:t.route};
+        ROUTE_TABLE[t.route]={page:t.page,hlsub:t.hlsub||null,view:t.view||null,stab:t.stab||null,ptab:t.ptab||null,vis:t.vis||s.vis||d.vis||'all',crumb:[d.label,s.label,t.label],domain:d.id,section:s.route,tabs,activeTab:t.route};
         if(!PAGE_HOME[t.page]) PAGE_HOME[t.page]=t.route;
       }
     }
@@ -653,7 +680,7 @@ Object.assign(PAGE_HOME,{
   // reached from the mound registry, INFRASTRUCTURE being a mound.
   homelab:'/tools/infrastructure',
   autonomy:'/projects', security:'/settings/security',
-  shell:'/settings/terminal', settings:'/settings/general', users:'/settings/users',
+  shell:'/settings/terminal', settings:'/settings/connection', users:'/settings/users',
   integrations:'/tools/integrations', projectview:'/projects', readiness:'/settings/readiness',
   knowledge:'/tools/knowledge'
 });
@@ -674,7 +701,7 @@ const LEGACY_REDIRECT={
   pheromones:'/tools/memory', homelab:'/tools/infrastructure',
   antconfig:'/projects', antobs:'/projects',
   autonomy:'/projects', security:'/settings/security',
-  shell:'/settings/terminal', settings:'/settings/general', users:'/settings/users'
+  shell:'/settings/terminal', settings:'/settings/connection', users:'/settings/users'
 };
 // v0.3.8.42 (§7): routes that MOVED when the Monitoring domain dissolved. Bookmarks and deep
 // links keep working; the router resolves these before the table lookup.
@@ -686,6 +713,10 @@ const ROUTE_ALIAS={
   '/objectives':'/projects',
   '/integrations':'/tools/integrations',
   '/tools-view':'/tools',
+  /* v0.3.8.127 — the settings row lost its second level, so the route that named the first level
+     resolves to the pane it used to open by default. A bookmark is a promise. */
+  '/settings/general':'/settings/connection',
+  '/settings/info':'/settings/diagnostics',
   /* v0.3.8.124 — SEVEN BOOKMARKS THAT USED TO LAND ON THE ANT INSPECTOR NOW LAND ON PROJECTS.
      Every one of them is a "where do I configure the colony's models" link, and the answer moved:
      routing is set per project. Projects is where an operator now goes to answer the question the
@@ -703,7 +734,7 @@ const ROUTE_ALIAS={
   '/colony/agents/coding':'/tools/integrations',
   '/colony/signals':'/tools/memory',
   '/administration/users':'/settings/users',
-  '/administration/settings':'/settings/general',
+  '/administration/settings':'/settings/connection',
   '/administration/terminal':'/settings/terminal',
   '/administration/readiness':'/settings/readiness',
   '/security/posture':'/settings/security',
@@ -787,8 +818,13 @@ function buildNav(){
 // Navigate to a route (nav clicks / tabs / router). push=false replaces history (back/forward, boot).
 function go(route,push){
   if(ROUTE_ALIAS[route]) route=ROUTE_ALIAS[route];   // v0.3.8.42 (§7): moved routes stay reachable
-  // v0.3.8.48: the one parameterised route — a project workspace. Deep-linkable, reload-safe.
-  const pm=/^\/projects\/([A-Za-z0-9]+)$/.exec(route);
+  /* v0.3.8.48: the one parameterised route — a project workspace. Deep-linkable, reload-safe.
+     v0.3.8.127: A DECLARED ROUTE IS NOT A PROJECT ID. `/projects/automation` matches the pattern
+     below exactly as well as `/projects/a1b2c3` does, so without this the Automation tab would
+     open a project workspace for a project called "automation" — a page that fetches nothing,
+     finds nothing, and looks like the project list failed. Anything the table knows is a route;
+     only what it does not know can be an id. */
+  const pm=!ROUTE_TABLE[route] && /^\/projects\/([A-Za-z0-9]+)$/.exec(route);
   if(pm){
     projectViewId=pm[1];
     showPage('projectview',{route:route,noHistory:true});
@@ -797,7 +833,7 @@ function go(route,push){
   }
   const r=ROUTE_TABLE[route]; if(!r) return;
   if(!canSee(r.vis)) return;
-  showPage(r.page,{route:route,hlsub:r.hlsub,view:r.view,stab:r.stab,noHistory:true});
+  showPage(r.page,{route:route,hlsub:r.hlsub,view:r.view,stab:r.stab,ptab:r.ptab,noHistory:true});
   try{ if(push===false) history.replaceState(null,'','#'+route); else history.pushState(null,'','#'+route); }catch{}
 }
 
@@ -865,6 +901,9 @@ function showPage(id,o){
       ? 'Patch proposals awaiting your decision — nothing touches disk until you approve and apply.'
       : 'Every coder patch proposal — inspect, compare, approve, apply, and roll back. Full history.';
   }
+  // v0.3.8.127: the Projects page's tab is decided by the route, before its loaders run — so
+  // entering /projects/automation does not flash the project list first.
+  if(id==='projects') projectsTab=(o.ptab==='automation'?'automation':'projects');
   if(typeof PAGE_ENTER[id]==='function') PAGE_ENTER[id]();
   // v2.6 Phase 3: Colony → Model Routing opens the Settings page pre-switched to its Models/Providers
   // tab (route-driven, reuses the existing settings tab machinery). Administration → Settings with no
@@ -883,10 +922,12 @@ function showPage(id,o){
       document.getElementById('tab-providers')?.classList.add('active');
       if(typeof loadProvidersTab==='function') loadProvidersTab();
     }
-    // Dedicated views hide the Settings tab strip and take their own header; plain Settings
-    // keeps the strip and its own title.
+    // v0.3.8.127: the strip is never shown. It is still in the markup and still clicked above —
+    // that click is what switches the pane, and reimplementing the switch here would be a second
+    // implementation of it — but the DOMAIN row is the tab bar the operator reads now, so a second
+    // identical-looking row underneath is the nesting this change removed.
     const strip=document.getElementById('settings-tabs');
-    if(strip) strip.style.display=(isMR||isProv)?'none':'';
+    if(strip) strip.style.display='none';
     const st=document.getElementById('set-title'), ss=document.getElementById('set-sub');
     if(st) st.textContent=isMR?'Model Routing':isProv?'Providers':'Settings';
     if(ss) ss.textContent=isMR
@@ -952,7 +993,8 @@ function router(){
   if(!h) return false;
   if(!h.startsWith('/') && LEGACY_REDIRECT[h]) h=LEGACY_REDIRECT[h];
   if(ROUTE_ALIAS[h]) h=ROUTE_ALIAS[h];   // v0.3.8.42 (§7): moved routes stay reachable
-  if(/^\/projects\/[A-Za-z0-9]+$/.test(h)){ go(h,false); return; }
+  // Declared routes win over the project-id shape here too — see `go`.
+  if(!ROUTE_TABLE[h] && /^\/projects\/[A-Za-z0-9]+$/.test(h)){ go(h,false); return; }
   const r=ROUTE_TABLE[h];
   if(r && canSee(r.vis)){ go(h,false); return true; }
   return false;
@@ -1332,105 +1374,54 @@ function casteIsRoutable(caste){
   return reg ? roleExecutable(reg)!==false : false;
 }
 
-/** The editor block. Returns '' for nodes with no caste (nothing safe to edit). */
+/**
+ * WHERE THIS ANT'S MODEL COMES FROM. Read-only, and that is the whole block now.
+ *
+ * v0.3.8.127 — THE PANEL HAD TWO EDITORS FOR THE SAME TWO FIELDS. The live panel above already
+ * carries a Display name and an Accent colour, and this block carried a second pair with a Save
+ * button underneath them. They were not duplicates, which is worse than if they had been: the one
+ * above styles THIS ANT in the live view (the renderer's own `antStyles`, saved with the colony
+ * layout), and this one renamed the whole CASTE (`uiState.castes`, which every worker inherits).
+ * Two controls, identical in appearance, writing different stores at different scopes, with
+ * nothing on screen saying which was which.
+ *
+ * That is the argument v0.3.8.124 used to take the model-route editor out of this same panel,
+ * quoted here because it applies unchanged: the operator cannot see the scope, so a mis-scoped
+ * change is silent. Caste-wide rename has no other home and is gone rather than moved — names
+ * already saved are still read by `casteName`/`casteColor`, so nobody's existing customization
+ * disappears; there is simply no longer a control that writes them.
+ *
+ * What is left is INFORMATION, not a control: which provider and model this ant runs on, and where
+ * that is set. A read-only fact does not compete with the editor above it.
+ */
 function inspectorEditorHtml(n){
   const caste=inspectorCasteFor(n);
   if(!caste) return '';
-  const name=casteName(caste), color=cssColor(casteColor(caste));
   const rt=runtimeStatusFor(caste);
   const routable=casteIsRoutable(caste);
   const cur=modelRoutes[caste]||{};
   const provider=uiState.castes[caste]?.provider||cur.provider||'ollama';
   const model=uiState.castes[caste]?.model||cur.model||'';
 
-  const scope=n.nodeType==='worker'
-    ? `<div class="ad-note">Editing the <b>${escapeHtml(casteName(caste))}</b> caste — workers inherit its name and colour.</div>`
-    : '';
-
-  let modelBlock;
   if(!routable){
     // Deliberately not a disabled control that looks editable: say why there is nothing to set.
     const why = caste==='queen'||caste==='director'
       ? 'Control plane — routes missions, never runs a model itself.'
       : (rt&&rt.unavailability_reason) || 'Not executable — no model route applies.';
-    modelBlock=`<div class="ad-note">${escapeHtml(why)}</div>`;
-  } else {
-    /* v0.3.8.124 — THIS PANEL SHOWS THE ROUTE; IT NO LONGER SETS IT. Routing became a per-project
-       decision, and a colony-wide editor here would have been the second place routes are written,
-       with a different scope from the first. Two editors that disagree about WHOSE model they are
-       changing is worse than one editor in a slightly less convenient place — the operator cannot
-       see the scope, so a mis-scoped change is silent. Where it is set is named, not implied. */
-    modelBlock=`<div class="ad-note">Runs on <b>${escapeHtml(provider||'ollama')}</b>`
-      + `${model?' · '+escapeHtml(model):''}. Set per project in Projects → Settings.</div>`;
+    return `<div class="ad-edit"><div class="ad-note">${escapeHtml(why)}</div></div>`;
   }
 
-  return `
-    <div class="ad-edit">
-      ${scope}
-      <label class="ad-lbl" for="ins-name">Display name</label>
-      <input class="ad-input" id="ins-name" type="text" maxlength="28" value="${escapeHtml(name)}"
-             aria-label="Display name for ${escapeHtml(name)}">
-      <label class="ad-lbl" for="ins-color">Accent colour</label>
-      <input class="ad-input ad-input-color" id="ins-color" type="color" value="${cssColor(color)}"
-             aria-label="Accent colour for ${escapeHtml(name)}">
-      ${modelBlock}
-      <div class="ad-edit-actions">
-        <button class="btn btn-ghost" data-insact="save" data-caste="${escapeHtml(caste)}">Save</button>
-        <span class="ad-msg" id="ins-msg" role="status" aria-live="polite"></span>
-      </div>
-    </div>`;
+  /* v0.3.8.124 — THIS PANEL SHOWS THE ROUTE; IT NO LONGER SETS IT. Routing became a per-project
+     decision, and a colony-wide editor here would have been the second place routes are written,
+     with a different scope from the first. Where it is set is named, not implied. */
+  return `<div class="ad-edit"><div class="ad-note">Runs on <b>${escapeHtml(provider||'ollama')}</b>`
+    + `${model?' · '+escapeHtml(model):''}. Set per project in Projects → Settings.</div></div>`;
 }
 
-/** Runtime + chamber + pheromone rows. Every value here comes from real state or is omitted. */
-function inspectorFactsHtml(n){
-  const caste=inspectorCasteFor(n);
-  const rt=caste?runtimeStatusFor(caste):null;
-  const strength=inspectorTrailStrength(n);
-  const reg=caste?registryRoleById(caste):null;
-  const paths=reg?(roleAllowedPaths(reg).slice(0,4).join(', ')):'';
-  const forbiddenPaths=reg?(roleForbiddenPaths(reg).slice(0,4).join(', ')):'';
-  return `
-    ${n.chamber?`<div class="ad-row"><span class="ad-key">Chamber</span><span class="ad-val">${escapeHtml(chamberLabel(n.chamber))}</span></div>`:''}
-    ${rt?`<div class="ad-row"><span class="ad-key">Runtime</span><span class="ad-val" title="${escapeHtml(rt.unavailability_reason||'')}">${escapeHtml(rt.status_label||rt.runtime_kind||'')}</span></div>
-    <div class="ad-row"><span class="ad-key">Planner</span><span class="ad-val">${rt.planner_eligible?'eligible':'not eligible'}</span></div>`:''}
-    ${rt&&rt.runtime_available===false&&rt.unavailability_reason?`<div class="ad-note">${escapeHtml(rt.unavailability_reason)}</div>`:''}
-    <div class="ad-row"><span class="ad-key">Pheromone</span><span class="ad-val">${strength>0?strength.toFixed(2):'no trail yet'}</span></div>
-    ${paths?`<div class="ad-section">Workspace Paths</div>
-    <div class="ad-fine">Allowed: ${escapeHtml(paths)}${forbiddenPaths?`<br>Forbidden: ${escapeHtml(forbiddenPaths)}`:''}</div>`:''}`;
-}
 
-async function inspectorSave(caste){
-  const msg=document.getElementById('ins-msg');
-  const set=(t,c)=>{ if(msg){ msg.style.color=c; msg.textContent=t; } };
-  const nameEl=document.getElementById('ins-name');
-  const colEl=document.getElementById('ins-color');
-
-  const nm=(nameEl&&nameEl.value||'').trim().slice(0,28);
-  const col=cssColor(colEl&&colEl.value, casteColor(caste));
-  const patch={color:col};
-  if(nm) patch.name=nm;
-  // v0.3.8.124: name and colour only. The route this panel used to write was colony-wide; routes
-  // are a project's now, and are written from Projects → Settings alone.
-
-  uiState.castes[caste]=Object.assign({},uiState.castes[caste],patch);
-  applyUiState(); saveUiState();
-  set('Saved.','var(--green)');
-  setTimeout(()=>{ const m=document.getElementById('ins-msg'); if(m&&m.textContent==='Saved.') m.textContent=''; },2500);
-  if(selectedNode) showInspector(selectedNode);
-}
-
-// CSP-safe delegated dispatch: the inspector body is re-rendered constantly, so the listener
-// lives on the stable container rather than on the controls themselves.
-/* CSP-safe delegated dispatch. The inspector body is re-rendered constantly, so the listener lives
-   on a stable container rather than on the controls themselves — and since v0.3.8.126 there are two
-   such containers, either of which may be absent. Delegating from `document` is the one binding
-   that is correct for both and cannot throw on a host that is not in the page: the previous form
-   called addEventListener on the result of getElementById, which is null the moment the element it
-   named is not there. */
-document.addEventListener('click',e=>{
-  const btn=e.target.closest?.('[data-insact="save"]');
-  if(btn) inspectorSave(btn.dataset.caste);
-});
+/* The inspector's delegated Save dispatch is gone with the editor it served (v0.3.8.127). It was
+   bound to `document` because the panel has two hosts either of which may be absent; there is now
+   nothing in either host to dispatch. */
 
 function showInspector(n){
   // v0.3.8.61 (caught live): a hidden widget's frame is detached — getElementById returns null and
@@ -5172,13 +5163,24 @@ async function loadToolsView(){
   }catch(e){ el.innerHTML=`<div class="hud-state err">${escapeHtml(e.message||'')}</div>`; }
 }
 
+/* Which half of the Projects page is showing. v0.3.8.127 — see the IA entry: these were columns
+   and are tabs now, so exactly one is in the page at a time and the domain row chooses.
+   Admin-only for Automation, the same visibility the standalone page had before `.55` folded it
+   into a column; a non-admin never sees the section in the row, and asking for its route directly
+   lands on the projects list rather than on an empty panel. */
+let projectsTab='projects';
+function projectsShowTab(which){
+  projectsTab=(which==='automation' && ROLE==='admin') ? 'automation' : 'projects';
+  const main=document.getElementById('projects-col-main');
+  const auto=document.getElementById('projects-col-auto');
+  if(main) main.hidden=(projectsTab!=='projects');
+  if(auto) auto.hidden=(projectsTab!=='automation');
+  if(projectsTab==='automation' && typeof openAutonomy==='function') openAutonomy();
+}
+
 PAGE_ENTER['projects']=()=>{
   loadProjectCards(); loadProjects();
-  // v0.3.8.55: the Automation panel rides the right-hand column — admin only, same visibility
-  // the standalone page had ('vis:admin' in the old IA entry).
-  const auto=document.getElementById('projects-col-auto');
-  if(auto) auto.hidden=(ROLE!=='admin');
-  if(ROLE==='admin' && typeof openAutonomy==='function') openAutonomy();
+  projectsShowTab(projectsTab);
 };
 
 /* v0.3.8.48 — the project workspace. One project, whole: Chat (its conversations), Schedules
@@ -6845,12 +6847,11 @@ function renameChamberTo(name,label){
   saveUiState();
 }
 
-function renameCasteTo(caste,label){
-  const c=caste||'queen', v=String(label||'').trim();
-  if(!v) return;
-  uiState.castes[c]=Object.assign({},uiState.castes[c],{name:v});
-  applyUiState();saveUiState();
-}
+/* `renameCasteTo` is gone with the editor that would have called it (v0.3.8.127). `uiState.castes`
+   is now READ ONLY in practice: `casteName` and `casteColor` still consult it, so a name an
+   operator set in an earlier release still applies, and nothing writes it. Kept as a read rather
+   than migrated away, because deleting the read would discard customization that is already on
+   disk — a rename this release removed the ability to CHANGE is not a licence to erase it. */
 
 // -- Ant Config page -----------------------------------------------------------
 let availableModels=[];
