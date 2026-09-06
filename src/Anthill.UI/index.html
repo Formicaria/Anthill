@@ -719,6 +719,11 @@ a.nav-logo-link:focus-visible{outline:2px solid var(--logo-node,#93bdf2);outline
 
 /* -- Settings Page ----------------------------------------------------------- */
 .settings-tabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0;margin-bottom:16px;}
+/* v0.3.8.127: the settings strip is the domain row now. The markup stays because clicking a
+   `.settings-tab` is still what switches a pane — one implementation of the switch, driven by the
+   route — but it is never shown, and hiding it here as well as in script stops it painting once
+   before the script runs. */
+.settings-tabs{display:none !important;}
 .settings-tab{padding:9px 16px;font-size:12px;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;transition:color var(--t),border-color var(--t);cursor:pointer;}
 .settings-tab.active{color:var(--queen);border-color:var(--queen);}
 .settings-pane{display:none;}
@@ -4148,15 +4153,14 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
            optional working-directory path. The mission-workspace checkouts report stays below:
            those are the isolated checkouts missions physically work in. -->
       <div class="page page-scroll" id="page-projects">
-        <!-- v0.3.8.55 (field report): Projects hosts Automation side by side — projects on
-             the left, the Director's panel on the right (admin only; hidden by PAGE_ENTER for
-             everyone else). Wraps on narrow screens instead of crushing either column.
-             (Operator's layout rule): each column carries ITS OWN header in the same shape —
-             title + sub on the left, buttons on the right — so the two read as equals; the old
-             page-wide header put the project buttons on the far right, over the Automation
-             column, where they looked like its controls. -->
-        <div id="projects-cols" style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;">
-        <div id="projects-col-main" style="flex:1 1 480px;min-width:0;">
+        <!-- v0.3.8.127: Projects and Automation are TABS, chosen from the domain row, not columns.
+             `.55` put the Director's panel beside the project list and the page read as two
+             unrelated halves — a list of containers, and an objective backlog with its own header,
+             buttons and tables. Below a wide desktop the columns wrapped and Automation appeared
+             underneath anyway, which is a tab with no way to choose it. Each half keeps its own
+             header, unchanged: that part of the `.55` layout rule was right. -->
+        <div id="projects-cols">
+        <div id="projects-col-main" style="min-width:0;">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
           <div><h2 style="font-size:14px;margin:0 0 2px;">Projects</h2><div class="sub">Long-lived containers: each conversation lives in one, with its missions and history. The purpose you write here travels with every message in the project.</div></div>
           <div style="display:flex;gap:8px;align-items:center;">
@@ -4186,7 +4190,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <div class="sub" style="margin-bottom:8px;">Each mission that changes files works in its own isolated checkout. Nothing here touches your live files until you approve a change.</div>
         <div id="projects-list"><div class="hud-state">Loading…</div></div>
         </div><!-- /projects-col-main -->
-        <div id="projects-col-auto" style="flex:1 1 420px;min-width:0;" hidden>
+        <div id="projects-col-auto" style="min-width:0;" hidden>
         <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
           <div><h2 style="font-size:14px;margin:0 0 2px;">Automation</h2><div class="sub">24/7 Colony Director &mdash; objective backlog and runs. Status, budgets and the kill switch live on the Colony Overview.</div></div>
           <div style="display:flex;gap:8px;align-items:center;">

@@ -1,3 +1,54 @@
+## v0.3.8.127 - one row, one editor
+
+**THREE OPERATOR REPORTS, ONE SHAPE.** The console kept offering the same choice in two places, and
+the two places meant different things without saying so.
+
+**SETTINGS HAD TABS INSIDE TABS.** A domain row — General, Security & Gates, Users, System,
+Readiness, Terminal — and a second identical-looking row inside General: Connection, Colony, Models,
+System Info. The outer row changes PAGE; the inner one changed PANE. Nothing on screen said which
+was which, so finding a setting meant learning both.
+
+The four panes are sections now, one row of nine. **The machinery already existed**: `stab` has been
+a field on the route table since v2.6, naming which settings pane a route opens, and `showPage` has
+always clicked the matching tab. Only the declarations changed. The strip stays in the markup — that
+click IS the pane switch, and reimplementing it would be a second implementation — and is hidden in
+CSS as well as in script, because script alone leaves it painting once before the script runs.
+
+`System Info` is **Diagnostics**, because the outer row already had a `System` section pointing at a
+different page, and two near-identical names in one row is the confusion this change exists to
+remove. A guard now closes the general case: no domain may offer two sections whose names read as
+the same destination, including the near-miss where one label is another plus a qualifier.
+
+**PROJECTS AND AUTOMATION WERE COLUMNS.** `.55` put the Director's objective backlog beside the
+project list, so one page carried two headers, two button groups and two unrelated subjects. Below a
+wide desktop the columns wrapped and Automation appeared underneath anyway — which is a tab with no
+way to choose it. They are sections of one domain now, shown one at a time, using the same row Tools
+uses rather than a third tab idiom.
+
+**A DECLARED ROUTE IS NOT A PROJECT ID**, and this nearly shipped as a bug. `/projects/{id}` is the
+console's one parameterised route, and `/projects/automation` matches its pattern exactly as well as
+`/projects/a1b2c3` does — so the Automation tab would have opened a project workspace for a project
+called "automation", fetching nothing, finding nothing, and reading as the project list having
+failed. The table is consulted first now, at BOTH sites that test the pattern: `go` and the
+boot/hash path. Fixing one would have left a reload landing somewhere the click did not.
+
+**THE ANT PANEL HAD TWO NAME-AND-COLOUR EDITORS, AND THEY WERE NOT DUPLICATES** — which is worse
+than if they had been. The one at the top styles THAT ANT in the live view, writing the renderer's
+`antStyles` and saved with the colony layout. The one underneath renamed the whole CASTE, writing
+`uiState.castes`, which every worker inherits. Two controls, identical in appearance, different
+stores at different scopes, nothing on screen saying so.
+
+That is the argument `.124` used to take the model-route editor out of this same panel — "the
+operator cannot see the scope, so a mis-scoped change is silent" — and it left two name editors
+sitting where the route editor had been. The caste editor is gone, with `inspectorSave`, its inputs
+and its delegated dispatch. What remains in its place is **information**: which provider and model
+this ant runs on, and where that is set. A read-only fact does not compete with the editor above it.
+
+**Caste-wide rename is removed, not moved**, and that is the honest description: it had no other
+home. **Names already on disk are still read** — `casteName` and `casteColor` still consult
+`uiState.castes`, and the document still carries the key — because removing the ability to CHANGE a
+setting is not a licence to erase what an operator already set.
+
 ## v0.3.8.126 - a word is not its letters
 
 **"REQUIRING" CONTAINS "UI".** A mission was routed to `coder.ui_coder` because
