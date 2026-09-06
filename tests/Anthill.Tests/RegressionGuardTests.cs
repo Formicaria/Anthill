@@ -387,7 +387,7 @@ public class RegressionGuardTests : IDisposable
         // deletion above cannot be read as "the colony stopped animating".
         var liveJs = File.ReadAllText(Path.Combine(dir, "colony-live.js"));
         Assert.Contains("requestAnimationFrame(frame)", liveJs, StringComparison.Ordinal);
-        Assert.Equal(1, Regex.Matches(liveJs, @"getContext\(").Count);
+        Assert.Single(Regex.Matches(liveJs, @"getContext\("));
 
         // v3.3.0: .ws-root needed pointer-events:none because it was a full-page layer sitting ON
         // TOP of the topology canvas — without it the map could not be clicked through. The grid
