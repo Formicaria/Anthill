@@ -225,9 +225,37 @@ public static class ColonySectors
         [Micromound] = "MICROMOUND",
     };
 
-    /// <summary>Presentation order. Micromound sits last: it is infrastructure beneath the colony.</summary>
+    /// <summary>
+    /// THE SECTORS THE REGISTRY POPULATES, in presentation order.
+    ///
+    /// v0.3.8.128 — MICROMOUND IS NO LONGER ONE OF THEM, and this is the third and last time this
+    /// release answers the same question. `.122` deleted the `unassigned` chamber because an empty
+    /// compartment does not report a gap — it occupies a seat and invites the reader to wonder what
+    /// is wrong. `.125` applied that to the mound REGISTRY, so the fleet list stopped showing a row
+    /// reading "MICROMOUND · 0 ants · built in · not yours to delete". Neither touched the
+    /// projection, so the snapshot kept emitting a `mound` sector with an empty roster on every
+    /// colony that has never enrolled a device — the operator's report, one layer down.
+    ///
+    /// It is not an oversight that no registry colony maps here: THERE IS NO MICROMOUND COLONY.
+    /// A mound is hardware that dials in, and its ants are the roster a DEVICE reports, which
+    /// arrives on the fleet snapshot and never through <see cref="AntRegistry"/>. So this list is
+    /// the set of sectors the registry can actually fill, and the guard below now says so — a
+    /// sector no colony maps to is an empty seat, and this list is the wrong place for one.
+    ///
+    /// <see cref="Micromound"/> itself stays, and so does its label: the renderer draws a mound
+    /// chamber from the fleet snapshot's own `present` flag, which is the fact that decides whether
+    /// there is a fleet to draw. Nothing about the picture changes for an operator who HAS mounds.
+    /// What changes is that an operator who has none stops being shown the outline of one.
+    /// </summary>
     public static readonly IReadOnlyList<string> Order =
-        [Queen, Intelligence, Forge, Validation, Memory, Output, Infrastructure, Micromound];
+        [Queen, Intelligence, Forge, Validation, Memory, Output, Infrastructure];
+
+    /// <summary>
+    /// Sectors that exist in the picture but not in the registry — drawn from a live fact rather
+    /// than from a role. Declared so the totality guard can tell "deliberately not registry-backed"
+    /// from "somebody added a sector and forgot to map a colony to it".
+    /// </summary>
+    public static readonly IReadOnlyList<string> PresentationOnly = [Micromound];
 
     public static string Label(string sectorId) => Labels.GetValueOrDefault(sectorId, sectorId);
 

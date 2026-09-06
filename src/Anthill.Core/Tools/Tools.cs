@@ -283,6 +283,41 @@ public sealed class ToolRegistry
         }
 
         var escalation = Conversations.ConversationScope.Evaluate(name);
+
+        // v0.3.8.128 — AND THE POLICY DOES NOT LAPSE WHEN THE WORK LEAVES THE CONVERSATION.
+        //
+        // `.102` wrote the finding down and it has been true ever since: "a mission does not run
+        // inside the ambient ConversationScope, so this branch is unreachable from one." That
+        // sentence describes a gate, at the colony's single tool chokepoint, that was silent for
+        // every dispatch a mission ever made. An operator could set `Ask` on a conversation, watch
+        // it escalate into a mission, and the mission would then apply patches, write files and run
+        // shell commands without the gate they had just configured ever being consulted — and
+        // WITHOUT a pending approval appearing, because `.105`'s question-filing hangs off the
+        // refusal branch below and a gate that never refuses never asks.
+        //
+        // Read here rather than in each tool for the reason the comment above this block already
+        // gives: `.102` closed the same hole for the two execute tools by hand, and doing that once
+        // more per tool is how a colony ends up with four gates that disagree. This is the one that
+        // was already in the right place and had nothing behind it.
+        //
+        // NO CONVERSATION MEANS NO CHANGE — see `OperatorDecisions.Governing` for why that is a
+        // rule and not a loophole.
+        if (escalation is null && missionId is not null
+            && Conversations.OperatorDecisions.Governing(_memory, missionId, name) is { } standing)
+        {
+            escalation = standing;
+
+            // A standing permission is still a decision somebody made, and `.46` requires the
+            // record to say whose. The refusal branch below logs its own; this logs the other half,
+            // so "why was the colony allowed to do that" never answers "nobody knows".
+            if (standing.Allowed)
+                _memory.LogEvent(missionId, "escalation_allowed",
+                    $"Tool ALLOWED by the conversation's recorded decision: {name}", taskId, antName,
+                    new() { ["tool_name"] = name, ["decision_id"] = standing.Id,
+                            ["policy"] = standing.Policy.ToString(),
+                            ["decided_by"] = standing.DecidedBy, ["reason"] = standing.Reason });
+        }
+
         if (escalation is { Allowed: false })
         {
             var refused = new ToolResult(name, false, "",

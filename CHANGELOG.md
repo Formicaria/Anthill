@@ -1,4 +1,4 @@
-## v0.3.8.128 - the subsystem is called Infrastructure
+## v0.3.8.128 - Infrastructure, and the gate that was never asked
 
 **THE LABEL CHANGED TWICE AND THE IDS DID NOT.** v2.6 renamed Homelab to Infrastructure in the
 sidebar; `.122` renamed the colony chamber and said plainly why the id stayed: "the sector id and its
@@ -45,6 +45,54 @@ two settings may claim the same former name.
 
 **What did NOT move:** the nineteen tables in that module which never carried the prefix, and the
 CHANGELOG and `docs/archive/**`, which are records of their own moment.
+
+---
+
+**THE OPERATOR'S ESCALATION POLICY STOPPED APPLYING THE MOMENT WORK BECAME A MISSION.** v0.3.8.102
+wrote the finding down and no release acted on it: "a mission does not run inside the ambient
+`ConversationScope`, so this branch is unreachable from one." Read plainly, that sentence says the
+colony's single tool chokepoint had an escalation gate that was SILENT for every dispatch a mission
+ever made. An operator could set `Ask` on a conversation, watch it escalate into a mission, and the
+mission would then apply patches, write files and run shell commands without the gate they had just
+configured ever being consulted.
+
+Two things kept it from looking like a hole. `.102`–`.110` closed it BY HAND for the two execute
+tools and the API's action path — the loudest actions, so the chokepoint's silence read as nothing
+being wrong, and one rule ended up living at three call sites. And `.105`'s question-filing hangs
+off the refusal branch, so a gate that never refused also never ASKED: an operator saw no pending
+approval, which is indistinguishable from a mission with nothing to approve. A patch went in, no
+question was raised, and nothing anywhere said a policy had been skipped.
+
+The chokepoint reads the durable record now, and only when the ambient scope had nothing to say —
+a live answer must beat a stored one. Under a standing `AutoApprove` or `Bypass` the action proceeds
+and the decision that permitted it is logged, because permission IS the record. Under `Ask` the
+answer comes from the same two ledgers `.110` unified, and its absence files the question instead of
+failing the mission.
+
+**WHAT DELIBERATELY DID NOT CHANGE is the whole safety of it.** A mission with NO conversation —
+autonomous, scheduled, CLI — is untouched. It is not ungoverned: role authorization and the
+mission's authority ceiling both ran before this point. It simply has no operator policy to apply,
+and manufacturing `Ask` for it would refuse every patch the coding lane has ever written on the
+grounds that a conversation nobody started did not answer a question nobody asked. The gap being
+closed is narrower and real: a conversation's own missions escaping the conversation's own policy.
+
+---
+
+**AND THE EMPTY MICROMOUND CHAMBER, ONE LAYER BELOW WHERE IT WAS LAST FIXED.** `.122` deleted the
+`unassigned` chamber because an empty compartment does not report a gap — it occupies a seat and
+invites the reader to wonder what is wrong. `.125` applied the same reasoning to the mound REGISTRY,
+so the fleet list stopped showing a row reading "MICROMOUND · 0 ants · built in · not yours to
+delete". Neither touched the PROJECTION, so every colony that has never enrolled a device kept
+getting a `mound` sector with an empty roster on every snapshot — which is what the operator
+reported, twice.
+
+It was never an oversight that no registry colony maps there: **there is no micromound colony.** A
+mound is hardware that dials in, and its ants are the roster a DEVICE reports — it arrives on the
+fleet snapshot and never through the ant registry. So the projection's sector list is now the set of
+chambers the registry can actually fill, the mound is declared as drawn-from-a-live-fact instead,
+and a new guard makes the map total in BOTH directions: no colony without a chamber, and no chamber
+without a colony that can fill it. Nothing changes for an operator who has mounds; an operator who
+has none stops being shown the outline of one.
 
 ## v0.3.8.127 - one row, one editor
 

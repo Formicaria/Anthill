@@ -87,6 +87,82 @@ public static class OperatorDecisions
     }
 
     /// <summary>
+    /// THE POLICY THE OPERATOR SET, APPLIED TO WORK THAT LEFT THE CONVERSATION BEHIND.
+    /// v0.3.8.128 — the gap `.102` named and no release closed.
+    ///
+    /// `ConversationScope` is ambient and `AsyncLocal`, and a mission is deliberately NOT run
+    /// inside it: escalation turns a chat turn into background execution, and the background work
+    /// does not inherit the turn's async context. `ToolRegistry.RunTool` asks the scope and nothing
+    /// else, so `ConversationScope.Evaluate` returned null on every mission dispatch — and null
+    /// means "not governed here". The result was a policy an operator explicitly chose, on a
+    /// conversation they were sitting in front of, that stopped applying at the exact moment the
+    /// work became autonomous. `apply_patch`, `write_text_file`, `shell_command`,
+    /// `run_allowlisted_check` and both execute tools all crossed that line ungated.
+    ///
+    /// Two facts kept it invisible. The colony's own `.102`–`.110` work read the DURABLE decision
+    /// at three call sites by hand — the two execute tools and the API — so the loudest actions
+    /// were covered and the chokepoint's silence looked like nothing being wrong. And `.105`'s
+    /// question-filing hangs off the refusal branch, so a gate that never refused also never asked:
+    /// the operator saw no pending approval, which reads exactly like a mission with nothing to
+    /// approve.
+    ///
+    /// WHAT THIS DOES NOT DO, because the distinction is the whole safety of the change. A mission
+    /// with NO conversation — autonomous, scheduled, CLI — returns null and is unchanged. It is not
+    /// ungoverned: `ToolAuthorization` and the mission's authority ceiling both ran before this
+    /// point. It simply has no operator policy to apply, and inventing `Ask` for it would refuse
+    /// every patch the coding lane has ever written on the grounds that a conversation nobody
+    /// started did not answer a question nobody asked. The gap being closed is narrower and real:
+    /// a conversation's OWN missions escaping the conversation's OWN policy.
+    ///
+    /// Under `AutoApprove` or `Bypass` this returns the standing decision — permission WITH the
+    /// record of who granted it, which is `.46`'s rule and the reason the gate returns a decision
+    /// rather than a bool. Under `Ask` it returns the durable answer if one exists, and otherwise a
+    /// refusal attributed to <see cref="EscalationDecision.Undecided"/> — the shape `.105` built
+    /// so the caller files the question instead of failing the mission.
+    /// </summary>
+    public static EscalationDecision? Governing(SqliteMemory memory, string? missionId, string action)
+    {
+        // Reads and searches are most of what a mission does, and gating them would bury the
+        // decisions that matter. The set is `EscalationGate`'s, not a second opinion about it.
+        if (!EscalationGate.NeedsDecision(action)) return null;
+        if (string.IsNullOrWhiteSpace(missionId)) return null;
+
+        Conversation? conversation;
+        try
+        {
+            conversation = memory.LoadConversations()
+                .FirstOrDefault(c => c.MissionIds.Contains(missionId!, StringComparer.OrdinalIgnoreCase));
+        }
+        catch
+        {
+            // The read that failed is the one that establishes whether a policy exists AT ALL, so
+            // there is nothing here to fail closed ON. This is not the S3 case: returning null
+            // leaves the call exactly where every release before this one left it — already past
+            // authorization and the authority ceiling — rather than manufacturing a refusal from a
+            // conversation we could not confirm is there.
+            return null;
+        }
+
+        if (conversation is null) return null;
+
+        var policy = conversation.EffectivePolicy;
+        if (policy is EscalationPolicy.AutoApprove or EscalationPolicy.Bypass)
+            return EscalationGate.Evaluate(conversation, action);
+
+        // Ask. `ForMission` is the durable read — both ledgers, latest answer wins — and it files
+        // the question when there is none. Reused rather than repeated: a second copy of "what has
+        // the operator said about this" is defect class 5, and the two copies would disagree the
+        // first time one of them learned about a new ledger.
+        var decided = ForMission(memory, missionId, action);
+        if (decided is not null) return decided;
+
+        return new EscalationDecision(
+            Guid.NewGuid().ToString("N")[..12], conversation.Id, action,
+            Allowed: false, EscalationPolicy.Ask, EscalationDecision.Undecided, AnthillTime.NowUtc(),
+            "no operator decision is recorded for this action on this mission");
+    }
+
+    /// <summary>
     /// FILE THE QUESTION THE MISSION IS STOPPING FOR. v0.3.8.105, PLAN.md §2b `.105`.
     ///
     /// One pending row in the ledger that already exists — `approval_requests`, with
