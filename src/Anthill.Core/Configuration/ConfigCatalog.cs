@@ -256,6 +256,78 @@ public static class ConfigCatalog
     /// <summary>Whether the settings surface may write this key. Ordinal-insensitive, as the set is.</summary>
     public static bool IsEditable(string key) => LazyEditable.Value.Contains(key);
 
+    /// <summary>
+    /// A key rename that was applied to a document on load: what the operator's file said, and what
+    /// it is now understood as.
+    /// </summary>
+    public readonly record struct ConfigKeyRename(string From, string To);
+
+    /// <summary>
+    /// HONOUR <see cref="ConfigKeyAttribute.Aliases"/> AT PARSE TIME. v0.3.8.126.
+    ///
+    /// The attribute has existed since v0.3.8.91 and its own doc comment said "the migration reads
+    /// these". Nothing did. `Aliases` was consulted in exactly one place — the docs renderer, which
+    /// prints "was: old_name" in the reference table — so a renamed key was DOCUMENTED as renamed
+    /// and then silently dropped on load, because `System.Text.Json` matches on
+    /// `[JsonPropertyName]` and nothing else. No key had ever declared an alias, so the gap had
+    /// never cost anything; v0.3.8.126 renames forty of them at once, and would have.
+    ///
+    /// Defect class #2, in the mechanism built to prevent a different one.
+    ///
+    /// THE RULES, both of which are about not surprising an operator:
+    ///
+    ///   1. An alias is read ONLY when the canonical key is absent. A file carrying both has
+    ///      already been migrated — by hand, or by a settings write — and the stale leftover must
+    ///      not win. Silently preferring the old spelling would make an edit an operator made to
+    ///      the NEW key do nothing, which is the worst outcome available here.
+    ///   2. The rename is reported, never silent. `AnthillRuntime` surfaces the list the way it
+    ///      surfaces the roster migration, because "I renamed your key" is exactly the class of
+    ///      thing an operator must be able to find out without reading the source.
+    ///
+    /// Operates on the RAW document, before profile defaults are overlaid — for the reason
+    /// `ConfigSchema`'s header gives about its own plan: after the merge there are no absent keys
+    /// left, so rule 1 could not be evaluated.
+    ///
+    /// Mutates <paramref name="raw"/> in place and returns what it did, in declaration order so the
+    /// report reads like the file.
+    /// </summary>
+    public static IReadOnlyList<ConfigKeyRename> ApplyKeyAliases(Dictionary<string, JsonElement> raw) =>
+        ApplyKeyAliases(raw, Declarations);
+
+    /// <summary>
+    /// The same rewrite against an explicit set of declarations.
+    ///
+    /// Exists so the RULES above can be proved on their own, against a fixture, rather than only
+    /// through whichever keys the catalog happens to have renamed this release. A mechanism whose
+    /// only test is "the current catalog behaves" is untested the moment the last rename ages out
+    /// of the catalog — and this one went thirty-five releases with no user at all, which is how it
+    /// came to be declared and dead in the first place.
+    /// </summary>
+    public static IReadOnlyList<ConfigKeyRename> ApplyKeyAliases(
+        Dictionary<string, JsonElement> raw, IReadOnlyList<ConfigDeclaration> declarations)
+    {
+        if (raw.Count == 0) return [];
+
+        var applied = new List<ConfigKeyRename>();
+        foreach (var declaration in declarations)
+        {
+            if (declaration.Aliases.Count == 0) continue;
+            // Rule 1: the canonical spelling, present at all, ends the question for this key.
+            if (raw.ContainsKey(declaration.Key)) continue;
+
+            foreach (var alias in declaration.Aliases)
+            {
+                if (!raw.TryGetValue(alias, out var value)) continue;
+                raw[declaration.Key] = value;
+                raw.Remove(alias);
+                applied.Add(new ConfigKeyRename(alias, declaration.Key));
+                break;   // first alias that matches wins; a key with two old names had them in order
+            }
+        }
+
+        return applied;
+    }
+
     private static IReadOnlyList<ConfigDeclaration> Build()
     {
         // A fresh instance IS the default. Reading the initializer any other way — parsing the
