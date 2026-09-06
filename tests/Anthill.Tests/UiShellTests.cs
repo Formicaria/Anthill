@@ -115,25 +115,51 @@ public class UiShellTests
     }
 
     /// <summary>
-    /// Chambers must not collide with each other either — the contents got larger, so the ring
-    /// they sit on had to grow with them. Six chambers ring a central one, so adjacent centres are
-    /// exactly R apart; the largest chamber measured 136px, needing 272px of clearance.
+    /// CHAMBER GEOMETRY IS THE RENDERER'S, AND THERE IS ONLY ONE OF IT. v0.3.8.125.
+    ///
+    /// This asserted that `chamberCentres` derived its ring radius from the viewport and left
+    /// 272px between adjacent chamber centres, so the largest chamber could not overlap its
+    /// neighbour. Every term in that sentence belonged to the classic canvas: `chamberCentres` laid
+    /// chambers out in screen space from `Math.min(W,H)`, and app.js has neither W nor H any more.
+    /// Colony Live places its chambers at CONSTANT world positions declared in `SECTOR_DEFS` — a
+    /// stable spatial grammar rather than a computed ring — so there is no radius to derive and no
+    /// viewport to derive it from.
+    ///
+    /// What replaces the collision check is the constants themselves: a chamber's `R` against the
+    /// distance to its neighbours, asserted against the real table. The failure mode is unchanged —
+    /// two chambers overlapping — but it is now a fact about the data rather than about arithmetic
+    /// that no longer runs.
     /// </summary>
     [Fact]
-    public void ChamberRing_LeavesRoomForTheLargestChamber()
+    public void ChamberPositions_LeaveRoomForTheChambersThatSitInThem()
     {
-        var js = Ui("app.js");
-        var centres = BodyOf(js, "function chamberCentres(names)");
-        var m = Regex.Match(centres, @"Math\.min\(W,H\)\s*\*\s*([0-9.]+)");
-        Assert.True(m.Success, "chamberCentres no longer derives its radius from the viewport");
-        var factor = double.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+        var live = Ui("colony-live.js");
+        var defs = live[live.IndexOf("var SECTOR_DEFS = [", StringComparison.Ordinal)..];
+        defs = defs[..defs.IndexOf("];", StringComparison.Ordinal)];
 
-        // On the shortest supported axis the ring must still clear two chamber radii.
-        const int shortestAxis = 900;
-        var adjacentGap = shortestAxis * factor;   // 2*R*sin(pi/6) == R for six ring positions
-        Assert.True(adjacentGap >= 272,
-            $"ring factor {factor} gives only {adjacentGap:F0}px between adjacent chamber centres; "
-            + "the largest chamber needs 272px to avoid overlapping its neighbour.");
+        var rows = Regex.Matches(defs,
+            @"id:\s*'([a-z]+)'.*?pos:\s*\[\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*\].*?R:\s*(\d+)");
+        Assert.True(rows.Count >= 8,
+            $"only {rows.Count} sector definitions were parsed out of colony-live.js. The table was "
+          + "reshaped and this guard is measuring nothing.");
+
+        var chambers = rows.Select(m => (
+            Id: m.Groups[1].Value,
+            X: double.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture),
+            Y: double.Parse(m.Groups[3].Value, System.Globalization.CultureInfo.InvariantCulture),
+            Z: double.Parse(m.Groups[4].Value, System.Globalization.CultureInfo.InvariantCulture),
+            R: double.Parse(m.Groups[5].Value, System.Globalization.CultureInfo.InvariantCulture)
+        )).ToList();
+
+        foreach (var a in chambers)
+            foreach (var b in chambers)
+            {
+                if (string.CompareOrdinal(a.Id, b.Id) >= 0) continue;
+                var d = Math.Sqrt(Math.Pow(a.X - b.X, 2) + Math.Pow(a.Y - b.Y, 2) + Math.Pow(a.Z - b.Z, 2));
+                Assert.True(d > a.R + b.R,
+                    $"chambers '{a.Id}' (R={a.R}) and '{b.Id}' (R={b.R}) are {d:F0} apart, which is "
+                  + $"less than the {a.R + b.R} their radii need. They overlap in the colony view.");
+            }
     }
 
     /// <summary>
