@@ -144,6 +144,25 @@ What is NOT claimed: that any mission can be resumed. Only the tasks a mission's
 name for the approved action are replayed, and a task that COMPLETED is never touched — its effects
 have already landed. A rejection replays nothing, which is the point of asking.
 
+**What v0.3.8.128 changes, and how far.** The escalation policy an operator set on a conversation
+now governs that conversation's MISSIONS. `.102` recorded the reason it did not — "a mission does
+not run inside the ambient `ConversationScope`, so this branch is unreachable from one" — and that
+sentence describes a gate at the colony's single tool chokepoint which was silent for every dispatch
+a mission ever made. `.102`–`.110` closed it by hand for the two execute tools and the API's action
+path, which covered the loudest actions and left one rule living at three call sites; `apply_patch`,
+`write_text_file`, `shell_command` and `run_allowlisted_check` crossed the boundary ungated. The
+chokepoint reads the durable record now, after the ambient one and only when the ambient one had
+nothing to say, so a live answer still beats a stored one. A standing permission allows the action
+AND logs the decision that permitted it; an absent answer files the question rather than failing the
+mission.
+
+What is NOT claimed: that a mission without a conversation is gated. Autonomous, scheduled and CLI
+missions are untouched — they passed role authorization and the mission's authority ceiling before
+reaching this point, and they have no operator policy to consult. Manufacturing `Ask` for them would
+refuse every patch the coding lane has ever written on the grounds that a conversation nobody
+started did not answer a question nobody asked. Nor is the escalation SET widened: it is
+`EscalationGate.SideEffecting`, unchanged, read rather than re-decided.
+
 What is NOT claimed: that the sources are any good, or that they support what they are cited for.
 Those are semantic judgments, and a model asserting one is the evidence v2.19.0 stopped accepting.
 Traceability is checkable; support is not. Nor is a request naming both worlds admitted — its answer

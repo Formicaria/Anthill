@@ -281,6 +281,52 @@ public class ColonyLiveGuardTests
     }
 
     /// <summary>
+    /// AND THE MAP IS TOTAL IN THE OTHER DIRECTION TOO — every chamber the projection emits is one
+    /// the registry can actually fill. v0.3.8.128.
+    ///
+    /// The guard above proves no COLONY is homeless. This proves no CHAMBER is empty by
+    /// construction, which is the half that let `mound` sit in the projection for six releases: no
+    /// registry colony has ever mapped to it, because a mound's ants are the roster a DEVICE
+    /// reports and arrive on the fleet snapshot rather than through `AntRegistry`. So every colony
+    /// with no hardware got a `mound` sector with an empty roster on every snapshot — the same
+    /// defect `unassigned` was deleted for at `.122` and the mound REGISTRY row was filtered for at
+    /// `.125`, surviving one layer below both fixes because nothing asked this question.
+    ///
+    /// A presentation-only chamber is still allowed; it just has to SAY so, in
+    /// <see cref="ColonySectors.PresentationOnly"/>, where the next reader can see that the
+    /// emptiness was chosen. What is no longer allowed is a sector appearing in the registry
+    /// projection with nothing able to reach it.
+    /// </summary>
+    [Fact]
+    public void EveryProjectedChamber_HasAColonyThatCanFillIt()
+    {
+        var reachable = ColonySectors.MappedColonies
+            .Select(ColonySectors.ForColony)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var empty = ColonySectors.Order.Where(id => !reachable.Contains(id))
+            .OrderBy(id => id, StringComparer.Ordinal).ToList();
+
+        Assert.True(empty.Count == 0,
+            "these sectors are projected from the registry and no registry colony maps to them, so "
+          + "every snapshot carries them with an empty roster: " + string.Join(", ", empty)
+          + ". Either map a colony to each, or — if the chamber is drawn from a live fact rather "
+          + "than from roles, as the micromound is — move it to ColonySectors.PresentationOnly and "
+          + "leave it out of Order.");
+
+        // VACUITY FLOOR: both lists were actually read, and the projection agrees with Order.
+        Assert.True(reachable.Count >= 6, $"only {reachable.Count} chambers are reachable — the sweep found nothing to check");
+        Assert.True(ColonySectors.Order.Count >= 6, "Order is too short to be the real sector list");
+        Assert.Equal(ColonySectors.Order.Count, ColonyLiveProjection.Sectors().Count);
+
+        // And the mound specifically: declared, labelled, drawable — and not projected.
+        Assert.Contains(ColonySectors.Micromound, ColonySectors.PresentationOnly);
+        Assert.DoesNotContain(ColonySectors.Micromound, ColonySectors.Order);
+        Assert.Equal("MICROMOUND", ColonySectors.Label(ColonySectors.Micromound));
+        Assert.DoesNotContain(ColonyLiveProjection.Sectors(), s => s.SectorId == ColonySectors.Micromound);
+    }
+
+    /// <summary>
     /// The records endpoint applies the same rule, and the point is WHERE the decision is made.
     /// An event whose ant the colony does not recognise goes to the server's declared fallback —
     /// stated in the snapshot, so the browser never has to choose. The forbidden thing was never
