@@ -42,7 +42,6 @@ public sealed class DashboardWorkspaceState
     /// <summary>Placements keyed by profile: "desktop" | "compact". Never merged into each other.</summary>
     [JsonPropertyName("profiles")] public Dictionary<string, Dictionary<string, PanelPlacement>> Profiles { get; set; } = new();
     [JsonPropertyName("tab_groups")] public Dictionary<string, TabGroup> TabGroups { get; set; } = new();
-    [JsonPropertyName("topology_overlays")] public Dictionary<string, OverlayState> TopologyOverlays { get; set; } = new();
 
     public static readonly string[] Profileses = { "desktop", "compact" };
     public static readonly string[] DisplayStates = { "visible", "collapsed", "minimized", "hidden" };
@@ -50,8 +49,6 @@ public sealed class DashboardWorkspaceState
     /// <summary>Retained for v2.15.0 documents only — docking was replaced by snapping in
     /// v2.15.1 and these values now feed the one-way migration in SanitizePanel.</summary>
     public static readonly string[] DockSides = { "left", "right", "top", "bottom" };
-    public static readonly string[] Anchors =
-        { "top-left", "top-center", "top-right", "bottom-left", "bottom-center", "bottom-right" };
 
     /// <summary>
     /// v2.14.14: the canonical panel ids, owned here rather than only in JavaScript.
@@ -98,13 +95,18 @@ public sealed class DashboardWorkspaceState
         "attempts",
     };
 
-    /// <summary>
-    /// Topology chrome that can be independently hidden and re-anchored (Stage 7).
-    /// The inspector is deliberately NOT here: on the Colony page it is a sidebar card rather than
-    /// a canvas overlay, so anchoring it belongs with Stage 9's route consolidation.
-    /// </summary>
-    public static readonly string[] KnownOverlayIds =
-        { "viewbar", "legend", "signals", "hints" };
+    /* TOPOLOGY OVERLAYS ARE GONE. v0.3.8.125.
+
+       `KnownOverlayIds` held four ids — `viewbar`, `legend`, `signals`, `hints` — the classic
+       canvas's chrome, independently hideable and re-anchorable since Stage 7. That canvas was
+       deleted with its chrome, so there is nothing left to hide: Colony Live draws its own bar and
+       places its own labels, and has never had an overlay in this sense.
+
+       The property, the `OverlayState` type, the `Anchors` vocabulary and the `knownOverlayIds`
+       parameter all went with it. Existing documents need no migration and get none: an old
+       `topology_overlays` key is simply not a property on this class any more, so it is dropped the
+       next time a document is round-tripped through `SanitizeInto`. No cleanup pass, and nothing
+       left validating state nobody writes. */
 
     public sealed class PanelPlacement
     {
@@ -143,15 +145,6 @@ public sealed class DashboardWorkspaceState
         [JsonPropertyName("z")] public int Z { get; set; } = 1;
     }
 
-    public sealed class OverlayState
-    {
-        [JsonPropertyName("visible")] public bool Visible { get; set; } = true;
-        [JsonPropertyName("anchor")] public string Anchor { get; set; } = "top-left";
-        // v0.3.8.55 (field report): the legend overlays fold to their header. A bool needs no
-        // sanitizing; without the property here the round-trip would silently drop the choice.
-        [JsonPropertyName("collapsed")] public bool Collapsed { get; set; }
-    }
-
     /// <summary>
     /// Repairs any state into something safe to render. Never throws, never returns null, and
     /// never discards more than the specific entry that is broken.
@@ -160,7 +153,6 @@ public sealed class DashboardWorkspaceState
     /// dropped (they cannot be drawn); missing known panels are added from defaults.</param>
     public DashboardWorkspaceState Sanitize(
         IReadOnlyCollection<string> knownPanelIds,
-        IReadOnlyCollection<string> knownOverlayIds,
         int viewportWidth = DefaultViewportWidth,
         int viewportHeight = DefaultViewportHeight)
     {
@@ -176,7 +168,6 @@ public sealed class DashboardWorkspaceState
             Profiles.Remove(stale);
 
         TabGroups ??= new();
-        TopologyOverlays ??= new();
 
         foreach (var (profile, panels) in Profiles)
         {
@@ -195,16 +186,6 @@ public sealed class DashboardWorkspaceState
         }
 
         SanitizeTabGroups(knownPanelIds, vw, vh);
-
-        foreach (var id in TopologyOverlays.Keys.ToList())
-        {
-            if (!knownOverlayIds.Contains(id)) { TopologyOverlays.Remove(id); continue; }
-            var o = TopologyOverlays[id] ?? new OverlayState();
-            if (!Anchors.Contains(o.Anchor ?? "")) o.Anchor = "top-left";
-            TopologyOverlays[id] = o;
-        }
-        foreach (var id in knownOverlayIds.Where(k => !TopologyOverlays.ContainsKey(k)))
-            TopologyOverlays[id] = new OverlayState();
 
         return this;
     }
@@ -342,7 +323,6 @@ public sealed class DashboardWorkspaceState
     public static Dictionary<string, object?> SanitizeInto(
         Dictionary<string, object?> uiState,
         IReadOnlyCollection<string> knownPanelIds,
-        IReadOnlyCollection<string> knownOverlayIds,
         int viewportWidth = DefaultViewportWidth,
         int viewportHeight = DefaultViewportHeight)
     {
@@ -355,7 +335,7 @@ public sealed class DashboardWorkspaceState
                 : new();
         }
         catch { workspace = new(); } // corrupt workspace: reset THIS key only
-        uiState["dashboard_workspace"] = workspace.Sanitize(knownPanelIds, knownOverlayIds, viewportWidth, viewportHeight);
+        uiState["dashboard_workspace"] = workspace.Sanitize(knownPanelIds, viewportWidth, viewportHeight);
         return uiState;
     }
 }

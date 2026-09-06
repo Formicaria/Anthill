@@ -75,41 +75,43 @@ public class UiShellTests
     }
 
     /// <summary>
-    /// v2.16.0: chamber layout gives every role its own angular sector.
+    /// THE ROSTER IS AN INDEX, NOT A LAYOUT. v0.3.8.125.
     ///
-    /// Before this, roles sat on a ring capped at 46px while their workers were placed 72px out,
-    /// and the worker bearing came from colonyAngleFor() — which in chamber mode derives from the
-    /// CHAMBER's index and is identical for every role in it. Each role's workers therefore landed
-    /// on the neighbouring role, and the view read as a smudge.
+    /// This test pinned the chamber geometry inside `buildNodes()` — sector width derived from the
+    /// member count, the role at its sector's centre, both radii from required arc length rather
+    /// than a magic cap. Every one of those properties was about where an ant was DRAWN on the
+    /// classic canvas, and that canvas is gone. Colony Live has its own spatial grammar
+    /// (`SECTOR_DEFS`) and its own saved layout; it never consulted any of this.
     ///
-    /// Sectors make cross-role collision geometrically impossible rather than merely unlikely, so
-    /// this test pins the three properties that guarantee it. The radii must stay DERIVED from the
-    /// arc length required; reintroducing a constant cap is what broke it the first time.
+    /// The test is not deleted, because the deletion has a failure mode of its own and it is worse
+    /// than the collision this originally guarded: `buildNodes` still exists, and it is what
+    /// resolves a clicked resident to an ant the inspector can open. Stripping the geometry and
+    /// accidentally stripping a FIELD would make that ant unopenable, silently, with no drawing
+    /// left to look wrong. So this now pins what the index must still carry — and that it carries
+    /// no coordinates.
     /// </summary>
     [Fact]
-    public void ChamberLayout_GivesEachRoleItsOwnSector()
+    public void TheRoster_CarriesIdentityAndNoGeometry()
     {
         var js = Ui("app.js");
         var build = BodyOf(js, "function buildNodes()");
 
-        // 1. Sector width is derived from the member count.
-        Assert.Contains("const sector = (Math.PI*2)/Math.max(1,n);", build);
-        // 2. The role sits at its sector's CENTRE, so neighbouring sectors cannot touch.
-        Assert.Contains("(k+0.5)*sector", build);
-        // 3. Both radii come from required arc length, not a magic cap.
-        Assert.Contains("(n*CHAMBER_ROLE_GAP)/(Math.PI*2)", build);
-        Assert.Contains("(ws.length*CHAMBER_WORKER_GAP)/(slot.sector*CHAMBER_SECTOR_USE)", build);
+        // What the inspector reads, and therefore what the index must still push.
+        foreach (var field in new[]
+                 { "purpose:", "permissions:", "allowedTools:", "forbiddenTools:", "workers:",
+                   "nodeType:", "parent:", "chamber:", "enabled:", "executable:" })
+            Assert.Contains(field, build);
 
-        // Workers are positioned from the CHAMBER centre along their own role's bearing. If this
-        // reverts to the role-relative global fan, the sectors stop containing anything.
-        Assert.Contains("slot.cx+Math.cos(cr)*r2", build);
-        Assert.DoesNotContain("roleAngleInChamber", js);
+        // EVERY worker, always. The old view modes filtered the drawing; filtering the INDEX would
+        // make an idle worker unopenable, which is the defect this half exists to prevent.
+        Assert.Contains("roleWorkers(r).forEach(", build);
+        Assert.DoesNotContain("showWorkers", build);
 
-        // The sector must keep a margin, or adjacent fans meet at the boundary.
-        var use = Regex.Match(js, @"CHAMBER_SECTOR_USE\s*=\s*([0-9.]+)");
-        Assert.True(use.Success, "CHAMBER_SECTOR_USE not found");
-        var fraction = double.Parse(use.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
-        Assert.InRange(fraction, 0.5, 0.9);
+        // And no coordinates: a position in here is a second layout competing with the renderer's.
+        foreach (var geometry in new[]
+                 { "x:", "y:", "chamberCentres", "CHAMBER_SECTOR_USE", "CHAMBER_ROLE_GAP",
+                   "colonyAngleFor", "Math.cos", "Math.sin" })
+            Assert.DoesNotContain(geometry, build);
     }
 
     /// <summary>
@@ -1142,14 +1144,15 @@ public class UiShellTests
         Assert.DoesNotContain("position:absolute;inset:0;z-index:0;display:flex;flex-direction:column", html);
         Assert.DoesNotContain("backdrop-filter:blur(8px)", html);
 
-        // Panning that loses the colony has an obvious way home, wired to the canonical reset.
+        // Panning that loses the colony has an obvious way home, wired to the canonical reset —
+        // which is the RENDERER's since v0.3.8.125, there being only one renderer to reset.
         Assert.Contains("id=\"chat-colony-fit\"", html);
-        Assert.Contains("colonyResetView", BodyOf(js, "document.getElementById('chat-colony-fit')?.addEventListener('click', ()=>"));
+        Assert.Contains("ColonyHost.resetAll()",
+            BodyOf(js, "document.getElementById('chat-colony-fit')?.addEventListener('click', ()=>"));
 
-        // Reduced motion is honored at the render loop: idle + reduced → 4fps; real work → full
-        // rate, because at that point the motion IS the information.
-        Assert.Contains("prefers-reduced-motion", js);
-        Assert.Contains("REDUCED_MOTION && !colonyRunning", BodyOf(js, "function loop(ts)"));
+        // Reduced motion is still honoured, in the renderer that still draws. app.js's own
+        // reduced-motion gate went with its render loop; colony-live.js carries its own.
+        Assert.Contains("prefers-reduced-motion", Ui("colony-live.js"));
 
         // Mobile is a clean switch, not a miniature unusable graph under the thread.
         Assert.Contains("#page-chat.colony-open .chat-main{display:none;}", html);
@@ -1171,9 +1174,10 @@ public class UiShellTests
         // No frosted floating panel, no translucent conversation over the map.
         Assert.DoesNotContain("backdrop-filter:blur(8px)", html);
         Assert.DoesNotContain("color-mix(in srgb, var(--panel) 92%, transparent)", html);
-        // The camera centres the canvas it owns — no occlusion means no offset arithmetic.
-        var resize = BodyOf(js, "function resize()");
-        Assert.Contains("cx=W/2; cy=H/2;", resize);
+        // The renderer centres the canvas it owns — no occlusion means no offset arithmetic.
+        // app.js's `resize()` went with the classic canvas in v0.3.8.125; the assertion moved to
+        // the renderer that actually does the measuring rather than being dropped.
+        Assert.Contains("scx = W / 2; scy = H / 2;", Ui("colony-live.js"));
         // The pane is a sibling in the page's own flow: the conversation orders first, the
         // colony second, and hiding the pane returns the row to a plain full-width chat.
         Assert.Contains("order:2;border-left:1px solid var(--border);", html);
@@ -1507,9 +1511,15 @@ public class UiShellTests
     /// v0.3.8.42 (§9/§14): a failed role registry is a STATE the operator sees, never a fiction.
     /// buildNodes used to invent six "Legacy executable ant" roles whenever /colony/registry had
     /// not answered, and the legend padded itself from a hardcoded list — so a dead endpoint drew
-    /// a healthy colony. Now: no data → core nodes only, and the legend names the failure with a
+    /// a healthy colony. Now: no data → core nodes only, and the console names the failure with a
     /// retry beside it; stale data → cached roles stay visible, marked stale with when and why.
-    /// </summary>
+    ///
+    /// v0.3.8.125 moved WHERE that is said, not WHETHER. The caste legend was the classic canvas's
+    /// and went with it; the account of the registry's condition moved into the live bar, which is
+    /// where the operator is now looking. The three strings below are asserted unchanged, because
+    /// they are the property — a relocation that quietly dropped "Roles are STALE" would leave the
+    /// console presenting a stale roster as a current one, which is the exact failure this test was
+    /// written for.
     [Fact]
     public void RegistryFailure_IsAState_NeverAFabricatedRoster()
     {
@@ -1522,10 +1532,16 @@ public class UiShellTests
         Assert.Contains("colonyRegistryProblem={message:(r&&r.message)||'registry request rejected'", js);
         Assert.Contains("colonyRegistryProblem={message:e.message||'registry unreachable'", js);
         // …rendered where the roles would be, with retry beside it, distinguishing stale from absent…
-        var legend = BodyOf(js, "function renderColonyLegend()");
-        Assert.Contains("Roles are STALE", legend);
-        Assert.Contains("Role registry unavailable", legend);
-        Assert.Contains("chud-legend-retry", legend);
+        var state = BodyOf(js, "function renderColonyRegistryState()");
+        Assert.Contains("Roles are STALE", state);
+        Assert.Contains("Role registry unavailable", state);
+        Assert.Contains("clb-registry-retry", state);
+        // The third state, which is neither: never loaded, not failed either. Silence here would
+        // read as a healthy empty colony.
+        Assert.Contains("Reading the colony registry…", state);
+        // And it has somewhere to render. A relocated surface whose host element does not exist is
+        // the same defect as no surface at all, and it fails silently.
+        Assert.Contains("id=\"clb-registry-note\"", Ui("index.html"));
         // …and retry busts the cache, or it would re-read the same failure for 30 seconds.
         Assert.Contains("apiCacheBust('/colony/registry')", BodyOf(js, "function colonyRegistryRetry()"));
     }

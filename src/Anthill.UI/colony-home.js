@@ -56,7 +56,11 @@
     // the registry opens whether or not the colony view has finished loading. v0.3.8.124.
     if (act === 'mounds') { go('/colony/mounds'); return; }
     var live = liveApi();
-    if (!live) { if (act === 'resetview' && typeof colonyResetView === 'function') colonyResetView(); return; }
+    // v0.3.8.125: with no renderer there is nothing to move. This used to fall through to the
+    // classic canvas's `colonyResetView`, which was a real answer while there were two renderers;
+    // now the absence of one means the failure state is on screen, and its Retry is the control
+    // that matters.
+    if (!live) return;
     if (act === 'survey') live.survey();
     else if (act === 'mission') live.focus('queen');
     else if (act === 'memory') live.focus('memory');
@@ -115,10 +119,6 @@
     if (needs) { needs.style.display = n > 0 ? '' : 'none'; if (needsTxt) needsTxt.textContent = n + (n === 1 ? ' needs you' : ' need you'); }
   }
 
-  function syncToggle() {
-    var b = $('clb-3d'), on = document.body.classList.contains('colony-live-on');
-    if (b) { b.textContent = on ? 'Classic 2D' : 'Live 3D'; b.classList.toggle('on', !on); }
-  }
   // ---- environment ----------------------------------------------------------------------------
   var ENV_KEY = 'anthill.colony.env';
   function consoleIsLight() { return document.documentElement.dataset.theme === 'light'; }
@@ -145,7 +145,7 @@
   var conduitAuto = true;
   function applyView() {
     var live = liveApi(), mo = $('clb-motion'), lb = $('clb-labels'), tr = $('clb-trails'), cd = $('clb-cdens'), cb = $('clb-cbright'), cc = $('clb-ccolor'), la = $('clb-linkalpha');
-    // motion + trails go through app.js's validated preference path (it also feeds the classic canvas)
+    // motion + trails go through app.js's validated preference path, which owns the vocabulary
     if (typeof setColonyPref === 'function') { if (mo) setColonyPref('motion', mo.value); if (tr) setColonyPref('pheromones', tr.value === 'off' ? 'off' : 'all'); }
     var conduits = { density: cd ? cd.value : 'normal', bright: cb ? Number(cb.value) : 1, color: (!conduitAuto && cc) ? cc.value : null };
     var links = { opacity: la ? Number(la.value) : .125 };
@@ -183,7 +183,21 @@
       box.innerHTML = '<div class="muted">The colony view has not loaded yet — open Colony › Live once, then come back.</div>';
       return;
     }
-    var list = live.listMounds();
+    /* A MOUND CHAMBER NOBODY HAS IS NOT A MOUND CHAMBER. v0.3.8.125.
+
+       The built-in `mound` sector shipped in the registry whether or not a device had ever
+       enrolled: a row reading "MICROMOUND · 0 ants · built in · not yours to delete", under a
+       heading that says "every mound chamber in your colony". It is not one — it is the seat a
+       fleet chamber will occupy once there is a fleet, and the renderer already knows that, which
+       is why it draws nothing there (`s.present` is false until the snapshot reports a fleet).
+
+       This is the same defect the `unassigned` chamber was deleted for in `.122`, one sector over:
+       an empty compartment does not report a gap, it just occupies a seat and invites the reader to
+       wonder what is wrong. The list now asks the same question the renderer does.
+
+       `added` chambers are exempt: an operator who pressed `+ Mound` made a label-only chamber on
+       purpose and must be able to find it in order to delete it again. */
+    var list = live.listMounds().filter(function (m) { return m.present || m.removable; });
     if (!list.length) {
       box.innerHTML = '<div class="muted">No mound chambers. Use <strong>+ Mound</strong> on Colony › Live to add one.</div>';
       return;
@@ -261,24 +275,51 @@
     $('clb-record-meta').textContent = [res.worker ? 'worker of ' + res.parent : 'role', res.roleId, res.status, tr ? ('trail ' + Number(tr.strength).toFixed(2) + ' · ' + (tr.successes || 0) + '✓ ' + (tr.failures || 0) + '✗') : 'no trail recorded', res.workers ? res.workers + ' worker' + (res.workers === 1 ? '' : 's') : ''].filter(Boolean).join(' · ');
     var tag = $('clb-record-verif'); tag.textContent = res.status || 'idle'; tag.className = 'clb-record-tag' + (res.status === 'working' ? ' ok' : res.status === 'disabled' ? ' bad' : '');
     box.style.display = '';
-    // THE INSPECTOR IS HERE NOW. v0.3.8.124 — this panel used to end with "Open ant →", which
-    // navigated to a page holding a card for every one of twenty-five ants so the operator could
-    // find the one they had just clicked. Its telemetry loads into the panel instead.
+    // THE INSPECTOR IS HERE NOW. v0.3.8.124 moved the ant's telemetry into this panel; v0.3.8.125
+    // moved the rest of it — purpose, permissions, tools, runtime facts, live task load — by
+    // relocating the `#agent-detail` element itself rather than growing a second copy here.
+    //
+    // `showInspector` is app.js's, and it is reached the way it always was: colony-host.js resolves
+    // the clicked resident against the roster and calls it. What this file does is make sure the
+    // element is VISIBLE and, when the resident has no registry role behind it, say so — a mound's
+    // ants are presentation-only, and an inspector that rendered nothing for them looked broken.
     showAntStats(res);
+    showAntDetail(res);
+  }
+
+  /* ── The inspector half, for residents the roster does not contain ───────────────────────────
+     v0.3.8.125. A micromound's ants are drawn from the mound roster, not from `/colony/registry`,
+     so `nodes.find` in colony-host.js does not resolve them and `showInspector` is never called.
+     Before this release that left the panel showing a name, a colour and nothing else, which read
+     as an inspector that had failed rather than as an ant that has no registry role.
+
+     They are still fully customizable — the name and colour above are the renderer's, and they are
+     what a mound's ants have always had. This says which half applies and why, instead of leaving
+     an empty panel to be interpreted. */
+  function showAntDetail(res) {
+    var host = $('agent-detail'); if (!host) return;
+    host.style.display = '';
+    var known = typeof nodes !== 'undefined' && nodes.some(function (n) {
+      var who = String(res.roleId || '').toLowerCase();
+      return n.ant === who || n.worker === who || n.id === who;
+    });
+    if (!known) {
+      host.innerHTML = '<div class="ad-empty">This ant belongs to a mound, not to the colony '
+        + 'registry — it has no purpose, permissions or tools of its own. Its name and colour are '
+        + 'yours to set above.</div>';
+    }
   }
 
   /* ── The ant's own telemetry, in the panel that named it ────────────────────────────────────
-     Lifetime task counts, success rate, average duration and recent activity, for whichever ant
-     was clicked. This is what the Ant Inspector page was for; the page is gone and the question it
-     answered is now asked by clicking the thing you are asking about.
+     Lifetime task counts, success rate and average duration for whichever ant was clicked. This is
+     what the Ant Inspector page was for; the page is gone and the question it answered is now asked
+     by clicking the thing you are asking about.
 
      THE FETCH IS NOT HERE, AND THAT IS A RULE RATHER THAN A PREFERENCE. `ColonyLiveGuardTests`
      holds that colony-host.js is the only file in this feature that reaches the network: the host
      hydrates, the reducer and the renderer consume, and this file resolves a project for its
-     composer and nothing more. So the ant tab borrows `antTelemetry` from app.js, exactly as it
-     borrows `onAntRecentToggle` for the activity list. Recent activity stays behind a disclosure
-     because it is a SECOND request per ant, and an operator scanning residents wants the counters,
-     not twelve event rows each time.
+     composer and nothing more. So the ant tab borrows `antTelemetry` from app.js rather than
+     fetching for itself.
 
      A WORKER HAS NO COUNTERS OF ITS OWN, and this says so rather than showing zeros. `/ants/stats`
      is keyed by ROLE; a worker's work is counted against its parent, so showing an empty card for
@@ -300,7 +341,7 @@
     try {
       // `antTelemetry` lives in app.js, not here. colony-host.js is the only file in this feature
       // that may reach the network — the host hydrates, the view consumes — so the ant tab borrows
-      // app.js's reader the same way it borrows `onAntRecentToggle`.
+      // app.js's reader rather than opening a second door.
       var data = (typeof antTelemetry === 'function') ? await antTelemetry() : null;
       var s = data && (data.ants || {})[roleId];
       if (!s) {
@@ -327,15 +368,11 @@
         + '<i style="width:' + (total ? skip / total * 100 : 0) + '%;background:var(--dim)"></i>'
         + '</div>'
         + '<div class="ac-sub">avg ' + (s.avg_seconds ? Number(s.avg_seconds).toFixed(1) + 's' : '—') + '/task'
-        + (skip ? ' · ' + skip + ' skipped' : '') + (s.running ? ' · ' + s.running + ' running' : '') + '</div>'
-        + '<details class="clb-ant-recent" data-ant="' + escapeHtml(roleId) + '"><summary>recent activity</summary>'
-        + '<div class="ac-recent"><div style="color:var(--dim)">Expand to load…</div></div></details>';
-
-      var det = host.querySelector('.clb-ant-recent');
-      // The loader app.js already owns — one implementation of "the last twelve events for this
-      // ant", rather than a second copy here that would drift from it.
-      if (det && typeof onAntRecentToggle === 'function')
-        det.addEventListener('toggle', function () { onAntRecentToggle(det); });
+        + (skip ? ' · ' + skip + ' skipped' : '') + (s.running ? ' · ' + s.running + ' running' : '') + '</div>';
+      // v0.3.8.125: the per-ant event disclosure is gone. It was a SECOND request for twelve event
+      // rows, and the panel below it already carries the ant's live task load — running, completed,
+      // failed, and the tasks themselves. Counters and current work here; the event log lives on
+      // the Events page, which is what that page is for.
     } catch (e) {
       host.innerHTML = '<div class="clb-ant-note">Telemetry unavailable: ' + escapeHtml((e && e.message) || 'unknown error') + '</div>';
     }
@@ -346,6 +383,7 @@
     var rec = r.record || {}; recordAnt = String(rec.ant || '').toLowerCase(); antId = null;
     var edit = $('clb-ant-edit'); if (edit) edit.style.display = 'none';
     var stats = $('clb-ant-stats'); if (stats) { stats.style.display = 'none'; stats.innerHTML = ''; }
+    var det = $('agent-detail'); if (det) det.style.display = 'none';
     $('clb-record-title').textContent = rec.title || rec.type || 'record';
     $('clb-record-meta').textContent = [rec.type, rec.ant, rec.mission && ('mission ' + String(rec.mission).slice(0, 8)), rec.taskId && ('task ' + String(rec.taskId).slice(0, 8)), rec.time].filter(Boolean).join(' · ');
     var v = rec.verif || 'not_scanned', tag = $('clb-record-verif');
@@ -445,9 +483,8 @@
   }
 
   // The renderer announces focus changes; the sector panel follows them. The host fires onLive
-  // with every renderer it creates (and null when it tears one down), so a 2D→3D toggle re-hooks.
+  // with every renderer it creates (and null when it tears one down), so a remount re-hooks.
   function hookLive(live) {
-    syncToggle();
     if (!live) { showSector(null); showRecord(null); return; }
     live.on('sector', function (s) { showSector(s); showRecord(null); markView(null); });
     // v0.3.8.124 — there is no `moundsettings` event any more. A mound chamber's second click used
@@ -456,7 +493,7 @@
     live.on('deselect', function () { showSector(null); showRecord(null); });
     live.on('record', function (r) { showRecord(r); });
     live.on('resident', function (h) { showResident(h); });
-    applyEnv(initialEnv()); restoreView(); syncToggle();
+    applyEnv(initialEnv()); restoreView();
   }
 
   // ---- wiring ---------------------------------------------------------------------------------
@@ -487,7 +524,6 @@
       // one-time token and answers under its own identity whatever the colony calls it.
       var lm = liveApi(); if (lm && lm.addMound) lm.addMound();
     }
-    else if (act === 'toggle3d') { if (window.ColonyHost) ColonyHost.toggle(); syncToggle(); }
     else if (act === 'ask') send('chat');
     else if (act === 'run') send('mission');
     else view(act);
@@ -544,7 +580,7 @@
     // chambers, and it changes only when they change it.
     if (typeof PAGE_ENTER !== 'undefined') PAGE_ENTER['mounds'] = renderMounds;
     if (window.ColonyHost) { ColonyHost.onLive(hookLive); ColonyHost.onScene(function (sc) { lastScene = sc; if (page.classList.contains('active')) refreshBar(); }); }
-    refreshBar(); syncToggle();
+    refreshBar();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();

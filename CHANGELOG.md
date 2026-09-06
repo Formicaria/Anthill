@@ -1,3 +1,75 @@
+## v0.3.8.125 - one colony, one renderer, one panel
+
+**THE CLASSIC CANVAS IS GONE.** Colony Live has been the default since `.117` and the only view
+anyone uses; the force-graph projection behind it stayed as the opt-out and the fallback, drawing a
+second colony nobody looked at. Deleting it takes **853 lines out of app.js** — the render loop,
+every draw function, particles, the camera, six canvas pointer handlers, the chamber geometry, the
+rename popover, the hover tooltip, the caste legend and the four view modes — plus the view bar,
+the HUD, the zoom hint and six overlay anchor slots out of the markup.
+
+Worth saying plainly, because the naming has misled every conversation about this: **neither
+renderer ever used WebGL.** "Live 3D" is a software projection painted through a 2D context, and it
+is the one that survives. There was no fallback for a machine that cannot do 3D, because there was
+nothing to fall back from.
+
+**WHAT THE FALLBACK WAS ACTUALLY FOR, AND WHAT REPLACES IT.** The classic canvas was what came back
+when Colony Live failed to mount — a detached container, an asset that lost a race. With one
+renderer that answer stops existing, and the guard protecting it would have passed on a blank panel
+and a `console.warn`, which is a colony view that is silently not there. So the failure now **says
+so in the DOM**, where the colony would have been, with what failed and a Retry — the causes are
+transient, so without one a recoverable failure needs a page reload. The stored preference is gone
+too, and that one matters: an operator who ever chose Classic 2D has `'0'` in localStorage, and a
+mount that still read it would boot them into a colony page that renders nothing at all.
+
+`buildNodes` survives as what it always half was — an **index**, not a layout. Colony Live keeps its
+own spatial grammar and its own saved arrangement, and asks this list exactly one question: who is
+`coder_2`, so the inspector can open on the ant that was clicked. The geometry is gone; the
+identity, purpose, permissions, tools and parentage stay, and the guard that used to pin the chamber
+maths now pins those fields instead. Deleting one silently would have made an ant unopenable with no
+drawing left to look wrong.
+
+**THE ANT INSPECTOR IS IN THE PANEL THAT NAMED THE ANT.** The colony page described the ant you
+clicked in two places at once, in two vocabularies for the same facts — the live panel said "trail
+0.62", the sidebar card said "Pheromone 0.74". One question, two panels, and an operator had to read
+both. `#agent-detail` **moved** into the live panel rather than being rebuilt there: it is one
+element with two hosts, re-parented by the dashboard widget exactly as the colony canvas area is, so
+a copy would have drifted from it and left that widget pointing at nothing. Purpose, permissions,
+tools, live task load, workers and the name/colour editor all come with it. The per-ant event
+disclosure does not — it was a second request for twelve rows under a panel that now shows the ant's
+actual task load, and the event log is what the Events page is.
+
+**A MOUND'S ANTS EXPLAIN THEMSELVES.** They come from the mound roster, not the registry, so nothing
+resolved them against `nodes` and the inspector below them rendered empty — which reads as a broken
+panel rather than as an ant with no registry role. It now says which. Their name and colour were
+always editable and still are: that store is the renderer's, which is exactly why it works for an
+ant the registry has never heard of.
+
+**AN EMPTY MOUND CHAMBER IS NOT A MOUND CHAMBER.** The built-in `mound` sector was listed in the
+registry whether or not a device had ever enrolled — "MICROMOUND · 0 ants · built in · not yours to
+delete", under a heading reading "every mound chamber in your colony". The renderer already knew
+better and drew nothing there. This is the `unassigned` chamber's defect from `.122` one sector
+over: an empty compartment does not report a gap, it occupies a seat and invites the reader to
+wonder what is wrong. Chambers an operator added stay listed, because they have to be findable to be
+deleted.
+
+**THE SHIMMER ON THE CHAMBERS WAS A STEP FUNCTION.** A chamber's specular highlight was gated on a
+boolean — is the lit point nearer the camera than the chamber's centre — which flips between two
+frames as you orbit. Worse, it flipped at the light's grazing angle, so the last thing drawn before
+it vanished was a bright bloom on the silhouette. It is a continuous facing term now, smoothstepped,
+so the highlight fades out before it would have popped. Identical head-on; no discontinuity anywhere.
+
+**Retired with the canvas:** topology overlays, server-side and client. The four ids were its chrome,
+and `DashboardWorkspaceState` was still validating anchors for panels that no longer exist. Existing
+documents need no migration and get none — the key is not a property any more, so it is dropped the
+next time one is round-tripped.
+
+**On the guards.** Four of them asserted 2D internals, and two would have gone quietly vacuous
+rather than failing: the one-renderer test counted canvases and loop bootstraps (now zero and zero,
+so the invariant inverts and still says there is exactly one renderer), and the control-handler test
+skipped any attribute with no occurrences, so deleting the view bar would have left it iterating an
+empty set and passing. Both were rewritten with the floor stated, which is the rule
+`docs/GUARDS.md` has always asked for and the way a large deletion is supposed to be made safe.
+
 ## v0.3.8.124 - which model does this work is a question about a project
 
 **ROUTING WAS COLONY-WIDE, AND OPERATORS DO NOT WORK THAT WAY.** One priority model and fourteen

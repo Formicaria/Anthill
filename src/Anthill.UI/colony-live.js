@@ -512,7 +512,28 @@
       return Math.min(1, .42 + .4 * key + .18 * facing + .2 * rim);
     }
     /** Screen-space offset of the key light for a sphere: where its highlight sits. */
-    function lightOffset(s, pr) { var q = proj([s.pos[0] + LKEY[0] * s.R * .55, s.pos[1] + LKEY[1] * s.R * .55, s.pos[2] + LKEY[2] * s.R * .55]); return q ? { dx: q.x - pr.x, dy: q.y - pr.y, front: q.zc < pr.zc } : { dx: 0, dy: 0, front: true }; }
+    /* WHERE THE KEY LIGHT LANDS ON A CHAMBER, and how much of it the camera can see.
+
+       v0.3.8.125 — THE SHIMMER. `front` was a BOOLEAN: `q.zc < pr.zc`, true when the lit point was
+       nearer the camera than the chamber's centre. Orbit the colony and that predicate flips at one
+       exact angle, so the specular highlight appeared and vanished between two frames — and it did
+       it at its WORST moment, because the light is grazing the silhouette right there, putting the
+       whole bloom on the rim where it reads as a bright flick rather than as a lit sphere. Reported
+       as "a weird light shimmer on the chambers at a certain angle", which is exactly what a
+       step function in a rotating scene looks like.
+
+       `facing` replaces it with the continuous quantity the boolean was a threshold on: how far in
+       front the lit point sits, in units of the offset's own length, smoothstepped to 0..1. The
+       highlight now fades out as the light rotates away and is gone by the time it would have
+       popped. Same look head-on — facing is 1 there — and no discontinuity anywhere. */
+    function lightOffset(s, pr) {
+      var q = proj([s.pos[0] + LKEY[0] * s.R * .55, s.pos[1] + LKEY[1] * s.R * .55, s.pos[2] + LKEY[2] * s.R * .55]);
+      if (!q) return { dx: 0, dy: 0, facing: 1 };
+      // Depth difference over the offset's own world length: +1 fully towards the camera, -1 away.
+      var t = (pr.zc - q.zc) / Math.max(1e-3, s.R * .55);
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      return { dx: q.x - pr.x, dy: q.y - pr.y, facing: t * t * (3 - 2 * t) };
+    }
     function pathAt(pts, t, rev) { if (rev) t = 1 - t; var fi = Math.min(.999, Math.max(0, t)) * (pts.length - 1), jj = Math.floor(fi); return V(pts[jj], pts[Math.min(pts.length - 1, jj + 1)], fi - jj); }
     function setCrumb(t) { if (crumb) crumb.textContent = t + (partial ? ' · partial history' : ''); }
     /** The tooltip and breadcrumb are DOM, so they take their ink from the environment here. */
@@ -806,14 +827,14 @@
         g.addColorStop(0, 'rgba(' + nuc + ',' + (.3 * sty.bright * (1 - m * .65) * LT.expo * fog(pr.zc)) + ')'); g.addColorStop(1, 'rgba(' + nuc + ',0)');
         ctx.beginPath(); ctx.arc(pr.x, pr.y, Math.max(4, nr * 1.6 * sty.glow), 0, TAU); ctx.fillStyle = g; ctx.fill();
         var lo = lightOffset(s, pr);
-        if (lo.front) {
+        if (lo.facing > .004) {
           // Same inversion as the ant cores: a pale specular is invisible on paper at best and a
           // milky smear at worst, so on the light page the key light leaves a soft DARK bloom where
           // it would otherwise leave a bright one. Both read as a lit sphere; only one of them reads
           // as a lit sphere on white.
           var hr = Math.max(3, nr * 1.4), hc = isLight() ? '44,58,78' : '235,240,250';
           var hg = ctx.createRadialGradient(pr.x + lo.dx, pr.y + lo.dy, 0, pr.x + lo.dx, pr.y + lo.dy, hr);
-          hg.addColorStop(0, 'rgba(' + hc + ',' + ((isLight() ? .08 : .10) * LT.expo * fog(pr.zc)) + ')'); hg.addColorStop(1, 'rgba(' + hc + ',0)');
+          hg.addColorStop(0, 'rgba(' + hc + ',' + ((isLight() ? .08 : .10) * lo.facing * LT.expo * fog(pr.zc)) + ')'); hg.addColorStop(1, 'rgba(' + hc + ',0)');
           ctx.beginPath(); ctx.arc(pr.x + lo.dx, pr.y + lo.dy, hr, 0, TAU); ctx.fillStyle = hg; ctx.fill();
         }
         /* LINKAGE OPACITY IS THE OPERATOR'S. v0.3.8.122 — this was hard-coded at .045 focused and
