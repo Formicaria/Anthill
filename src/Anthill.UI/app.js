@@ -4120,7 +4120,7 @@ async function chatSend(mode){
   // returned `mission_id`, and this function has always thrown it away, so every caller that
   // wanted to follow the work it just started had to go and find it again. The colony composer is
   // the first caller that needs it: it stays where it is now and watches, instead of leaving.
-  const submitted={ conversationId:null, missionId:null };
+  const submitted={ conversationId:null, missionId:null, started:null, note:'' };
   try{
     if(!chatActiveId){
       // v0.3.8.48: a conversation lives in a project — chosen, never invented. The picker
@@ -4168,6 +4168,7 @@ async function chatSend(mode){
     }else{
       const r=await api('/conversations/'+encodeURIComponent(chatActiveId)+'/turns','POST',{ message:msg, mode:mode, attachments:chatStagedFiles });
       if(r&&r.data&&r.data.mission_id) submitted.missionId=r.data.mission_id;
+      if(r&&r.data&&typeof r.data.started==='boolean') submitted.started=r.data.started;
       if(r&&r.success===false){
         note=r.message||'Refused';
         if(el) el.value=msg;
@@ -4186,7 +4187,7 @@ async function chatSend(mode){
     await chatOpen(chatActiveId);
     if(note) chatSetState(note);
   }
-  submitted.conversationId=chatActiveId;
+  submitted.conversationId=chatActiveId; submitted.note=note;
   return submitted;
 }
 

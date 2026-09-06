@@ -1653,6 +1653,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
     .ccp-run{border-color:rgba(var(--queen-rgb),.5);background:rgba(var(--queen-rgb),.16);color:#ffb3d8;}
     .ccp-run:hover{background:rgba(var(--queen-rgb),.28);}
     .ccp-foot{max-width:820px;margin:6px auto 0;display:flex;justify-content:space-between;gap:12px;font-family:var(--mono);font-size:9.5px;color:rgba(185,194,207,.45);}
+    .ccp-pol{max-width:170px;}
     .ccp-state{color:var(--muted);}
     /* The mission the composer started, followed without leaving the colony. Ready = clickable. */
     .ccp-watch{flex:none;display:inline-flex;align-items:center;gap:6px;height:20px;padding:0 9px;border-radius:10px;cursor:default;
@@ -2372,6 +2373,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                 <select id="ccp-scope" class="ccp-sel" aria-label="Where this conversation lives" title="Where this conversation lives">
                   <option value="q">Just a question</option>
                   <option value="new">New project…</option>
+                </select>
+                <select id="ccp-policy" class="ccp-sel ccp-pol" aria-label="Approval mode for the work this starts" title="How the work this starts handles side effects — the same gate the conversation carries in Chat">
+                  <option value="ask">Manual approval</option>
+                  <option value="autoapprove">Automatically approve</option>
+                  <option value="bypass">Skip all approvals</option>
                 </select>
                 <input id="ccp-newname" class="ccp-newname" placeholder="Name the project" maxlength="120" aria-label="New project name" style="display:none">
               </div>

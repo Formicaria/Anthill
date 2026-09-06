@@ -1,3 +1,30 @@
+## v0.3.8.131 - the chip that could not tell "not yet" from "never"
+
+**THE OPERATOR REPORTED IT AS TWO BUGS AND IT WAS ONE.** `.130`'s mission chip sat on
+`mission starting…` forever, and separately the colony composer had no way to choose an approval
+mode. The second causes the first: the turn stopped at the approval gate, so **no mission was ever
+created**, so there was no id for the chip to follow. It had nothing to filter on and no way to tell
+"the plan has not reached the graph yet" from "there is no plan and never will be" — both are an
+empty list.
+
+**THE GATE THE COMPOSER COULD NOT SET.** Chat has had an approval selector since `.51` and a
+hand-off for a conversation that does not exist yet — `chatPendingPolicy` — since `.53`. The colony
+composer had neither, so every mission started from that screen inherited `ask`, stopped at its first
+side effect, and left the operator on a page with no control to say otherwise. It carries the same
+three-option selector now (manual approval / automatically approve / skip all approvals), writing the
+same hand-off. **Not a second policy path** — the one Chat already honours, set from one more place.
+
+**AND A TURN THAT STARTS NO MISSION SAYS SO.** `no mission started · open it →`, clickable, because
+the reason is in the thread and the thread is one click away. `chatSend` returns `started` and the
+refusal note alongside the ids it already handed back, so the chip is reporting what the server said
+rather than inferring from a silence. The guard now pins both halves: no mission id is not a mission,
+and the gate is chosen rather than reimplemented.
+
+**A note on where this landed.** `.130` was tagged before this fix was written, and the first attempt
+appended it to `.130`'s changelog entry — which `ShippedChangelogTests` refused, correctly and
+immediately. A shipped entry is frozen; a correction goes in the next one. That guard has now caught
+this exact mistake twice in the repository's history, which is the argument for it.
+
 ## v0.3.8.130 - the lane with nobody in front of it
 
 **`.128` CLOSED HALF A GATE AND SAID SO.** The escalation policy an operator sets on a conversation

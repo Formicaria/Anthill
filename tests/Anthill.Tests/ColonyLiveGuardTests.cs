@@ -979,6 +979,16 @@ public class ColonyLiveGuardTests
         Assert.Contains("tasks.length > 0 && live === 0", home);
         Assert.Contains("refreshBar(); renderWatch();", home);
 
+        // AND NO MISSION ID MEANS NO MISSION. The first cut showed "mission starting…" forever
+        // when the turn was refused or stopped at the approval gate — a chip describing a mission
+        // that was never created, in the one state where the operator most needs to be told why.
+        Assert.Contains("blocked: !handed.missionId,", home);
+        Assert.Contains("no mission started", home);
+
+        // The gate is chosen here rather than reimplemented: `chatPendingPolicy` is the hand-off
+        // Chat already honours for a conversation that does not exist yet.
+        Assert.Contains("chatPendingPolicy = pol.value;", home);
+
         Assert.False(home.Contains("setTimeout(renderWatch", StringComparison.Ordinal),
             "the mission chip drives itself from a timer. It is redrawn by ColonyHost.onScene, "
           + "which already fires on every colony event — a second clock here is the client mission "
