@@ -109,9 +109,15 @@ public class UiShellTests
 
         // And no coordinates: a position in here is a second layout competing with the renderer's.
         foreach (var geometry in new[]
-                 { "x:", "y:", "chamberCentres", "CHAMBER_SECTOR_USE", "CHAMBER_ROLE_GAP",
+                 { "chamberCentres", "CHAMBER_SECTOR_USE", "CHAMBER_ROLE_GAP",
                    "colonyAngleFor", "Math.cos", "Math.sin" })
             Assert.DoesNotContain(geometry, build);
+
+        // The coordinate KEYS, matched on a word boundary rather than as substrings. `Contains("y:")`
+        // was the first draft and it matched `colony:` — a guard that fails on a field the roster is
+        // required to carry, which is the opposite of what it is for.
+        foreach (var key in new[] { @"\bx:", @"\by:" })
+            Assert.DoesNotMatch(new Regex(key), build);
     }
 
     /// <summary>
