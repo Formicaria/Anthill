@@ -1249,9 +1249,9 @@ function buildNodes(){
     const color=ROLE_COLORS[id]||'#7fa0bc';
     nodes.push({id,ant:id,label:roleName(r),role:roleColony(r),colony:roleColony(r),purpose:rolePurpose(r),enabled:roleEnabled(r),executable:roleExecutable(r),permissions:rolePerms(r),allowedTools:roleAllowedTools(r),forbiddenTools:roleForbiddenTools(r),color,pp:i,activity:0,nodeType:'role',workers:roleWorkers(r),chamber:chamberFor(id)});
     edges.push({from:id==='planner'||id==='constraint'?'queen':'director',to:id});
-    // EVERY worker, always. The old `showWorkers` gate came from the canvas's view modes, and a
-    // filtered DRAWING was a rendering decision — this is no longer a rendering. An index that
-    // omitted a worker would make that worker unopenable from the live view.
+    // EVERY worker, always. The gate that used to stand here came from the canvas's view modes,
+    // and a filtered DRAWING is a rendering decision — this is no longer a rendering. An index
+    // that omitted a worker would make that worker unopenable from the live view.
     roleWorkers(r).forEach((w,wi)=>{
       const wid=workerId(w);
       nodes.push({id:wid,ant:id,worker:wid,label:workerName(w),role:roleName(r),colony:roleColony(r),purpose:workerPurpose(w),permissions:workerPerms(w),allowedTools:prop(w,'allowedTools','AllowedTools')||[],forbiddenTools:prop(w,'forbiddenTools','ForbiddenTools')||[],color,pp:wi,activity:0,nodeType:'worker',parent:id,chamber:chamberFor(id)});

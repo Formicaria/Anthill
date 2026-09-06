@@ -1718,9 +1718,13 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
     html[data-theme="light"] .clb-needs{border-color:rgba(168,95,7,.5);background:rgba(168,95,7,.08);color:#a85f07;}
     html[data-theme="light"] .clb-needs-dot{background:#a85f07;box-shadow:none;}
     .clb-record-tag.bad{border-color:rgba(255,65,108,.45);color:#ff8fa8;}
+    /* Without a renderer the live bar's controls have nothing to act on, so they fold away and
+       the failure state in #colony-canvas-area is what is left on screen. v0.3.8.125 dropped the
+       carve-out that kept the Classic 2D button visible here: it existed so the one control that
+       could bring a renderer BACK stayed reachable, and Retry is that control now. */
     body:not(.colony-live-on) #clb-record,
     body:not(.colony-live-on) #clb-sector,
-    body:not(.colony-live-on) #clb-views .clb-btn:not(#clb-3d):not(.clb-focus),
+    body:not(.colony-live-on) #clb-views .clb-btn:not(.clb-focus),
     body:not(.colony-live-on) .clb-pop-wrap{display:none;}
     @media (max-width:900px){ .clb-views .clb-btn:not(.clb-focus){display:none;} .clb-prog,.clb-count{display:none;} .ccp-sel{max-width:130px;} }
     @media (prefers-reduced-motion:reduce){ .clb-dot.on{animation:none;} .clb-prog-fill{transition:none;} }
@@ -2303,7 +2307,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </div>
         <!-- v0.3.8.125: THE CANVAS IS THE RENDERER'S, NOT THIS FILE'S.
 
-             This element used to contain a static `<canvas id="c">`, an HUD overlay, a view bar
+             This element used to contain a static canvas element (id "c"), an HUD overlay, a bar
              with four modes and three preference selects, a zoom hint, and six overlay anchor
              slots — all of it chrome for the classic force-graph projection. That projection is
              gone; Colony Live creates its own canvas on mount, draws its own bar (the `clb-*`
