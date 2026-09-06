@@ -61,7 +61,7 @@ public class VerificationFrameworkTests : IDisposable
     public void Diff_InScopeChange_Passes_WithHashes()
     {
         var r = new DiffVerifier().Verify(new VerificationRequest("code_patch", Ws(),
-            ChangedPath: "docs/HOMELAB.md", NewContent: "new", OldContent: "old",
+            ChangedPath: "docs/INFRASTRUCTURE.md", NewContent: "new", OldContent: "old",
             ApprovedScope: new[] { "docs/" }));
         Assert.True(r.Passed);
         Assert.Contains(r.Evidence, e => e.Kind == "new_content_sha256");

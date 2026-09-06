@@ -223,7 +223,7 @@ public class V3ReadinessTests : IDisposable
     public void ANegativeAttestation_IsRecorded_AndDoesNotSatisfy()
     {
         var mem = Memory();
-        mem.SaveReadinessAttestation(V3Readiness.Ids.KillSwitch, false, "homelab stop worked, autonomy stop lagged", "op");
+        mem.SaveReadinessAttestation(V3Readiness.Ids.KillSwitch, false, "infrastructure stop worked, autonomy stop lagged", "op");
         Assert.False(mem.LoadReadinessAttestations()[V3Readiness.Ids.KillSwitch].Satisfied);
     }
 
@@ -273,7 +273,7 @@ public class V3ReadinessTests : IDisposable
     [Fact]
     public void FaultInjectionRidesTheSharedScheduler()
     {
-        var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Homelab", "ApiHost.Homelab.cs"));
+        var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Anthill.Api", "Infrastructure", "ApiHost.Infrastructure.cs"));
         Assert.Contains("\"fault-injection\"", source);
         Assert.Contains("SaveFaultInjectionRun", source);
         Assert.Contains("ShadowSimulation.RunAll", source);

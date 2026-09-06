@@ -8,17 +8,17 @@ namespace Anthill.Modules.Micromound;
 /// SQLite persistence for the mound registry — the store the README promised would land with the
 /// Api wiring, against the same semantics <see cref="InMemoryMoundStore"/> proved network-free.
 ///
-/// Lives in the same database file as colony memory and the homelab tables, for the same reason
+/// Lives in the same database file as colony memory and the infrastructure tables, for the same reason
 /// they do: mound knowledge should be linkable and searchable, not siloed. It owns its three
 /// tables and touches nothing else. Schema creation is idempotent (CREATE TABLE IF NOT EXISTS),
 /// writes serialize through one lock, and connections run WAL with a busy timeout — all of it
-/// deliberately indistinguishable from <c>HomelabRepository</c>, because a second persistence
+/// deliberately indistinguishable from <c>InfrastructureRepository</c>, because a second persistence
 /// convention is a second thing to get wrong.
 ///
 /// The enrollment token hash goes through the field cipher when one is configured. The hash is
 /// already one-way; encrypting it at rest means a copied database file does not even yield the
 /// oracle a hash provides. Null cipher stores plaintext hashes — the same supported state the
-/// homelab credential store accepts.
+/// infrastructure credential store accepts.
 /// </summary>
 public sealed class SqliteMoundStore : IMoundStore, IDisposable
 {
@@ -41,7 +41,7 @@ public sealed class SqliteMoundStore : IMoundStore, IDisposable
 
     public void Dispose()
     {
-        // Scoped to THIS database's pool (see HomelabRepository.Dispose for why not ClearAllPools).
+        // Scoped to THIS database's pool (see InfrastructureRepository.Dispose for why not ClearAllPools).
         try { using var c = new SqliteConnection(ConnString); SqliteConnection.ClearPool(c); } catch { }
     }
 

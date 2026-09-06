@@ -4,9 +4,9 @@ namespace Anthill.SDK.Tools;
 /// The settings a tool consults when it RUNS. v3.8.11.
 ///
 /// An interface with live-reading properties, not a snapshot record — and that is the whole design
-/// decision, arrived at by measuring rather than by copying the pattern that worked for the homelab.
+/// decision, arrived at by measuring rather than by copying the pattern that worked for the infrastructure.
 ///
-/// <c>HomelabOptions</c> could be a record because its values are read once and describe where the
+/// <c>InfrastructureOptions</c> could be a record because its values are read once and describe where the
 /// process lives. These are different: they are CAPABILITY GATES, and the colony already gates them
 /// twice on purpose. <c>RuntimeOptions</c> decides at composition time whether a tool is registered
 /// at all; then the tool re-checks at call time, so a tool that somehow reached the registry still

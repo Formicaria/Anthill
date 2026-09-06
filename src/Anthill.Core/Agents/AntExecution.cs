@@ -13,7 +13,7 @@ public enum AntRuntimeKind
 {
     /// <summary>Orchestration/planning/policy services (queen, director, planner, constraint). Never mission workers.</summary>
     ControlPlane,
-    /// <summary>Deterministic C# service behavior (homelab collectors, quartermaster). Never LLM-directed.</summary>
+    /// <summary>Deterministic C# service behavior (infrastructure collectors, quartermaster). Never LLM-directed.</summary>
     DeterministicService,
     /// <summary>A real mission executor with a runtime handler and execution contract.</summary>
     MissionAgent,

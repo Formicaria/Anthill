@@ -138,7 +138,7 @@ reads as a bug. The old mode survives as `fixed`, with migration at both ends fo
 `normal`. **Linkage opacity is a slider**, default `.125`, which reproduces the old hard-coded
 `.045`/`.022` exactly.
 
-**HOMELAB IS `INFRASTRUCTURE` AND PRESENTS AS A MOUND.** Label only — the sector id and its eight
+**INFRASTRUCTURE IS `INFRASTRUCTURE` AND PRESENTS AS A MOUND.** Label only — the sector id and its eight
 roles are untouched, so saved layouts survive. Mound chambers are doors on the SECOND click; the
 first still approaches and inspects, because navigating on the first would make a mound the one
 chamber an operator cannot look at. Customization is not special-cased: the sector panel is generic
@@ -474,7 +474,7 @@ web, coder, builder, verifier; six specialists opened by canary gates; thirteen 
 Previous state below, kept because the next session runs the live pack against it.
 
 State (previous): main carried **v0.3.8.96** — the live qualification run's findings, closed.
-3,213+ tests (core + homelab), all green.
+3,213+ tests (core + infrastructure), all green.
 
 **THE LIVE MISSION PASSED.** Mission `3bbbde32` (2026-08-26): a real Claude Code acting-coder
 mission through the composed runtime — per-project worktree from the project's own clone, the CLI

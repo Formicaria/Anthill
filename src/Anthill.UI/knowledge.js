@@ -112,7 +112,7 @@ function knMayToggle() {
  *
  * `KnowledgeModule` re-reads its options on every call, so this takes effect on
  * the next request rather than at the next restart — the message says so,
- * because the homelab gate beside it needs a restart and an operator who has
+ * because the infrastructure gate beside it needs a restart and an operator who has
  * used that one will otherwise assume this one does too.
  */
 async function knSetGate(on) {

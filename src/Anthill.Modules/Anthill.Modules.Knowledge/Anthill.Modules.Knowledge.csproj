@@ -8,7 +8,7 @@
 
   <!--
     THE SDK, AND NOTHING ELSE OF OURS. Same rule as Anthill.Modules.Tools and
-    Anthill.Modules.Homelab: no Anthill.Core reference, no reference to another module.
+    Anthill.Modules.Infrastructure: no Anthill.Core reference, no reference to another module.
     ModuleBoundaryTests discovers this project from disk and enforces it, including for references
     that are present but unused.
 

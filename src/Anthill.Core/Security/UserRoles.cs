@@ -9,23 +9,23 @@ namespace Anthill.Core.Security;
 ///   Queen and watch the colony: send a mission, see live status, and read the event logs from
 ///   the Queen and ants. Everything else (settings, patches, approvals, autonomy control, user
 ///   management, pheromone pruning, ant configuration) is denied.
-/// - <b>homelab_operator</b> — the NORTH_STAR D3 homelab tier (v1.9.0): may view everything the
-///   coordinator can, read the homelab (inventory, health, events, allowlist, secret-free
-///   credential statuses), and approve homelab action proposals (shipped v2.3.0). May NOT manage
+/// - <b>infrastructure_operator</b> — the NORTH_STAR D3 infrastructure tier (v1.9.0): may view everything the
+///   coordinator can, read the infrastructure (inventory, health, events, allowlist, secret-free
+///   credential statuses), and approve infrastructure action proposals (shipped v2.3.0). May NOT manage
 ///   integrations/credentials, execute actions, touch providers, settings, users, or the shell.
 ///
 /// Role checks compose with the capability gates in <c>AnthillRuntime.ApiPermissions</c>: an
 /// action is allowed only if the user's role permits it AND the capability is enabled at all
-/// (the execute/approve homelab gates still ship disabled — fail closed — even though v2.3.0
+/// (the execute/approve infrastructure gates still ship disabled — fail closed — even though v2.3.0
 /// implemented the action pipeline behind them).
 /// </summary>
 public static class UserRoles
 {
     public const string Admin = "admin";
     public const string Coordinator = "coordinator";
-    public const string HomelabOperator = "homelab_operator";
+    public const string InfrastructureOperator = "infrastructure_operator";
 
-    public static readonly string[] All = { Admin, Coordinator, HomelabOperator };
+    public static readonly string[] All = { Admin, Coordinator, InfrastructureOperator };
 
     public static bool IsValid(string? role) => role is not null && Array.Exists(All, r => r == role);
 
@@ -34,9 +34,17 @@ public static class UserRoles
         {
             Admin => Admin,
             Coordinator => Coordinator,
-            HomelabOperator => HomelabOperator,
+            InfrastructureOperator => InfrastructureOperator,
             "viewer" or "mission_coordinator" or "mission-coordinator" => Coordinator,
-            "homelab-operator" or "homelab" => HomelabOperator,
+            "infrastructure-operator" or "infrastructure" => InfrastructureOperator,
+            /* THE ROLE THIS USED TO BE CALLED. v0.3.8.128.
+               `users.role` is a persisted column, so every operator who was a homelab_operator has
+               that literal on disk. Normalize is consulted on every role read, which makes this the
+               whole migration: no UPDATE, no schema version, no window where a signed-in operator
+               loses their permissions because the release renamed their role out from under them.
+               It is also why the rename could be done at all — the alternative was a data migration
+               that fails halfway and leaves an account with a role nothing recognises. */
+            "homelab_operator" or "homelab-operator" or "homelab" => InfrastructureOperator,
             _ => "",
         };
 
@@ -49,28 +57,28 @@ public static class UserRoles
         "read_ui_state",   // load the saved colony layout so the map renders
     };
 
-    // Homelab Operator (NORTH_STAR D3): view + approve, never manage or execute.
-    // Includes the coordinator view set so the console works, plus homelab read/approve.
-    private static readonly HashSet<string> HomelabOperatorPermissions = new()
+    // Infrastructure Operator (NORTH_STAR D3): view + approve, never manage or execute.
+    // Includes the coordinator view set so the console works, plus infrastructure read/approve.
+    private static readonly HashSet<string> InfrastructureOperatorPermissions = new()
     {
         "run_mission", "read_status", "read_events", "read_ui_state",
-        "read_homelab",            // inventory, health, events, allowlist, credential statuses
-        "approve_homelab_actions", // approve v2.3.0 action proposals (capability gate still ships off)
+        "read_infrastructure",            // inventory, health, events, allowlist, credential statuses
+        "approve_infrastructure_actions", // approve v2.3.0 action proposals (capability gate still ships off)
         "read_micromound",         // the mound fleet, beats, and evidence — MICROMOUND M1's whole view
-        "approve_micromound_actions", // per-mound stop/resume: view + halt, the homelab-operator shape
+        "approve_micromound_actions", // per-mound stop/resume: view + halt, the infrastructure-operator shape
         // Deliberately absent: manage_micromound (minting enrollment tokens creates device
         // identities, an admin act like credential writes).
-        // Deliberately absent: manage_homelab_integrations (credentials/allowlist writes),
-        // execute_homelab_actions, and every provider/settings/user/shell permission.
+        // Deliberately absent: manage_infrastructure_integrations (credentials/allowlist writes),
+        // execute_infrastructure_actions, and every provider/settings/user/shell permission.
     };
 
     /// <summary>True if the given role is permitted to use the named API permission.</summary>
     public static bool RoleAllows(string role, string permission) =>
         role == Admin
         || (role == Coordinator && CoordinatorPermissions.Contains(permission))
-        || (role == HomelabOperator && HomelabOperatorPermissions.Contains(permission));
+        || (role == InfrastructureOperator && InfrastructureOperatorPermissions.Contains(permission));
 
     /// <summary>True for permissions only an admin may use — used to label the UI.</summary>
     public static bool IsAdminOnly(string permission) =>
-        !CoordinatorPermissions.Contains(permission) && !HomelabOperatorPermissions.Contains(permission);
+        !CoordinatorPermissions.Contains(permission) && !InfrastructureOperatorPermissions.Contains(permission);
 }

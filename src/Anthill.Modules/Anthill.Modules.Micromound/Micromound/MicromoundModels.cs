@@ -3,7 +3,7 @@ using Micromound.Protocol;
 
 namespace Anthill.Modules.Micromound;
 
-/// <summary>Permissions this module introduces, tiered exactly like the homelab's three.</summary>
+/// <summary>Permissions this module introduces, tiered exactly like the infrastructure's three.</summary>
 public static class MicromoundPermissions
 {
     /// <summary>See the fleet, missions, and evidence. Everything M1 exposes.</summary>

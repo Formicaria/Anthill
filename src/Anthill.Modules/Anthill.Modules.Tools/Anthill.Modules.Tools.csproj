@@ -14,7 +14,7 @@
     is the whole distinction phase 5 opened with. A tool is capability; registration, authorization
     and dispatch are coordination.
 
-    No package references. The homelab needed Sqlite; these need nothing but the BCL — which is
+    No package references. The infrastructure needed Sqlite; these need nothing but the BCL — which is
     itself the evidence that the seam was in the right place.
   -->
   <ItemGroup>

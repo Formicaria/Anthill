@@ -49,14 +49,14 @@ Legend: KEEP · CORRECT (fix in place) · CONSOLIDATE (merge into canonical) · 
 | Monitoring → Activity (All/Events/Results/Changes/Runs/Infra) | overlapping with Operations → Missions/Changes | CONSOLIDATE in §7 pass — one home per concept |
 | Operations → Approvals + Changes (two entries, same `patches` page, different `view`) | one backend patch store | CONSOLIDATE → one **Changes & Approvals** entry |
 | Colony → Model Routing (under Colony) | `/settings` stabs | RELABEL/move under Admin per spec §2; roles ≠ routing (§9/§11) |
-| Infrastructure domain (vis:hl) | homelab subsystem, real | KEEP (visible only when supported — already role-gated) |
+| Infrastructure domain (vis:hl) | infrastructure subsystem, real | KEEP (visible only when supported — already role-gated) |
 
 ### Known mismatches (spec §5)
 
 | Claim | Reality | Decision |
 |---|---|---|
 | "Projects" page copy | workspaces are per-mission isolated checkouts | RELABEL page + nav + copy; no CRUD invented |
-| "Scheduled" as product concept | Objectives + homelab health schedules only | REMOVE label; keep real functionality where it lives |
+| "Scheduled" as product concept | Objectives + infrastructure health schedules only | REMOVE label; keep real functionality where it lives |
 | Skills management | no skills API exists anywhere in `ApiHost` | CONFIRMED ABSENT — nothing to remove; do not add |
 | Desktop app claims | none found. `deployment_mode: desktop|server` is a backend wire value with a truthful label | NO ACTION (not a desktop-app claim) |
 | Chat "◧ Colony" button | mounts the canonical canvas into a 400px side panel; unusable at <900px (hidden entirely) | REPLACE with layered full-page mode behind chat (spec §4) |

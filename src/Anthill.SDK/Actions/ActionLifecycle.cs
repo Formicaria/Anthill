@@ -2,7 +2,7 @@ namespace Anthill.SDK.Actions;
 
 /// <summary>
 /// NORTH_STAR Phase 6 — the ONE lifecycle every state-changing system shares (code patches and
-/// homelab actions alike). Transitions are enforced structurally: approval cannot be skipped,
+/// infrastructure actions alike). Transitions are enforced structurally: approval cannot be skipped,
 /// nothing executes from draft, and a terminal state is terminal. Illegal transitions are refused
 /// with a reason rather than silently coerced.
 /// </summary>

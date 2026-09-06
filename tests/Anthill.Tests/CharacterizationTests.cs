@@ -1,7 +1,7 @@
 using Anthill.Core.Agents;
 using Anthill.Core.Configuration;
 using Anthill.Core.Domain;
-using Anthill.Modules.Homelab.Actions;
+using Anthill.Modules.Infrastructure.Actions;
 using Anthill.Core.Memory;
 using Anthill.Core.Outcomes;
 using Anthill.Core.Skills;

@@ -50,8 +50,8 @@ public class EventVocabularyTests
     /// publication, while the emitted-is-declared direction read only `LogEvent`. One direction
     /// knew about the bus and the other did not.
     ///
-    /// The trailing lookahead excludes a CONCATENATION — `EventType = "homelab_" + evt.EventType`
-    /// composes its name at runtime, and matching the prefix would report `homelab_` as an
+    /// The trailing lookahead excludes a CONCATENATION — `EventType = "infrastructure_" + evt.EventType`
+    /// composes its name at runtime, and matching the prefix would report `infrastructure_` as an
     /// undeclared event, which is a false finding rather than a real one. Those sites are pinned by
     /// <see cref="TheComposedEventNames_AreAKnownAndBoundedSet"/> instead, because a name no static
     /// reader can resolve needs a different answer than a wider regex.
@@ -62,7 +62,7 @@ public class EventVocabularyTests
     /// <summary>Event names this codebase composes at runtime, with the reason each one has to.</summary>
     private static readonly Dictionary<string, string> ComposedAtRuntime = new(StringComparer.Ordinal)
     {
-        ["homelab_"] = "HomelabRepository re-publishes a repository event under a homelab_ prefix",
+        ["infrastructure_"] = "InfrastructureRepository re-publishes a repository event under a infrastructure_ prefix",
         ["automation_"] = "AutomationEngine names the rule outcome it just evaluated",
     };
 
@@ -149,7 +149,7 @@ public class EventVocabularyTests
     /// <summary>
     /// A NAME COMPOSED AT RUNTIME CANNOT BE SWEPT, AND SAYING SO IS THE HONEST ANSWER. v0.3.8.114.
     ///
-    /// `EventType = "homelab_" + evt.EventType` produces a name no static reader can resolve, so
+    /// `EventType = "infrastructure_" + evt.EventType` produces a name no static reader can resolve, so
     /// widening a regex does not help: there is no literal to find. Pretending otherwise would give
     /// the vocabulary sweep a coverage claim it cannot support — the shape this repository calls a
     /// check answering an adjacent question.
@@ -160,7 +160,7 @@ public class EventVocabularyTests
     ///
     /// The real fix is for those prefixes to become declared constants and for the composition to
     /// happen against the vocabulary rather than against a string. That is not done here because it
-    /// changes what the homelab publishes, and this release is not the place to change what a
+    /// changes what the infrastructure publishes, and this release is not the place to change what a
     /// subscriber sees.
     /// </summary>
     [Fact]

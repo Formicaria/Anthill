@@ -44,7 +44,7 @@ public sealed record ExternalSendReceipt(bool Ok, string Target, string Receipt,
 /// THE ONE SEAM THROUGH WHICH ANYTHING LEAVES THE COLONY ON A MISSION'S BEHALF. v0.3.8.103.
 ///
 /// WHY AN INTERFACE RATHER THAN A CALL. `.102` reached infrastructure through
-/// `IHomelabActionRunner`, and the shape earned its keep immediately: the composed acceptance
+/// `IInfrastructureActionRunner`, and the shape earned its keep immediately: the composed acceptance
 /// mission ran against the module's deterministic runner while production ran against Proxmox and
 /// Docker, through the same executor and the same gates. This is that shape for the outside world.
 /// An adapter is what makes "did anything actually leave" answerable by something other than the

@@ -30,7 +30,7 @@ namespace Anthill.Api;
 /// The colony endpoints: missions, tasks, events, patches, approvals, tools.
 ///
 /// v3.8.17 — split out of ApiHost.cs, which was 3,294 lines and 102 endpoints. Same class,
-/// same behaviour: ApiHost has been `public static partial` with eight files since the homelab
+/// same behaviour: ApiHost has been `public static partial` with eight files since the infrastructure
 /// moved, so this is where the file was always going to divide.
 /// </summary>
 public static partial class ApiHost
@@ -75,13 +75,13 @@ public static partial class ApiHost
             ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
             return Results.Content(UiGridJs, "text/javascript; charset=utf-8");
         });
-        // v0.3.8.52: the homelab domain, split out of app.js. Same-origin and same no-store policy
+        // v0.3.8.52: the infrastructure domain, split out of app.js. Same-origin and same no-store policy
         // as every other asset, so the CSP stays script-src 'self' and a redeploy is never served a
         // stale half of the console.
-        app.MapGet("/ui/homelab.js", (HttpContext ctx) =>
+        app.MapGet("/ui/infrastructure.js", (HttpContext ctx) =>
         {
             ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
-            return Results.Content(UiHomelabJs, "text/javascript; charset=utf-8");
+            return Results.Content(UiInfrastructureJs, "text/javascript; charset=utf-8");
         });
 
         // v0.3.8.55: routing controls + themes, split out of app.js under the size guard.

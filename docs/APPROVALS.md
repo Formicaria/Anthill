@@ -1,22 +1,22 @@
 # ANTHILL Approvals — The IApprovable Design (v1.14.0, NORTH_STAR Phase 10)
 
 Status: Canonical design for the unified approval system. Reviewed and shipped as code in v1.14.0
-(`src/Anthill.Modules/Anthill.Modules.Homelab/Homelab/Approvals/IApprovable.cs` — it was
-`src/Anthill.Core/Homelab/` until v3.8.7, when the homelab left the core); the execution side
+(`src/Anthill.Modules/Anthill.Modules.Infrastructure/Infrastructure/Approvals/IApprovable.cs` — it was
+`src/Anthill.Core/Infrastructure/` until v3.8.7, when the infrastructure left the core); the execution side
 shipped in v2.3.0
-(`Homelab/Actions/`) against this contract without changing it — the v1.14 fields gained only
+(`Infrastructure/Actions/`) against this contract without changing it — the v1.14 fields gained only
 additive execution metadata (payload, blast-radius score, decided/executed stamps). See
 `docs/archive/v3/NORTH_STAR.md` §6 rule 1: **one approval system**. The rule still holds; the
 document stating it was archived at v3.8.24.
 
 ## Why one abstraction
 
-Three things will need operator approval by V2.4: code **patches** (exist today), homelab
+Three things will need operator approval by V2.4: code **patches** (exist today), infrastructure
 **action proposals** (V2.1: restart service, snapshot VM, run backup), and **network changes**
 (V2.4: DNS/DHCP/firewall previews). Three separate queues means three audit trails, three dedupe
 implementations, and three places for a safety bug to hide. `IApprovable` collapses them into:
 
-- **One pending queue** — `GET /homelab/approvals/unified` returns every kind, newest first.
+- **One pending queue** — `GET /infrastructure/approvals/unified` returns every kind, newest first.
 - **One lifecycle** — `pending → approved → executed`, `pending → rejected`,
   `pending → superseded`. Execution NEVER happens from `pending`; approval is a distinct human
   step, and every executor re-checks state at execution time (TOCTOU guard).
@@ -24,14 +24,14 @@ implementations, and three places for a safety bug to hide. `IApprovable` collap
   newer supersedes the older. Patches already do this per `action_type:target_id`; every future
   kind inherits it via `ApprovableProjections.DedupePending`.
 - **One audit trail** — every state transition is an event on the owning record's stream
-  (patch events today, `homelab_events` for actions), and the unified view exposes them uniformly.
+  (patch events today, `infrastructure_events` for actions), and the unified view exposes them uniformly.
 
 What differs per kind is ONLY the renderer, selected by `RendererHint`:
 
 | Kind | RendererHint | Detail view |
 |---|---|---|
 | `patch` (today) | `patch_diff` | unified diff, risk badge, verify state |
-| `homelab_action` (V2.1) | `action_proposal` | blast-radius card, rollback note, dry-run button |
+| `infrastructure_action` (V2.1) | `action_proposal` | blast-radius card, rollback note, dry-run button |
 | `network_change` (V2.4) | `network_preview` | rule/record diff preview, export-config note |
 
 ## The contract
@@ -57,10 +57,10 @@ discussion happens against real fields: `DependencyFanout` (from the v1.10 depen
 
 ## V2.1 execution requirements (bound by this design)
 
-1. Approval and execution are separate permissions (`approve_homelab_actions` vs
-   `execute_homelab_actions` — both capability-gated OFF since v1.9.0).
+1. Approval and execution are separate permissions (`approve_infrastructure_actions` vs
+   `execute_infrastructure_actions` — both capability-gated OFF since v1.9.0).
 2. Executors re-read state and refuse anything not `approved`.
-3. `.anthill/HOMELAB_STOP` halts every executor regardless of state.
+3. `.anthill/INFRASTRUCTURE_STOP` halts every executor regardless of state.
 4. Every execution appends `executed`/`execution_failed` audit events + post-execution
    verification results to the same stream the approval lived on.
 5. The forbidden-actions list (NORTH_STAR Phase 12) is enforced in the executor, not just the UI.

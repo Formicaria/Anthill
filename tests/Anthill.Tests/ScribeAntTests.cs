@@ -55,14 +55,14 @@ public class ScribeAntTests
     [Fact]
     public void DocsPatchProposal_DocsTargets_Allowed_WithApprovalRequired()
     {
-        var o = Run("update docs. target: docs/HOMELAB.md target: CHANGELOG.md", "docs_patch_proposal");
+        var o = Run("update docs. target: docs/INFRASTRUCTURE.md target: CHANGELOG.md", "docs_patch_proposal");
         var patch = Artifact(o, "docs_patch_set");
         Assert.NotNull(patch);
         // Parsed, not substring-matched: requires_approval must be true, not merely mentioned.
         var root = JsonDocument.Parse(patch!.Content).RootElement;
         Assert.True(root.GetProperty("requires_approval").GetBoolean());
         var targets = root.GetProperty("targets").EnumerateArray().Select(t => t.GetString()).ToArray();
-        Assert.Equal(new[] { "docs/HOMELAB.md", "CHANGELOG.md" }, targets);
+        Assert.Equal(new[] { "docs/INFRASTRUCTURE.md", "CHANGELOG.md" }, targets);
     }
 
     [Fact]

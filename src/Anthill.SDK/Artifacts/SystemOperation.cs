@@ -16,7 +16,7 @@ namespace Anthill.SDK.Artifacts;
 /// executor already mandates it before execution — reversibility as a precondition, made visible
 /// in the record rather than trusted to the pipeline's memory.
 ///
-/// EVERY FIELD IS STAMPED DETERMINISTICALLY from the homelab pipeline's own rows and the
+/// EVERY FIELD IS STAMPED DETERMINISTICALLY from the infrastructure pipeline's own rows and the
 /// escalation lane's own decision — never written by a model, for the standing `.100` reason: an
 /// identity a model wrote is an identity it could have invented. <see cref="ApprovedBy"/> carries
 /// the escalation decision's identity ("operator:&lt;decision-id&gt;"), which is a DIFFERENT

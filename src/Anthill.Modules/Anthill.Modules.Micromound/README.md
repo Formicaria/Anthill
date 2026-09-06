@@ -84,10 +84,10 @@ ordinary `PackageReference`.
 **2. `IMoundStore` has two implementations, and the tests use the in-memory one.**
 
 `InMemoryMoundStore` is the reference the 33 tests prove the authority logic against —
-network-free and database-free, the same way the homelab's mock-provider harness lets its 240
+network-free and database-free, the same way the infrastructure's mock-provider harness lets its 240
 tests run without touching hardware. `SqliteMoundStore` (this directory) is what the composed
-colony runs: same database file as colony memory and the homelab tables, own tables only,
-`HomelabRepository`'s write-lock / WAL / `Bind` conventions, and enrollment token hashes through
+colony runs: same database file as colony memory and the infrastructure tables, own tables only,
+`InfrastructureRepository`'s write-lock / WAL / `Bind` conventions, and enrollment token hashes through
 the field cipher when one is configured.
 
 ## Wired (composition root, `Anthill.Api/Micromound/ApiHost.Micromound.cs`)
@@ -118,10 +118,10 @@ None of this is in the module by design — composition happens in `Anthill.Api`
    ARE the authentication. `/micromound/stop` is per-mound only — the global stop stays a file
    (`.anthill/MICROMOUND_STOP`) precisely so no API flow can clear it.
 4. **Composition.** `MicromoundOptions` is built from the live runtime and handed the same
-   `FieldCipher.CreateDefault()` the homelab gets; `MicromoundModule` loads alongside
-   `HomelabModule`. Permissions: `read_micromound` and `manage_micromound` ship enabled;
+   `FieldCipher.CreateDefault()` the infrastructure gets; `MicromoundModule` loads alongside
+   `InfrastructureModule`. Permissions: `read_micromound` and `manage_micromound` ship enabled;
    `approve_micromound_actions` also ships enabled because the only thing it could authorize in M1
-   is stopping hardware, and a stop an operator cannot reach is the unsafe default. The homelab
+   is stopping hardware, and a stop an operator cannot reach is the unsafe default. The infrastructure
    operator role gains read + approve (view and halt), never manage — minting an enrollment
    token creates a device identity, which is an admin act like credential writes.
 5. ~~**Tests.**~~ Shipped: `tests/Anthill.Tests.Micromound/` covers enrollment refusals,

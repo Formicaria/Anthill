@@ -113,7 +113,7 @@ public static class MissionIntake
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     /// <summary>
-    /// v0.3.8.102 — the SERVICE dimension, resolved at last: infrastructure nouns the homelab's
+    /// v0.3.8.102 — the SERVICE dimension, resolved at last: infrastructure nouns the infrastructure's
     /// own action catalog operates on. Deliberately narrow and concrete — a word here admits a
     /// CHANGE request into the class that proposes real operations, so "the build server is slow"
     /// must not enter on the strength of "server" alone unless the intent is also Change, and a
@@ -122,7 +122,7 @@ public static class MissionIntake
     /// </summary>
     private static readonly Regex ServiceTargets = new(
         @"\b(container|docker|compose|vm|virtual machine|proxmox|pve\w*|hyper-?v|vsphere|"
-      + @"host|node|homelab|service|daemon|media[- ]server|plex|overseerr|uptime[- ]?kuma)\b",
+      + @"host|node|infrastructure|service|daemon|media[- ]server|plex|overseerr|uptime[- ]?kuma)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     /// <summary>
@@ -334,7 +334,7 @@ public static class MissionIntake
                 Intent = MissionIntent.Change,
                 Targets = targets,
                 Freshness = MissionFreshness.Current,
-                // MODIFY — the first class to carry it, and what it grants is exactly the homelab
+                // MODIFY — the first class to carry it, and what it grants is exactly the infrastructure
                 // action catalog behind its own approval gate: the model proposes, the operator's
                 // recorded escalation decision executes, the executor's TOCTOU/rollback/kill-switch
                 // gates stand underneath. Never a shell, never the patch lane.
@@ -581,7 +581,7 @@ public static class WorkerCapabilities
     /// "run commands": what it grants is the catalog, not a shell.</summary>
     public const string ExecuteDiagnosticChecks = "execute_diagnostic_checks";
 
-    /// <summary>Propose an allowlisted infrastructure action into the homelab's approval-gated
+    /// <summary>Propose an allowlisted infrastructure action into the infrastructure's approval-gated
     /// pipeline, with a rollback note and a captured before-state. v0.3.8.102 — deliberately
     /// PROPOSE: execution is the operator's recorded escalation decision, and no capability
     /// grants it.</summary>

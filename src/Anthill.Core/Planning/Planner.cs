@@ -609,7 +609,7 @@ Required JSON:
                     TaskType = "external_action",
                     // The step names the CAPABILITY, not the worker (`.98`'s rule): the tester now
                     // has two propose-and-execute workers, and with the mission's capability list
-                    // alone the first compatible one wins — which would hand a send to the homelab
+                    // alone the first compatible one wins — which would hand a send to the infrastructure
                     // action proposer, silently.
                     RequiredCapability = Anthill.Core.Missions.WorkerCapabilities.ProposeExternalAction,
                 });

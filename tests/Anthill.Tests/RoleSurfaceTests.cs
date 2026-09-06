@@ -111,7 +111,7 @@ public class RoleSurfaceTests
     /// roles are REGISTERED, 12 role types are EXECUTABLE under the shipped profile, and only SIX
     /// of those twelve are executable by their own flag — the other six are specialists opened by
     /// canary gates, and thirteen roles are never executable at all (five control-plane, eight
-    /// homelab). A document or a display quoting one of these as "the ants" is quoting a
+    /// infrastructure). A document or a display quoting one of these as "the ants" is quoting a
     /// configuration rather than the system.
     /// </summary>
     [Fact]
@@ -127,7 +127,7 @@ public class RoleSurfaceTests
 
         Assert.True(AntRegistry.Roles.Count(r => !r.Executable) == 19,
             "nineteen registered roles are non-executable by flag: the six gated specialists, the "
-          + "five control-plane roles, and the eight homelab ants that are visible by design and "
+          + "five control-plane roles, and the eight infrastructure ants that are visible by design and "
           + "never run.");
     }
 }

@@ -1,6 +1,6 @@
 using Anthill.Core.Shadow;   // v3.8.7: ShadowObservation/ShadowRecommendation stayed in the core
-using Anthill.Modules.Homelab;
-using Anthill.Modules.Homelab.Incidents;
+using Anthill.Modules.Infrastructure;
+using Anthill.Modules.Infrastructure.Incidents;
 using Anthill.Core.Common;
 using Anthill.Core.Configuration;
 using Anthill.Core.Memory;
@@ -8,14 +8,14 @@ using Anthill.Core.Skills;
 
 // v3.8.7 — moved out of Anthill.Core.Shadow.
 //
-// This is the one component the homelab extraction could not leave where it was. It reads
+// This is the one component the infrastructure extraction could not leave where it was. It reads
 // IncidentRecord (now a module type) and writes to SqliteMemory and the skill registry (core
 // types), so it is a BRIDGE — and a bridge cannot live on either bank. In the core it made the
 // core depend on a module, which is the one rule this refactor has; in the module it would have
 // needed the colony's memory, which no module may hold.
 //
 // The composition root is where both sides legitimately exist, and it is where the only caller
-// already was: ApiHost.InitHomelab passes it Queen.Memory.
+// already was: ApiHost.InitInfrastructure passes it Queen.Memory.
 namespace Anthill.Api;
 
 /// <summary>
@@ -110,7 +110,7 @@ public static class LiveIncidentObserver
     }
 
     /// <summary>
-    /// Map a homelab incident onto the observation the recommender expects.
+    /// Map a infrastructure incident onto the observation the recommender expects.
     ///
     /// The proposed operation is derived from the incident's own subject kind rather than guessed
     /// from its prose: a service incident proposes a restart, a VM incident a power action, storage

@@ -170,7 +170,7 @@ public class TypedRowMigrationTests
     /// <summary>
     /// THE MODULE EDGE STILL CARRIES EVERY KEY THE MODULE READS.
     ///
-    /// `ApprovableProjections.FromPatchApproval` lives in `Anthill.Modules.Homelab`, which may
+    /// `ApprovableProjections.FromPatchApproval` lives in `Anthill.Modules.Infrastructure`, which may
     /// reference the SDK and nothing else of ours — so the core's typed `ApprovalRequest` cannot
     /// cross into it and the API host projects a row at the boundary. That projection is now the one
     /// place a field name has to agree across the boundary, and a rename on either side would empty
@@ -178,11 +178,11 @@ public class TypedRowMigrationTests
     /// blank card rather than fail.
     /// </summary>
     [Fact]
-    public void TheHomelabApprovalProjection_CarriesEveryKeyTheModuleReads()
+    public void TheInfrastructureApprovalProjection_CarriesEveryKeyTheModuleReads()
     {
-        var host = Path.Combine(SourceText.RepoRoot(), "src", "Anthill.Api", "Homelab", "ApiHost.Homelab.cs");
+        var host = Path.Combine(SourceText.RepoRoot(), "src", "Anthill.Api", "Infrastructure", "ApiHost.Infrastructure.cs");
         var module = Path.Combine(SourceText.RepoRoot(), "src", "Anthill.Modules",
-            "Anthill.Modules.Homelab", "Homelab", "Approvals", "IApprovable.cs");
+            "Anthill.Modules.Infrastructure", "Infrastructure", "Approvals", "IApprovable.cs");
 
         Assert.True(File.Exists(host) && File.Exists(module),
             "the approval projection or its consumer has moved; this guard reads nothing.");
@@ -209,7 +209,7 @@ public class TypedRowMigrationTests
 
         var missing = read.Except(projected).OrderBy(k => k, StringComparer.Ordinal).ToList();
         Assert.True(missing.Count == 0,
-            "the Homelab approval projection does not supply: " + string.Join(", ", missing)
+            "the Infrastructure approval projection does not supply: " + string.Join(", ", missing)
           + ". The module reads a missing key as the empty string, so the unified approval queue "
           + "would render blank cards rather than fail — which is the quietest way for a boundary "
           + "translation to break.");

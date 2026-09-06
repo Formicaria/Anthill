@@ -112,7 +112,7 @@ public static class ColonySectors
     public const string Validation = "valid";
     public const string Memory = "memory";
     public const string Output = "output";
-    public const string Homelab = "homelab";
+    public const string Infrastructure = "infrastructure";
     public const string Micromound = "mound";
 
     /// <summary>
@@ -174,11 +174,11 @@ public static class ColonySectors
     /// <summary>
     /// Registry `Colony` → sector. The ONE place this is decided.
     ///
-    /// `Homelab` gets its own sector rather than being folded into Forge or dropped into
+    /// `Infrastructure` gets its own sector rather than being folded into Forge or dropped into
     /// `unassigned`: it is eight real roles and a named colony in the registry, and both
-    /// alternatives would state something false — that homelab work happens in the code sector, or
+    /// alternatives would state something false — that infrastructure work happens in the code sector, or
     /// that the colony does not know where it happens. It is deliberately NOT Micromound: Micromound
-    /// is physical devices reporting over the wire, and the homelab roles do not execute there
+    /// is physical devices reporting over the wire, and the infrastructure roles do not execute there
     /// unless and until the backend says so.
     /// </summary>
     private static readonly Dictionary<string, string> ByColony = new(StringComparer.OrdinalIgnoreCase)
@@ -204,7 +204,7 @@ public static class ColonySectors
         ["Repair"] = Validation,
         ["Memory"] = Memory,
         ["Output"] = Output,
-        ["Homelab"] = Homelab,
+        ["Infrastructure"] = Infrastructure,
     };
 
     /// <summary>Default operator-facing labels. An operator override replaces the label, never the id.</summary>
@@ -216,17 +216,18 @@ public static class ColonySectors
         [Validation] = "VALIDATION",
         [Memory] = "MEMORY",
         [Output] = "OUTPUT",
-        // v0.3.8.122 — INFRASTRUCTURE, not HOMELAB. The sector id stays `homelab` because it is the
-        // registry colony's name and an operator's saved layout is keyed on it; only the label an
-        // operator reads changes. The roles in it are unchanged: this is the chamber's name, not a
-        // re-placement of anything.
-        [Homelab] = "INFRASTRUCTURE",
+        // v0.3.8.122 renamed the LABEL from HOMELAB to INFRASTRUCTURE and deliberately kept the
+        // sector id `homelab`, because an operator's saved layout is keyed on it. v0.3.8.128 renamed
+        // the id too, at the operator's instruction — and the reason `.122` gave is exactly why
+        // `ColonyLiveLayoutMigration` exists: a saved layout naming the old id is rewritten on read
+        // rather than silently losing its arrangement.
+        [Infrastructure] = "INFRASTRUCTURE",
         [Micromound] = "MICROMOUND",
     };
 
     /// <summary>Presentation order. Micromound sits last: it is infrastructure beneath the colony.</summary>
     public static readonly IReadOnlyList<string> Order =
-        [Queen, Intelligence, Forge, Validation, Memory, Output, Homelab, Micromound];
+        [Queen, Intelligence, Forge, Validation, Memory, Output, Infrastructure, Micromound];
 
     public static string Label(string sectorId) => Labels.GetValueOrDefault(sectorId, sectorId);
 

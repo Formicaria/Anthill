@@ -14,7 +14,7 @@
     <ProjectReference Include="..\Anthill.SDK\Anthill.SDK.csproj" />
     <!-- Composition root: modules are wired in here, never referenced by the core. -->
     <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Reasoning\Anthill.Modules.Reasoning.csproj" />
-    <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Homelab\Anthill.Modules.Homelab.csproj" />
+    <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Infrastructure\Anthill.Modules.Infrastructure.csproj" />
     <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Tools\Anthill.Modules.Tools.csproj" />
     <ProjectReference Include="..\Anthill.Modules\Anthill.Modules.Knowledge\Anthill.Modules.Knowledge.csproj" />
   </ItemGroup>
@@ -53,7 +53,7 @@
     <!-- v0.3.8.52: the app.js split. Each domain file needs its own pin — the single-file
          self-contained binary serves these from embedded resources, so an unpinned asset 404s at
          runtime while building and testing perfectly. -->
-    <EmbeddedResource Include="..\Anthill.UI\homelab.js" LogicalName="Anthill.Api.Ui.homelab.js" Condition="'$(AnthillNoUi)' != 'true'" />
+    <EmbeddedResource Include="..\Anthill.UI\infrastructure.js" LogicalName="Anthill.Api.Ui.infrastructure.js" Condition="'$(AnthillNoUi)' != 'true'" />
     <EmbeddedResource Include="..\Anthill.UI\routing-controls.js" LogicalName="Anthill.Api.Ui.routing-controls.js" Condition="'$(AnthillNoUi)' != 'true'" />
     <EmbeddedResource Include="..\Anthill.UI\themes.js" LogicalName="Anthill.Api.Ui.themes.js" Condition="'$(AnthillNoUi)' != 'true'" />
     <EmbeddedResource Include="..\Anthill.UI\console-extras.js" LogicalName="Anthill.Api.Ui.console-extras.js" Condition="'$(AnthillNoUi)' != 'true'" />

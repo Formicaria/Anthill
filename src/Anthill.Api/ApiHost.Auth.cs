@@ -28,7 +28,7 @@ namespace Anthill.Api;
 /// Authentication, identity and permission gating — every route guard in one place.
 ///
 /// v3.8.17 — split out of ApiHost.cs, which was 3,294 lines and 102 endpoints. Same class,
-/// same behaviour: ApiHost has been `public static partial` with eight files since the homelab
+/// same behaviour: ApiHost has been `public static partial` with eight files since the infrastructure
 /// moved, so this is where the file was always going to divide.
 /// </summary>
 public static partial class ApiHost

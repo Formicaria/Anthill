@@ -16,7 +16,7 @@ public class AntRegistryTests
     [Fact]
     public void Registry_HasExpectedVisibleColonyShape()
     {
-        Assert.Equal(25, AntRegistry.Roles.Count); // Queen + Director + 15 main hubs + 8 homelab ants (v1.9.0)
+        Assert.Equal(25, AntRegistry.Roles.Count); // Queen + Director + 15 main hubs + 8 infrastructure ants (v1.9.0)
         // 32 at v0.3.8.98: `researcher.runtime_researcher` joined, declaring `inspect_runtime_state`
         // — the capability an audit needs to answer "what is enabled right now" rather than reading
         // the source and calling that the state of the colony.
@@ -34,16 +34,16 @@ public class AntRegistryTests
         Assert.Contains(AntRegistry.Roles, r => r.RoleId == "queen");
         Assert.Contains(AntRegistry.Roles, r => r.RoleId == "director");
         Assert.Contains(AntRegistry.Roles, r => r.RoleId == "ui_cartographer");
-        // v1.9.0 homelab ants: present, visible-only, never executable, never patch-capable.
-        var homelabRoles = new[] { "inventory", "network_scout", "health", "proxmox", "storage", "backup", "security_scout", "change_archivist" };
-        foreach (var roleId in homelabRoles)
+        // v1.9.0 infrastructure ants: present, visible-only, never executable, never patch-capable.
+        var infrastructureRoles = new[] { "inventory", "network_scout", "health", "proxmox", "storage", "backup", "security_scout", "change_archivist" };
+        foreach (var roleId in infrastructureRoles)
         {
             var role = Assert.Single(AntRegistry.Roles, r => r.RoleId == roleId);
-            Assert.False(role.Executable, $"Homelab ant '{roleId}' must not be executable in v1.9.0.");
-            Assert.False(role.Permissions.ProposePatches, $"Homelab ant '{roleId}' must not propose patches.");
-            Assert.Equal("Homelab", role.Colony);
+            Assert.False(role.Executable, $"Infrastructure ant '{roleId}' must not be executable in v1.9.0.");
+            Assert.False(role.Permissions.ProposePatches, $"Infrastructure ant '{roleId}' must not propose patches.");
+            Assert.Equal("Infrastructure", role.Colony);
         }
-        Assert.DoesNotContain(AntRegistry.ExecutableRoleIds, id => homelabRoles.Contains(id));
+        Assert.DoesNotContain(AntRegistry.ExecutableRoleIds, id => infrastructureRoles.Contains(id));
     }
 
     [Fact]

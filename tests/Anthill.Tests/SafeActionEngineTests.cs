@@ -109,7 +109,7 @@ public class SafeActionEngineTests
         var r = RiskEngine.Score(new RiskInputs(
             Operation: "update_docs", TargetCriticality: "low", Production: false, BackupAgeDays: 1,
             Novel: false, SkillConfidence: 1.0, StrongVerifiers: true, InMaintenanceWindow: true,
-            ChangedLines: 12, TouchedPaths: new[] { "docs/HOMELAB.md" }));
+            ChangedLines: 12, TouchedPaths: new[] { "docs/INFRASTRUCTURE.md" }));
         Assert.Equal("low", r.Level);
         Assert.False(r.RequiresApproval);
     }

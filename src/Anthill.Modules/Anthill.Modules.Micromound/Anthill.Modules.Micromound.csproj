@@ -7,7 +7,7 @@
   </PropertyGroup>
 
   <!--
-    THE SDK, AND NOTHING ELSE OF OURS. Same rule as Anthill.Modules.Homelab: no Anthill.Core
+    THE SDK, AND NOTHING ELSE OF OURS. Same rule as Anthill.Modules.Infrastructure: no Anthill.Core
     reference, no reference to another module. ModuleBoundaryTests enforces it, including for
     references that are present but unused.
 
@@ -33,7 +33,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- SqliteMoundStore — same package and version the homelab's repository persists through. -->
+    <!-- SqliteMoundStore — same package and version the infrastructure's repository persists through. -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
   </ItemGroup>
 
