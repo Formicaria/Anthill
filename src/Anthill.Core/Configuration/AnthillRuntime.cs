@@ -898,6 +898,17 @@ public static class AnthillRuntime
             File.WriteAllText(path, JsonSerializer.Serialize(seed, AnthillConfig.JsonOptions));
         }
 
+        /* RENAMED KEYS ARE READ UNDER THEIR OLD NAMES. v0.3.8.126.
+
+           Applied to the RAW document, before profile defaults are overlaid and before the roster
+           plan below — same reason that plan reads raw: after the merge there are no absent keys
+           left, and "was the canonical spelling present?" is the whole question an alias turns on.
+
+           This has to run before `safety_profile` is read for the same reason it has to run before
+           everything else: an alias is not a special case of a setting, it IS the setting, under
+           the name the operator's file happens to use. */
+        LastConfigKeyRenames = ConfigCatalog.ApplyKeyAliases(raw);
+
         var requestedProfile = raw.TryGetValue("safety_profile", out var sp) && sp.ValueKind == JsonValueKind.String
             ? sp.GetString()!
             : "SAFE_LOCAL";
@@ -937,6 +948,16 @@ public static class AnthillRuntime
     /// scrolled past. <c>/config/health</c> and <c>/status</c> both surface it.
     /// </summary>
     public static ConfigMigrationResult? LastConfigMigration { get; private set; }
+
+    /// <summary>
+    /// Keys read under a former spelling on this run, or empty. v0.3.8.126.
+    ///
+    /// Held for the reason <see cref="LastConfigMigration"/> is: "why is my setting not taking
+    /// effect" is a question an operator asks through the console, and the honest answer is
+    /// sometimes "it did — under the name it has now". Empty on the overwhelming majority of runs,
+    /// because a rename is a release event and the file self-heals on the first settings write.
+    /// </summary>
+    public static IReadOnlyList<ConfigCatalog.ConfigKeyRename> LastConfigKeyRenames { get; private set; } = [];
 
     /// <summary>
     /// Why the operator's configuration could not be read, or empty when it was. v0.3.8.91.
@@ -1197,6 +1218,12 @@ public static class AnthillRuntime
         // deliberate configuration from one a release picked for them.
         if (LastConfigMigration is { } migrated)
             Console.Error.WriteLine($"[config-migration] {migrated.Explanation}");
+        // Named individually rather than counted: an operator reading this needs to know WHICH of
+        // their settings moved, and a count tells them only that something did.
+        foreach (var rename in LastConfigKeyRenames)
+            Console.Error.WriteLine(
+                $"[config-rename] '{rename.From}' is now '{rename.To}' — read under its old name this "
+              + "run; rewritten on the next settings save.");
         Console.Error.WriteLine(
             $"[roster] profile '{RosterProfile}': "
             + string.Join(", ", EffectiveRoster().Select(r => $"{r.Key}={(r.Value ? "on" : "off")}"))
