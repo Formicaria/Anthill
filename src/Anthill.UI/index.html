@@ -156,14 +156,6 @@
    bar (the canvas has its own HUD), and .cmap-mode no longer exists, so the rule is now
    unconditional. */
 #page-colony #tb-colony{display:none;}
-/* v2.2.4: in classic (Live Colony) mode the map toolbar is hidden entirely — floating it was
-   fragile (clipped at the top-left). The map-view switches live inside the classic canvas's own
-   #colony-viewbar instead, which is already correctly positioned top-right. */
-.cv-sep{width:1px;height:14px;background:var(--border);margin:0 3px;}
-.cv-lbl{font-size:8px;color:var(--dim);letter-spacing:.08em;text-transform:uppercase;margin-left:4px;}
-.cv-sel{background:rgba(2,6,23,.7);border:1px solid var(--border);color:var(--muted);
-  font-size:9px;border-radius:4px;padding:2px 4px;cursor:pointer;}
-.cv-sel:focus-visible{outline:2px solid var(--hud-cyan);outline-offset:1px;}
 /* v2.2.3: active ants breathe on the chamber map (active-only animation; reduced-motion covered
 /* v2.2.4: delegation lines (Queen → Mission Control → chambers); active targets flow. */
 /* v2.2.6: the retired HUD strip/core/metrics are deleted from the DOM (they were hidden but
@@ -500,25 +492,10 @@ a.nav-logo-link:focus-visible{outline:2px solid var(--logo-node,#93bdf2);outline
    bottom of the workspace so a floating panel can never cover it. */
 #ws-bottombar{position:absolute;left:0;right:0;bottom:0;z-index:46;pointer-events:auto;}
 #ws-bottombar > #mission-bar{position:static;}
-/* Bottom-anchored topology overlays sit above it rather than behind it. */
-#ws-topology .topo-ov-slot[data-ovslot="bottom-left"],
-#ws-topology .topo-ov-slot[data-ovslot="bottom-center"],
-#ws-topology .topo-ov-slot[data-ovslot="bottom-right"]{bottom:62px;}
-
 /* The workspace toolbar (Locked / Modules / Focus / Reset) also clears the status bar — the bar
    has the higher z-index, so without this it simply hides the toolbar. */
 #page-overview.ws-active .ws-toolbar{top:58px;}
 #page-overview.ws-active .ws-modules{top:94px;max-height:calc(100vh - 170px);overflow-y:auto;}
-
-/* Top-anchored topology overlays clear BOTH the status bar (0-52) and the workspace toolbar
-   (58-90). Applied to every top slot rather than to the view bar specifically, so an overlay the
-   operator re-anchors cannot land underneath the chrome either. */
-#ws-topology .topo-ov-slot[data-ovslot="top-left"],
-#ws-topology .topo-ov-slot[data-ovslot="top-center"],
-#ws-topology .topo-ov-slot[data-ovslot="top-right"]{top:96px;}
-/* Left/centre slots hug their content instead of stretching to the widest sibling. */
-#ws-topology .topo-ov-slot[data-ovslot="top-left"],
-#ws-topology .topo-ov-slot[data-ovslot="bottom-left"]{align-items:flex-start;}
 
 /* -- Colony Page Layout ------------------------------------------------------ */
 #page-colony{flex-direction:row !important;overflow:hidden;}
@@ -527,45 +504,19 @@ a.nav-logo-link:focus-visible{outline:2px solid var(--logo-node,#93bdf2);outline
   border-right:1px solid var(--border);display:flex;flex-direction:column;padding:8px;gap:8px;
 }
 #colony-canvas-area{flex:1;position:relative;overflow:hidden;}
-#c{position:absolute;top:0;left:0;}
-/* Colony Live Canvas 2.0 HUD overlay */
-/* v2.14.14: the HUD wrapper stops being a positioned box so its children can be re-parented into
-   anchor slots. display:contents removes the box while keeping the children rendered. */
-.colony-hud{display:contents;}
-/* v2.15.1: no max-width on the SLOT. It clipped the colony view bar so the row began at
-   "Handoffs" with Command/Expanded/Active/Chambers cut off the left edge. Width belongs to the
-   overlays that actually need constraining (the legend and signals panels), not to the slot. */
-.topo-ov-slot{position:absolute;z-index:6;display:flex;flex-direction:column;gap:8px;max-width:none;pointer-events:none;}
-#chud-legend,#chud-phero{max-width:260px;}
-/* The view bar is a single row and must never wrap or clip. */
-#colony-viewbar{flex-wrap:nowrap;white-space:nowrap;max-width:none;}
-.topo-ov-slot>*{pointer-events:auto;}
-.topo-ov-slot[data-ovslot="top-left"]{top:10px;left:10px;}
-.topo-ov-slot[data-ovslot="top-center"]{top:10px;left:50%;transform:translateX(-50%);align-items:center;}
-.topo-ov-slot[data-ovslot="top-right"]{top:10px;right:10px;align-items:flex-end;}
-.topo-ov-slot[data-ovslot="bottom-left"]{bottom:10px;left:10px;flex-direction:column-reverse;}
-.topo-ov-slot[data-ovslot="bottom-center"]{bottom:10px;left:50%;transform:translateX(-50%);align-items:center;flex-direction:column-reverse;}
-.topo-ov-slot[data-ovslot="bottom-right"]{bottom:10px;right:10px;align-items:flex-end;flex-direction:column-reverse;}
-/* Overlays inside a slot are laid out BY the slot, so they must not carry their own anchoring. */
-.topo-ov{position:static !important;top:auto !important;left:auto !important;right:auto !important;bottom:auto !important;}
-.ov-hidden{display:none !important;}
-
-/* v0.3.8.117: retired view modes stay in the DOM so app.js keeps working, and out of sight. */
-.cv-hidden{display:none !important;}
+/* v0.3.8.125: THE FAILURE STATE. The only thing this container styles itself now — Colony Live
+   creates and sizes its own canvas. Shown when the renderer does not mount, in the space the
+   colony would have occupied, because a colony view that is silently absent is the failure the
+   old classic-canvas fallback existed to prevent. */
+.colony-down{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:10px;padding:24px;text-align:center;}
+.colony-down-hd{font-size:13px;font-weight:700;color:var(--text);}
+.colony-down-why{font-size:10px;color:var(--muted);font-family:var(--mono);max-width:460px;
+  line-height:1.6;word-break:break-word;}
 #colony-right{
   width:225px;flex-shrink:0;overflow-y:auto;overflow-x:hidden;
   border-left:1px solid var(--border);display:flex;flex-direction:column;padding:8px;gap:8px;
 }
-/* v0.3.8.56 (field report: a stray "name" under the legends): the hint kept its ORIGINAL
-   bottom-centre positioning (left:50%; translateX(-50%)) after v2.14.14 re-parented it into the
-   overlay slots — so in any slot but bottom-centre it shifted half its width off the canvas and
-   only the last word ("…rename") peeked past the edge. The SLOT owns position now; the hint is
-   just text. */
-#zoom-hint{
-  font-size:9px;color:rgba(255,255,255,.18);pointer-events:none;white-space:nowrap;
-  max-width:100%;overflow:hidden;text-overflow:ellipsis;
-}
-
 /* -- Mission Bar ------------------------------------------------------------- */
 /* The Missions page stops scrolling as a document: the THREAD scrolls and the composer stays
    pinned, which is what makes it read as a conversation rather than a long form. */
@@ -765,17 +716,6 @@ a.nav-logo-link:focus-visible{outline:2px solid var(--logo-node,#93bdf2);outline
 .ev-time{font-size:9px;color:var(--dim);margin-left:auto;}
 .ev-meta{font-size:9px;color:var(--dim);margin-bottom:2px;font-family:var(--mono);}
 .ev-msg{font-size:10px;color:var(--muted);word-break:break-word;}
-
-/* -- Tooltip ----------------------------------------------------------------- */
-#tooltip{
-  position:fixed;z-index:800;display:none;
-  background:var(--card);border:1px solid var(--border);border-radius:var(--r);
-  padding:10px 14px;min-width:170px;pointer-events:none;
-  box-shadow:0 8px 24px rgba(0,0,0,.5);
-}
-.tt-name{font-size:13px;font-weight:700;margin-bottom:6px;}
-.tt-row{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);padding:2px 0;}
-.tt-val{color:var(--text);font-family:var(--mono);}
 
 /* -- Settings Page ----------------------------------------------------------- */
 .settings-tabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0;margin-bottom:16px;}
@@ -1015,8 +955,6 @@ kbd{display:inline-block;min-width:16px;padding:1px 5px;border:1px solid var(--b
    operator last saw them. */
 .clb-ant-note{font-size:10px;color:var(--muted);padding:6px 0;line-height:1.45;}
 #clb-ant-stats .ac-stats{margin-top:8px;}
-#clb-ant-stats .clb-ant-recent{margin-top:6px;font-size:10px;}
-#clb-ant-stats .clb-ant-recent summary{cursor:pointer;color:var(--muted);}
 .pv-route-inherit{font-size:9px;}
 @media (max-width:820px){.pv-route-row{grid-template-columns:1fr 1fr;}.pv-route-inherit{grid-column:1/-1;}}
 .ant-card{background:var(--hud-glass);border:1px solid var(--border);border-left-width:3px;border-radius:8px;padding:13px 15px;}
@@ -1038,7 +976,6 @@ kbd{display:inline-block;min-width:16px;padding:1px 5px;border:1px solid var(--b
 .ant-card .ac-sub{font-size:10px;color:var(--muted);}
 .ant-card details summary{cursor:pointer;font-size:10px;color:var(--hud-cyan);margin-top:8px;list-style:none;}
 .ant-card details summary::-webkit-details-marker{display:none;}
-.ant-card .ac-recent{margin-top:6px;max-height:150px;overflow-y:auto;font-size:10px;}
 /* -- Mission Timeline + Task DAG (v1.8.23, Phase 6) -- */
 .mrflow-tabs{display:flex;gap:6px;margin-bottom:8px;}
 .mrflow-view{border:1px solid var(--border);border-radius:6px;background:var(--bg);padding:8px;overflow:auto;max-height:340px;}
@@ -1136,17 +1073,6 @@ kbd{display:inline-block;min-width:16px;padding:1px 5px;border:1px solid var(--b
 .result-close:hover{background:rgba(255,255,255,.06);color:var(--text);}
 #result-body{flex:1;overflow-y:auto;padding:18px 20px;font-family:var(--mono);font-size:12px;line-height:1.7;color:var(--text);white-space:pre-wrap;}
 .result-status-bar{padding:7px 18px;border-top:1px solid var(--border);display:flex;gap:18px;font-size:10px;color:var(--dim);flex-shrink:0;}
-
-/* -- Rename Popover ---------------------------------------------------------- */
-#rename-pop{
-  position:fixed;z-index:1200;background:var(--card);border:1px solid var(--border);
-  border-radius:var(--r);padding:12px 14px;width:208px;
-  display:none;flex-direction:column;gap:8px;box-shadow:0 8px 28px rgba(0,0,0,.55);
-}
-#rename-pop.show{display:flex;}
-#rename-input{padding:7px 10px;border-radius:var(--r);background:var(--inner);border:1px solid var(--border);color:var(--text);font-size:12px;width:100%;}
-#rename-input:focus{outline:none;border-color:var(--queen);}
-.rename-btns{display:flex;gap:6px;}
 
 /* -- Utility ----------------------------------------------------------------- */
 .text-queen{color:var(--queen);}
@@ -1305,10 +1231,12 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 /* v0.3.8.44: while a streamed answer is in flight the send button is ■ — red, because pressing
    it aborts the model call, and that is the one thing it can truthfully do right then. */
 .mn-send.chat-streaming{background:rgba(229,72,77,.14);border-color:rgba(229,72,77,.5);color:var(--status-danger,#e5484d);}
-/* v0.3.8.42 (§9/§14): the topology legend's registry-problem notice — amber for stale, and the
-   retry sits beside the failure it retries. */
-.chud-problem{color:var(--amber,#f59e0b);font-size:10px;line-height:1.5;margin-bottom:6px;
-  max-width:220px;white-space:normal;}
+/* v0.3.8.42 (§9/§14), relocated v0.3.8.125: the registry-problem notice — amber for stale, and
+   the retry sits beside the failure it retries. It lives in the live bar now, so it is a row
+   rather than a panel. */
+.clb-registry{display:inline-flex;align-items:center;gap:6px;}
+.clb-problem{color:var(--amber,#f59e0b);font-size:10px;line-height:1.5;max-width:420px;
+  white-space:normal;}
 /* v0.3.8.49 (§2) — the scroll fix. `justify-content:flex-end` LOOKED right (newest message at the
    bottom) but silently broke scrolling: in a flex column, content that overflows the START (top)
    edge is not counted in scrollHeight and cannot be scrolled to, so every message above the last
@@ -1728,12 +1656,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
     body.colony-focus:has(#page-colony.active) #domain-subnav,
     body.colony-focus:has(#page-colony.active) #colony-left,
     body.colony-focus:has(#page-colony.active) #colony-right{display:none !important;}
-    /* live on: the classic-only controls step aside; the old CTA bar yields to the composer */
-    body.colony-live-on #colony-viewbar,
-    body.colony-live-on #zoom-hint,
-    body.colony-live-on #mission-bar,
-    body.colony-live-on .chud-legend,
-    body.colony-live-on .chud-phero{display:none !important;}
+    /* live on: the old CTA bar yields to the composer. The four classic-canvas overlays that used
+       to be folded away here were deleted in v0.3.8.125 along with the canvas. */
+    body.colony-live-on #mission-bar{display:none !important;}
     .clb-sel{height:24px;padding:0 6px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:var(--text);font:inherit;font-size:10.5px;cursor:pointer;}
     .clb-pop-wrap{position:relative;display:inline-flex;}
     .clb-pop{position:absolute;top:30px;right:0;z-index:30;min-width:230px;padding:8px;border-radius:10px;
@@ -2230,9 +2155,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <!-- V2.2 Pass A: shared top telemetry bar -->
         <div id="tb-colony"></div>
 
-        <!-- v2.14.8: the chamber SVG map and its control bar are retired. Chambers, motion,
-             labels, pheromones, and the reset controls all live on the live colony canvas
-             (see the Chambers button in #colony-viewbar). One renderer, one set of controls. -->
+        <!-- v2.14.8: the chamber SVG map and its control bar are retired; v0.3.8.125 retired the
+             classic canvas that replaced them. Motion, labels, trails and reset all live in the
+             live bar's view menu. One renderer, one set of controls. -->
 
         <!-- Left sidebar: status + approvals + jobs -->
         <div id="colony-left">
@@ -2287,6 +2212,12 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <span class="clb-mission"><span class="clb-dot" id="clb-dot"></span><span class="clb-goal" id="clb-goal">colony idle</span></span>
             <span class="clb-prog" id="clb-prog" title="Tasks complete in the active mission"><span class="clb-prog-fill" id="clb-prog-fill"></span></span>
             <span class="clb-count" id="clb-count"></span>
+            <!-- v0.3.8.125: THE REGISTRY'S CONDITION, moved here from the classic canvas's caste
+                 legend. Empty and hidden while the roster is healthy — a permanent "roles OK" line
+                 would be chrome, and the colony itself is the evidence. It appears only to say the
+                 roster is stale or unavailable, with when, why, and a retry, because the rule this
+                 keeps is that the console never presents an absent roster as a current one. -->
+            <span class="clb-registry" id="clb-registry-note" hidden></span>
             <span class="clb-spacer"></span>
             <button class="clb-needs" id="clb-needs" data-homeact="needs" title="Approvals waiting on you — opens Chat" style="display:none"><span class="clb-needs-dot"></span><span id="clb-needs-txt">0 need you</span></button>
             <div class="clb-views" id="clb-views">
@@ -2323,7 +2254,6 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                   <button class="clb-btn clb-row-btn" data-homeact="resetlayout" title="Return every sector to its canonical position, name and style">⌂ Reset colony layout</button>
                 </div>
               </span>
-              <button class="clb-btn" id="clb-3d" data-homeact="toggle3d" title="Switch between Colony Live and the classic 2D canvas">Classic 2D</button>
               <button class="clb-btn clb-focus" id="clb-focus" data-homeact="focus" title="Toggle the full-screen colony and the console around it">Console</button>
             </div>
           </div>
@@ -2359,74 +2289,29 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                  had just clicked on. The telemetry it went to fetch is now in the panel: lifetime
                  task counts, success rate, average duration, and recent activity on demand. -->
             <div id="clb-ant-stats" style="display:none"></div>
+            <!-- v0.3.8.125 — THE ANT INSPECTOR, FOLDED IN. This is the same #agent-detail element
+                 that sat in a card in the right sidebar: purpose, permissions, tools, the runtime
+                 and pheromone facts, live task load, workers, and the name/colour editor. It was a
+                 second panel describing the ant this one had already named, in a second vocabulary
+                 ("trail 0.62" here, "Pheromone 0.74" there), and an operator had to look in two
+                 places to answer one question.
+
+                 MOVED, not copied: the dashboard's Ant Inspector widget re-parents this exact node
+                 (`body:'agent-detail'` in the widget registry), the same way the colony canvas area
+                 is re-parented. One element, one renderer, two hosts. -->
+            <div id="agent-detail"><div class="ad-empty">Select an ant to inspect it</div></div>
           </div>
+        <!-- v0.3.8.125: THE CANVAS IS THE RENDERER'S, NOT THIS FILE'S.
+
+             This element used to contain a static `<canvas id="c">`, an HUD overlay, a view bar
+             with four modes and three preference selects, a zoom hint, and six overlay anchor
+             slots — all of it chrome for the classic force-graph projection. That projection is
+             gone; Colony Live creates its own canvas on mount, draws its own bar (the `clb-*`
+             row above), and places its own labels. What is left is the mount point, which is
+             also the node re-parented between the Colony page, the dashboard widget and Chat's
+             colony layer, and the container the failure state renders into when the renderer
+             does not come up. -->
         <div id="colony-canvas-area">
-          <canvas id="c"></canvas>
-          <!-- Canvas 2.0 HUD overlay: caste legend + live pheromone trails -->
-          <div id="colony-hud" class="colony-hud">
-            <div class="chud-legend" id="chud-legend"></div>
-            <div class="chud-phero" id="chud-phero">
-              <!-- v0.3.8.55: the header folds the panel — same collapse the caste legend has. -->
-              <div class="chud-phero-hd chud-hd" data-ovcollapse="signals" role="button" tabindex="0" title="Collapse or expand the learning signals">Colony Learning · Signals<span class="ov-caret">▾</span></div>
-              <div id="chud-phero-body" class="chud-body"><div class="chud-empty">Loading trails…</div></div>
-            </div>
-          </div>
-          <!-- data-chrome-avoid: the Live 3D renderer reads these rectangles and places
-               chamber labels clear of them. The viewbar sits top-right over the canvas. -->
-          <div class="colony-viewbar" id="colony-viewbar" data-chrome-avoid>
-            <!-- v0.3.8.117: THE 2D VIEW IS ONE VIEW NOW. Colony Live 3D is the default and the
-                 primary; the canvas projection is the fallback and the deliberate 2D option, and it
-                 shows every ant including workers - which is what "Expanded" always was. Command,
-                 Active and Chambers are HIDDEN rather than deleted: `colonyView` still drives
-                 buildNodes() and the chamber layout, and ripping the modes out is a separate change
-                 with its own blast radius. Chambers is on its way out entirely. -->
-            <button class="cv-btn cv-hidden" data-view="command" title="Queen, Director, and main ant hubs">Command</button>
-            <button class="cv-btn on" data-view="expanded" title="The 2D canvas projection - every role and worker">2D View</button>
-            <button class="cv-btn cv-hidden" data-view="active" title="Only current mission path">Active</button>
-            <button class="cv-btn cv-hidden" data-view="group" title="Organize the ants into their chambers, in place on this canvas">Chambers</button>
-            <button class="cv-btn on" data-toggle="handoffs" title="Show active handoff edges">Handoffs</button>
-            <span class="cv-sep"></span>
-            <!-- v2.14.5: map preferences live on the live colony canvas. The separate chamber SVG
-                 is being retired — "Groups" above organizes the same ants into chambers in place. -->
-            <label class="cv-lbl" for="cv-motion">Motion</label>
-            <select class="cv-sel" id="cv-motion" data-colonypref="motion" title="Particle/animation density">
-              <option value="off">Off</option><option value="low">Low</option>
-              <option value="normal" selected>Normal</option><option value="high">High</option>
-            </select>
-            <label class="cv-lbl" for="cv-labels">Labels</label>
-            <select class="cv-sel" id="cv-labels" data-colonypref="labels" title="Ant label density">
-              <option value="off">Off</option><option value="active">Active</option>
-              <option value="all" selected>All</option>
-            </select>
-            <label class="cv-lbl" for="cv-pher">Pheromones</label>
-            <select class="cv-sel" id="cv-pher" data-colonypref="pheromones" title="Pheromone trail visibility">
-              <option value="off">Off</option><option value="active">Active</option>
-              <option value="all" selected>All</option>
-            </select>
-            <button class="cv-btn" data-colonyact="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
-            <button class="cv-btn" data-colonyact="zoom-in" title="Zoom in" aria-label="Zoom in">＋</button>
-            <!-- v0.3.8.117: ONE RESET. There were two here and two more in the 3D HUD, and an
-                 operator who has lost the view does not want to work out which of four to press.
-                 This resets whichever renderer is showing: pan/zoom and dragged ants in 2D, camera
-                 and chamber layout in 3D. -->
-            <button class="cv-btn" data-colonyact="reset-all" title="Reset the view and the layout - camera, pan, zoom, and any chamber or ant you have dragged">⤾ Reset</button>
-            <span class="cv-sep"></span>
-            <!-- Colony Live (design doc §17, stage 3) behind a view switch. The classic canvas stays the default
-                 and the permanent reduced/no-WebGL fallback (design doc §17, stage 3). -->
-            <button class="cv-btn" data-colonyact="live3d" title="Colony Live — 3D formicarium view (classic canvas stays the fallback)">Live 3D</button>
-          </div>
-          <div id="zoom-hint">Use ＋/− to zoom (or Ctrl/⌘ + scroll) · Drag canvas to pan · Drag ant to move · Double-click to rename</div>
-          <!-- v2.14.14 Stage 7: six anchor slots. Overlays are re-parented into these, so two
-               overlays sharing an anchor stack instead of overlapping. -->
-          <div class="topo-ov-slot" data-ovslot="top-left"></div>
-          <div class="topo-ov-slot" data-ovslot="top-center"></div>
-          <div class="topo-ov-slot" data-ovslot="top-right"></div>
-          <div class="topo-ov-slot" data-ovslot="bottom-left"></div>
-          <div class="topo-ov-slot" data-ovslot="bottom-center"></div>
-          <div class="topo-ov-slot" data-ovslot="bottom-right"></div>
-          <!-- v2.15.2: overlay show/hide and anchoring moved into the workspace Modules menu,
-               so there is one place to control everything that is on screen. That menu lives in
-               the always-present toolbar, so hiding every overlay is still recoverable. -->
           <!-- v0.3.8.42 (§3): Chat is the one mission entry. This bar held the third of four
                composers; it now points at the canonical one instead of competing with it. -->
           <div class="mission-bar-wrap" id="mission-bar">
@@ -2460,16 +2345,6 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 
         <!-- Right sidebar: inspector + events -->
         <div id="colony-right">
-
-          <div class="card" id="card-inspector">
-            <div class="card-head">
-              Ant Inspector
-              <button class="collapse-btn" data-card="card-inspector" title="Collapse">▾</button>
-            </div>
-            <div class="card-body">
-              <div id="agent-detail"><div class="ad-empty">Click or hover a colony node<br>to inspect the agent</div></div>
-            </div>
-          </div>
 
           <div class="card" id="events-card" style="flex:1;display:flex;flex-direction:column;min-height:0;">
             <div class="card-head" style="flex-shrink:0;">
@@ -4451,27 +4326,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
   <div class="result-status-bar" id="result-status-bar"></div>
 </div>
 
-<!-- ---------------------------------------------------------------------------
-     RENAME POPOVER
----------------------------------------------------------------------------- -->
-<div id="rename-pop">
-  <div style="font-size:10px;color:var(--muted);font-weight:600;">Rename Agent</div>
-  <input id="rename-input" type="text" maxlength="28" placeholder="Display name">
-  <div class="rename-btns">
-    <button class="btn btn-primary" id="rename-save" style="flex:1;justify-content:center;">Save</button>
-    <button class="btn btn-ghost" id="rename-cancel">Cancel</button>
-  </div>
-</div>
-
-<!-- ---------------------------------------------------------------------------
-     TOOLTIP
----------------------------------------------------------------------------- -->
-<div id="tooltip">
-  <div class="tt-name" id="tt-name"></div>
-  <div class="tt-row"><span>Status</span><span class="tt-val" id="tt-status"></span></div>
-  <div class="tt-row"><span>Tasks</span><span class="tt-val" id="tt-tasks"></span></div>
-  <div class="tt-row"><span>Activity</span><span class="tt-val" id="tt-activity"></span></div>
-</div>
+<!-- v0.3.8.125: the RENAME POPOVER and the hover TOOLTIP are gone with the canvas whose
+     double-click and mousemove opened them. Renaming happens in place in the live bar
+     (#clb-sector-name, #clb-ant-name); what the tooltip showed is the ant panel's, on click. -->
 
 <!-- ---------------------------------------------------------------------------
      v1.8.25 UI Phase 10: COMMAND PALETTE + GLOBAL SEARCH (Ctrl+K)
