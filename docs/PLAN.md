@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.128**.
+Shipping release: **v0.3.8.129**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -689,13 +689,59 @@ either honour it or delete it rather than let it decay into a sentence nobody ap
 
 ---
 
-## 2e. What comes next — the shape of v0.3.8.127 and after
+## 2e. What comes next — the shape of v0.3.8.129 and after
 
 The universal-workflow program closed at `.113` and R0 closed at `.114`. There is no successor
 program: what remains is R-numbered work, standing hygiene, and a small number of findings the last
 several releases surfaced and deliberately did not chase. This section exists because "what is next"
 was being reconstructed from three documents every release, and the reconstruction kept losing the
 same items.
+
+### The external review of the mission workflow — verified at `.129`, and what of it is real
+
+An outside review of the colony-wide mission workflow arrived against `main` at **v0.3.8.125**. Every
+claim in it was re-checked against the tree at `.128` before any of it entered this plan, because a
+review is a reading and a reading ages — and one of its two headline findings had already been fixed
+two releases before it was written down.
+
+**What was already closed, and must not be re-opened.** Its lead finding was that the coder resolver
+selected `ui_coder` on a bare `text.Contains("ui")`, so the word "req·ui·ring" routed backend work to
+the UI worker. `.126` replaced that with `RoutingWords` word boundaries and added
+`RoutingWordBoundaryTests.NoWorkerRoutingBranch_DecidesOnABareSubstring`, a source guard that fails
+if any routing branch decides on a bare substring again. The review's own failure logs predate it.
+
+**What is verified and queued.** In order, and the order is the review's ranking corrected for what
+this tree actually does:
+
+| # | Finding | Where | Pinned by a test? |
+|---|---|---|---|
+| 1 | **A project mission's source root never becomes tool scope.** `Queen.RunMission` gates workspace activation on `EnableFileWriting \|\| EnablePatchApplication \|\| EnableActingCoder` — all three default OFF. `Project.Path` is loaded and then used only to build a workspace that is never built, so under proposal-only defaults every file and check tool falls back to `agent_workspace_dir`. A mission about project X reads, patches and tests some other tree. | `Queen.cs` ~`775`/`812` | No |
+| 2 | **A check whose process never started is filed as a reproducible test failure.** `CheckRunner` returns a typed failure with empty output; the tester greps for `exit_code=`, writes `n/a`, and then converts EVERY unsuccessful tool result into `VerificationFailure` + retryable + a medic handoff, discarding the tool's own class; `ToolEvidence` marks every `run_allowlisted_check` deterministic on the tool NAME alone. A missing `dotnet` and a failing test are the same row. | `CheckRunner.cs`, `SpecialistAnts.cs`, `ToolEvidence.cs` | Partly — the not-started path has no test at all |
+| 3 | **A schedule run is complete before its mission has done anything.** `ConversationRunner` returns as soon as the mission ROW exists; `ProjectScheduler` reads `outcome.Started` as `"complete"` and stamps `FinishedAt`. Overlap detection looks only for a `running` row, so occurrences can overlap. `ScheduleRun` carries no mission or job id. | `ProjectScheduler.cs`, `ConversationRunner.cs` | **Yes, and worse** — the test's fake mission runner is synchronous, so the defect is invisible to the harness by construction |
+| 4 | **A justified no-change is an internal defect.** `ClassifyPatchJson` grades a well-formed response with zero proposals as `InternalDefect`. The typed vocabulary already exists one path over — the acting coder's `NO_CHANGES_NEEDED` — and grades it a success. | `Ants.cs` | **Yes**, and the fixture is itself a justified refusal |
+| 5 | **Two early returns skip finalization.** Dispatch-plan refusal and preflight refusal persist a status and return; neither compiles the operator report, emits the outcome event, or invokes `onMissionFinished`. So a BLOCKED mission — the state those very comments insist is not a failure — reaches the operator's job list as a bare `failed` with no reason. No `try`/`finally` wraps the mission body either. | `Queen.cs` | No |
+| 6 | ProjectId is lost through the Director and the API job path (`ApiMissionJob` has no such field; `POST /missions` has no such field). The conversation/schedule path does carry it. Bites when the Director replaces a cron. | `ColonyDirector.cs`, `ApiJobRegistry.cs` | No |
+| 7 | The validated dispatch plan is logged and then discarded — `PlanningService.CreatePlan` builds the executed graph independently. Only bites when an operator actually requested a workflow, which is the one case the stage exists for. | `Queen.cs`, `DispatchPlanner.cs` | No |
+| 8 | `FallbackTasks` still decides the CODE lane on `"add"` and `"class"`. `.126` moved it to `AnyPrefix`, which anchors at a word START, so "req·ui·ring" and "un·change·d" were genuinely fixed and "**add**ress" and "**class**ification" were not. The comment claims four; it earned two. | `Planner.cs` | No |
+
+**Where this plan disagrees with the review.** Three of its findings are accurate readings of code that
+is the way it is on purpose, and adopting them as defects would undo argued decisions:
+
+- **Spec ingestion on length alone** is real and is a standing design choice, defended in writing by
+  `EvidenceGroundedPlanningTests` — abandoning it trades a mission that inspects nothing for a
+  mission that overflows its context. Changing it is a design change with its own case to make.
+- **Structural status beside `verification_status: failed`** was ATTEMPTED at `.122`, reverted, and
+  the reason written down where the next attempt will find it. It is blocked on the per-task
+  execution record, exactly as this section already said.
+- **The tester judging the base tree** is real, partially mitigated by the dispatcher re-entering a
+  live revision scope, and its full answer is R6/R7 work rather than a repair.
+
+Its P2 and P3 sections are a roadmap, and they substantially restate R6, R7 and R9. They do not
+reorder this one.
+
+**Items 1 and 2 are one slice.** Together they are the whole of what the operator actually observed —
+patches proposed against `.anthill\workspace`, a `dotnet_test` that "failed" in 0.06 seconds with no
+exit code, and a medic loop that re-ran a coder against a failure nothing had changed.
 
 ### The orchestration slice — `.118` opened it, `.122` closed two findings, and the rest waits on one row
 

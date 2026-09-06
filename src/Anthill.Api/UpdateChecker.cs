@@ -13,8 +13,19 @@ namespace Anthill.Api;
 public static class UpdateChecker
 {
     private const string Repo = "Formicaria/Anthill";
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(6) };
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(20) };
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(30);
+
+    /// <summary>
+    /// A FAILED CHECK IS NOT CACHED LIKE AN ANSWER. v0.3.8.129.
+    ///
+    /// Six seconds is not a timeout, it is a bet that the first TLS handshake of the session
+    /// completes faster than most home connections manage — and the loss was charged at the
+    /// success rate: one blocked poll pinned "unavailable" in the header for the full thirty
+    /// minutes, long after the network came back. Twenty seconds to answer, five minutes to
+    /// forgive.
+    /// </summary>
+    private static readonly TimeSpan FailureTtl = TimeSpan.FromMinutes(5);
     private static readonly object Gate = new();
 
     private static Dictionary<string, object?>? _cached;
@@ -32,7 +43,9 @@ public static class UpdateChecker
     {
         lock (Gate)
         {
-            if (!force && _cached is not null && DateTime.UtcNow - _cachedAt < CacheTtl)
+            var ttl = _cached is not null && _cached.TryGetValue("status", out var s) && (s as string) == "ok"
+                ? CacheTtl : FailureTtl;
+            if (!force && _cached is not null && DateTime.UtcNow - _cachedAt < ttl)
                 return _cached;
         }
 
@@ -71,9 +84,24 @@ public static class UpdateChecker
         }
         catch (Exception ex)
         {
-            return Unknown(current, ex.Message);
+            return Unknown(current, Reason(ex));
         }
     }
+
+    /// <summary>
+    /// WHAT AN OPERATOR CAN ACT ON, not what the exception said.
+    ///
+    /// `ex.Message` for a lapsed timeout is "The request was canceled due to the configured
+    /// HttpClient.Timeout of 6 seconds elapsing." — a sentence about this class's own field,
+    /// rendered in the header of a colony that is working perfectly. It names no cause the reader
+    /// owns and no action they can take. The check could not reach GitHub; that is the fact.
+    /// </summary>
+    private static string Reason(Exception ex) => ex switch
+    {
+        OperationCanceledException => $"no answer from github.com within {(int)Http.Timeout.TotalSeconds}s",
+        HttpRequestException => "github.com could not be reached",
+        _ => "the update check did not complete",
+    };
 
     private static Dictionary<string, object?> Unknown(string current, string reason) => new()
     {

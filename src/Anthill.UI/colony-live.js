@@ -1193,7 +1193,16 @@
     };
     var handlers = {};
     function on(ev, fn) { (handlers[ev] = handlers[ev] || []).push(fn); }
-    function emit(ev, data) { (handlers[ev] || []).forEach(function (fn) { fn(data); }); }
+    // v0.3.8.129: guarded, because an unguarded fan-out makes one subscriber's bug look like a
+  // different subscriber's feature being gone. `.127` left a ReferenceError in the FIRST resident
+  // handler; the second handler is the one that opens the record panel, and it simply never ran.
+  // `colony-host.js` already guards all three of its fan-outs — this was the bus that did not.
+  function emit(ev, data) {
+    (handlers[ev] || []).forEach(function (fn) {
+      try { fn(data); }
+      catch (e) { try { console.error('[colony-live] ' + ev + ' handler failed', e); } catch (e2) { } }
+    });
+  }
 
     function mount(el) {
       root = el;
