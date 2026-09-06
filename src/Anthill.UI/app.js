@@ -490,7 +490,7 @@ PAGE_ENTER['overview']=()=>{
   setTimeout(()=>{
     const area=document.getElementById('colony-canvas-area');
     if(area && area.closest('#page-overview')){
-      if(typeof renderColonyLegend==='function') renderColonyLegend();
+      if(typeof renderColonyRegistryState==='function') renderColonyRegistryState();
       if(typeof pollColonyPheromones==='function') pollColonyPheromones();
     }
   },80);
@@ -895,10 +895,7 @@ function showPage(id,o){
       ? 'External model providers — keys, connections, and their curated model catalogs.'
       : 'Colony configuration, model routes, and system diagnostics';
   }
-  if(id==='colony') setTimeout(()=>{ resize(); buildNodes(); renderColonyLegend(); pollColonyPheromones(); },50);
-  // v2.14.13: one layout read per navigation, so the render loop stops drawing a map that is
-  // sitting inside a display:none page.
-  setTimeout(refreshTopologyAwake,60);
+  if(id==='colony') setTimeout(()=>{ buildNodes(); renderColonyRegistryState(); pollColonyPheromones(); },50);
 }
 
 // Breadcrumb + active-nav + contextual sub-nav for the current route.
@@ -966,7 +963,6 @@ window.addEventListener('popstate',()=>router());
 document.getElementById('nav-collapse-btn').addEventListener('click',()=>{
   document.body.classList.toggle('nav-collapsed');
   localStorage.setItem('nav-collapsed', document.body.classList.contains('nav-collapsed')?'1':'0');
-  setTimeout(()=>{ if(document.getElementById('page-colony')?.classList.contains('active')) resize(); },220);
 });
 
 // v0.3.8.42 (§3): the mission composers are gone — Chat is the one mission entry, and the three
@@ -1002,27 +998,6 @@ PAGE_ENTER['settings']=()=>{
   loadSettingsInfo();
 };
 
-// -- Canvas --------------------------------------------------------------------
-const canvas = document.getElementById('c');
-const ctx = canvas.getContext('2d');
-let W, H, cx, cy;
-
-function resize(){
-  const el=document.getElementById('colony-canvas-area');
-  if(!el) return;
-  // Render at the display's real pixel density so the colony stays sharp on HiDPI screens:
-  // backing store scaled by devicePixelRatio, all drawing kept in logical (CSS px) coordinates.
-  const dpr=window.devicePixelRatio||1;
-  W=el.clientWidth; H=el.clientHeight;
-  canvas.width=Math.round(W*dpr); canvas.height=Math.round(H*dpr);
-  canvas.style.width=W+'px'; canvas.style.height=H+'px';
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-  cx=W/2; cy=H/2;
-}
-resize();
-window.addEventListener('resize',()=>{ resize(); buildNodes(); refreshTopologyAwake(); });
-
-let camX=0,camY=0,camZ=1,tX=0,tY=0,tZ=1;
 
 const ROLE_COLORS={
   queen:'#fbbf24',director:'#f59e0b',planner:'#a78bfa',constraint:'#f43f5e',
@@ -1033,7 +1008,7 @@ const ROLE_COLORS={
 // v0.3.8.117: 'expanded' is the only 2D mode offered now - Colony Live 3D is the default view
 // and this canvas is its fallback, so when it IS shown it shows everything rather than a
 // filtered subset. command/active/group still work; their buttons are hidden, not deleted.
-let colonyRegistry=null,colonyView='expanded',showHandoffs=true;
+let colonyRegistry=null;
 let antRuntimeStatus={};   // v2.14.13: roleId -> /colony/registry runtime_status entry
 const ANT_MAP={
   researcher:{ color:ROLE_COLORS.researcher, label:'ResearcherAnt', role:'CONTEXT' },
@@ -1078,7 +1053,7 @@ function antTaskState(status){
   }
 }
 let totalModelCalls=0, modelCallRate=0, colonyRunning=false;
-let nodes=[], edges=[], dataFlowEdges=[], particles=[], selectedNode=null, hoveredNode=null;
+let nodes=[], edges=[], dataFlowEdges=[], selectedNode=null;
 
 function prop(o,...names){for(const n of names){if(o&&Object.prototype.hasOwnProperty.call(o,n))return o[n];}return undefined;}
 function roleId(r){return prop(r,'roleId','RoleId')||'';}
@@ -1116,13 +1091,13 @@ function activeRoles(){
   (lastGraphData?.nodes||[]).forEach(t=>{if(t.assigned_ant)roles.add(t.assigned_ant);});
   return roles;
 }
+/* EVERY role the registry names, minus the two structural cores. v0.3.8.125 dropped the
+   `colonyView==='active'` filter with the canvas view modes it belonged to: filtering the ROSTER
+   by what happens to be running would make an idle ant unopenable in the inspector, which is the
+   opposite of what the 'active' DRAWING meant. `activeRoles()` is still what the live view asks
+   for when it wants that distinction. */
 function visibleRoles(){
-  const roles=(colonyRegistry?.roles||colonyRegistry?.Roles||[]).filter(r=>!['queen','director'].includes(roleId(r)));
-  if(colonyView==='active'){
-    const ar=activeRoles();
-    return roles.filter(r=>ar.has(roleId(r)));
-  }
-  return roles;
+  return (colonyRegistry?.roles||colonyRegistry?.Roles||[]).filter(r=>!['queen','director'].includes(roleId(r)));
 }
 // v2.14.5: chambers are a LAYOUT of the live colony canvas, not a second renderer. The old
 // 'group' arc-spread only nudged roles along one arc; real chambers cluster each colony around
@@ -1150,28 +1125,19 @@ const ROLE_CHAMBER = (()=>{
 /** Chamber for a role id — never invents a chamber for an unmapped role. */
 function chamberFor(roleIdStr){ return ROLE_CHAMBER[String(roleIdStr||'').toLowerCase()]||CHAMBER_FALLBACK; }
 
-let CHAMBERS={};   // colony -> {x,y,label}; rebuilt by buildNodes in chamber mode, drawn by drawBg
-
 /* ---------------------------------------------------------------------------------------------
- * v2.14.12 REPAIR: colony map preferences + chamber geometry.
+ * COLONY MAP PREFERENCES — and the reason the guard beside them exists. v2.14.12.
  *
- * v2.14.5 through v2.14.10 added CALL SITES for everything below — drawChambers reads
- * colonyMotion/colonyLabels, drawNode reads colonyLabels, maybeSpawn reads colonyMotion, the
- * render loop reads colonyPheromones, buildNodes calls chamberCentres, the mouse handlers call
- * chamberAt/moveChamber/persistChamber, and the viewbar has reset-view/reset-layout buttons —
- * but the DEFINITIONS were never actually written to this file. The result:
+ * v2.14.5 through v2.14.10 added CALL SITES for all of this without ever writing the DEFINITIONS,
+ * and the result was a map drawing edges that radiated from an empty centre: an undeclared
+ * identifier is a runtime ReferenceError, not a syntax error, so `node --check` stayed green the
+ * whole time. `RegressionGuardTests.UiIntegrity_ColonyAndChamberSymbolsAreDeclared` fails the
+ * build on any colony- or chamber-prefixed symbol used without a declaration — and that guard is
+ * what makes a deletion the size of v0.3.8.125's safe. It removed the renderer these preferences
+ * were written for; the guard is what proves nothing was left pointing at it.
  *
- *   - loop() threw a ReferenceError on `colonyPheromones` every frame, AFTER drawing the
- *     background and edges but BEFORE nodes.forEach — so the map showed edges radiating from an
- *     empty centre and no ants at all, and nothing downstream (particles, activity decay) ran.
- *   - buildNodes() threw on `chamberCentres` in chamber mode after pushing only queen+director,
- *     which is why the Chambers view rendered as a single line.
- *   - the Motion/Labels/Pheromones selects and the View/Layout reset buttons had no listeners,
- *     so they were inert.
- *
- * `node --check` cannot catch this: an undeclared identifier is a runtime ReferenceError, not a
- * syntax error. RegressionGuardTests.UiIntegrity_ColonyAndChamberSymbolsAreDeclared now fails the
- * build on any colony-prefixed or chamber-prefixed symbol used without a declaration.
+ * The three preferences survive because the LIVE renderer takes all three — motion, labels and
+ * trails — through `ColonyHost.setOptions`. They are the operator's answer, not the canvas's.
  * ------------------------------------------------------------------------------------------- */
 
 const COLONY_PREF_VALUES={
@@ -1185,128 +1151,33 @@ let colonyMotion     = colonyReducedMotion ? 'off' : 'normal';
 let colonyLabels     = 'all';
 let colonyPheromones = 'all';
 
-/** Seed the preferences from the markup so the `selected` options stay the single source of truth. */
+/** Seed the preferences from the markup so the `selected` options stay the single source of truth.
+    v0.3.8.125: read from the live bar's own selects (`clb-*`) — the classic viewbar's `cv-*` ids
+    went with the canvas, and reading ids that no longer exist would silently seed every preference
+    from its fallback instead of from what the operator is actually looking at. */
 function loadColonyPrefs(){
   const read=(id,fb)=>{ const el=document.getElementById(id); return el&&el.value?el.value:fb; };
-  colonyLabels     = read('cv-labels','all');
-  colonyPheromones = read('cv-pher','all');
-  colonyMotion     = colonyReducedMotion ? 'off' : read('cv-motion','normal');
+  colonyLabels     = read('clb-labels','all');
+  colonyPheromones = read('clb-trails','all');
+  colonyMotion     = colonyReducedMotion ? 'off' : read('clb-motion','normal');
   if(colonyReducedMotion){
-    const sel=document.getElementById('cv-motion');
+    const sel=document.getElementById('clb-motion');
     if(sel){ sel.value='off'; sel.title='Forced off: your system requests reduced motion'; }
   }
 }
 
-/** Apply one preference. Values are validated against COLONY_PREF_VALUES — never trusted raw. */
+/** Apply one preference. Values are validated against COLONY_PREF_VALUES — never trusted raw.
+    The renderer is the only consumer now; the particle and mote pools these used to clear were
+    the classic canvas's, and Colony Live owns its own. */
 function setColonyPref(kind,value){
   const allowed=COLONY_PREF_VALUES[kind];
   if(!allowed||allowed.indexOf(value)<0) return;
-  if(kind==='motion'){ colonyMotion=colonyReducedMotion?'off':value; if(colonyMotion==='off') particles=[]; }
+  if(kind==='motion'){ colonyMotion=colonyReducedMotion?'off':value; }
   else if(kind==='labels'){ colonyLabels=value; }
-  else if(kind==='pheromones'){ colonyPheromones=value; if(value==='off') pheroMotes.length=0; }
+  else if(kind==='pheromones'){ colonyPheromones=value; }
   if(window.ColonyHost&&ColonyHost.active()) ColonyHost.setOptions({motion:colonyMotion, labels:colonyLabels, trails:colonyPheromones!=='off'});
 }
 
-/**
- * Chamber centres. The Queen's Core holds the middle because it is the control plane, not a peer
- * cluster; the remaining chambers sit on a ring around it. Operator drags are stored as OFFSETS
- * (uiState.chambers[name] = {dx,dy}) against the computed base, so a chamber stays where it was
- * put across resizes and across changes to the chamber order.
- */
-function chamberCentres(names){
-  const all=Array.isArray(names)?names:[];
-  const ring=all.filter(n=>n!=="Queen's Core");
-  const off=uiState.chambers||{};
-  // v2.16.0: chambers hold more area now that roles and workers are properly spaced, so the ring
-  // they sit on grows with them — otherwise neighbouring chambers overlap and the view is muddier
-  // than the version it replaced.
-  const R=Math.min(W,H)*0.38;
-  const out={};
-  const place=(name,bx,by)=>{
-    const o=off[name]||{};
-    const dx=Number(o.dx)||0, dy=Number(o.dy)||0;
-    out[name]={x:bx+dx,y:by+dy,bx:bx,by:by,label:name};
-  };
-  if(all.indexOf("Queen's Core")>=0) place("Queen's Core",cx,cy);
-  ring.forEach((name,i)=>{
-    const a=(i/Math.max(1,ring.length))*Math.PI*2 - Math.PI/2;
-    place(name, cx+Math.cos(a)*R, cy+Math.sin(a)*R);
-  });
-  return out;
-}
-
-/** Ring radius that actually encloses the chamber's ants; 0 when the chamber is empty. */
-function chamberRadius(name){
-  const c=CHAMBERS[name];
-  if(!c) return 0;
-  let max=0, count=0;
-  nodes.forEach(n=>{
-    if(n.chamber!==name) return;
-    count++;
-    max=Math.max(max, Math.hypot(n.x-c.x,n.y-c.y)+(n.r||10));
-  });
-  return count ? Math.max(58, max+22) : 0;
-}
-
-/** Chamber under a world point, preferring the tightest ring so overlaps resolve predictably. */
-function chamberAt(wx,wy){
-  if(colonyView!=='group'||!CHAMBERS) return null;
-  let best=null,bestR=Infinity;
-  Object.keys(CHAMBERS).forEach(name=>{
-    const c=CHAMBERS[name], r=chamberRadius(name);
-    if(!r||r>=bestR) return;
-    if(Math.hypot(wx-c.x,wy-c.y)<=r){ best=name; bestR=r; }
-  });
-  return best;
-}
-
-/** Move a chamber and carry its ants, preserving their positions relative to the ring. */
-function moveChamber(name,dx,dy){
-  const c=CHAMBERS[name];
-  if(!c||(!dx&&!dy)) return;
-  c.x+=dx; c.y+=dy;
-  nodes.forEach(n=>{ if(n.chamber===name){ n.x+=dx; n.y+=dy; } });
-}
-
-/** Persist a dragged chamber: the ring offset, plus the ants that travelled with it. */
-function persistChamber(name){
-  const c=CHAMBERS[name];
-  if(!c) return;
-  uiState.chambers=uiState.chambers||{};
-  uiState.chambers[name]={dx:Math.round(c.x-c.bx),dy:Math.round(c.y-c.by)};
-  // The ants moved too, so their own positions are saved as well — matching what a single-ant
-  // drag already does. Without this a reload would snap them out of the ring they were put in.
-  nodes.forEach(n=>{ if(n.chamber===name) uiState.positions[n.id]={x:Math.round(n.x),y:Math.round(n.y)}; });
-  saveUiState();
-}
-
-/** Reset pan and zoom only. Sets the camera TARGETS so the loop eases there instead of snapping. */
-function colonyResetView(){ tX=0; tY=0; tZ=1; }
-/** v0.3.8.49 — zoom about the viewport centre by a factor, clamped like the wheel path. Keeps the
- *  centre point fixed so the map grows/shrinks in place rather than drifting. */
-function colonyZoom(factor){
-  const nz=Math.max(.2,Math.min(4,tZ*factor));
-  // Zoom about the canvas centre (cx,cy in world = screen centre): tX/tY stay put for a centre zoom.
-  tZ=nz;
-}
-
-/**
- * Reset layout: drops dragged ant positions and chamber offsets, then rebuilds. Deliberately does
- * NOT touch caste names, colours, or model routes — those are settings, not layout.
- */
-function colonyResetLayout(){
-  uiState.positions={};
-  uiState.chambers={};
-  buildNodes();
-  colonyResetView();
-  saveUiState();
-}
-
-function colonyAngleFor(role,index,total){
-  if(colonyView!=='group') return -90 + index*(360/Math.max(1,total));
-  const c=roleColony(role),ci=Math.max(0,CHAMBER_ORDER.indexOf(c));
-  return -115 + ci*(230/Math.max(1,CHAMBER_ORDER.length-1)) + (index%3-1)*7;
-}
 // v0.3.8.42 (§9/§14): registry failure is a STATE, not a console.warn. Both branches of this
 // release fixed it independently; this is the union. What the operator sees: with cached roles,
 // the map keeps drawing them and the legend marks them STALE with when, why, and a retry; with
@@ -1327,150 +1198,70 @@ async function loadColonyRegistry(){
       // v2.14.13: truthful per-role runtime state for the inspector, from the same fetch.
       antRuntimeStatus={};
       (r.data.runtime_status||[]).forEach(st=>{ antRuntimeStatus[String(st.role_id||'').toLowerCase()]=st; });
-      buildNodes();renderColonyLegend();
+      buildNodes();renderColonyRegistryState();
       return;
     }
     // A structured failure is still a failure. `if(r.success)` with no else meant an authorisation
     // refusal or a 500 left the previous drawing on screen with nothing saying it was old.
     colonyRegistryProblem={message:(r&&r.message)||'registry request rejected', at:Date.now()};
   }catch(e){ colonyRegistryProblem={message:e.message||'registry unreachable', at:Date.now()}; }
-  buildNodes();renderColonyLegend();
+  buildNodes();renderColonyRegistryState();
 }
 function colonyRegistryRetry(){
   apiCacheBust('/colony/registry');
-  const el=document.getElementById('chud-legend-problem');
+  const el=document.getElementById('clb-registry-note');
   if(el) el.textContent='Retrying…';
   loadColonyRegistry();
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   THE ROSTER. v0.3.8.125 — what `buildNodes()` became when the canvas it laid
+   out was deleted.
+
+   `nodes` was two things wearing one name: an INDEX of who the colony contains —
+   identity, purpose, permissions, tools, parentage — and a LAYOUT of where each
+   one sat on a canvas. Only the first has a reader now. Colony Live keeps its own
+   spatial grammar (`SECTOR_DEFS` in colony-live.js) and its own saved layout; it
+   asks this list one question — "who is `coder_2`" — through ColonyHost's
+   resident handler, so the Agent Inspector can open on whoever was clicked.
+
+   So the geometry is gone: no `x`/`y`, no chamber centres, no angular sectors, no
+   radii. Nothing here reads the viewport any more, which is why this no longer
+   needs a resize to be correct — and why deleting `resize()` did not take the
+   inspector with it. `chamber` survives as a LABEL because the inspector shows
+   it; it is a fact about the role, not a coordinate.
+
+   `edges` stays and is still built: `buildDataFlowEdges` and `updateNodeActivity`
+   read the structural edges to decide which ants are mid-handoff, and that signal
+   reaches the operator as the ant's STATE, not as a drawn line.
+   ───────────────────────────────────────────────────────────────────────────── */
 function buildNodes(){
   nodes=[]; edges=[];
-  const bR=Math.min(W,H)*0.27;
-  nodes.push({ id:'queen',ant:'queen',x:cx,y:cy,label:'Queen',role:'CORE',colony:'Core',purpose:'Central mission authority',color:ROLE_COLORS.queen,r:QUEEN_R,pp:0,activity:1,nodeType:'core',chamber:"Queen's Core" });
-  nodes.push({ id:'director',ant:'director',x:cx,y:cy-bR*.48,label:'Director',role:'AUTONOMY',colony:'Core',purpose:'Objective lifecycle and autonomy control',color:ROLE_COLORS.director,r:18,pp:1,activity:0,nodeType:'core',chamber:"Queen's Core" });
+  nodes.push({ id:'queen',ant:'queen',label:'Queen',role:'CORE',colony:'Core',purpose:'Central mission authority',color:ROLE_COLORS.queen,activity:1,nodeType:'core',chamber:"Queen's Core" });
+  nodes.push({ id:'director',ant:'director',label:'Director',role:'AUTONOMY',colony:'Core',purpose:'Objective lifecycle and autonomy control',color:ROLE_COLORS.director,activity:0,nodeType:'core',chamber:"Queen's Core" });
   edges.push({from:'queen',to:'director'});
-  // v0.3.8.42 (§9): no fabricated roster — the full forensics live on loadColonyRegistry above.
-  // With no registry the map draws the control plane only; visibleRoles() answers [] then, and
-  // the guard here says so explicitly rather than relying on the optional chain.
+  // v0.3.8.42 (§9): no fabricated roster. With no registry the index holds the control plane only
+  // — `visibleRoles()` answers [] then, and the guard here says so explicitly rather than leaning
+  // on an optional chain.
   const roles = colonyRegistry ? visibleRoles() : [];
-  // v2.14.5 chamber mode: cluster each colony around its own centre. Roles fan out inside their
-  // chamber instead of sharing one global ring, so groups are visually distinct on the SAME canvas.
-  const chamberMode=colonyView==='group';
-  CHAMBERS = chamberMode ? chamberCentres(CHAMBER_ORDER) : {};
-  const perChamber={};
-  roles.forEach(r=>{ const c=chamberFor(roleId(r)); perChamber[c]=(perChamber[c]||0)+1; });
-  const seen={};
-  /* v2.16.0 chamber layout: one angular SECTOR per role.
-   *
-   * The old layout muddied because two things fought each other — roles sat on a ring capped at
-   * 46px while their workers were placed 72px out, and the worker bearing came from
-   * colonyAngleFor(), which in chamber mode derives from the CHAMBER's index and is therefore
-   * identical for every role in it. So each role's workers landed on the neighbouring role.
-   *
-   * Now each role owns 1/n of the chamber's circle and its workers are laid on an arc inside that
-   * sector, which makes cross-role collision geometrically impossible rather than merely
-   * unlikely. Radii are derived from the arc length actually needed, so a chamber with five roles
-   * or a role with four workers grows instead of packing tighter.
-   * Verified: zero overlapping node pairs across all seven chambers, 15px tightest gap. */
-  const CHAMBER_ROLE_GAP = 60;    // arc length reserved per role on the role ring
-  const CHAMBER_WORKER_GAP = 30;  // arc length reserved per worker on its role's arc
-  const CHAMBER_SECTOR_USE = 0.82;// fraction of a sector its workers may span (rest is margin)
-  const chamberSlot={};           // roleId -> {cx,cy,angle,sector,r1}
-
   roles.forEach((r,i)=>{
-    const id=roleId(r),rad=colonyAngleFor(r,i,roles.length)*Math.PI/180;
-    let bx=cx+Math.cos(rad)*bR, by=cy+Math.sin(rad)*bR;
-    if(chamberMode){
-      const c=chamberFor(id), centre=CHAMBERS[c];
-      if(centre){
-        const k=(seen[c]=(seen[c]||0)), n=perChamber[c];
-        // Role ring scales with membership instead of being capped at 46px. The old cap meant a
-        // five-role chamber packed its roles ~46px apart while their workers sat 72px out — the
-        // workers of one role landed on top of the next role entirely.
-        const sector = (Math.PI*2)/Math.max(1,n);
-        // Ring radius from the arc each role needs, not a magic cap.
-        const r1 = n<=1 ? 0 : Math.max(58, (n*CHAMBER_ROLE_GAP)/(Math.PI*2));
-        const a = n>1 ? (-Math.PI/2 + (k+0.5)*sector) : 0;   // sector CENTRE, starting at 12 o'clock
-        chamberSlot[id]={cx:centre.x,cy:centre.y,angle:a,sector:sector,r1:r1};
-        bx=centre.x+Math.cos(a)*r1; by=centre.y+Math.sin(a)*r1;
-        seen[c]=k+1;
-      }
-    }
+    const id=roleId(r);
     const color=ROLE_COLORS[id]||'#7fa0bc';
-    nodes.push({id,ant:id,x:bx,y:by,label:roleName(r),role:roleColony(r),colony:roleColony(r),purpose:rolePurpose(r),enabled:roleEnabled(r),executable:roleExecutable(r),permissions:rolePerms(r),allowedTools:roleAllowedTools(r),forbiddenTools:roleForbiddenTools(r),color,r:ANT_R,pp:i,activity:0,nodeType:'role',workers:roleWorkers(r),chamber:chamberFor(id)});
+    nodes.push({id,ant:id,label:roleName(r),role:roleColony(r),colony:roleColony(r),purpose:rolePurpose(r),enabled:roleEnabled(r),executable:roleExecutable(r),permissions:rolePerms(r),allowedTools:roleAllowedTools(r),forbiddenTools:roleForbiddenTools(r),color,pp:i,activity:0,nodeType:'role',workers:roleWorkers(r),chamber:chamberFor(id)});
     edges.push({from:id==='planner'||id==='constraint'?'queen':'director',to:id});
-    const showWorkers=colonyView==='expanded'||colonyView==='group'||colonyView==='active';
-    if(showWorkers){
-      const activeWorkers=new Set((lastGraphData?.nodes||[]).map(t=>t.assigned_worker).filter(Boolean));
-      const ws=roleWorkers(r).filter(w=>colonyView!=='active'||activeWorkers.has(workerId(w)));
-      const slot = chamberMode ? chamberSlot[id] : null;
-      // Worker arc radius: far enough out that this role's workers fit inside its OWN sector.
-      const r2 = slot ? Math.max(slot.r1+46, (ws.length*CHAMBER_WORKER_GAP)/(slot.sector*CHAMBER_SECTOR_USE)) : 0;
-      const span = slot ? slot.sector*CHAMBER_SECTOR_USE : 0;
-      ws.forEach((w,wi)=>{
-        let wx,wy;
-        if(slot){
-          const off = ws.length===1 ? 0 : (wi-(ws.length-1)/2)*(span/ws.length);
-          const cr = slot.angle+off;
-          wx=slot.cx+Math.cos(cr)*r2; wy=slot.cy+Math.sin(cr)*r2;
-        } else {
-          const sR=Math.max(54,bR*.30);
-          const spread=ws.length===1?0:(wi-(ws.length-1)/2)*24;
-          const cr=(colonyAngleFor(r,i,roles.length)+spread)*Math.PI/180;
-          wx=bx+Math.cos(cr)*sR; wy=by+Math.sin(cr)*sR;
-        }
-        const wid=workerId(w);
-        nodes.push({id:wid,ant:id,worker:wid,x:wx,y:wy,label:workerName(w),role:roleName(r),colony:roleColony(r),purpose:workerPurpose(w),permissions:workerPerms(w),allowedTools:prop(w,'allowedTools','AllowedTools')||[],forbiddenTools:prop(w,'forbiddenTools','ForbiddenTools')||[],color,r:10,pp:wi,activity:0,nodeType:'worker',parent:id,chamber:chamberFor(id)});
-        edges.push({from:id,to:wid});
-      });
-    }
+    // EVERY worker, always. The old `showWorkers` gate came from the canvas's view modes, and a
+    // filtered DRAWING was a rendering decision — this is no longer a rendering. An index that
+    // omitted a worker would make that worker unopenable from the live view.
+    roleWorkers(r).forEach((w,wi)=>{
+      const wid=workerId(w);
+      nodes.push({id:wid,ant:id,worker:wid,label:workerName(w),role:roleName(r),colony:roleColony(r),purpose:workerPurpose(w),permissions:workerPerms(w),allowedTools:prop(w,'allowedTools','AllowedTools')||[],forbiddenTools:prop(w,'forbiddenTools','ForbiddenTools')||[],color,pp:wi,activity:0,nodeType:'worker',parent:id,chamber:chamberFor(id)});
+      edges.push({from:id,to:wid});
+    });
   });
   applyUiState();
 }
 buildNodes();
 
-document.querySelectorAll('#colony-viewbar .cv-btn').forEach(btn=>{
-  btn.addEventListener('click',()=>{
-    const view=btn.dataset.view;
-    const toggle=btn.dataset.toggle;
-    const act=btn.dataset.colonyact;   // v2.14.12: reset buttons share this one dispatch path
-    if(act==='reset-view'){ colonyResetView(); return; }
-    if(act==='reset-layout'){ colonyResetLayout(); return; }
-    // v0.3.8.117: ONE reset for both renderers. Four reset buttons across two bars asked the
-    // operator to know which renderer they were looking at before they could recover the view -
-    // and the reason to press reset is usually that you have lost track of exactly that.
-    if(act==='reset-all'){
-      colonyResetView(); colonyResetLayout();
-      if(window.ColonyHost && ColonyHost.active()) ColonyHost.resetAll();
-      return;
-    }
-    // v0.3.8.49: on-screen zoom — the Ctrl/Cmd+wheel bargain is undiscoverable, so the buttons
-    // zoom about the canvas centre with no modifier required. Eases via the camera targets.
-    // v0.3.8.117: the zoom buttons drive whichever renderer is showing. They were 2D-only, so in
-    // the 3D view they were two controls that visibly did nothing.
-    if(act==='zoom-in'||act==='zoom-out'){
-      const f=act==='zoom-in'?1.2:1/1.2;
-      if(window.ColonyHost && ColonyHost.active()) ColonyHost.zoom(f); else colonyZoom(f);
-      return;
-    }
-    if(act==='live3d'){ if(window.ColonyHost) ColonyHost.toggle(); return; }
-    if(view){
-      colonyView=view;
-      document.querySelectorAll('#colony-viewbar [data-view]').forEach(b=>b.classList.toggle('on',b.dataset.view===view));
-      buildNodes();renderColonyLegend();
-    }
-    if(toggle==='handoffs'){
-      showHandoffs=!showHandoffs;
-      btn.classList.toggle('on',showHandoffs);
-      if(!showHandoffs) dataFlowEdges=[];
-    }
-  });
-});
-
-// v2.14.12: CSP-safe preference wiring — delegated by data attribute, no inline handlers.
-document.querySelectorAll('#colony-viewbar [data-colonypref]').forEach(sel=>{
-  sel.addEventListener('change',()=>setColonyPref(sel.dataset.colonypref,sel.value));
-});
 loadColonyPrefs();
 
 /* Colony Live. The whole integration — toggle, read-model hydration, layout persistence — lives in
@@ -1478,97 +1269,6 @@ loadColonyPrefs();
  * showInspector, onColonyEvent). It is its own asset for the reason the v0.3.8.52 split exists:
  * app.js is the shared foundation and is held under 10,000 lines by a guard, and a growing feature
  * belongs beside its renderer rather than in the foundation. */
-
-/**
- * v2.14.5: chamber rings + labels, drawn in WORLD space so they pan, zoom, and sit beneath the
- * ants like the rest of the map. Only rendered in chamber mode; every other view is untouched.
- * This replaces the separate SVG chamber map — same information, one renderer.
- */
-function chamberStats(name){
-  const members=nodes.filter(n=>n.chamber===name);
-  const counts=lastGraphData||{};
-  let running=0, failed=0, active=0, dormant=0;
-  members.forEach(m=>{
-    if(m.activity>0.05) active++;
-    if(m.executable===false) dormant++;
-    const key=m.nodeType==='worker'?m.worker:m.ant;
-    running+=(counts.running_counts&&counts.running_counts[key])||0;
-    failed+=(counts.failed_counts&&counts.failed_counts[key])||0;
-  });
-  const health = failed>0 ? 'alert' : active>0 ? 'live' : dormant===members.length ? 'dormant' : 'idle';
-  return {members,running,failed,active,dormant,health};
-}
-
-/** One dominant status colour per chamber — alert wins, then live, then idle, then dormant. */
-function chamberColor(health){
-  return health==='alert' ? 'rgba(255,90,120,'
-       : health==='live'  ? 'rgba(34,211,238,'
-       : health==='idle'  ? 'rgba(150,175,200,'
-                          : 'rgba(132,150,172,';
-}
-
-/**
- * v2.14.15: per-health ring opacity.
- *
- * Dormant chambers used to draw at stroke .12 / fill .012 against .30 / .035 for everything else,
- * which read as "this chamber is missing" rather than "this chamber is on standby". Network Watch
- * is entirely non-executable ants (network_scout, health, security_scout are all Executable:false),
- * so it was always dormant and always looked broken. Standby is now a STEADY, clearly visible
- * state — dimmer and cooler than a working chamber, but unmistakably present.
- */
-function chamberAlpha(health,grabbed){
-  if(grabbed) return {stroke:0.70,fill:0.045,label:1};
-  return health==='dormant'
-    ? {stroke:0.26,fill:0.026,label:0.78}
-    : {stroke:0.34,fill:0.038,label:0.94};
-}
-
-function drawChambers(){
-  if(colonyView!=='group'||!CHAMBERS) return;
-  Object.keys(CHAMBERS).forEach(name=>{
-    const c=CHAMBERS[name];
-    const st=chamberStats(name);
-    if(!st.members.length) return;
-    const rad=chamberRadius(name);
-    const p=w2s(c.x,c.y), sr=rad*camZ;
-    const grabbed=draggingChamber===name;
-    const base=chamberColor(st.health);
-    // Subtle activity pulse, only when something is actually happening (and never under
-    // reduced motion / Motion=off).
-    // Only chambers with real activity breathe. Idle and standby are deliberately STEADY: a
-    // pulsing ring means "work is happening here", so pulsing everything would make it meaningless.
-    const pulsing = st.health!=='dormant' && st.active>0 && colonyMotion!=='off';
-    const beat = pulsing ? Math.sin(performance.now()/480) : 0;
-    const pulse = beat*(colonyMotion==='high'?0.20:0.15);
-    const a = chamberAlpha(st.health,grabbed);
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(p.x,p.y,sr,0,Math.PI*2);
-    ctx.strokeStyle=base+Math.max(0.10,a.stroke+pulse)+')';
-    ctx.lineWidth=grabbed?2:(pulsing?1.6:1.2);
-    ctx.stroke();
-    ctx.fillStyle=base+Math.max(0.008,a.fill+pulse/4)+')';
-    ctx.fill();
-
-    if(colonyLabels!=='off'){
-      const cw=Math.max(9,Math.round(10*camZ));
-      ctx.textAlign='center';
-      ctx.font=`600 ${cw}px var(--mono,monospace)`;
-      ctx.fillStyle=base+a.label+')';
-      ctx.fillText(chamberLabel(name), p.x, p.y-sr-8);
-      // Chamber summary only — the detail lives on the ants themselves.
-      const bits=[st.active+'/'+st.members.length+' active'];
-      if(st.running>0) bits.push(st.running+' running');
-      if(st.failed>0) bits.push(st.failed+' failed');
-      if(st.health==='dormant') bits.push('standby');
-      ctx.font=`${Math.max(8,Math.round(8.5*camZ))}px var(--mono,monospace)`;
-      ctx.fillStyle=base+(st.health==='dormant'?0.55:0.66)+')';
-      ctx.fillText(bits.join(' · '), p.x, p.y-sr+cw+2);
-    }
-    ctx.restore();
-  });
-}
 
 function updateNodeActivity(){
   // v0.3.8.49 (§18): ants that are the SOURCE of a live data-flow edge this frame are communicating —
@@ -1587,275 +1287,6 @@ function updateNodeActivity(){
   });
 }
 
-function h2rgb(h){return[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];}
-
-function spawnParticle(e){
-  const fn=nodes.find(n=>n.id===e.from),tn=nodes.find(n=>n.id===e.to);
-  if(!fn||!tn||tn.activity===0) return;
-  const [r,g,b]=h2rgb(tn.color);
-  particles.push({fn,tn,t:0,speed:.003+tn.activity*.006,r,g,b,a:.6+tn.activity*.4,sz:1.5+tn.activity*2});
-}
-
-let lastSpawn=0;
-function maybeSpawn(ts){
-  if(!colonyRunning) return;
-  if(colonyMotion==='off') return;                    // v2.14.5: motion preference governs particles
-  const rate = colonyMotion==='low' ? 0.4 : colonyMotion==='high' ? 1.6 : 1;
-  const dt=(200-modelCallRate*80)/rate;
-  if(ts-lastSpawn<Math.max(80,dt)) return;
-  lastSpawn=ts;
-  const active=edges.filter(e=>{const tn=nodes.find(n=>n.id===e.to);return tn&&tn.activity>0;});
-  const n=Math.min(4,active.length);
-  for(let i=0;i<n;i++) spawnParticle(active[Math.floor(Math.random()*active.length)]);
-}
-
-function w2s(wx,wy){return{x:(wx-cx)*camZ+cx+camX,y:(wy-cy)*camZ+cy+camY};}
-function s2w(sx,sy){return{x:(sx-cx-camX)/camZ+cx,y:(sy-cy-camY)/camZ+cy};}
-function qb(fp,cp,tp,t){return{x:(1-t)**2*fp.x+2*(1-t)*t*cp.x+t**2*tp.x,y:(1-t)**2*fp.y+2*(1-t)*t*cp.y+t**2*tp.y};}
-function cpFor(fp,tp){const dx=tp.x-fp.x,dy=tp.y-fp.y;return{x:fp.x+dx*.5+dy*.1,y:fp.y+dy*.5-dx*.1};}
-
-function drawBg(){
-  const g=ctx.createRadialGradient(cx,cy*.5,0,cx,cy,Math.max(W,H)*.85);
-  g.addColorStop(0,'#1c2d40');g.addColorStop(1,'#0f1923');
-  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
-  ctx.save();ctx.globalAlpha=.028;ctx.strokeStyle='#fff';ctx.lineWidth=1;
-  const gs=56*camZ,ox=((camX%gs)+gs)%gs,oy=((camY%gs)+gs)%gs;
-  for(let x=ox-gs;x<W+gs;x+=gs){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
-  for(let y=oy-gs;y<H+gs;y+=gs){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
-  ctx.restore();
-}
-
-function drawEdge(e){
-  const fn=nodes.find(n=>n.id===e.from),tn=nodes.find(n=>n.id===e.to);
-  if(!fn||!tn) return;
-  const fp=w2s(fn.x,fn.y),tp=w2s(tn.x,tn.y),cp=cpFor(fp,tp);
-  const [r,g,b]=h2rgb(tn.color);
-  ctx.beginPath();ctx.moveTo(fp.x,fp.y);ctx.quadraticCurveTo(cp.x,cp.y,tp.x,tp.y);
-  ctx.strokeStyle='rgba(255,255,255,0.035)';ctx.lineWidth=(3+tn.activity*3)*camZ;ctx.stroke();
-  if(tn.activity>0){
-    ctx.beginPath();ctx.moveTo(fp.x,fp.y);ctx.quadraticCurveTo(cp.x,cp.y,tp.x,tp.y);
-    ctx.strokeStyle=`rgba(${r},${g},${b},${tn.activity*.28})`;ctx.lineWidth=(1+tn.activity*1.5)*camZ;ctx.stroke();
-  }
-}
-
-function drawDataFlowEdge(e,ts){
-  const fn=nodes.find(n=>n.id===e.from),tn=nodes.find(n=>n.id===e.to);
-  if(!fn||!tn) return;
-  const fp=w2s(fn.x,fn.y),tp=w2s(tn.x,tn.y);
-  const dx=tp.x-fp.x,dy=tp.y-fp.y;
-  const mx=(fp.x+tp.x)/2,my=(fp.y+tp.y)/2;
-  const perp={x:-dy*.35,y:dx*.35};
-  const cp={x:mx+perp.x,y:my+perp.y};
-  const [r,g,b]=h2rgb(fn.color);
-  const pulse=.4+Math.sin(ts*.002+e.phase)*0.25;
-  ctx.beginPath();ctx.moveTo(fp.x,fp.y);ctx.quadraticCurveTo(cp.x,cp.y,tp.x,tp.y);
-  ctx.setLineDash([4*camZ,5*camZ]);
-  // v0.3.8.55 (field report: "transfer visuals don't look right"): the dashes MARCH toward the
-  // receiving ant. The dash pattern was static — only its alpha pulsed — so an active handoff
-  // read as a flickering dotted line rather than data in motion. The offset advances with time
-  // (negative: from source toward target), the one visual signature every earlier "nice" version
-  // of this had; the alpha pulse stays as the secondary heartbeat.
-  ctx.lineDashOffset=-(ts*.02%(9*camZ))*camZ;
-  ctx.strokeStyle=`rgba(${r},${g},${b},${pulse*.22})`;ctx.lineWidth=1.5*camZ;ctx.stroke();
-  ctx.setLineDash([]);ctx.lineDashOffset=0;
-  // A packet travelling the curve, tail behind it — the transfer itself, not just its route.
-  const tt=(ts*.0004+e.phase)%1;
-  for(let i=2;i>=0;i--){
-    const pp=qb(fp,cp,tp,Math.max(0,tt-i*.05));
-    ctx.beginPath();ctx.arc(pp.x,pp.y,Math.max(1.2,(2.6-i*.7)*camZ),0,Math.PI*2);
-    ctx.fillStyle=`rgba(${r},${g},${b},${(0.7-i*.22)*pulse})`;ctx.fill();
-  }
-  const t2=qb(fp,cp,tp,.92),sz=5*camZ;
-  const ax=tp.x-t2.x,ay=tp.y-t2.y,al=Math.hypot(ax,ay)||1;
-  ctx.beginPath();
-  ctx.moveTo(t2.x+ax/al*sz*1.2,t2.y+ay/al*sz*1.2);
-  ctx.lineTo(t2.x-ay/al*sz*.5,t2.y+ax/al*sz*.5);
-  ctx.lineTo(t2.x+ay/al*sz*.5,t2.y-ax/al*sz*.5);
-  ctx.closePath();
-  ctx.fillStyle=`rgba(${r},${g},${b},${pulse*.55})`;ctx.fill();
-}
-
-function drawParticles(){
-  particles.forEach(p=>{
-    const fp=w2s(p.fn.x,p.fn.y),tp=w2s(p.tn.x,p.tn.y),cp=cpFor(fp,tp);
-    for(let i=3;i>=0;i--){const tt=Math.max(0,p.t-i*.02),pp=qb(fp,cp,tp,tt);ctx.beginPath();ctx.arc(pp.x,pp.y,p.sz*(4-i)/4*camZ,0,Math.PI*2);ctx.fillStyle=`rgba(${p.r},${p.g},${p.b},${p.a*(1-i/4)*.3})`;ctx.fill();}
-    const pos=qb(fp,cp,tp,p.t);
-    const gg=ctx.createRadialGradient(pos.x,pos.y,0,pos.x,pos.y,p.sz*5*camZ);
-    gg.addColorStop(0,`rgba(${p.r},${p.g},${p.b},.3)`);gg.addColorStop(1,`rgba(${p.r},${p.g},${p.b},0)`);
-    ctx.beginPath();ctx.arc(pos.x,pos.y,p.sz*5*camZ,0,Math.PI*2);ctx.fillStyle=gg;ctx.fill();
-    ctx.beginPath();ctx.arc(pos.x,pos.y,p.sz*camZ,0,Math.PI*2);ctx.fillStyle=`rgba(${p.r},${p.g},${p.b},${p.a})`;ctx.fill();
-  });
-}
-
-function drawNode(n,ts){
-  const sp=w2s(n.x,n.y),r=n.r*camZ;
-  if(r<3) return;
-  const [cr,cg,cb]=h2rgb(n.color);
-  const act=n.activity,sel=selectedNode&&selectedNode.id===n.id,hov=hoveredNode&&hoveredNode.id===n.id;
-  const pulse=Math.sin(ts*.0018+n.pp)*.1+.9;
-  if(act>0||hov){ctx.beginPath();ctx.arc(sp.x,sp.y,r*(1.7+Math.sin(ts*.0014+n.pp)*.15),0,Math.PI*2);ctx.fillStyle=`rgba(${cr},${cg},${cb},${(hov?.1:0)+act*.06})`;ctx.fill();}
-  if(sel||hov){ctx.beginPath();ctx.arc(sp.x,sp.y,r*(hov?1.8:2),0,Math.PI*2);ctx.strokeStyle=`rgba(${cr},${cg},${cb},${hov?.55:.4})`;ctx.lineWidth=hov?2:1.5;ctx.setLineDash([5,5]);ctx.stroke();ctx.setLineDash([]);}
-  ctx.save();
-  ctx.shadowColor=`rgba(${cr},${cg},${cb},${act*.5+(hov?.3:0)})`;ctx.shadowBlur=r*(act>0||hov?2.2:.5);
-  const grad=ctx.createRadialGradient(sp.x-r*.25,sp.y-r*.25,0,sp.x,sp.y,r);
-  const alpha=act>0||hov?.95:.3;
-  grad.addColorStop(0,`rgba(${Math.min(255,cr+55)},${Math.min(255,cg+55)},${Math.min(255,cb+40)},${alpha})`);
-  grad.addColorStop(1,`rgba(${cr},${cg},${cb},${alpha*.85})`);
-  ctx.beginPath();ctx.arc(sp.x,sp.y,r,0,Math.PI*2);ctx.fillStyle=grad;ctx.fill();
-  ctx.restore();
-  ctx.beginPath();ctx.arc(sp.x,sp.y,r,0,Math.PI*2);
-  ctx.strokeStyle=`rgba(${cr},${cg},${cb},${act>0||hov?.6:.2})`;ctx.lineWidth=sel||hov?2:1.2;ctx.stroke();
-  ctx.beginPath();ctx.arc(sp.x,sp.y,r*.45,0,Math.PI*2);ctx.fillStyle=`rgba(255,255,255,${act>0?.1:.03})`;ctx.fill();
-  if(r>7&&camZ>.42){
-    ctx.font=`${Math.max(9,10*camZ)}px 'Segoe UI',sans-serif`;ctx.textAlign='center';
-    // v2.14.5: label density is an operator preference (off | active-only | all). Hovered and
-    // selected ants always keep their label so inspection never goes blind.
-    const showLabel = colonyLabels==='all' || hov || (colonyLabels==='active' && act>0);
-    // v2.14.9: visible-only ants (gate closed / not executable) read as STANDBY — dimmed and
-    // marked, deliberately not styled like a failure.
-    const standby = n.executable===false && n.nodeType!=='core';
-    if(showLabel){
-      ctx.fillStyle='rgba(8,16,26,.8)';ctx.fillText(n.label,sp.x+1,sp.y+r*1.8+1);
-      ctx.fillStyle=act>0||hov?`rgba(${cr},${cg},${cb},1)`:`rgba(${cr},${cg},${cb},${standby?.30:.45})`;
-      ctx.fillText(n.label,sp.x,sp.y+r*1.8);
-      if(standby&&(hov||colonyLabels==='all')){
-        ctx.save();
-        ctx.font=`${Math.max(7,Math.round(7.5*camZ))}px var(--mono,monospace)`;
-        ctx.fillStyle='rgba(150,170,190,.55)';
-        ctx.fillText('standby',sp.x,sp.y+r*1.8+Math.max(8,9*camZ));
-        ctx.restore();
-      }
-    }
-  }
-  if(act>0&&r>6){ctx.beginPath();ctx.arc(sp.x+r*.65,sp.y-r*.65,Math.max(2,3*camZ)*pulse,0,Math.PI*2);ctx.fillStyle=`rgba(${cr},${cg},${cb},.9)`;ctx.fill();}
-  // v0.3.8.49 (§18): the discrete-state ring — a coloured arc around the ant in its state's colour, so
-  // blocked/awaiting-approval/failed/working read at a glance rather than being inferred from a
-  // glow. Idle draws nothing (a quiet colony stays quiet). The two states an operator must act on —
-  // blocked and awaiting approval — pulse; the rest are steady.
-  const st=n.state;
-  if(st && st!=='idle' && r>=4){
-    const [sr,sg,sb]=h2rgb(STATE_COLORS[st]||STATE_COLORS.idle);
-    const urgent=(st==='blocked'||st==='awaiting_approval'||st==='failed');
-    const ringPulse=urgent?(Math.sin(ts*.006+n.pp)*.28+.72):1;
-    ctx.beginPath();ctx.arc(sp.x,sp.y,r*1.42,0,Math.PI*2);
-    ctx.strokeStyle=`rgba(${sr},${sg},${sb},${(urgent?.9:.7)*ringPulse})`;
-    ctx.lineWidth=Math.max(1.4,2.1*camZ);
-    if(st==='waiting'||st==='completed'){ctx.setLineDash([4*camZ,3*camZ]);}
-    ctx.stroke();ctx.setLineDash([]);
-    // A small filled state dot at 4 o'clock, so the state is legible even when rings overlap.
-    if(r>7){ctx.beginPath();ctx.arc(sp.x+r*1.0,sp.y+r*1.0,Math.max(2,2.6*camZ),0,Math.PI*2);
-      ctx.fillStyle=`rgba(${sr},${sg},${sb},.95)`;ctx.fill();}
-  }
-}
-
-// -- Mouse (all coords via getBoundingClientRect) ------------------------------
-let dragging=false,dragStart={x:0,y:0},dragCam={x:0,y:0};
-const tooltip=document.getElementById('tooltip');
-let draggingNode=null,nodeDragOff={x:0,y:0},nodeMoved=false;
-let draggingChamber=null,chamberDragLast={x:0,y:0},chamberMoved=false;
-
-function getCanvasLocal(e){
-  const rect=canvas.getBoundingClientRect();
-  return{x:e.clientX-rect.left,y:e.clientY-rect.top};
-}
-
-canvas.addEventListener('mousedown',e=>{
-  const cl=getCanvasLocal(e);
-  const wp=s2w(cl.x,cl.y);
-  const hit=nodes.find(n=>Math.hypot(n.x-wp.x,n.y-wp.y)<n.r*2.2);
-  if(hit){ draggingNode=hit; nodeDragOff={x:wp.x-hit.x,y:wp.y-hit.y}; nodeMoved=false; dragStart={x:e.clientX,y:e.clientY}; canvas.style.cursor='grabbing'; return; }
-  // v2.14.7: grabbing the chamber body (ring interior, not an ant) moves the WHOLE chamber and
-  // carries its ants along. Ant hit-testing runs first, so individual ants stay independently
-  // draggable; empty canvas still pans the camera.
-  const ch=chamberAt(wp.x,wp.y);
-  if(ch){ draggingChamber=ch; chamberDragLast={x:wp.x,y:wp.y}; chamberMoved=false; canvas.style.cursor='grabbing'; return; }
-  dragging=true;dragStart={x:e.clientX,y:e.clientY};dragCam={x:camX,y:camY};
-});
-
-canvas.addEventListener('mousemove',e=>{
-  if(draggingNode){
-    const cl=getCanvasLocal(e);const wp=s2w(cl.x,cl.y);
-    draggingNode.x=wp.x-nodeDragOff.x; draggingNode.y=wp.y-nodeDragOff.y;
-    nodeMoved=true; hoveredNode=null; tooltip.style.display='none'; return;
-  }
-  if(draggingChamber){
-    const cl=getCanvasLocal(e);const wp=s2w(cl.x,cl.y);
-    moveChamber(draggingChamber, wp.x-chamberDragLast.x, wp.y-chamberDragLast.y);
-    chamberDragLast={x:wp.x,y:wp.y}; chamberMoved=true;
-    hoveredNode=null; tooltip.style.display='none'; return;
-  }
-  if(dragging){camX=dragCam.x+(e.clientX-dragStart.x);camY=dragCam.y+(e.clientY-dragStart.y);tX=camX;tY=camY;hoveredNode=null;tooltip.style.display='none';return;}
-  const cl=getCanvasLocal(e);const wp=s2w(cl.x,cl.y);
-  const hit=nodes.find(n=>Math.hypot(n.x-wp.x,n.y-wp.y)<n.r*2.2);
-  canvas.style.cursor=hit?'grab':(chamberAt(wp.x,wp.y)?'grab':'default');
-  if(hit){
-    hoveredNode=hit;
-    const tasks=hit.nodeType==='worker'
-      ? (lastGraphData?.worker_counts?.[hit.worker]??0)
-      : (lastGraphData?.ant_counts?.[hit.ant]??0);
-    const act=hit.id==='queen'?'Command':colonyRunning&&hit.activity>0?'Active':'Idle';
-    document.getElementById('tt-name').textContent=`${hit.label} (${hit.role})`;
-    document.getElementById('tt-name').style.color=hit.color;
-    document.getElementById('tt-status').textContent=act;
-    document.getElementById('tt-tasks').textContent=tasks;
-    document.getElementById('tt-activity').textContent=Math.round(hit.activity*100)+'%';
-    tooltip.style.display='block';
-    const tx=e.clientX+14,ty=e.clientY-10;
-    tooltip.style.left=(tx+150>window.innerWidth?e.clientX-tooltip.offsetWidth-10:tx)+'px';
-    tooltip.style.top=ty+'px';
-  } else { hoveredNode=null;tooltip.style.display='none'; }
-});
-
-canvas.addEventListener('mouseleave',()=>{hoveredNode=null;tooltip.style.display='none';});
-
-canvas.addEventListener('mouseup',e=>{
-  if(draggingNode){
-    const n=draggingNode; draggingNode=null; canvas.style.cursor='grab';
-    if(nodeMoved){ persistNodePosition(n); } else { showInspector(n); }
-    return;
-  }
-  if(draggingChamber){
-    const name=draggingChamber; draggingChamber=null; canvas.style.cursor='grab';
-    if(chamberMoved) persistChamber(name);
-    return;
-  }
-  const moved=Math.abs(e.clientX-dragStart.x)+Math.abs(e.clientY-dragStart.y);
-  dragging=false;
-  if(moved<5){
-    const cl=getCanvasLocal(e);const wp=s2w(cl.x,cl.y);
-    const hit=nodes.find(n=>Math.hypot(n.x-wp.x,n.y-wp.y)<n.r*2.5);
-    if(hit) showInspector(hit);
-    else{selectedNode=null;const ad=document.getElementById('agent-detail');if(ad)ad.innerHTML='<div class="ad-empty">Click or hover a colony node<br>to inspect the agent</div>';}
-  }
-});
-
-canvas.addEventListener('dblclick',e=>{
-  const cl=getCanvasLocal(e);const wp=s2w(cl.x,cl.y);
-  const hit=nodes.find(n=>Math.hypot(n.x-wp.x,n.y-wp.y)<n.r*2.5);
-  if(hit){ openRename(hit,e.clientX,e.clientY); return; }
-  // v2.14.10: double-clicking a chamber renames it, mirroring ant rename exactly.
-  const ch=chamberAt(wp.x,wp.y);
-  if(ch) openChamberRename(ch,e.clientX,e.clientY);
-});
-
-canvas.addEventListener('wheel',e=>{
-  // v3.3.0: the colony is a WIDGET inside a scrolling dashboard now, not the page background.
-  // Swallowing every wheel event used to be free — the workspace page could not scroll — but it
-  // now traps the operator: scrolling down to reach the widgets BELOW the Colony zoomed the map
-  // and the page never moved. Zoom takes a modifier; a plain wheel scrolls the dashboard. This is
-  // the same bargain embedded maps strike on scrolling pages, and for the same reason.
-  // v0.3.8.55 (field report: "can't zoom on colony view"): on the DEDICATED Colony page the
-  // canvas is the page — there is nothing below to scroll to, so the modifier bargain protects
-  // nothing and just makes zoom look broken. Plain wheel zooms there; embedded in the scrolling
-  // dashboard the Ctrl/Cmd bargain stands, for the same reason embedded maps strike it.
-  const dedicated=document.getElementById('page-colony')?.classList.contains('active');
-  if(!(e.ctrlKey||e.metaKey||dedicated)) return;      // no preventDefault: let the page scroll
-  e.preventDefault();
-  const cl=getCanvasLocal(e);
-  const zf=e.deltaY<0?1.1:.91,nz=Math.max(.2,Math.min(4,tZ*zf));
-  const wx=(cl.x-cx-tX)/tZ+cx,wy=(cl.y-cy-tY)/tZ+cy;
-  tZ=nz;tX=cl.x-cx-(wx-cx)*nz;tY=cl.y-cy-(wy-cy)*nz;
-},{passive:false});
 
 function statusColor(s){return{complete:'var(--green)',failed:'var(--red)',running:'var(--queen)',blocked:'var(--purple)'}[s]||'var(--dim)';}
 
@@ -1994,130 +1425,6 @@ document.getElementById('agent-detail').addEventListener('click',e=>{
   const btn=e.target.closest('[data-insact="save"]');
   if(btn) inspectorSave(btn.dataset.caste);
 });
-/* ---------------------------------------------------------------------------------------------
- * v2.14.14 Stage 7 — topology overlays.
- *
- * The canvas chrome is a set of independently hideable, re-anchorable overlays rather than fixed
- * furniture. State lives in dashboard_workspace.topology_overlays so the C# sanitizer validates
- * it (unknown ids dropped, unknown anchors reset to top-left), and it applies on the Colony page
- * and on the dashboard alike — the chrome belongs to the topology, not to either host.
- *
- * The Overlays button is itself NOT an overlay. If it could be hidden, hiding everything would be
- * unrecoverable without editing ui_state.json by hand.
- * ------------------------------------------------------------------------------------------- */
-const TOPOLOGY_OVERLAYS = {
-  viewbar: { el:'colony-viewbar', label:'View controls',     anchor:'top-right'     },
-  legend:  { el:'chud-legend',    label:'Caste legend',      anchor:'top-left'      },
-  signals: { el:'chud-phero',     label:'Learning signals',  anchor:'top-left'      },
-  hints:   { el:'zoom-hint',      label:'Interaction hints', anchor:'bottom-center' },
-};
-const OVERLAY_ANCHORS=['top-left','top-center','top-right','bottom-left','bottom-center','bottom-right'];
-
-/** Read persisted overlay state out of a /ui/state document, falling back to the defaults. */
-function overlayStateFrom(doc){
-  const saved=((doc||{}).dashboard_workspace||{}).topology_overlays||{};
-  const out={};
-  Object.keys(TOPOLOGY_OVERLAYS).forEach(id=>{
-    const def=TOPOLOGY_OVERLAYS[id], got=saved[id]||{};
-    out[id]={
-      visible: got.visible!==false,
-      anchor: OVERLAY_ANCHORS.indexOf(got.anchor)>=0 ? got.anchor : def.anchor,
-      collapsed: got.collapsed===true,   // v0.3.8.55: the legends fold to their header
-    };
-  });
-  return out;
-}
-
-function overlayState(id){
-  uiState.overlays=uiState.overlays||{};
-  if(!uiState.overlays[id]){
-    const def=TOPOLOGY_OVERLAYS[id];
-    uiState.overlays[id]={visible:true,anchor:def?def.anchor:'top-left'};
-  }
-  return uiState.overlays[id];
-}
-
-/**
- * Overlays are moved into one of six anchor SLOTS rather than positioned individually. Two
- * overlays sharing an anchor then stack in the slot's flex flow instead of drawing on top of each
- * other — which is what the legend and the signals panel do by default, exactly as they always
- * looked when they were hard-coded siblings.
- */
-function applyOverlayState(){
-  Object.keys(TOPOLOGY_OVERLAYS).forEach(id=>{
-    const el=document.getElementById(TOPOLOGY_OVERLAYS[id].el);
-    if(!el) return;
-    const st=overlayState(id);
-    el.classList.add('topo-ov');
-    el.classList.toggle('ov-hidden',!st.visible);
-    // v0.3.8.55 (field report): the legend panels COLLAPSE to their header — distinct from
-    // hiding (the Overlays menu) because a folded legend still shows it exists and reopens with
-    // one click. Only panels with a .chud-body fold; the class is inert on the rest.
-    el.classList.toggle('ov-collapsed',!!st.collapsed);
-    const caret=el.querySelector('.ov-caret'); if(caret) caret.textContent=st.collapsed?'▸':'▾';
-    // Hidden chrome must leave the tab order, or keyboard users tab into invisible controls.
-    el.setAttribute('aria-hidden',st.visible?'false':'true');
-    const slot=document.querySelector('[data-ovslot="'+st.anchor+'"]');
-    if(slot&&el.parentElement!==slot) slot.appendChild(el);
-  });
-  refreshOverlayMenu();
-}
-
-function setOverlay(id,changes){
-  if(!TOPOLOGY_OVERLAYS[id]) return;
-  const st=overlayState(id);
-  if(typeof changes.visible==='boolean') st.visible=changes.visible;
-  if(typeof changes.collapsed==='boolean') st.collapsed=changes.collapsed;
-  if(changes.anchor&&OVERLAY_ANCHORS.indexOf(changes.anchor)>=0) st.anchor=changes.anchor;
-  applyOverlayState();
-  saveUiState();
-}
-// v0.3.8.55: one delegated handler folds/unfolds whichever legend header was clicked — the
-// headers are re-rendered with their panels, so per-render listeners would leak or vanish.
-document.addEventListener('click',e=>{
-  const hd=e.target.closest&&e.target.closest('[data-ovcollapse]');
-  if(!hd) return;
-  const id=hd.dataset.ovcollapse;
-  setOverlay(id,{collapsed:!overlayState(id).collapsed});
-});
-
-function resetOverlays(){
-  uiState.overlays={};
-  Object.keys(TOPOLOGY_OVERLAYS).forEach(id=>overlayState(id));
-  applyOverlayState();
-  saveUiState();
-}
-
-/**
- * v2.15.2: overlay control moved into the workspace Modules menu.
- *
- * It previously lived in a separate "Overlays" button pinned to the canvas, which meant two
- * different places to manage what is on screen. The Modules menu already lists every panel, so
- * overlays belong in the same list — and that menu lives in the always-present workspace toolbar,
- * so hiding every overlay is still recoverable, which was the standalone button's only real job.
- *
- * dashboard-workspace.js renders the rows; this is the bridge it reads and writes through. Kept
- * deliberately small so the two modules share state rather than each keeping their own copy.
- */
-window.AnthillTopologyOverlays = {
-  list: function(){
-    return Object.keys(TOPOLOGY_OVERLAYS).map(function(id){
-      var st=overlayState(id);
-      return { id:id, label:TOPOLOGY_OVERLAYS[id].label, visible:st.visible, anchor:st.anchor };
-    });
-  },
-  anchors: function(){ return OVERLAY_ANCHORS.slice(); },
-  set: function(id,changes){ setOverlay(id,changes); },
-  reset: function(){ resetOverlays(); },
-};
-
-/** Re-render whichever surface is currently showing overlay rows. */
-function refreshOverlayMenu(){
-  if(window.AnthillWorkspace && typeof window.AnthillWorkspace.rerender==='function')
-    window.AnthillWorkspace.rerender();
-}
-
-
 
 function showInspector(n){
   // v0.3.8.61 (caught live): the inspector pane is the Agent Inspector WIDGET's body now, and a
@@ -2198,12 +1505,12 @@ function showInspector(n){
  * There is exactly ONE canvas, one render loop, and one polling path. Rather than instantiating a
  * second renderer for the dashboard, the existing #colony-canvas-area element is RE-PARENTED
  * between its two hosts: the Colony page and the workspace topology layer. Same node, same
- * listeners, same state — so ant drag, chamber drag, panning, zoom, and the inspector all keep
- * working without being reimplemented or duplicated.
+ * renderer, same state — so panning, zoom, the layout and the inspector all keep working without
+ * being reimplemented or duplicated.
  *
- * The canvas takes its size from its container, so resize() must run AFTER the move lands, on the
- * next frame, once layout has settled. Measuring during the move yields 0x0 and collapses every
- * ant onto the origin.
+ * v0.3.8.125: the re-measure this used to schedule was the classic canvas's, which took its size
+ * from the container and had to be told when the container moved. Colony Live carries its own
+ * ResizeObserver, so the move notifies it directly.
  * ------------------------------------------------------------------------------------------- */
 let topologyHost='colony';          // 'colony' | 'dashboard'
 let topologyHome=null;              // original DOM slot, captured before the first move
@@ -2216,7 +1523,11 @@ function topologyCaptureHome(){
 
 /** Re-measure after the element has actually been laid out in its new host. */
 function topologyRemeasure(){
-  requestAnimationFrame(()=>{ resize(); buildNodes(); refreshTopologyAwake(); });
+  // v0.3.8.125: nothing to re-measure here any more. The classic canvas took its size from this
+  // container and had to be told when the container moved; Colony Live carries its own
+  // ResizeObserver, so the move is already its own notification. Kept as the seam the two mount
+  // points call, so a future renderer that DOES need telling has somewhere to be told.
+  if(window.ColonyHost && ColonyHost.active() && typeof ColonyHost.remeasure==='function') ColonyHost.remeasure();
 }
 
 function topologyMountTo(where){
@@ -2235,77 +1546,6 @@ function topologyMountTo(where){
   topologyRemeasure();
 }
 
-/**
- * Whether the map is worth drawing. Deliberately conservative: only a backgrounded tab and a
- * zero-sized canvas suppress rendering. Occlusion-based throttling is NOT claimed here — a
- * wrong "it's hidden" is how the canvas silently freezes, and this repo has paid for that twice.
- */
-let topologyAwake=true;
-function refreshTopologyAwake(){
-  // Measure the container rather than trusting the last resize(): clientWidth is 0 whenever an
-  // ancestor is display:none, which is exactly the "user navigated away" case. That makes this a
-  // fact about the DOM, not a guess about visibility.
-  //
-  // v0.3.8.55 (field report: "UI needs a refresh"): document.hidden is GONE from this gate — the
-  // third payment for a wrong "it's hidden". Embedded webviews (the desktop shell) and occluded
-  // windows report visibilityState 'hidden' while the operator is looking straight at the canvas,
-  // which latched the loop off until a manual reload. The genuine backgrounded-tab case needs no
-  // help from us: the browser stops firing requestAnimationFrame there all by itself.
-  const el=document.getElementById('colony-canvas-area');
-  topologyAwake = !!el && el.clientWidth>0 && el.clientHeight>0;
-}
-document.addEventListener('visibilitychange',refreshTopologyAwake);
-// v0.3.8.55 (field report: "default layout scrambled"): navigation re-measures at a FIXED 50ms,
-// but the dashboard-grid lays its widgets out on its own clock — a canvas measured before its
-// widget settles computes the ring around a stale centre and the map lands scrambled until a
-// manual refresh. The observer makes layout follow the CONTAINER's actual size, whenever it
-// changes, debounced one frame so a drag-resize doesn't relayout per-pixel.
-(function(){
-  const area=document.getElementById('colony-canvas-area');
-  if(!area || typeof ResizeObserver==='undefined') return;
-  let raf=null;
-  new ResizeObserver(()=>{
-    if(raf) return;
-    raf=requestAnimationFrame(()=>{ raf=null; resize(); buildNodes(); refreshTopologyAwake(); });
-  }).observe(area);
-})();
-
-// v0.3.8.43 (SOW §4): reduced motion, honored at the render loop. When the operator asks for
-// reduced motion and the colony is genuinely idle (no running mission), the map redraws at 4fps —
-// enough to stay current, still, and honest — and returns to full rate the moment real work
-// starts, because at that point the motion IS the information.
-const REDUCED_MOTION = typeof matchMedia==='function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-let _lastReducedDraw=0;
-function loop(ts){
-  requestAnimationFrame(loop);
-  // v2.14.13: the topology now renders on the dashboard too, i.e. effectively always. Skip the
-  // draw when the tab is backgrounded or the canvas has no area; the rAF keeps ticking so the
-  // map resumes instantly with no re-init.
-  if(!topologyAwake) return;
-  // Colony Live on: this canvas is display:none under it. Drawing it every frame was a second full
-  // render nobody could see; the rAF keeps ticking so Classic 2D resumes instantly when chosen.
-  if(document.body.classList.contains('colony-live-on')) return;
-  if(REDUCED_MOTION && !colonyRunning){
-    if(ts-_lastReducedDraw<250) return;
-    _lastReducedDraw=ts;
-  }
-  camZ+=(tZ-camZ)*.1;camX+=(tX-camX)*.1;camY+=(tY-camY)*.1;
-  drawBg();
-  drawChambers();                  // v2.14.5: chamber grouping lives on this canvas, under the edges
-  edges.forEach(e=>drawEdge(e));
-  if(colonyPheromones!=='off') drawPheromoneField(); // Real-pheromone drift under structural edges
-  if(showHandoffs) dataFlowEdges.forEach(e=>drawDataFlowEdge(e,ts));
-  maybeSpawn(ts);
-  particles=particles.filter(p=>(p.t+=p.speed)<=1);
-  drawParticles();
-  nodes.forEach(n=>{
-    // NB: parentheses matter — this used to parse as `colonyActivity || (0-n.activity)`,
-    // which accumulated activity unboundedly every frame (tooltips showing >100%).
-    if(n.id!=='queen'){const key=n.worker||n.ant;n.activity=Math.min(1,Math.max(0,n.activity+((colonyActivity[key]||0)-n.activity)*.06));}
-    drawNode(n,ts);
-  });
-}
-requestAnimationFrame(loop);
 
 // -- Real data polling ----------------------------------------------------------
 let lastGraphData=null,lastEventText='',activeJobId=null,jobPollTimer=null,connected=false;
@@ -2709,8 +1949,7 @@ async function pollGraph(){
     updateNodeActivity();
     if(selectedNode) showInspector(selectedNode);
     buildDataFlowEdges(r.data?.nodes||[]);
-    if(colonyView==='active'){ buildNodes(); updateNodeActivity(); }
-    renderColonyLegend(); // Keep the caste legend's live state in sync
+    renderColonyRegistryState(); // Keep the registry's condition on screen in sync
   }catch{}
 }
 
@@ -2744,57 +1983,48 @@ function buildDataFlowEdges(taskNodes){
 
 // -- Colony Live Canvas 2.0 · caste legend + real pheromone trails --
 // v0.3.8.42 (§9): CHUD_CASTES deleted — it was the legend's hardcoded six-role stand-in.
-let pheromoneTrails=[], pheromoneIntensity=0, pheroMotes=[];
+let pheromoneTrails=[], pheromoneIntensity=0;
 
-function renderColonyLegend(){
-  const el=document.getElementById('chud-legend'); if(!el || typeof ANT_MAP==='undefined') return;
+/* ─────────────────────────────────────────────────────────────────────────────
+   REGISTRY FAILURE IS A STATE. v0.3.8.42, relocated in v0.3.8.125.
+
+   This was the caste legend on the classic canvas: a list of castes, a list of
+   live states, and — the part that mattered — an honest account of the role
+   registry's condition. Colony Live draws its own castes and its own states, so
+   only the account survives, and it moved into the live bar where the operator
+   is now looking.
+
+   The three states it has always distinguished, unchanged:
+     · never loaded, no failure yet  → "Reading the colony registry…"
+     · failed with nothing cached    → name the failure, offer retry, claim nothing
+     · failed with roles cached      → keep them, marked STALE with when and why
+
+   Silence is not one of them. The rule this exists to keep is that the console
+   never presents a stale or absent roster as a current one — which is what a
+   console.warn would have done, and what the six-role stand-in before it did.
+   ───────────────────────────────────────────────────────────────────────────── */
+function renderColonyRegistryState(){
+  const el=document.getElementById('clb-registry-note');
+  if(!el) return;
   const roles=(colonyRegistry?.roles||colonyRegistry?.Roles||[]).filter(r=>!['queen','director'].includes(roleId(r)));
 
-  // v0.3.8.42 (§9/§14): the legend states the registry's real condition instead of padding it —
-  // both branches of this release removed the six-role stand-in independently; this is the union.
-  // Never loaded and no failure yet → "Reading…". Failed with nothing cached → name the failure,
-  // offer retry, list nothing. Failed with cached roles → keep them visible, marked STALE with
-  // when and why. Loaded → the complete roster, uncapped (v2.14.15).
-  // ONE element, ONE id, in every branch — two template branches each declaring the id is a
-  // duplicate to the guard even though only one renders (it reads templates, not the DOM).
   let problemText='', retry='';
   if(colonyRegistryProblem){
     const since=fmtTime(new Date(colonyRegistryProblem.at).toISOString());
     problemText = roles.length
       ? `Roles are STALE (last refresh failed at ${escapeHtml(since)}: ${escapeHtml(colonyRegistryProblem.message)})`
       : `Role registry unavailable — ${escapeHtml(colonyRegistryProblem.message)}`;
-    retry = `<button class="conv-btn" id="chud-legend-retry">Retry</button>`;
+    retry = `<button class="conv-btn" id="clb-registry-retry">Retry</button>`;
   } else if(!roles.length){
     // The third state: never loaded, not failed either — say so, claim nothing.
     problemText = 'Reading the colony registry…';
   }
-  const notice = problemText
-    ? `<div class="chud-problem" id="chud-legend-problem">${problemText}</div>`+retry
-    : '';
 
-  // v2.14.15: no arbitrary cap. This used to .slice(0,15), which silently dropped all eight
-  // homelab ants from the legend while they were still drawn on the canvas.
-  const casteRows = roles.map(roleId).map(a=>{
-    const am=ANT_MAP[a]||{label:roleName(roles.find(r=>roleId(r)===a)||{RoleId:a}),color:ROLE_COLORS[a]||'#7fa0bc'}; if(!am) return '';
-    const on=(colonyActivity[a]||0)>0;
-    // v0.3.8.52: through cssColor, like every other style-attribute colour. ANT_MAP[caste].color is
-    // not the static literal it looks like here — applyUiState() overwrites it with
-    // casteColor(caste), i.e. uiState.castes[caste].color, the operator-set value that v2.14.13
-    // added cssColor to validate. Three sites had been missed; the boundary now has a test.
-    return `<div class="chud-caste ${on?'on':''}"><span class="dot" style="color:${cssColor(am.color)};background:${cssColor(am.color)}"></span>${escapeHtml(am.label)}</div>`;
-  }).join('');
-  // v0.3.8.49 (§18): a legend for the STATE ring colours — only the states currently present on the
-  // map, so a quiet colony shows a short list and a busy one explains every ring the operator sees.
-  const liveStates=[...new Set(nodes.map(n=>n.state).filter(s=>s&&s!=='idle'))]
-    .sort((a,b)=>(STATE_RANK[b]??0)-(STATE_RANK[a]??0));
-  const stateRows = liveStates.length
-    ? `<div class="chud-state-hd">STATES</div>`+liveStates.map(s=>
-        `<div class="chud-caste on"><span class="dot" style="color:${STATE_COLORS[s]};background:${STATE_COLORS[s]}"></span>${escapeHtml(STATE_LABEL[s]||s)}</div>`).join('')
-    : '';
-  // v0.3.8.55 (field report): a header the panel can FOLD to — click collapses to this line.
-  const hd=`<div class="chud-hd" data-ovcollapse="legend" role="button" tabindex="0" title="Collapse or expand the caste legend">Caste legend<span class="ov-caret">${overlayState('legend').collapsed?'▸':'▾'}</span></div>`;
-  el.innerHTML = hd + `<div class="chud-body">` + notice + casteRows + stateRows + `</div>`;
-  document.getElementById('chud-legend-retry')?.addEventListener('click', colonyRegistryRetry);
+  // Loaded and healthy says nothing at all. A permanent "12 roles OK" line would be chrome; the
+  // colony itself is the evidence that the roster loaded.
+  el.innerHTML = problemText ? `<span class="clb-problem">${problemText}</span>`+retry : '';
+  el.hidden = !problemText;
+  document.getElementById('clb-registry-retry')?.addEventListener('click', colonyRegistryRetry);
 }
 
 // Real pheromone memory ? the HUD trail bars + a global intensity that drives the canvas drift.
@@ -2812,23 +2042,11 @@ async function pollColonyPheromones(){
     pheromoneTrails=trails.slice(0,80);
     const topN=pheromoneTrails.slice(0,3);
     pheromoneIntensity = topN.length ? Math.max(0,Math.min(1, topN.reduce((s,t)=>s+(+t.strength||0),0)/topN.length)) : 0;
-    const body=document.getElementById('chud-phero-body'); if(!body) return;
-    body.innerHTML = pheromoneTrails.length ? pheromoneTrails.slice(0,4).map(t=>{
-      const s=Math.max(0,Math.min(1,+t.strength||0)), pct=Math.round(s*100);
-      const col=s>=.6?'var(--green)':s>=.3?'var(--queen)':'var(--red)';
-      const key=(t.trail_key||'—').split(':').slice(-1)[0];
-      return `<div class="chud-trail"><div class="tk" title="${escapeHtml(t.trail_key||'')}">${escapeHtml(key)}</div><div class="tb"><i style="width:${pct}%;background:${col}"></i></div></div>`;
-    }).join('') : '<div class="chud-empty">No trails yet — run missions to build colony memory.</div>';
-    // v2.24.0: after the learning reset every pre-boundary trail sits at the neutral 0.5, so this
-    // list is a wall of identical bars. Without saying so it reads as a broken subsystem rather
-    // than as memory awaiting re-verification.
-    const m=r.meta||{};
-    if(m.legacy_trails>0){
-      body.insertAdjacentHTML('beforeend',
-        `<div class="chud-empty">${m.legacy_trails}/${m.total_trails} trails reset to neutral on `
-        + `${escapeHtml(String(m.learning_reset||'the learning boundary').slice(0,10))} — they re-differentiate `
-        + `as missions reach completed_verified.</div>`);
-    }
+    /* v0.3.8.125: the trail bars this used to draw were `#chud-phero-body`, part of the classic
+       canvas's HUD. The READ stays exactly as it was, because two live readers depend on it and
+       neither is a drawing: the Agent Inspector's per-ant trail strength (`inspectorTrailStrength`)
+       and the Colony Learning table. `pheromoneIntensity` is kept for the same reason it was
+       computed — it is the colony's own summary of its memory, and it is cheap. */
   }catch{}
 }
 
@@ -2858,54 +2076,6 @@ function antTrailStrengths(){
   return out;
 }
 
-function drawPheromoneField(){
-  const queen=nodes.find(n=>n.id==='queen'); if(!queen) return;
-  const strengths=antTrailStrengths();
-  // Emitters are ants that actually HAVE a trail; a worker trail can also credit its parent role.
-  const emitters=nodes.filter(n=>n.id!=='queen'
-    && (strengths[n.id]>0 || (n.worker && strengths[n.worker]>0) || (n.ant && strengths[n.ant]>0))
-    // v2.14.12: "Active" narrows the field to ants doing work right now; "All" shows every trail.
-    && (colonyPheromones!=='active' || n.activity>0));
-  if(!emitters.length){ pheroMotes.length=0; return; }
-
-  const strengthOf=n=>Math.max(strengths[n.id]||0, strengths[n.worker]||0, strengths[n.ant]||0);
-  const total=emitters.reduce((s,n)=>s+strengthOf(n),0);
-  if(total<=0){ pheroMotes.length=0; return; }
-
-  // Mote budget scales with how much real signal exists, and each ant's share is proportional to
-  // ITS strength — not an average smeared across the colony.
-  const budget=Math.min(28, Math.round(4+total*6));
-  const want={};
-  emitters.forEach(n=>{ want[n.id]=Math.max(1, Math.round(budget*(strengthOf(n)/total))); });
-
-  const have={};
-  pheroMotes.forEach(m=>{ if(m.fromId) have[m.fromId]=(have[m.fromId]||0)+1; });
-  // Retire motes whose emitter lost its trail or over-emitted; then top up the deficits.
-  pheroMotes=pheroMotes.filter(m=>{
-    if(!want[m.fromId]) return false;
-    if(have[m.fromId]>want[m.fromId]){ have[m.fromId]--; return false; }
-    return true;
-  });
-  emitters.forEach(n=>{
-    const deficit=want[n.id]-(pheroMotes.filter(m=>m.fromId===n.id).length);
-    for(let i=0;i<deficit;i++)
-      pheroMotes.push({fromId:n.id, t:Math.random(), speed:.0015+Math.random()*.002});
-  });
-
-  const qp=w2s(queen.x,queen.y);
-  pheroMotes.forEach(m=>{
-    m.t+=m.speed; if(m.t>=1) m.t=0;                 // same emitter every cycle — the path is real
-    const src=nodes.find(n=>n.id===m.fromId); if(!src) return;
-    const fp=w2s(src.x,src.y);
-    const x=fp.x+(qp.x-fp.x)*m.t, y=fp.y+(qp.y-fp.y)*m.t;
-    const s=strengthOf(src);
-    // Brightness carries that ant's own strength, so a weak trail reads as a faint thread.
-    const a=(0.08+s*0.30)*(1-Math.abs(m.t-0.5)*1.2);
-    if(a<=0) return;
-    ctx.beginPath();ctx.arc(x,y,(1.2+s*1.1)*camZ,0,Math.PI*2);
-    ctx.fillStyle=`rgba(251,191,36,${a})`;ctx.fill();
-  });
-}
 
 function evTypeClass(t){
   if(!t) return '';
@@ -4328,7 +3498,7 @@ document.getElementById('obj-seed-improve')?.addEventListener('click',()=>{
  * the host hydrates, the reducer and the renderer consume, and the page chrome resolves a project
  * for its composer and nothing more. The ant tab needs telemetry, so the fetch belongs outside that
  * boundary: app.js already owns `/ants/stats` (this is what `loadAntObs` read), and colony-home.js
- * reaches it the same way it already reaches `onAntRecentToggle`.
+ * borrows this reader across it.
  *
  * CACHED FOR FIFTEEN SECONDS because `/ants/stats` is a COLONY-WIDE read — every ant's counters in
  * one payload — and an operator clicking through six residents in a row should cost one request,
@@ -4946,11 +4116,10 @@ function chatSetComposerStreaming(streaming){
 /* v0.3.8.43 — Chat + Colony mode: the canonical topology as a full-page layer BEHIND the
  * conversation (SOW §4), the chat floating above it as a frosted panel. One renderer: the same
  * #colony-canvas-area the Colony page owns is re-parented into the layer (topologyMountTo), so
- * there is no second canvas, no second render loop, and no second subscription — toggling moves a
- * node, it does not build one. The camera (camX/camY/camZ) travels with the node, so the view an
- * operator framed on the Colony page is the view they get here. Closing hands the canvas back to
- * its home slot; refreshTopologyAwake() then measures 0×0 in the hidden layer and the loop stops
- * drawing it. Chat state (draft, scroll, selection) is untouched in both directions because
+ * there is no second canvas, no second renderer, and no second subscription — toggling moves a
+ * node, it does not build one. The renderer travels with the node, so the view an operator framed
+ * on the Colony page is the view they get here. Closing hands the element back to its home slot.
+ * Chat state (draft, scroll, selection) is untouched in both directions because
  * nothing in the conversation subtree is rebuilt. */
 function chatToggleColony(open){
   const layer=document.getElementById('chat-colony-layer'); if(!layer) return;
@@ -5886,10 +5055,11 @@ document.getElementById('chat-colony-close')?.addEventListener('click', ()=>chat
 document.getElementById('chat-colony-full')?.addEventListener('click', ()=>{
   chatToggleColony(false); go('/colony/topology');
 });
-// v0.3.8.43 (SOW §4): the obvious way back when panning has lost the colony — reset the camera
-// targets and let the loop glide home. The same reset the Colony page's own controls use.
+// v0.3.8.43 (SOW §4): the obvious way back when panning has lost the colony. v0.3.8.125 points it
+// at the renderer's own reset — one reset for the one renderer, rather than a camera this file
+// kept for a canvas it no longer draws.
 document.getElementById('chat-colony-fit')?.addEventListener('click', ()=>{
-  if(typeof colonyResetView==='function') colonyResetView();
+  if(window.ColonyHost && typeof ColonyHost.resetAll==='function') ColonyHost.resetAll();
   if(typeof topologyRemeasure==='function') topologyRemeasure();
 });
 // Escape closes the layer — but never out from under a real modal, which owns the key first.
@@ -6537,21 +5707,6 @@ async function installAgentCli(id, btn){
 }
 
 
-async function onAntRecentToggle(det){
-  if(!det.open || det.dataset.loaded) return;
-  det.dataset.loaded='1';
-  const box=det.querySelector('.ac-recent');
-  try{
-    const r=await api('/events/json?limit=12&ant='+encodeURIComponent(det.dataset.ant)); if(!r.success) throw new Error(r.message);
-    const evs=(r.data&&r.data.events)||[];
-    box.innerHTML = evs.length ? evs.map(e=>{
-      const t=(e.event_type||'').replace(/_/g,' ');
-      return `<div style="padding:2px 0;border-bottom:1px solid rgba(30,51,84,.4)"><span style="color:var(--dim);font-size:9px">${fmtTime(e.created_at)||''}</span> ${escapeHtml(t)}<div style="color:var(--muted);font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml((e.message||'').slice(0,90))}</div></div>`;
-    }).join('') : '<div style="color:var(--dim)">No recent events for this caste.</div>';
-  }catch(e){ box.innerHTML=`<div style="color:var(--red)">Error: ${escapeHtml(e.message)}</div>`; }
-}
-
-
 // Route a job's "View Result" to the Results page when it has a mission; the overlay stays as
 // the quick view for running/queued jobs and legacy jobs without a mission id.
 function openJobResult(jobId, missionId){
@@ -6678,7 +5833,6 @@ function typingInField(){
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
     document.getElementById('result-overlay').classList.remove('show');
-    document.getElementById('rename-pop').classList.remove('show');
     closePalette(); closeShortcuts(); closeNotifPanel();
   }
   if((e.ctrlKey||e.metaKey)&&e.key==='k'){ e.preventDefault(); togglePalette(); return; }
@@ -7528,7 +6682,13 @@ function renderActivity(){
 PAGE_ENTER['activity']=loadActivity; // Event Log / Results / Changes keep their own PAGE_ENTER loaders.
 
 // -- UI State ------------------------------------------------------------------
-let uiState={version:1,castes:{},positions:{},widgets:{},chambers:{},chamberNames:{},overlays:{}}; // chambers: v2.14.7 dragged chamber offsets// widgets: v2.5.2 R2 layout registry (zone → ordered [{id,kind,integration_id}])
+/* v0.3.8.125: `positions`, `chambers` and `overlays` are gone. They held where each ant sat on
+   the classic canvas, where each chamber had been dragged to, and which pieces of that canvas's
+   chrome were showing — all of it layout for a renderer that no longer exists. Colony Live keeps
+   its own arrangement under `colony_live_layout`, which this file has never touched.
+   `chamberNames` stays: it is the operator's LABEL for a chamber, which the inspector still shows.
+   widgets: v2.5.2 R2 layout registry (zone → ordered [{id,kind,integration_id}]). */
+let uiState={version:1,castes:{},widgets:{},chamberNames:{}};
 const ANT_CASTES=['researcher','web','file','coder','builder','verifier'];
 const ANT_DEFAULTS=Object.assign({queen:{label:'Queen',color:'#fbbf24',role:'QUEEN'}},
   Object.fromEntries(Object.entries(ANT_MAP).map(([k,v])=>[k,{label:v.label,color:v.color,role:v.role}])));
@@ -7538,13 +6698,11 @@ async function loadUiState(){
   try{
     const r=await api('/ui/state');
     if(r.success&&r.data){
-      uiState.castes=r.data.castes||{}; uiState.positions=r.data.positions||{}; uiState.widgets=r.data.widgets||{};
-      uiState.chambers=r.data.chambers||{}; uiState.chamberNames=r.data.chamberNames||{};
-      uiState.overlays=overlayStateFrom(r.data);
+      uiState.castes=r.data.castes||{}; uiState.widgets=r.data.widgets||{};
+      uiState.chamberNames=r.data.chamberNames||{};
     }
   }catch{}
   applyUiState();
-  applyOverlayState();
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -7596,14 +6754,12 @@ function saveUiState(){
   UiStateWriter.queue(doc=>{
     doc.version=1;
     doc.castes=uiState.castes;
-    doc.positions=uiState.positions;
     doc.widgets=uiState.widgets;
-    doc.chambers=uiState.chambers||{};
+    // v0.3.8.125: `positions`, `chambers` and `dashboard_workspace.topology_overlays` are no
+    // longer written. They described where ants sat on a canvas that no longer exists and which
+    // pieces of that canvas's chrome were showing. Existing documents keep their keys — this
+    // writer merges rather than replaces — so a downgrade finds its layout intact.
     doc.chamberNames=uiState.chamberNames||{};
-    // Overlay visibility lives inside the workspace subtree so the C# sanitizer validates it.
-    // Only this key is touched here; panel placements belong to the workspace module's mutator.
-    doc.dashboard_workspace=doc.dashboard_workspace||{};
-    doc.dashboard_workspace.topology_overlays=uiState.overlays||{};
   });
 }
 
@@ -7631,62 +6787,37 @@ function applyUiState(){
     if(n.id===caste||n.id==='queen') n.label=base;
     else if(n.id.startsWith(caste+'_')){const idx=parseInt(n.id.split('_').pop(),10)||0;n.label=base+'-'+(idx+1);}
     n.color=casteColor(caste);
-    const pos=uiState.positions[n.id];
-    if(pos&&typeof pos.x==='number'&&typeof pos.y==='number'){n.x=pos.x;n.y=pos.y;}
   });
 }
 
-function persistNodePosition(n){uiState.positions[n.id]={x:Math.round(n.x),y:Math.round(n.y)};saveUiState();}
-
-// -- Rename popover ------------------------------------------------------------
-let renameCaste=null;
-const renamePop=document.getElementById('rename-pop');
-
 /** v2.14.10: operator-renamed chambers. The canonical key stays the built-in chamber name, so
- *  role membership, drag offsets, and stats never depend on the label the operator chose. */
+ *  role membership and stats never depend on the label the operator chose. Read by the inspector;
+ *  written by the live view's own sector rename (`#clb-sector-name`). */
 function chamberLabel(name){
   const c=(uiState.chamberNames||{})[name];
   return (c&&String(c).trim())||name;
 }
-let renameChamber=null;
-function openChamberRename(name,sx,sy){
-  renameChamber=name; renameCaste=null;
-  const inp=document.getElementById('rename-input');
-  inp.value=chamberLabel(name);
-  renamePop.style.left=Math.min(sx,window.innerWidth-220)+'px';
-  renamePop.style.top=Math.min(sy,window.innerHeight-120)+'px';
-  renamePop.classList.add('show');
-  inp.focus();inp.select();
+/* RENAMING, v0.3.8.125. The floating popover went with the canvas that opened it — a double-click
+   on a drawn node. Both things it renamed are renamed in the live bar now, in place: a sector
+   through `#clb-sector-name` and an ant through `#clb-ant-name`. These two functions are what that
+   bar commits through, so the rules stay in one file: a chamber's canonical key is never the
+   operator's label, and an empty or unchanged name means "back to the default" rather than a
+   stored blank. */
+function renameChamberTo(name,label){
+  if(!name) return;
+  const v=String(label||'').trim();
+  uiState.chamberNames=uiState.chamberNames||{};
+  if(v&&v!==name) uiState.chamberNames[name]=v;
+  else delete uiState.chamberNames[name];
+  saveUiState();
 }
 
-function openRename(node,sx,sy){
-  renameChamber=null;
-  renameCaste=node.ant||'queen';
-  const inp=document.getElementById('rename-input');
-  inp.value=casteName(renameCaste);
-  renamePop.style.left=Math.min(sx,window.innerWidth-220)+'px';
-  renamePop.style.top=Math.min(sy,window.innerHeight-120)+'px';
-  renamePop.classList.add('show');
-  inp.focus();inp.select();
+function renameCasteTo(caste,label){
+  const c=caste||'queen', v=String(label||'').trim();
+  if(!v) return;
+  uiState.castes[c]=Object.assign({},uiState.castes[c],{name:v});
+  applyUiState();saveUiState();
 }
-function commitRename(){
-  const v=document.getElementById('rename-input').value.trim();
-  if(renameChamber){
-    uiState.chamberNames=uiState.chamberNames||{};
-    if(v&&v!==renameChamber) uiState.chamberNames[renameChamber]=v;
-    else delete uiState.chamberNames[renameChamber];   // empty or unchanged = back to the default
-    saveUiState();
-    renamePop.classList.remove('show'); renameChamber=null; return;
-  }
-  if(renameCaste&&v){
-    uiState.castes[renameCaste]=Object.assign({},uiState.castes[renameCaste],{name:v});
-    applyUiState();saveUiState();
-  }
-  renamePop.classList.remove('show');renameCaste=null;renameChamber=null;
-}
-document.getElementById('rename-save').addEventListener('click',commitRename);
-document.getElementById('rename-cancel').addEventListener('click',()=>{renamePop.classList.remove('show');renameCaste=null;});
-document.getElementById('rename-input').addEventListener('keydown',e=>{if(e.key==='Enter')commitRename();if(e.key==='Escape'){renamePop.classList.remove('show');renameCaste=null;}});
 
 // -- Ant Config page -----------------------------------------------------------
 let availableModels=[];
@@ -9049,8 +8180,13 @@ function colonySearchHook(q){
                        || String(n.worker||'').toLowerCase().includes(needle));
   if(!hit) return;
   selectedNode=hit;
-  // Centre the camera on the match without changing zoom.
-  tX = -(hit.x-cx)*camZ; tY = -(hit.y-cy)*camZ;
+  // v0.3.8.125: centring is the RENDERER's job now — a search knows WHO was found, not where
+  // anything is drawn. `focus` is a no-op on a renderer that has not placed that resident, which
+  // is the right answer rather than a camera moved to a coordinate nobody owns any more.
+  if(window.ColonyHost && ColonyHost.active()){
+    const live=ColonyHost.live();
+    if(live && typeof live.focus==='function') live.focus(hit.worker||hit.ant||hit.id);
+  }
   if(typeof showInspector==='function') showInspector(hit);
 }
 

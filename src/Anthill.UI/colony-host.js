@@ -10,16 +10,15 @@
    nothing here polls anything the console can already see.
 
    The reducer (colony-topology.js) decides what an event means. The renderer
-   (colony-live.js) draws the scene it publishes. This file toggles, hydrates,
+   (colony-live.js) draws the scene it publishes. This file mounts, hydrates,
    persists the operator's layout, and relays the renderer's events to the page
-   (colony-home.js) and to the console's existing Ant Inspector. It does not
-   decide, and it does not draw.
+   (colony-home.js) and to the console's Ant Inspector. It does not decide, and
+   it does not draw.
    ───────────────────────────────────────────────────────────────────────────── */
 (function () {
   'use strict';
 
   var live = null, topo = null;
-  var VIEW_KEY = 'anthill.colony.view3d';
   var layoutTimer = null;
   var sceneListeners = [], liveListeners = [];
 
@@ -28,20 +27,49 @@
     catch (e) { return fallback; }
   }
 
-  function enable(area, classic) {
+  /* ── When the renderer does not come up ──────────────────────────────────────
+     v0.3.8.125. Until this release the answer to a failed mount was "show the
+     classic canvas instead", and that was a real answer because there were two
+     renderers. There is one now, so the fallback had to become something rather
+     than nothing: a blank panel and a console warning is a colony view that
+     silently is not there, which is the failure this file's own guard was
+     written to prevent.
+
+     So a failure SAYS SO, in the DOM, where the colony would have been — what
+     failed, and a way to try again. Retry is worth offering because the causes
+     are overwhelmingly transient: a container measured at 0×0 mid-layout, an
+     asset that lost a race. Nothing here retries on its own; an operator asks. */
+  function renderMountFailure(area, message) {
+    if (!area) return;
+    area.innerHTML =
+      '<div class="colony-down" role="alert">'
+      + '<div class="colony-down-hd">The colony view could not start</div>'
+      + '<div class="colony-down-why"></div>'
+      + '<button class="btn btn-ghost" id="colony-down-retry">Retry</button>'
+      + '</div>';
+    // textContent, not interpolation: the message is an exception's, and an exception's text can
+    // carry anything the runtime put in it.
+    var why = area.querySelector('.colony-down-why');
+    if (why) why.textContent = String(message || 'the renderer did not start');
+    var btn = area.querySelector('#colony-down-retry');
+    if (btn) btn.addEventListener('click', function () { area.innerHTML = ''; mount(); });
+  }
+
+  function enable(area) {
     topo = ColonyTopology.create();
     live = ColonyLive.create();
 
     /* MOUNTING IS WHERE A RENDERER ACTUALLY FAILS. The renderer is canvas-2D and has no
        WebGL to lose, but a mount can still throw on a detached area or an exotic
-       canvas policy — and when it does the classic canvas must come back rather than
-       leave a hidden `#c` under nothing. Reported, not swallowed. */
+       canvas policy. Reported and SHOWN, never swallowed. */
     try {
       live.mount(area);
     } catch (e) {
-      try { console.warn('[colony-live] the renderer failed to mount, keeping the classic canvas: ' + ((e && e.message) || e)); } catch (e2) { }
+      var msg = (e && e.message) || String(e);
+      try { console.warn('[colony-live] the renderer failed to mount: ' + msg); } catch (e2) { }
       try { live.destroy(); } catch (e3) { }
       live = null; topo = null;
+      renderMountFailure(area, msg);
       return false;
     }
 
@@ -81,29 +109,28 @@
     liveListeners.forEach(function (fn) { try { fn(null); } catch (e) { } });
   }
 
-  function toggle(want) {
-    var area = document.getElementById('colony-canvas-area');
-    var classic = document.getElementById('c');
-    if (!area || !classic) return;
+  /* THE LIVE VIEW IS THE ONLY VIEW. v0.3.8.125.
 
-    var on = want === undefined ? !live : !!want;
-    if (on && !(window.ColonyLive && window.ColonyTopology)) {
-      try { console.warn('[colony-live] assets not loaded; classic canvas kept'); } catch (e) { }
-      on = false;
+     This was `toggle(want)`, and the thing it toggled to was the classic force-graph canvas that
+     `.125` deleted. What is left is not a toggle with one position — it is a mount, so it is
+     spelled as one. Idempotent: called on DOMContentLoaded, again from the Retry button, and
+     harmlessly again by anything that used to flip the view. */
+  function mount() {
+    var area = document.getElementById('colony-canvas-area');
+    if (!area || live) return !!live;
+
+    if (!(window.ColonyLive && window.ColonyTopology)) {
+      // The assets did not load. Said out loud rather than left as an empty panel — this is the
+      // one failure mode an operator can actually act on (a blocked or stale asset).
+      renderMountFailure(area, 'the colony renderer did not load');
+      return false;
     }
 
-    // The 2D chrome belongs to the 2D canvas; the stylesheet folds it away under this class. It is
-    // set BEFORE the renderer is created or torn down, so chrome notified by onLive reads the new
-    // state rather than the old one.
-    document.body.classList.toggle('colony-live-on', !!on);
-    if (on && !live) { if (!enable(area, classic)) on = false; }
-    else if (!on && live) disable();
-
-    classic.style.display = on ? 'none' : '';
-    document.body.classList.toggle('colony-live-on', !!on);
-    document.querySelectorAll('#colony-viewbar [data-colonyact="live3d"]')
-      .forEach(function (b) { b.classList.toggle('on', !!on); });
-    try { localStorage.setItem(VIEW_KEY, on ? '1' : '0'); } catch (e) { }
+    // Kept as a body class because the page chrome styles against it: the live bar, the sector and
+    // record panels are only meaningful while the renderer is up.
+    document.body.classList.add('colony-live-on');
+    if (!enable(area)) { document.body.classList.remove('colony-live-on'); return false; }
+    return true;
   }
 
   /* ── The read model. Two bounded reads on enable, then nothing — unless enable happened before
@@ -191,16 +218,14 @@
     onColonyEvent(function (ev) { if (!topo) return; if (!hydrated()) hydrate(); topo.ingestEvent(ev); });
   }
 
-  /* COLONY LIVE IS THE DEFAULT VIEW (`.117`). Only an explicit '0' — an operator who turned it
-     off — keeps the classic canvas; a mount that fails falls back on its own. */
-  document.addEventListener('DOMContentLoaded', function () {
-    var want = true;
-    try { want = localStorage.getItem(VIEW_KEY) !== '0'; } catch (e) { }
-    if (want) toggle(true);
-  });
+  /* COLONY LIVE IS THE VIEW (`.117` made it the default; `.125` made it the only one). There is no
+     stored preference to read any more — `anthill.colony.view3d` is not written and not consulted,
+     because an operator who had turned the live view OFF would otherwise boot into a colony page
+     that renders nothing at all. Any stale '0' in localStorage is simply ignored. */
+  document.addEventListener('DOMContentLoaded', function () { mount(); });
 
   window.ColonyHost = {
-    toggle: toggle,
+    mount: mount,
     /** For app.js's polls — the host owns the feed, app.js owns the fetch. */
     ingestGraph: function (g) { if (topo) topo.ingestGraph(g); },
     ingestApprovals: function (a) { if (topo) topo.ingestApprovals(a); },
@@ -208,6 +233,10 @@
     setOptions: function (o) { if (live) live.setOptions(o); },
     resetAll: function () { if (live) live.resetAll(); },
     zoom: function (f) { if (live) live.zoom(f); },
+    /** The seam `topologyRemeasure` calls after a re-parent. The renderer has its own
+        ResizeObserver, so this is normally redundant — it exists so a renderer that DOES need
+        telling has somewhere to be told, rather than that knowledge living back in app.js. */
+    remeasure: function () { if (live && typeof live.remeasure === 'function') live.remeasure(); },
     active: function () { return !!live; },
     live: function () { return live; },
     topology: function () { return topo; },
