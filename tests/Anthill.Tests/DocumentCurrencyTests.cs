@@ -88,6 +88,11 @@ public class DocumentCurrencyTests
         // first time somebody edits the file above them. It records what was true on one day.
         // The work items it implies live in `docs/PLAN.md` §2e, which IS current and is kept so.
         "ORCHESTRATION-FINDINGS.md",
+        // v0.3.8.139 — the FORAGER A0 gate artifact. HISTORICAL for the ORCHESTRATION-FINDINGS
+        // reason: every row is an audit measured against two named commits (`8491fee` here,
+        // `258baf8` in the FORAGER checkout) and a pinned artifact digest, and it records what was
+        // true on that day. The living program state is the A0–A6 table in `docs/PLAN.md` §2e.
+        "FORAGER_A0_COMPATIBILITY.md",
     };
 
     /// <summary>Documents whose whole content is "this moved" — they point and stop.</summary>
