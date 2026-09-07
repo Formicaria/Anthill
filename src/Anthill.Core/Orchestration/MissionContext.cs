@@ -109,6 +109,20 @@ public sealed record MissionContext
     /// </summary>
     public string? WorkspaceId { get; init; }
 
+    /// <summary>
+    /// v0.3.8.138 — the validated dispatch plan, when the operator requested a structured workflow
+    /// and every step of it resolved. Null is the ordinary case (strategy `planner_chosen`) and
+    /// leaves planning exactly as it was.
+    ///
+    /// This field is the review's item 7 closed: the plan used to be persisted to the event log
+    /// and then DISCARDED — `PlanningService.CreatePlan` built the executed graph independently,
+    /// so the one case the pre-dispatch stage exists for ran whatever the planner invented
+    /// instead of what was validated. Carried on the context rather than passed as a parameter so
+    /// there is still exactly ONE plan construction with one signature, and the preview path
+    /// cannot drift from dispatch by calling it differently.
+    /// </summary>
+    public Planning.DispatchPlan? DispatchPlan { get; init; }
+
     /// <summary>Convenience passthrough — the configuration snapshot behind the profile.</summary>
     public RuntimeOptions Options => Profile.Options;
 

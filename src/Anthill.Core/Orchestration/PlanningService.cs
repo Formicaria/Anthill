@@ -84,6 +84,66 @@ public sealed class PlanningService : IPlanningService
 
     public List<Task> CreatePlan(MissionContext context)
     {
+        // v0.3.8.138 — the review's item 7: an operator-requested dispatch plan used to be logged
+        // and then DISCARDED, this method building the executed graph independently — so the one
+        // case the pre-dispatch stage exists for (an operator actually requested a workflow) ran
+        // whatever the planner invented instead of what was validated. When the context carries an
+        // operator-requested plan, the graph IS that plan: same task ids (the persisted record and
+        // the executed graph join), same types, same roles, same declared edges. Everything the
+        // admission pipeline does to a planner-authored task — worker resolution, capability
+        // repair, trail tie-breaks, the registry's verdict — is done to these tasks by the SAME
+        // code, because two admission pipelines is how a preview comes to describe a plan the
+        // dispatch would not run.
+        if (context.DispatchPlan is { } dispatch
+            && dispatch.Strategy == Planning.DispatchPlanner.Strategies.OperatorRequested
+            && dispatch.Tasks.Count > 0)
+        {
+            var materialized = dispatch.Tasks.Select(p => new Task
+            {
+                Id = p.TaskId,
+                Title = p.Label,
+                Description = $"{p.Label} — operator-requested step from the validated dispatch "
+                            + $"plan. Objective: {context.Goal}",
+                AssignedAnt = p.Role,
+                TaskType = p.TaskType,
+                DependsOn = p.DependsOnTaskIds.ToList(),
+                ParentTaskIds = p.DependsOnTaskIds.ToList(),
+            }).ToList();
+
+            foreach (var task in materialized) AdmitTask(task, context);
+
+            // Deliberately NO auto-wiring: the operator's declared edges are the graph, and the
+            // dispatch planner's own contract is that it "does not reorder steps it was given,
+            // and does not add work the operator did not ask for". Verification is different —
+            // it is runtime policy, the planner refused any operator-authored verifier step for
+            // exactly this reason, and the plan cannot omit it.
+            EnsurePlanVerification(materialized);
+
+            try
+            {
+                // Only for a mission that exists — PlanPreview never persists one, and this event
+                // is a row in a mission's history.
+                if (_memory.GetMission(context.MissionId) is not null)
+                    _memory.LogEvent(context.MissionId,
+                        Anthill.SDK.Events.EventTypes.MissionPlanFromDispatch,
+                        $"The executed graph is the operator's validated dispatch plan: "
+                      + $"{dispatch.Tasks.Count} requested step(s), materialized with their plan ids.",
+                        metadata: new()
+                        {
+                            ["strategy"] = dispatch.Strategy,
+                            ["task_ids"] = dispatch.Tasks.Select(t => t.TaskId).ToList(),
+                        });
+            }
+            catch (Exception logError)
+            {
+                Console.Error.WriteLine(
+                    $"[planning] {Anthill.SDK.Events.EventTypes.MissionPlanFromDispatch} not recorded "
+                  + $"for {context.MissionId}: {logError.Message}");
+            }
+
+            return materialized;
+        }
+
         var goal = context.Goal;
 
         // Memory limits are compile-time constants on AnthillRuntime, not operator-mutable gates —
@@ -123,13 +183,45 @@ public sealed class PlanningService : IPlanningService
                     metadata: new() { ["reason"] = reason, ["detail"] = TextUtil.Truncate(detail, 800) });
             });
 
-        foreach (var task in tasks)
+        foreach (var task in tasks) AdmitTask(task, context);
+
+        // Spec-ingestion plans already carry explicit section→synthesis→verify wiring and
+        // non-critical section flags; auto-wiring would only re-derive the same edges.
+        if (context.Options.AutoDependencyWiring && !Planner.IsLongInput(goal))
+        {
+            var graph = new Mission { Goal = goal, Tasks = tasks };
+            AutoWireDependencies(graph);
+            tasks = graph.Tasks;
+        }
+
+        // Structural repair §6: MANDATORY VERIFICATION IS RUNTIME POLICY, NOT A PLANNER OPTION.
+        // The planner may request verification; it cannot omit it. A model-generated plan that
+        // produces a consequential deliverable (any admitted work task) and names no verifier gets
+        // one appended here — bound by lineage and dependency to every deliverable-producing task,
+        // so a planner omission can never yield an unverified mission that merely looks complete.
+        EnsurePlanVerification(tasks);
+        return tasks;
+    }
+
+    /// <summary>
+    /// THE ONE ADMISSION PIPELINE, applied per task on both planning paths — planner-authored and
+    /// materialized-from-dispatch (v0.3.8.138). Worker resolution, capability repair, trail
+    /// tie-breaks and the registry's verdict live here once, because two copies of this block is
+    /// exactly how a preview once came to describe a plan the dispatch would not run.
+    /// </summary>
+    private void AdmitTask(Task task, MissionContext context)
+    {
+        var goal = context.Goal;
+
+        // The block below is the loop body extracted VERBATIM from CreatePlan (indentation
+        // preserved so the move reads as a move), braces kept so nothing inside had to change.
         {
             if (task.TaskType == "general")
                 task.TaskType = TextUtil.InferTaskType(task.AssignedAnt, task.Title, task.Description);
             // A task that reached here with no worker came from a path that does not assign one
-            // (the planner's model-rejection fallbacks, and tasks inserted by constraint
-            // enforcement). It gets the SAME resolver the planner uses, so there is exactly one
+            // (the planner's model-rejection fallbacks, tasks inserted by constraint enforcement,
+            // and every task materialized from a dispatch plan — the plan names roles, never
+            // workers). It gets the SAME resolver the planner uses, so there is exactly one
             // answer to "which worker serves this task" in the codebase.
             if (string.IsNullOrWhiteSpace(task.AssignedWorker))
                 Agents.WorkerResolution.Assign(task, goal, context.Specification);
@@ -229,29 +321,12 @@ public sealed class PlanningService : IPlanningService
             // operator reviewing a preview is approving the plan that will actually run, so a task
             // the registry refuses must be visibly refused there too.
             var selection = AntRegistry.ValidateTask(task, context.Constraints);
-            if (selection.Allowed) continue;
+            if (selection.Allowed) return;
             task.Status = TaskStatus.Failed;
             task.FailureType = AdmissionRefusedFailureType;
             task.FailureReason = selection.Reason;
             task.Result = $"Task rejected by ant registry: {selection.Reason}";
         }
-
-        // Spec-ingestion plans already carry explicit section→synthesis→verify wiring and
-        // non-critical section flags; auto-wiring would only re-derive the same edges.
-        if (context.Options.AutoDependencyWiring && !Planner.IsLongInput(goal))
-        {
-            var graph = new Mission { Goal = goal, Tasks = tasks };
-            AutoWireDependencies(graph);
-            tasks = graph.Tasks;
-        }
-
-        // Structural repair §6: MANDATORY VERIFICATION IS RUNTIME POLICY, NOT A PLANNER OPTION.
-        // The planner may request verification; it cannot omit it. A model-generated plan that
-        // produces a consequential deliverable (any admitted work task) and names no verifier gets
-        // one appended here — bound by lineage and dependency to every deliverable-producing task,
-        // so a planner omission can never yield an unverified mission that merely looks complete.
-        EnsurePlanVerification(tasks);
-        return tasks;
     }
 
     /// <summary>

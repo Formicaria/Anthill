@@ -1041,6 +1041,14 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
                 ["unmet_required_roles"] = plan.UnmetRequiredRoles.Select(r => r.RoleId).ToList(),
             });
 
+        // v0.3.8.138 — the review's item 7: this plan used to be persisted above and then
+        // DISCARDED — `CreatePlan` built the executed graph independently, so the one case the
+        // pre-dispatch stage exists for (an operator actually requested a workflow) executed
+        // whatever the planner invented instead of what was just validated. An operator-requested
+        // plan now travels into planning on the context, and the executed graph IS the plan.
+        if (plan.Strategy == Planning.DispatchPlanner.Strategies.OperatorRequested && plan.Tasks.Count > 0)
+            context = context with { DispatchPlan = plan };
+
         // v3.1.0 (ADR-001): planning is a service. The Queen says WHEN a plan is made and owns
         // everything that happens to it afterwards; it no longer also implements how one is built.
         mission.Tasks = _planning.CreatePlan(context);
