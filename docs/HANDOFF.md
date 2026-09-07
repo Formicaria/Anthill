@@ -4,7 +4,7 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-Shipping release: **v0.3.8.139**. Everything below the rule is a record, not a state.
+Shipping release: **v0.3.8.140**. Everything below the rule is a record, not a state.
 
 **This file is a POINTER, and the reason is written into `CONTRIBUTING.md`: a snapshot has to be
 rewritten every release to stay true, and will therefore be false most of the time.** It spent forty
@@ -34,7 +34,12 @@ edges, admitted through the same pipeline, policy verifier still appended, recor
 `mission_plan_from_dispatch`); `.139` gave `task_attempts` the eight columns that make an attempt's
 EXECUTION durable — the row §2e called missing for eleven releases already existed, and what it
 lacked was any fact about what the attempt did, four of which `Domain.Task` marks transient and a
-restart therefore forgot. Closure enforcement is the next slice and is deliberately not in it.
+restart therefore forgot; `.140` closed closure enforcement — a mission may no longer close complete
+when its own verifier said no — which turned out not to need that record at all: `failed` was one
+word doing two jobs, and splitting it from the new `inconclusive` (which demotes nothing, and is
+exactly what `.122` demoted on) needed no new fact. It also tried pointing the gate at the verifier's
+own recorded ruling and reverted that inside the release — that ruling answers a promotion question
+and is `Unknown` for every class with no deterministic evidence by design.
 
 ---
 

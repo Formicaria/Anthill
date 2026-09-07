@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.139**.
+Shipping release: **v0.3.8.140**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -796,13 +796,33 @@ revision" or "this generation was fine" would refuse every mission the colony ha
 inventing history to satisfy a guard, the direction `evidence.revision_id` and
 `patch_sets.base_fingerprint` both refused.
 
-**WHAT STILL WAITS, now unblocked:** items 3–8 themselves — artifact and evidence handoff,
-verification that reads execution rather than a narrative, closure ENFORCEMENT (a mission may not
-close complete when its plan declared a check that never produced a deterministic pass), and
-unsourced-claim rejection. Closure enforcement is the next slice and is deliberately NOT part of
-`.139`: `Verification.Failed` still spans "a check said no" and "nothing could satisfy the check",
-`.122` tried to reconcile them and reverted, and splitting those two meanings is what the record was
-built for. Doing both in one release repeats `.122`.
+**CLOSURE ENFORCEMENT LANDED AT `.140`, AND IT DID NOT NEED THE RECORD.** That is worth stating
+plainly, because this section named the missing execution row as its prerequisite for eleven
+releases and it was not one. `.140` SPLIT THE WORD rather than the join, and needed nothing new to do
+it: `VerificationVerdict.Parse` has separated `Failed` and `NeedsImprovement` from `Unknown` since
+`v2.19.0`, and only the mission-level status flattened them. Now `failed` means a verdict-bearing
+task said no, the new `inconclusive` means nothing could establish a verdict, and the evaluator
+demotes a COMPLETE mission to Partial on the first only. `inconclusive` is exactly the set `.122`
+demoted on and it still demotes nothing — which is why the plan's own instruction, "do not begin the
+next attempt by making the status line read `VerificationStatus`", is followed literally. The truth
+table in `CharacterizationTests` changes exactly one row, with the reason beside it as that table
+requires. `ClosureEnforcementTests` owns it.
+
+**AND `.140` TRIED A SECOND FIX AND REVERTED IT INSIDE THE RELEASE.** `VerifierAnt` decides a verdict
+(`v3.8.27`) and records it; the mission gate re-parses the model's prose instead, which reads exactly
+like defect #5 with the authoritative implementation losing. Pointing the gate at the ruling failed
+twenty integration tests across five mission classes, and they were right: the ant's verdict answers
+a PROMOTION question — is there DETERMINISTIC evidence — and an audit, an external action and a
+system action have none by design, so the ruling is `Unknown` for entire classes of legitimately
+verified mission. "May this be promoted" and "did the verifier judge this acceptable" are different
+questions. Recorded in `MissionVerification.VerdictOf` and pinned by `ClosureEnforcementTests` so it
+is not re-tried.
+
+`.139`'s record is not thereby unused: it is what makes an attempt's execution survive the process,
+which every gate below still needs.
+
+**WHAT STILL WAITS:** the remainder of items 3–8 — artifact and evidence handoff, verification that
+reads execution rather than a narrative, and unsourced-claim rejection.
 
 One structural fact a session starting that work needs, and it is not in the brief:
 
