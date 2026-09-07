@@ -108,6 +108,34 @@ public static class MissionIntake
       + @"health|healthy|live|active|actually (?:ran|run|used)|missions?|workers?|ants?|roles?)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    /// <summary>
+    /// v0.3.8.134 — IS THE OPERATOR ASKING A QUESTION? The `simple_answer` class's third condition,
+    /// and it was added because the first two were not enough.
+    ///
+    /// The branch first read `Explain` intent AND no target, which is exactly the class's own
+    /// description — "a question the colony can answer from what it already knows" — except for the
+    /// word QUESTION, which was doing all the work and was nowhere in the code. `Explain` is the
+    /// FALL-THROUGH intent: it means "no change verb, no diagnostic verb, no research verb, no
+    /// assessment verb", which is a statement about what the request is NOT. Plenty of imperatives
+    /// land there. "Document the deployment procedure in a runbook" is a creation request; "Exercise
+    /// the coder and stop it while it works" is a colony instruction. Both were being admitted to a
+    /// class whose gate forbids changing anything, so both would have been graded against a promise
+    /// nobody made.
+    ///
+    /// SO THE SHAPE IS TESTED DIRECTLY, and narrowly: a question mark anywhere, or an interrogative
+    /// or ask-me opener at the START of the request. The opener must be first because "the report
+    /// on what can be done" contains `what` and asks nothing — the same word-position discipline
+    /// `RoutingWords` exists for, applied to a sentence instead of a token.
+    ///
+    /// It is deliberately not a model call and not a cleverer parser. A request this misreads
+    /// resolves `general` — ungraded, exactly as it did before this class existed — which is the
+    /// cost this whole file is written to prefer over a confident misclassification.
+    /// </summary>
+    private static readonly Regex QuestionShape = new(
+        @"\?|^\s*(?:who|what|when|where|why|how|which|whose|whom|can|could|should|would|will|"
+      + @"do|does|did|is|are|was|were|am|explain|describe|define|tell me|teach me)\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     private static readonly Regex CurrentFreshness = new(
         @"\b(now|current(?:ly)?|today|at the moment|right now|present(?:ly)?)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -263,6 +291,25 @@ public static class MissionIntake
     };
 
     /// <summary>
+    /// Capability ids a simple-answer mission requires. v0.3.8.134, and the SHORTEST list here by
+    /// design rather than by omission: every sibling leads with the capability that defines its
+    /// class — inspect, execute, propose, retrieve — and this class's defining property is that it
+    /// needs none of them. What remains is what any specified mission owes: compile an answer, and
+    /// check it answered what was asked.
+    ///
+    /// Naming a `answer_from_knowledge` capability here was considered and rejected: no worker
+    /// declares it, and requiring a capability nothing serves is a declaration reaching nobody —
+    /// this repository's recurring defect, named in the audit list's own remark. The constraint this
+    /// class actually carries is its authority ceiling, which is enforced at dispatch, not a
+    /// capability nobody can answer.
+    /// </summary>
+    public static readonly IReadOnlyList<string> SimpleAnswerCapabilities = new[]
+    {
+        WorkerCapabilities.CompileResult,
+        WorkerCapabilities.VerifyResultCompleteness,
+    };
+
+    /// <summary>
     /// Resolve the specification. Never throws, and never returns null: a request it cannot
     /// classify becomes <see cref="MissionSpecification.General"/>, which constrains nothing.
     /// </summary>
@@ -413,6 +460,68 @@ public static class MissionIntake
                 // the rows `ToolEvidence` writes when `run_allowlisted_check` dispatches, and the
                 // rows `DiagnosisIntegrity` resolves receipts against.
                 RequiredEvidence = new[] { Anthill.SDK.Artifacts.EvidenceKinds.CommandCheck },
+            };
+
+        // v0.3.8.134 — THE ANSWER CLASS, AND IT IS THE LAST BRANCH BEFORE THE EXIT, which is the
+        // only place it could go. Every branch above claims a request by something the colony can
+        // DO about it; this one claims what is left over when none of them wanted it and there is
+        // still a question on the table.
+        //
+        // BOTH CONDITIONS ARE NARROW ON PURPOSE. `Explain` is the fall-through intent — no change
+        // verb, no diagnostic verb, no research verb, no assessment verb — and `MissionTargets.None`
+        // means the request named neither the repository, the runtime, a service, an external
+        // destination nor the world. A request satisfying both is one the colony has nothing to
+        // inspect for and nowhere to go and read: it is answered from what the model knows or not at
+        // all, and saying so is more honest than pretending the answer was established.
+        //
+        // WHAT THIS TAKES OUT OF `general`, and it is the whole reason the branch exists. Before
+        // this release such a request was ungoverned: no deliverable, no evidence, and no authority
+        // ceiling, so `MissionAuthorityGate` had nothing to enforce and the dynamic planner's
+        // file-change rule could turn "how do you make tacos" into a proposed patch with no layer
+        // able to refuse it. The class does not make the planner smarter. It makes the refusal
+        // possible, which is the difference between a prompt and a guarantee.
+        //
+        // `general` DOES NOT GO AWAY. A request that names a target but matches no class — an
+        // Explain about the repository, a Change aimed at the tree — still lands there, unchanged
+        // and ungraded, exactly as it did before.
+        //
+        // AND THE THIRD CONDITION IS THE ONE THE FIRST CUT OF THIS RELEASE LEFT OUT, so it is stated
+        // rather than folded into the two above. `Explain` is the FALL-THROUGH intent — it says only
+        // that no other verb list claimed the request — and the class's description says QUESTION.
+        // Without `QuestionShape`, "Document the deployment procedure in a runbook" and "Exercise the
+        // coder and stop it while it works" both entered a class whose gate forbids changing
+        // anything, and were graded against a promise neither of them made. The suite caught it,
+        // which is the argument for classifying against real fixtures rather than against the two
+        // sentences the class was designed around.
+        if (intent == MissionIntent.Explain
+            && targets == MissionTargets.None
+            && QuestionShape.IsMatch(request))
+            return new MissionSpecification
+            {
+                OriginalRequest = request,
+                MissionClass = MissionSpecification.SimpleAnswerClass,
+                Intent = MissionIntent.Explain,
+                Targets = MissionTargets.None,
+                // HISTORICAL, and it is the resolved value rather than a forced one. Nothing here is
+                // a claim about now: an answer from what is already known is as current as what is
+                // known, and stamping it `Current` would be the class asserting a freshness it has
+                // no retrieval to back. A request that explicitly asks for the latest something is
+                // matched by `CurrentFreshness` and keeps that reading — but it is then a question
+                // about the world, and the research branch above has already claimed it.
+                Freshness = freshness,
+                // OBSERVE. Not because the answer inspects something, but because it changes
+                // nothing — and `MissionAuthorityGate` reads this ceiling at dispatch, so
+                // `apply_patch`, `write_text_file` and `shell_command` are refused by the runtime
+                // rather than merely absent from a plan.
+                Authority = MissionAuthority.Observe,
+                Deliverables = ResolveDeliverables(request),
+                RequiredCapabilities = SimpleAnswerCapabilities,
+                // NONE, and this class is the only one in the list that requires none. Its promise
+                // is that the answer rests on nothing retrieved and nothing inspected; requiring an
+                // evidence kind would be demanding a receipt for a thing the class exists to say
+                // did not happen. `AnswerIntegrity` grades what it can grade instead: that an answer
+                // exists, and that nothing was changed to produce it.
+                RequiredEvidence = Array.Empty<string>(),
             };
 
         if (intent != MissionIntent.Assess || targets == MissionTargets.None)

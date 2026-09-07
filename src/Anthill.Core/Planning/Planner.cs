@@ -531,11 +531,13 @@ Required JSON:
             t.DependsOn = t.DependsOn.Where(d => !removedIds.Contains(d)).ToList();
 
         // Guarantee the mission still inspects the workspace if it names files/code/paths.
-        // v0.3.8.126: prefixes, not substrings — "repo" was matching "repo·rt", "path" was
-        // matching "path·ological", and "code" was matching "en·code·d", each of which inserted a
-        // workspace-inspection task into a mission that named no files at all.
+        // v0.3.8.126 moved this to prefixes and v0.3.8.134 finished the job. `\bcode` did stop
+        // matching "en·code·d", but a prefix is open at the END: `\brepo` still matched "repo·rt"
+        // and `\bpath` still matched "path·ological" — the two examples the old comment claimed
+        // were fixed. Whole words for those, with their real inflections named.
         var loweredGoal = goal.ToLowerInvariant();
-        var mentionsFiles = SDK.Common.RoutingWords.AnyPrefix(loweredGoal, "file", "code", "repo", "path", "folder", "directory", "config")
+        var mentionsFiles = SDK.Common.RoutingWords.AnyPrefix(loweredGoal, "file", "code", "folder", "directory", "config")
+                         || SDK.Common.RoutingWords.AnyWord(loweredGoal, "repo", "repos", "repository", "repositories", "path", "paths")
                          || new[] { ".cs", ".md", ".json" }.Any(loweredGoal.Contains);
         if (mentionsFiles && !kept.Any(t => t.AssignedAnt == "file"))
             kept.Insert(0, new Task
@@ -723,6 +725,48 @@ Required JSON:
                     Title = "Verify the attribution",
                     Description = "Check that every claim's cited source is one this mission actually "
                                 + $"retrieved, and that nothing unattributed is presented as sourced: {goal}",
+                    AssignedAnt = "verifier",
+                    TaskType = "verification",
+                });
+
+            return tasks;
+        }
+
+        // v0.3.8.134 — the answer class's own coverage, AND IT IS THE INVERSE OF EVERY SIBLING
+        // ABOVE. They each INSERT the step that defines their class, because a plan that omits it
+        // builds a mission the gate must refuse. This class is defined by a step's ABSENCE, so the
+        // same doctrine — do not build a mission that is wired to fail its own gate — means
+        // REMOVING what the class forbids rather than adding what it requires.
+        //
+        // WHY THE PLANNER AND NOT ONLY THE GATE. `AnswerIntegrity` refuses a change-typed step, and
+        // `MissionAuthorityGate` refuses the tools underneath it, so nothing here is load-bearing
+        // for safety. What it is load-bearing for is the OPERATOR'S EXPERIENCE: without it, a model
+        // that types a patch step for a recipe question produces a mission that runs, proposes a
+        // patch card the operator has to decline, and then grades itself not satisfied. The gate
+        // makes that outcome correct. This makes it not happen.
+        //
+        // THE STEPS ARE DROPPED, NOT REWRITTEN. A `patch_proposal` retyped as `build_answer` would
+        // be this layer guessing at what the model meant, and the description it carries was written
+        // for a change; the builder task below asks the operator's own question instead.
+        if (specification?.MissionClass == Anthill.Core.Missions.MissionSpecification.SimpleAnswerClass)
+        {
+            tasks.RemoveAll(t => Anthill.Core.Outcomes.AnswerIntegrity.ChangeTaskTypes.Contains(t.TaskType)
+                              || string.Equals(t.AssignedAnt, "coder", StringComparison.OrdinalIgnoreCase));
+
+            if (!tasks.Any(t => string.Equals(t.AssignedAnt, "builder", StringComparison.OrdinalIgnoreCase)))
+                tasks.Add(new Task
+                {
+                    Title = "Answer the question",
+                    Description = $"Answer directly and completely, from what is already known: {goal}",
+                    AssignedAnt = "builder",
+                    TaskType = "build_answer",
+                });
+
+            if (!tasks.Any(t => string.Equals(t.AssignedAnt, "verifier", StringComparison.OrdinalIgnoreCase)))
+                tasks.Add(new Task
+                {
+                    Title = "Verify the answer is complete",
+                    Description = $"Check that every part of the request was answered: {goal}",
                     AssignedAnt = "verifier",
                     TaskType = "verification",
                 });
@@ -1408,11 +1452,28 @@ Required JSON:
            mission to `coder.ui_coder`, one layer up and choosing the whole lane rather than the
            worker. `.md` / `.cs` / `.json` / `docs/` stay literal: they are not words, and a
            boundary before a dot is not where a filename starts. */
-        var codeWords = new[] { "code", "script", "python", "bug", "debug", "review", "refactor",
-            "function", "class", "repo", "repository", "file", "folder", "directory", "patch",
-            "modify", "change", "create", "add", "write", "edit", "document", "frontend", "canvas",
+        // v0.3.8.134 — AND `.126` FIXED ONE OF THE THREE CASES ITS OWN COMMENT CLAIMS.
+        //
+        // `Prefix` is `\bkeyword`: anchored at the START of a word and open at the end, which is
+        // right for a stem whose inflections carry the same signal ("file" → "files", "patch" →
+        // "patches") and wrong for a short word that begins longer unrelated ones. `\bcode` really
+        // did stop matching "en·code·d" — but `\brepo` still matches "**repo**rt", `\badd` still
+        // matches "**add**ress", `\bclass` still matches "**class**ification", `\bedit` matches
+        // "**edit**or" and `\bcreate` matches "**creat**ure". Six words that appear in ordinary
+        // English questions, every one of them routing an answer into the coding lane.
+        //
+        // Split by what each word actually is. A STEM keeps prefix matching because its inflections
+        // are the signal. A WORD is matched whole, with the inflections that matter listed rather
+        // than assumed — "add" is a code word and "address" is not, and no amount of anchoring at
+        // one end can tell them apart.
+        var codeStems = new[] { "code", "script", "python", "bug", "debug", "review", "refactor",
+            "function", "repositor", "file", "folder", "directory", "patch",
+            "modify", "change", "write", "document", "frontend", "canvas",
             "css", "html", "javascript", "visualization", "dashboard" };
-        var isCodeGoal = SDK.Common.RoutingWords.AnyPrefix(lowered, codeWords)
+        var codeExact = new[] { "class", "classes", "repo", "repos", "add", "adds", "added", "adding",
+            "create", "creates", "created", "creating", "edit", "edits", "edited", "editing" };
+        var isCodeGoal = SDK.Common.RoutingWords.AnyPrefix(lowered, codeStems)
+                      || SDK.Common.RoutingWords.AnyWord(lowered, codeExact)
                       || SDK.Common.RoutingWords.Word(lowered, "ui")
                       || new[] { "docs/", ".md", ".cs", ".json" }.Any(lowered.Contains);
 

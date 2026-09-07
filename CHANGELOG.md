@@ -1,3 +1,62 @@
+## v0.3.8.134 - a question is not a change request
+
+**"HOW TO MAKE TACOS" CAME BACK AS A PROPOSED SOURCE PATCH.** Not a bad answer — a patch, offered
+for approval, against a repository the question never mentioned. `.133` fixed the reason that
+mission FAILED. This fixes the reason it was ever pointed at the coder.
+
+**THE PLANNER IS WHERE IT WAS VISIBLE, NOT WHERE IT WAS WRONG.** Its standing rule says a goal that
+creates, adds, writes or edits ANY file must include a `patch_proposal` coder task, and a model
+reading that against a recipe found a verb it liked. What let the result through is that the mission
+had no class. `general` does not mean unconstrained — it means UNGOVERNED: no deliverable, no
+evidence, no authority ceiling. `MissionAuthorityGate` had nothing to enforce and `MissionEvaluator`
+had no promise to contradict.
+
+**SO THE FIX IS A CLASS, NOT A BETTER PROMPT.** A prompt asks a model to behave; a class gives every
+layer underneath something to refuse. `simple_answer` is the sixth recognized class: intent
+`Explain`, no target the colony could go and inspect, the shape of a question, and authority
+`Observe`. The third condition was missing from the first cut and the suite is what found it —
+`Explain` is the FALL-THROUGH intent, so "document the deployment procedure in a runbook" was
+entering a class whose gate forbids changing anything. The ceiling refuses
+`apply_patch`, `write_text_file` and `shell_command` at dispatch. The coverage pass drops the change
+lane out of the plan before it runs. `AnswerIntegrity` refuses the record if one appears anyway —
+from the plan's own typing and from the artifact store independently, because two accounts of one
+mission that disagree is the finding rather than a discrepancy to reconcile quietly.
+
+**IT IS THE ONLY CLASS THAT REQUIRES NO EVIDENCE, and that is a promise rather than a gap.** Research
+goes and reads pages and owes citations. This class reads nothing — so it promises the answer rests
+on nothing, and nothing can be misrepresented as having been established. `general` does not go
+away: a request that names a target no class serves still lands there, ungraded, exactly as before.
+
+**A CHECK THAT NEVER RAN IS NO LONGER A FAILED CHECK.** `RunAllowlistedCheckTool` returns
+`Success: false` for four reasons that are not verdicts — the id is not in the allowlisted catalog,
+the check is disabled, it timed out, the process could not start — and all four returned empty
+output and were recorded as `command_check`, deterministic, passed false. `DiagnosisIntegrity`
+accepts any such row as proof the mission executed something, so a typo in a check id produced a
+receipt saying the symptom REPRODUCED, and a diagnosis resting on it passed its gate. A false receipt
+is worse than no receipt: no receipt is refused, and this one was believed. The discriminator is
+`CheckRunner`'s own `exit_code=` line — stated by the layer that would know — and the row is now not
+written at all rather than written softly, because a soft row lands in the inspection lane and trades
+a false receipt in one class for a false receipt in another.
+
+**A REFUSED MISSION NOW ANNOUNCES ITS ENDING.** Both refusal paths — the dispatch plan and the
+preflight check — saved a status and returned. Neither logged `mission_outcome`. Neither invoked the
+finished callback. To every consumer that watches for an ending, a mission that was over the moment
+it was refused looked exactly like one still running, which is what "mission starting, forever" was.
+One shared exit now persists, grades, reports and ANNOUNCES it, and returns what the normal path
+returns — before this, one returned rendered prose and the other a bare mission id.
+
+**AND THE WORD BOUNDARIES `.126` CLAIMED ARE FINALLY TRUE.** It moved the code-lane keywords to
+`AnyPrefix`, which anchors at a word START, so "req-ui-ring" was genuinely fixed and "**add**ress",
+"**class**ification", "**repo**rt", "**edit**or" and "**creat**ure" were not. The comment claimed
+four; it earned two. The lists are now split: stems match by prefix, whole words match whole.
+
+**A REASONED NO-CHANGE IS A SUCCESS.** `ClassifyPatchJson` graded a well-formed response with zero
+proposals as `InternalDefect`, while the acting path one file over already graded the same judgment a
+success via `NO_CHANGES_NEEDED`. A coder that looked and correctly found nothing to do is not a
+broken coder. A zero-proposal response with no summary still is.
+
+**And the composer's two dropdowns sit side by side.**
+
 ## v0.3.8.133 - a synonym is not a broken mission
 
 **"HOW TO MAKE TACOS" FAILED.** The researcher ran for 22 seconds and produced its brief. Then the

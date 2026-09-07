@@ -144,12 +144,21 @@ public class ArtifactBridgeTests : IDisposable
     private sealed class FakeTool : ITool
     {
         private readonly bool _ok;
-        public FakeTool(string name, bool ok) { Name = name; _ok = ok; }
+        private readonly bool _ran;
+        // v0.3.8.134 — `ran` is what separates a check that FAILED from one that never started, and
+        // the fixture has to be able to say which: a real `CheckRunner` writes `exit_code=` on
+        // exactly the paths where a process ran to completion, and nothing on the four where it did
+        // not. The default is `true` because the existing cases all mean "the check ran and the
+        // verdict was no".
+        public FakeTool(string name, bool ok, bool ran = true) { Name = name; _ok = ok; _ran = ran; }
         public string Name { get; }
         public string Description => "fake";
         public ToolResult Run(IReadOnlyDictionary<string, object?> args) =>
-            _ok ? new ToolResult(Name, true, "exit 0")
-                : new ToolResult(Name, false, "", "exit 1", FailureClass.TargetRejection);
+            _ok ? new ToolResult(Name, true, "check_id=fake\nexit_code=0\n--- output ---\nok")
+                : _ran ? new ToolResult(Name, false, "check_id=fake\nexit_code=1\n--- output ---\nboom",
+                             "check 'fake' exited 1", FailureClass.VerificationFailure)
+                       : new ToolResult(Name, false, "", "check 'fake' could not start: no such file",
+                             FailureClass.TargetRejection);
     }
 
     /// <summary>
@@ -184,6 +193,31 @@ public class ArtifactBridgeTests : IDisposable
 
         Assert.False(Assert.Single(((IEvidenceStore)_memory).ForMission("m1")).Passed);
         Assert.False(((IEvidenceStore)_memory).HasDeterministicPass("m1"));
+    }
+
+    /// <summary>
+    /// AND A CHECK THAT NEVER RAN IS NOT A FAILED CHECK. v0.3.8.134.
+    ///
+    /// `RunAllowlistedCheckTool` returns `Success: false` for four reasons that are not verdicts:
+    /// the id is not in the catalog, the check is disabled, it timed out, or the process could not
+    /// start. All four returned an empty output and were recorded as `command_check`, deterministic,
+    /// passed false — indistinguishable from a build that compiled and failed.
+    ///
+    /// WHAT THAT COST: `DiagnosisIntegrity` accepts any `command_check` row as proof the mission
+    /// executed something, and a troubleshooting mission's whole premise is that its symptom was
+    /// REPRODUCED. A typo in a check id therefore produced a receipt saying the symptom reproduced,
+    /// and a diagnosis resting on it passed its gate. A false receipt is worse than no receipt: no
+    /// receipt is refused, and this one was believed.
+    /// </summary>
+    [Fact]
+    public void ACheckThatCouldNotStart_IsNotRecordedAsAFailedCheck()
+    {
+        var registry = new ToolRegistry(_memory);
+        registry.Register(new FakeTool("run_allowlisted_check", ok: false, ran: false));
+
+        registry.RunTool("run_allowlisted_check", "m1", "t1");
+
+        Assert.Empty(((IEvidenceStore)_memory).ForMission("m1"));
     }
 
     /// <summary>

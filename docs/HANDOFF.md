@@ -4,7 +4,7 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-Shipping release: **v0.3.8.133**. Everything below the rule is a record, not a state.
+Shipping release: **v0.3.8.134**. Everything below the rule is a record, not a state.
 
 **This file is a POINTER, and the reason is written into `CONTRIBUTING.md`: a snapshot has to be
 rewritten every release to stay true, and will therefore be false most of the time.** It spent forty
@@ -20,11 +20,13 @@ it stopped claiming to be the state of things:
 | What an outside review found, and which of it is real | `docs/PLAN.md` §2e, verified against the tree rather than adopted |
 | How a guard must be written | `docs/GUARDS.md`, enforced by `GuardHierarchyTests` |
 
-**The last four releases, in one line each.** `.126` word-bounded the routing lanes; `.127` gave
-settings one row of tabs and the ant panel one editor; `.128` renamed the homelab subsystem to
-Infrastructure and stopped a conversation's policy lapsing when its work became a mission; `.129`
-restored the ant inspector, quieted the update check, and put the verified external review into the
-plan. `.130` closes the other half of `.128`'s gate — see `docs/AUTONOMY.md` §5.
+**The last four releases, in one line each.** `.131` and `.132` gave a proposal-only mission a
+read-only scope over its own project source, so a mission about project X stopped reading some other
+tree; `.133` reconciled task-type synonyms at planning instead of failing on them at dispatch, which
+is what made every mission a small local model planned die at its last step; `.134` gave a question
+with nothing to inspect a mission class of its own — `simple_answer`, authority `Observe` — so the
+colony can REFUSE to answer "how do you make tacos" with a source patch instead of merely being
+asked not to, and closed four review findings alongside it.
 
 ---
 
