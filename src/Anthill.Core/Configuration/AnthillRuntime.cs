@@ -15,13 +15,17 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "0.3.8.138";
+    public const string Version = "0.3.8.139";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
     // a later upgrade, seeing 22, would skip the migration it needed to run. That is why it sat at
     // 21 through v3.7.1 and v3.7.2 while these tables were parked.
-    public const int SchemaVersion = 23;   // v3.8.19: ADR-004 artifact + evidence stores (artifacts, evidence)
+    // v0.3.8.139: the execution record — eight columns on `task_attempts`, added in place by
+    // `EnsureColumns`. Bumped because an existing database MUST run that migration: the columns
+    // carry the facts every closure gate after this release reads, and a build that left the number
+    // at 23 would tell an upgraded colony it was already current and then read nulls forever.
+    public const int SchemaVersion = 24;   // v0.3.8.139: task_attempts carries the execution record
 
     /// <summary>
     /// v2.22.0: the environment a skill is proven against. Coverage is a safety boundary — a

@@ -641,6 +641,33 @@ public sealed partial class SqliteMemory : IDisposable
         // sets read as NULL — "never captured" — which the promotion gate treats as unmeasurable
         // rather than as unchanged, the same non-retroactive rule the evidence check follows.
         AddMissing("patch_sets", new() { ["base_fingerprint"] = "TEXT" });
+        // v0.3.8.139 — THE EXECUTION RECORD, on the row the atomic claim already writes.
+        //
+        // `docs/PLAN.md` §2e has said since `.118` that items 3-8 "all consume the same missing
+        // row" and that `.122` did not add it. The row was not missing — `task_attempts` has been
+        // live since `v3.8.0` because the claim runs on it — what was missing is any fact about
+        // what the attempt DID. Four of these are marked TRANSIENT on `Domain.Task` in their own
+        // doc comments: the object holds them, the `tasks` row does not, and a restart forgot why a
+        // worker was chosen, which deliverable a task served, and which tree a check ran in.
+        //
+        // Legacy rows read as NULL, which means NOT RECORDED and never "no". A closure gate reading
+        // these must treat absence as unmeasurable — the same non-retroactive rule
+        // `evidence.revision_id` above already follows — or it refuses every mission that ran
+        // before this release, which would be this repository inventing history to satisfy a guard.
+        AddMissing("task_attempts", new()
+        {
+            ["assigned_ant"] = "TEXT",
+            ["task_type"] = "TEXT",
+            ["worker_basis"] = "TEXT",
+            ["deliverable_ids"] = "TEXT",
+            ["required_capability"] = "TEXT",
+            // Nullable INTEGER rather than NOT NULL DEFAULT 0: on this column false and unrecorded
+            // are different claims, and a default would tell every legacy row's reader that its
+            // generation was fine — a fact nobody established.
+            ["generation_degraded"] = "INTEGER",
+            ["produced_revision_id"] = "TEXT",
+            ["ran_revision_id"] = "TEXT",
+        });
         // v0.3.8.106: WHICH MISSION DID THE READING. `mission_id` on this table has always been the
         // artifact's PRODUCING mission, and the only caller read within one mission — so the two
         // were the same value and the column meant both. Multi-mission continuity is where that

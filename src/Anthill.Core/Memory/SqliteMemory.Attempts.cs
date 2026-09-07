@@ -159,10 +159,25 @@ public sealed partial class SqliteMemory
         }
     }
 
-    /// <summary>Finish an attempt, with the route that served it and why it ended.</summary>
+    /// <summary>
+    /// Finish an attempt, with the route that served it, why it ended, and — v0.3.8.139 — WHAT IT
+    /// DID.
+    ///
+    /// THE EXECUTION FACTS ARE WRITTEN HERE AND NOWHERE ELSE, and that placement is the whole of
+    /// why this closes an item eleven releases old. They are all properties of a FINISHED attempt:
+    /// which tree the check actually ran in is not known when the claim is taken, and neither is
+    /// whether the generation degraded. Writing them at claim time would record a prediction; the
+    /// caller that closes the attempt is holding the task that answers each one.
+    ///
+    /// <paramref name="record"/> IS OPTIONAL, and null means "this caller had nothing to record"
+    /// rather than "there was nothing to record" — the columns are left untouched, so a partial
+    /// caller cannot blank facts a fuller one wrote. Every existing call site keeps its meaning
+    /// without being changed, which is what lets this land as a slice rather than a sweep.
+    /// </summary>
     public void FinishAttempt(string attemptId, AttemptState state,
         string? provider = null, string? model = null,
-        string? failureClass = null, string? failureReason = null)
+        string? failureClass = null, string? failureReason = null,
+        AttemptExecutionRecord? record = null)
     {
         lock (_writeLock)
         {
@@ -171,12 +186,35 @@ public sealed partial class SqliteMemory
                 @"UPDATE task_attempts
                      SET state=@state, provider=@p, model=@m,
                          failure_class=@fc, failure_reason=@fr,
+                         -- COALESCE so a null record leaves what is already there. A later caller
+                         -- with less to say must not erase what an earlier one recorded, which is
+                         -- the shape `SaveMission`'s INSERT OR REPLACE gets wrong and this file's
+                         -- own evaluation columns learned the hard way.
+                         assigned_ant=COALESCE(@ant, assigned_ant),
+                         task_type=COALESCE(@type, task_type),
+                         worker_basis=COALESCE(@basis, worker_basis),
+                         deliverable_ids=COALESCE(@deliverables, deliverable_ids),
+                         required_capability=COALESCE(@capability, required_capability),
+                         generation_degraded=COALESCE(@degraded, generation_degraded),
+                         produced_revision_id=COALESCE(@produced, produced_revision_id),
+                         ran_revision_id=COALESCE(@ran, ran_revision_id),
                          lease_until=NULL, finished_at=@at
                    WHERE id=@id AND state='Running'",
                 ("@state", state.ToString()),
                 ("@p", (object?)provider ?? DBNull.Value), ("@m", (object?)model ?? DBNull.Value),
                 ("@fc", (object?)failureClass ?? DBNull.Value),
                 ("@fr", (object?)failureReason ?? DBNull.Value),
+                ("@ant", (object?)record?.AssignedAnt ?? DBNull.Value),
+                ("@type", (object?)record?.TaskType ?? DBNull.Value),
+                ("@basis", (object?)record?.WorkerBasis ?? DBNull.Value),
+                // An EMPTY list is a recorded fact — "the plan declared no deliverable for this
+                // task" — and it must round-trip as `[]` rather than as null, or the reader cannot
+                // tell it from a legacy row that predates the column.
+                ("@deliverables", record is null ? DBNull.Value : (object)Json.SafeDumps(record.DeliverableIds)),
+                ("@capability", (object?)record?.RequiredCapability ?? DBNull.Value),
+                ("@degraded", record is null ? DBNull.Value : (object)(record.GenerationDegraded ? 1 : 0)),
+                ("@produced", (object?)record?.ProducedRevisionId ?? DBNull.Value),
+                ("@ran", (object?)record?.RanRevisionId ?? DBNull.Value),
                 ("@at", AnthillTime.NowUtc().ToIso()), ("@id", attemptId ?? ""));
         }
     }
@@ -300,5 +338,18 @@ public sealed partial class SqliteMemory
         LeaseUntil = AnthillTime.ParseIsoOrNull(row.GetValueOrDefault("lease_until")?.ToString()),
         StartedAt = AnthillTime.ParseIsoOrNow(row.GetValueOrDefault("started_at")?.ToString()),
         FinishedAt = AnthillTime.ParseIsoOrNull(row.GetValueOrDefault("finished_at")?.ToString()),
+
+        // v0.3.8.139 — the execution record. Null stays null: these are read back as "not
+        // recorded", never as a negative claim, so `?.ToString()` rather than `?? ""` on every one
+        // of them is deliberate and the `??` that would look tidier here would be a lie.
+        AssignedAnt = row.GetValueOrDefault("assigned_ant")?.ToString(),
+        TaskType = row.GetValueOrDefault("task_type")?.ToString(),
+        WorkerBasis = row.GetValueOrDefault("worker_basis")?.ToString(),
+        DeliverableIds = Json.SafeLoadList(row.GetValueOrDefault("deliverable_ids")?.ToString()),
+        RequiredCapability = row.GetValueOrDefault("required_capability")?.ToString(),
+        GenerationDegraded = row.GetValueOrDefault("generation_degraded") is { } d
+                          && Convert.ToInt64(d) != 0,
+        ProducedRevisionId = row.GetValueOrDefault("produced_revision_id")?.ToString(),
+        RanRevisionId = row.GetValueOrDefault("ran_revision_id")?.ToString(),
     };
 }
