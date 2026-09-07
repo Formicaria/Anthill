@@ -652,6 +652,40 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         }
     }
 
+    /// <summary>
+    /// WHICH KNOWLEDGE THIS MISSION MAY READ. v0.3.8.136 — the resolution v0.3.8.121's ambient
+    /// design shipped without.
+    ///
+    /// A PURE FUNCTION of the mission and the settings, public and static, so the tenant boundary's
+    /// rules are testable without a colony (MissionKnowledgeScopeTests holds them). The rules, each
+    /// a refusal rather than a fallback:
+    ///
+    ///   - knowledge disabled            → Unresolved. The default-off world stays exactly off.
+    ///   - mission has no project        → Unresolved. A direct API or CLI run has no tenant, so it
+    ///                                     has no knowledge — NOT the operator's default project,
+    ///                                     which exists for a console operator with no context.
+    ///   - project unmapped or mapped "" → Unresolved. Borrowing the default here would be project
+    ///                                     A's mission answering from project B's documents, with
+    ///                                     full provenance, looking entirely correct — the single
+    ///                                     failure the scope model exists to prevent.
+    ///   - mapped                        → a MISSION-kind scope carrying the FORAGER project, the
+    ///                                     mission id (so an audit of what was retrieved can name
+    ///                                     the run that asked) and the ANTHILL project id.
+    /// </summary>
+    public static Anthill.SDK.Knowledge.KnowledgeScope ResolveKnowledgeScope(
+        Mission mission, Configuration.KnowledgeSettings settings)
+    {
+        if (settings is null || !settings.Enabled || mission is null)
+            return Anthill.SDK.Knowledge.KnowledgeScope.Unresolved;
+
+        var projectRef = settings.ProjectRefFor(mission.ProjectId);
+        if (projectRef is null)
+            return Anthill.SDK.Knowledge.KnowledgeScope.Unresolved;
+
+        return Anthill.SDK.Knowledge.KnowledgeScope.ForMission(
+            projectRef, mission.Id, anthillProjectId: mission.ProjectId);
+    }
+
     private Anthill.Core.Workspaces.MissionWorkspace? PrepareWorkspace(string missionId, string? projectSourceRoot = null)
     {
         try
@@ -866,6 +900,30 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         }
         using var workspaceScope = Anthill.Core.Workspaces.MissionWorkspaceScope.Enter(missionWorkspace);
         using var routingScope = Projects.ProjectRoutingScope.Enter(missionRouting);
+        // v0.3.8.136 — THE KNOWLEDGE SCOPE IS FINALLY ENTERED. v0.3.8.121 shipped the whole ambient
+        // design — KnowledgeScopeContext, the no-argument rule, the tools reading Current — and
+        // PLAN.md §2k has said "entered by the core at intake" since. Nothing entered one. The
+        // console worked, because it resolves a scope per request; every knowledge tool an ANT
+        // dispatched read Unresolved and refused, so the surface a human used was fine and the
+        // surface an agent used was inert — "declared and reaching nobody", one more time. The
+        // resolution is a pure function (tested without a colony), the entry sits beside the other
+        // ambient boundaries so they enter and unwind together, and an unmapped or projectless
+        // mission enters the REFUSAL rather than nothing — a scope was set, and it retrieves
+        // nothing, which is what the tenant boundary promises.
+        var knowledgeScope = ResolveKnowledgeScope(mission, AnthillRuntime.Knowledge);
+        using var knowledgeAmbient = Anthill.SDK.Knowledge.KnowledgeScopeContext.Enter(knowledgeScope);
+        if (AnthillRuntime.Knowledge.Enabled)
+            Memory.LogEvent(mission.Id, SDK.Events.EventTypes.MissionKnowledgeScope,
+                knowledgeScope.IsQueryable
+                    ? $"Knowledge for this mission resolves to {knowledgeScope.ProjectRef}."
+                    : "No knowledge base is mapped for this mission's project — knowledge tools retrieve nothing.",
+                metadata: new()
+                {
+                    ["queryable"] = knowledgeScope.IsQueryable,
+                    ["kind"] = knowledgeScope.Kind.ToString().ToLowerInvariant(),
+                    ["project_ref"] = knowledgeScope.ProjectRef,
+                    ["anthill_project_id"] = mission.ProjectId,
+                });
         if (missionRouting is not null)
             Memory.LogEvent(mission.Id, SDK.Events.EventTypes.MissionProjectRouting,
                 $"Model routing for this mission comes from project '{missionRouting.ProjectId}'.",
