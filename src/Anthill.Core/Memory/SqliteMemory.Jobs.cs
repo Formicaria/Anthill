@@ -28,6 +28,7 @@ public sealed partial class SqliteMemory
                     assigned_worker TEXT, claim_at TEXT, lease_expires_at TEXT, heartbeat_at TEXT,
                     cancel_requested INTEGER NOT NULL DEFAULT 0,
                     mission_id TEXT, result TEXT, error TEXT, outcome TEXT, reason TEXT,
+                    project_id TEXT,
                     created_at TEXT NOT NULL, started_at TEXT, finished_at TEXT);
                 CREATE UNIQUE INDEX IF NOT EXISTS ix_mission_jobs_idem
                     ON mission_jobs(idempotency_key) WHERE idempotency_key IS NOT NULL;
@@ -36,6 +37,17 @@ public sealed partial class SqliteMemory
                     worker TEXT, reason TEXT, error TEXT, duration_ms INTEGER,
                     started_at TEXT, finished_at TEXT);";
             cmd.ExecuteNonQuery();
+
+            // v0.3.8.137 — the review's item 6: a job accepted for a PROJECT lost the project on
+            // the way to RunMission, so its mission ran without the project's worktree, routing or
+            // knowledge scope. The column is migrated here (this table is created lazily, so the
+            // startup migrator in Schema.cs may run before it exists). Duplicate-column on a
+            // fresh table is the expected no-op.
+            using (var migrate = conn.CreateCommand())
+            {
+                migrate.CommandText = "ALTER TABLE mission_jobs ADD COLUMN project_id TEXT";
+                try { migrate.ExecuteNonQuery(); } catch (SqliteException) { /* already there */ }
+            }
             _jobTablesReady = true;
         }
     }
@@ -47,12 +59,16 @@ public sealed partial class SqliteMemory
         public string? LeaseExpiresAt; public bool CancelRequested;
         public string? MissionId; public string? Result; public string? Error;
         public string? Outcome; public string? Reason;
+        /// <summary>v0.3.8.137 — the project this job's mission belongs to. Durable, because a job
+        /// re-queued after a crash must still run inside its project, not as a colony-wide orphan.</summary>
+        public string? ProjectId;
         public string CreatedAt = ""; public string? StartedAt; public string? FinishedAt;
     }
 
     /// <summary>Insert-or-replay: if the idempotency key already exists, the EXISTING job is
     /// returned and nothing new is created — repeated delivery must not duplicate work.</summary>
-    public (MissionJobRow Job, bool Replayed) PersistNewJob(string id, string goal, string? idempotencyKey)
+    public (MissionJobRow Job, bool Replayed) PersistNewJob(string id, string goal, string? idempotencyKey,
+        string? projectId = null)
     {
         EnsureJobTables();
         lock (_writeLock)
@@ -64,14 +80,21 @@ public sealed partial class SqliteMemory
             }
             using var conn = Connect();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = @"INSERT INTO mission_jobs (id, goal, status, attempt, idempotency_key, created_at)
-                VALUES ($id, $goal, 'queued', 1, $key, $created)";
+            cmd.CommandText = @"INSERT INTO mission_jobs (id, goal, status, attempt, idempotency_key, project_id, created_at)
+                VALUES ($id, $goal, 'queued', 1, $key, $project, $created)";
             cmd.Parameters.AddWithValue("$id", id);
             cmd.Parameters.AddWithValue("$goal", goal);
             cmd.Parameters.AddWithValue("$key", (object?)idempotencyKey ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$project",
+                (object?)(string.IsNullOrWhiteSpace(projectId) ? null : projectId) ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$created", AnthillTime.NowUtc().ToIso());
             cmd.ExecuteNonQuery();
-            return (new MissionJobRow { Id = id, Goal = goal, IdempotencyKey = idempotencyKey, CreatedAt = AnthillTime.NowUtc().ToIso() }, false);
+            return (new MissionJobRow
+            {
+                Id = id, Goal = goal, IdempotencyKey = idempotencyKey,
+                ProjectId = string.IsNullOrWhiteSpace(projectId) ? null : projectId,
+                CreatedAt = AnthillTime.NowUtc().ToIso(),
+            }, false);
         }
     }
 
@@ -251,7 +274,8 @@ public sealed partial class SqliteMemory
         using var conn = Connect();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT id, goal, status, attempt, idempotency_key, assigned_worker, lease_expires_at, "
-            + "cancel_requested, mission_id, result, error, outcome, reason, created_at, started_at, finished_at "
+            + "cancel_requested, mission_id, result, error, outcome, reason, created_at, started_at, finished_at, "
+            + "project_id "
             + "FROM mission_jobs" + (where is null ? "" : " WHERE " + where)
             + " ORDER BY created_at DESC, id DESC LIMIT $limit";
         if (param is not null) cmd.Parameters.AddWithValue("$p", param);
@@ -270,6 +294,7 @@ public sealed partial class SqliteMemory
                 Error = r.IsDBNull(10) ? null : r.GetString(10), Outcome = r.IsDBNull(11) ? null : r.GetString(11),
                 Reason = r.IsDBNull(12) ? null : r.GetString(12), CreatedAt = r.GetString(13),
                 StartedAt = r.IsDBNull(14) ? null : r.GetString(14), FinishedAt = r.IsDBNull(15) ? null : r.GetString(15),
+                ProjectId = r.IsDBNull(16) ? null : r.GetString(16),
             });
         }
         return list;

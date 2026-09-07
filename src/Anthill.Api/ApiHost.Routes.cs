@@ -527,7 +527,16 @@ public static partial class ApiHost
             if (key.Length > 0 && !key.All(c => char.IsLetterOrDigit(c) || c is '-' or '_' or ':' or '.'))
                 return ApiJson.Error("Idempotency-Key may contain only letters, digits, '-', '_', ':' and '.'.", "bad_request");
 
-            var submitted = Jobs.Submit(goal, key.Length == 0 ? null : key);
+            // v0.3.8.137 — the review's item 6: a project id accepted here used to go nowhere,
+            // so "run this in project X" ran the mission with no project at all. Validated at the
+            // door: an unknown project is a refusal now, not a mission that silently runs
+            // colony-wide and gets discovered later.
+            var projectId = (body?.ProjectId ?? "").Trim();
+            if (projectId.Length > 0 && Queen.Memory.LoadProject(projectId) is null)
+                return ApiJson.Error($"No project '{projectId}'.", "not_found");
+
+            var submitted = Jobs.Submit(goal, key.Length == 0 ? null : key,
+                projectId.Length == 0 ? null : projectId);
             var dict = submitted.ToDict();
             // Replay is reported rather than hidden: a client that retried deserves to know it got
             // the original mission back instead of a second one.
