@@ -559,6 +559,9 @@ public sealed class MissionRequest
 {
     public string Goal { get; set; } = "";
     public string? IdempotencyKey { get; set; }
+    /// <summary>v0.3.8.137 — optional: run the mission inside this project (worktree, routing,
+    /// knowledge scope). An unknown id is refused at submission, not discovered mid-mission.</summary>
+    public string? ProjectId { get; set; }
 }
 
 /// <summary>

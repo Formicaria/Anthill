@@ -212,7 +212,10 @@ public sealed class ColonyDirector : IDisposable
                 ["governor_code"] = governor.Code,
             });
 
-        var job = _jobs.Submit(goal);
+        // v0.3.8.137: the objective's project travels into the job — a Director mission for a
+        // project objective now runs inside that project's worktree, routing and knowledge scope
+        // instead of shedding the project at the queue.
+        var job = _jobs.Submit(goal, projectId: objective.ProjectId);
         // Missions are bounded by MaxMissionSeconds; cap the wait generously beyond that.
         var deadline = AnthillTime.NowUtc().AddSeconds(AnthillRuntime.MaxMissionSeconds + 120);
         _inFlight.Add(new InFlight(objective, run, job, strategy, deadline));

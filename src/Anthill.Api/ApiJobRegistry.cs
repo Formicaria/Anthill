@@ -9,6 +9,11 @@ public sealed class ApiMissionJob
 {
     public string Id { get; init; } = Guid.NewGuid().ToString();
     public string Goal { get; init; } = "";
+    /// <summary>v0.3.8.137 — the project this mission runs inside, or null for colony-wide work.
+    /// Carried from submission to <see cref="Queen.RunMission"/>, which is what puts the mission
+    /// in the project's worktree under its routing and knowledge scope. Before this field the API
+    /// job path silently dropped the project on the floor.</summary>
+    public string? ProjectId { get; init; }
     public string Status { get; set; } = "queued"; // queued | running | complete | failed | cancelled
     /// <summary>Set by Cancel/CancelAll; a queued job is skipped by the worker instead of running.</summary>
     public volatile bool Cancelled;
@@ -32,6 +37,7 @@ public sealed class ApiMissionJob
     public Dictionary<string, object?> ToDict() => new()
     {
         ["id"] = Id, ["goal"] = Goal, ["status"] = Status, ["mission_id"] = MissionId,
+        ["project_id"] = ProjectId,
         ["result"] = Result, ["error"] = Error, ["outcome"] = Outcome, ["reason"] = Reason,
         ["outcome_code"] = OutcomeCode,
         ["created_at"] = CreatedAt.ToIso(),
@@ -68,7 +74,9 @@ public sealed class ApiJobRegistry : IDisposable
         var (resumable, retried, orphaned, cancelled) = _mem.ReconcileJobsAtStartup();
         foreach (var row in _mem.ListMissionJobs(500).Where(r => r.Status == "queued").OrderBy(r => r.CreatedAt))
         {
-            var job = new ApiMissionJob { Id = row.Id, Goal = row.Goal };
+            // The project rides the durable row through a restart — a job re-queued after a crash
+            // still runs inside its project (v0.3.8.137).
+            var job = new ApiMissionJob { Id = row.Id, Goal = row.Goal, ProjectId = row.ProjectId };
             _jobs[job.Id] = job;
             _order.Enqueue(job.Id);
             _queue.Add(job);
@@ -86,19 +94,19 @@ public sealed class ApiJobRegistry : IDisposable
         }
     }
 
-    public ApiMissionJob Submit(string goal, string? idempotencyKey = null)
+    public ApiMissionJob Submit(string goal, string? idempotencyKey = null, string? projectId = null)
     {
         // v2.8.0: persist FIRST (durability), with idempotent replay — the same key never creates
         // a duplicate mission, it returns the original job.
-        var (row, replayed) = _mem.PersistNewJob(Guid.NewGuid().ToString(), goal, idempotencyKey);
+        var (row, replayed) = _mem.PersistNewJob(Guid.NewGuid().ToString(), goal, idempotencyKey, projectId);
         if (replayed)
         {
             if (_jobs.TryGetValue(row.Id, out var known)) return known;
-            var ghost = new ApiMissionJob { Id = row.Id, Goal = row.Goal };
+            var ghost = new ApiMissionJob { Id = row.Id, Goal = row.Goal, ProjectId = row.ProjectId };
             ghost.Status = row.Status; ghost.MissionId = row.MissionId; ghost.Result = row.Result;
             return ghost; // terminal or owned elsewhere — never re-queued
         }
-        var job = new ApiMissionJob { Id = row.Id, Goal = goal };
+        var job = new ApiMissionJob { Id = row.Id, Goal = goal, ProjectId = row.ProjectId };
         _jobs[job.Id] = job;
         _order.Enqueue(job.Id);
         TrimLocked();
@@ -161,7 +169,10 @@ public sealed class ApiJobRegistry : IDisposable
                 job.Result = _queen.RunMission(job.Goal,
                     missionId => { job.MissionId = missionId; _mem.UpdateJobState(job.Id, "running", missionId: missionId); },
                     job.Cts.Token,
-                    outcome => { job.Outcome = outcome.Outcome; job.Reason = outcome.Reason; job.OutcomeCode = outcome.OutcomeCode; });
+                    outcome => { job.Outcome = outcome.Outcome; job.Reason = outcome.Reason; job.OutcomeCode = outcome.OutcomeCode; },
+                    // v0.3.8.137: the project the job was submitted for reaches mission intake —
+                    // which is what selects the project's worktree, routing and knowledge scope.
+                    projectId: job.ProjectId);
                 // v2.26.0 pre-V3 hardening: the job status MAPS FROM the canonical mission
                 // outcome — "RunMission returned" is not "complete". Before this, a timed-out
                 // mission produced the contradiction status=complete / outcome=timed_out, and
@@ -250,6 +261,7 @@ public sealed class ApiJobRegistry : IDisposable
         return new Dictionary<string, object?>
         {
             ["id"] = row.Id, ["goal"] = row.Goal, ["status"] = row.Status, ["mission_id"] = row.MissionId,
+            ["project_id"] = row.ProjectId,
             ["result"] = row.Result, ["error"] = row.Error, ["outcome"] = row.Outcome, ["reason"] = row.Reason,
             ["outcome_code"] = string.IsNullOrWhiteSpace(row.MissionId)
                 ? null

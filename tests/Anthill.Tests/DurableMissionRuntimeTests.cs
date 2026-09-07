@@ -123,6 +123,71 @@ public class DurableMissionRuntimeTests : IDisposable
         Assert.Single(mem.ListMissionJobs(10));      // exactly one row exists
     }
 
+    // ---- v0.3.8.137: the project survives every durable hop ------------------------------------
+
+    /// <summary>The review's item 6: a job accepted for a project must still be that project's
+    /// job after a crash — the requeue path reads the durable row, so the row must carry it.</summary>
+    [Fact]
+    public void AJobsProject_IsDurable_AndSurvivesRestart()
+    {
+        var db = DbPath();
+        using (var mem = new SqliteMemory(db))
+            mem.PersistNewJob("j1", "goal", null, projectId: "proj-9");
+        using var mem2 = new SqliteMemory(db);
+        mem2.ReconcileJobsAtStartup();
+        Assert.Equal("proj-9", mem2.GetMissionJob("j1")!.ProjectId);
+    }
+
+    /// <summary>Replay returns the ORIGINAL submission — including its project. A retry that
+    /// named a different project must not quietly re-home the work.</summary>
+    [Fact]
+    public void IdempotentReplay_ReturnsTheOriginalsProject()
+    {
+        using var mem = new SqliteMemory(DbPath());
+        mem.PersistNewJob("j1", "goal", "key-7", projectId: "proj-9");
+        var (replayed, wasReplay) = mem.PersistNewJob("j2", "goal", "key-7", projectId: "proj-other");
+        Assert.True(wasReplay);
+        Assert.Equal("proj-9", replayed.ProjectId);
+    }
+
+    /// <summary>Whitespace is null: "" satisfies every is-not-null check while naming nothing.</summary>
+    [Fact]
+    public void AWhitespaceProject_IsStoredAsNull()
+    {
+        using var mem = new SqliteMemory(DbPath());
+        mem.PersistNewJob("j1", "goal", null, projectId: "   ");
+        Assert.Null(mem.GetMissionJob("j1")!.ProjectId);
+    }
+
+    /// <summary>A database created before v0.3.8.137 has a mission_jobs table without the column;
+    /// opening it must migrate in place — legacy rows read back with a null project, new rows
+    /// carry theirs.</summary>
+    [Fact]
+    public void ALegacyDatabase_GainsTheProjectColumn_InPlace()
+    {
+        var db = DbPath();
+        using (var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={db}"))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"CREATE TABLE mission_jobs (
+                    id TEXT PRIMARY KEY, goal TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued',
+                    attempt INTEGER NOT NULL DEFAULT 1, idempotency_key TEXT,
+                    assigned_worker TEXT, claim_at TEXT, lease_expires_at TEXT, heartbeat_at TEXT,
+                    cancel_requested INTEGER NOT NULL DEFAULT 0,
+                    mission_id TEXT, result TEXT, error TEXT, outcome TEXT, reason TEXT,
+                    created_at TEXT NOT NULL, started_at TEXT, finished_at TEXT);
+                INSERT INTO mission_jobs (id, goal, created_at)
+                    VALUES ('old1', 'legacy goal', '2026-01-01T00:00:00Z');";
+            cmd.ExecuteNonQuery();
+        }
+
+        using var mem = new SqliteMemory(db);
+        Assert.Null(mem.GetMissionJob("old1")!.ProjectId);
+        mem.PersistNewJob("new1", "goal", null, projectId: "p1");
+        Assert.Equal("p1", mem.GetMissionJob("new1")!.ProjectId);
+    }
+
     // ---- Completed work is never repeated -------------------------------------------------------
 
     [Fact]
