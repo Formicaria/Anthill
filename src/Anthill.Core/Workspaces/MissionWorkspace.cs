@@ -158,4 +158,22 @@ public sealed record MissionWorkspace
     /// <summary>Whether work can still happen here. A cleaned or orphaned workspace cannot host it.</summary>
     public bool Usable => State is WorkspaceState.Ready or WorkspaceState.Active
         or WorkspaceState.Checkpointed or WorkspaceState.Retained;
+
+    /// <summary>
+    /// MAY ANYTHING WRITE HERE. v0.3.8.132, and the tree had no way to ask before this.
+    ///
+    /// Three predicates decided everything about a scope — <see cref="Usable"/>,
+    /// <c>Root.Length > 0</c> and <c>Mode == "worktree"</c> — and none of them answers "is this a
+    /// disposable checkout I own, or the operator's live project I am only allowed to read?" That
+    /// question had no wrong answer while the only scopes were worktrees. It has one now: a
+    /// project mission enters a READ-ONLY scope over the operator's own source so its file and
+    /// check tools stop falling back to `agent_workspace_dir` — and five consumers would take that
+    /// scope as licence to run an agent CLI in it, diff the operator's uncommitted work and file
+    /// it as a patch set the mission produced.
+    ///
+    /// DEFAULT TRUE, deliberately: every worktree ever prepared, and both pinned apply-target
+    /// scopes, keep exactly the behaviour they had. Only the new read-only scope says otherwise,
+    /// and it has to say so explicitly.
+    /// </summary>
+    public bool Writable { get; init; } = true;
 }

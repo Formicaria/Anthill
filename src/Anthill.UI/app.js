@@ -3698,6 +3698,14 @@ async function loadChat(){
  * Fenced code blocks render as code. Everything passes through escapeHtml FIRST and the only
  * structure added is <pre><code> around the fenced spans — no markdown engine, no third-party
  * renderer, no new sanitisation surface. The rest of the message keeps pre-wrap text semantics. */
+/**
+ * The header `MissionReport.Render` writes above the compiled record, and the one string in a
+ * turn's content that is guaranteed not to be the operator's or the model's prose. Declared here
+ * rather than inline so the console has exactly one copy of it — a second would drift from the
+ * renderer the first time somebody reworded the header.
+ */
+const CHAT_RECORD_MARKER='=== MISSION RECORD';
+
 function chatRenderContent(text){
   const parts=String(text||'').split('```');
   let html='';
@@ -3828,11 +3836,29 @@ async function chatOpen(id){
             // operator's own messages are never collapsed. "Long" is measured on the raw text so
             // the decision is stable regardless of how it renders.
             const raw=String(t.content||'');
-            const isLong=!mine && (raw.length>900 || (raw.match(/\n/g)||[]).length>16);
-            const body=isLong
-              ? `<div class="chat-body clamp" data-body="${i}">${chatRenderContent(t.content)}</div>`
+            // v0.3.8.132 — THE ANSWER AND THE RECORD ARE TWO THINGS, so they are two blocks.
+            //
+            // `ConversationRunner` appends the compiled mission record beneath the answer in one
+            // content string, which is right for the audit trail and wrong for reading: a cookie
+            // recipe arrived with twenty lines of task ids under it, and the collapse toggle
+            // measured the WHOLE thing, so an answer of three sentences was clamped because of
+            // what came after it. Split on the record's own header — the marker
+            // `MissionReport.Render` writes and nothing else does — so the answer is the response
+            // and the record is a thing you open. Split at RENDER, not at storage: the turn stays
+            // one auditable string, every already-stored turn gains the split, and copy still
+            // yields the whole thing.
+            const recAt=mine?-1:raw.indexOf(CHAT_RECORD_MARKER);
+            const answerText=recAt<0?raw:raw.slice(0,recAt).trimEnd();
+            const recordText=recAt<0?'':raw.slice(recAt).trimEnd();
+            const isLong=!mine && (answerText.length>900 || (answerText.match(/\n/g)||[]).length>16);
+            const body=(isLong
+              ? `<div class="chat-body clamp" data-body="${i}">${chatRenderContent(answerText)}</div>`
                 + `<button class="chat-expand" data-expand="${i}" aria-expanded="false">Show full response</button>`
-              : chatRenderContent(t.content);
+              : chatRenderContent(answerText))
+              + (recordText
+                ? `<button class="chat-record-toggle" data-record="${i}" aria-expanded="false">▸ Mission record</button>`
+                  + `<pre class="chat-record" data-recbody="${i}" style="display:none">${escapeHtml(recordText)}</pre>`
+                : '');
             return `<div class="chat-turn ${mine?'user':'colony'}">`
               + `<span class="who"><span class="who-name">${mine?'You':escapeHtml(t.model||t.provider||'Colony')}</span>`
               + (when?`<span class="chat-when" title="${escapeHtml(String(t.created_at||''))}">${escapeHtml(when)}</span>`:'')
@@ -3855,6 +3881,16 @@ async function chatOpen(id){
       }));
       // v0.3.8.49 (§3): expand/collapse a long colony response. CSP is script-src 'self', so the
       // handler is bound here, never inlined.
+      // v0.3.8.132: the mission record, opened on demand. Same binding discipline — CSP is
+      // script-src 'self', so no handler is ever inlined.
+      thread.querySelectorAll('.chat-record-toggle').forEach(b=>b.addEventListener('click',()=>{
+        const rec=thread.querySelector('.chat-record[data-recbody="'+b.dataset.record+'"]');
+        if(!rec) return;
+        const open=rec.style.display==='none';
+        rec.style.display=open?'':'none';
+        b.setAttribute('aria-expanded',open?'true':'false');
+        b.textContent=(open?'▾':'▸')+' Mission record';
+      }));
       thread.querySelectorAll('.chat-expand').forEach(b=>b.addEventListener('click',()=>{
         const body=thread.querySelector('.chat-body[data-body="'+b.dataset.expand+'"]');
         if(!body) return;

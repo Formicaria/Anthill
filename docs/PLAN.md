@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.131**.
+Shipping release: **v0.3.8.132**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -693,7 +693,7 @@ either honour it or delete it rather than let it decay into a sentence nobody ap
 
 ---
 
-## 2e. What comes next — the shape of v0.3.8.131 and after
+## 2e. What comes next — the shape of v0.3.8.132 and after
 
 The universal-workflow program closed at `.113` and R0 closed at `.114`. There is no successor
 program: what remains is R-numbered work, standing hygiene, and a small number of findings the last
@@ -719,7 +719,7 @@ this tree actually does:
 
 | # | Finding | Where | Pinned by a test? |
 |---|---|---|---|
-| 1 | **A project mission's source root never becomes tool scope.** `Queen.RunMission` gates workspace activation on `EnableFileWriting \|\| EnablePatchApplication \|\| EnableActingCoder` — all three default OFF. `Project.Path` is loaded and then used only to build a workspace that is never built, so under proposal-only defaults every file and check tool falls back to `agent_workspace_dir`. A mission about project X reads, patches and tests some other tree. | `Queen.cs` ~`775`/`812` | No |
+| 1 | ✅ **CLOSED at v0.3.8.132.** A mission that wants no worktree now enters a READ-ONLY scope over `Project.Path`, materialising nothing; `MissionWorkspace.Writable` (default true) is the discriminator, and the five consumers that read the ambient scope in order to WRITE — the agent-CLI working directory, the change harvester, the edit processor, the change summary and the acting-coder branch — read `CurrentWritable` instead, so a read-only scope is indistinguishable from no scope to every one of them. Was: **A project mission's source root never becomes tool scope.** `Queen.RunMission` gates workspace activation on `EnableFileWriting \|\| EnablePatchApplication \|\| EnableActingCoder` — all three default OFF. `Project.Path` is loaded and then used only to build a workspace that is never built, so under proposal-only defaults every file and check tool falls back to `agent_workspace_dir`. A mission about project X reads, patches and tests some other tree. | `Queen.cs` ~`775`/`812` | No |
 | 2 | **A check whose process never started is filed as a reproducible test failure.** `CheckRunner` returns a typed failure with empty output; the tester greps for `exit_code=`, writes `n/a`, and then converts EVERY unsuccessful tool result into `VerificationFailure` + retryable + a medic handoff, discarding the tool's own class; `ToolEvidence` marks every `run_allowlisted_check` deterministic on the tool NAME alone. A missing `dotnet` and a failing test are the same row. | `CheckRunner.cs`, `SpecialistAnts.cs`, `ToolEvidence.cs` | Partly — the not-started path has no test at all |
 | 3 | **A schedule run is complete before its mission has done anything.** `ConversationRunner` returns as soon as the mission ROW exists; `ProjectScheduler` reads `outcome.Started` as `"complete"` and stamps `FinishedAt`. Overlap detection looks only for a `running` row, so occurrences can overlap. `ScheduleRun` carries no mission or job id. | `ProjectScheduler.cs`, `ConversationRunner.cs` | **Yes, and worse** — the test's fake mission runner is synchronous, so the defect is invisible to the harness by construction |
 | 4 | **A justified no-change is an internal defect.** `ClassifyPatchJson` grades a well-formed response with zero proposals as `InternalDefect`. The typed vocabulary already exists one path over — the acting coder's `NO_CHANGES_NEEDED` — and grades it a success. | `Ants.cs` | **Yes**, and the fixture is itself a justified refusal |

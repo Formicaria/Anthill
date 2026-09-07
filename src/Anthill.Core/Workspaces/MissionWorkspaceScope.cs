@@ -42,6 +42,25 @@ public static class MissionWorkspaceScope
             : null;
 
     /// <summary>
+    /// The ambient workspace ONLY when something may write into it. v0.3.8.132.
+    ///
+    /// <see cref="Current"/> answers "what tree am I looking at"; this answers "what tree may I
+    /// change". They were the same question until a read-only project scope existed, and the
+    /// consumers that must not confuse them are the ones that run an agent CLI, harvest a diff as
+    /// a patch set, or summarise changes — each of which, given the operator's live checkout,
+    /// produces a confident and completely wrong result rather than an error.
+    /// </summary>
+    public static MissionWorkspace? CurrentWritable =>
+        Ambient.Value is { Writable: true } writable ? writable : null;
+
+    /// <summary>
+    /// <see cref="CurrentRoot"/>, but null when the ambient scope is read-only. The property a
+    /// caller wants whenever the root is about to be handed to something that writes.
+    /// </summary>
+    public static string? CurrentWritableRoot =>
+        Ambient.Value is { Writable: true, Usable: true } w && w.Root.Length > 0 ? w.Root : null;
+
+    /// <summary>
     /// Enter a scope binding <paramref name="workspace"/> as the ambient mission workspace.
     /// Disposing restores the previous one, so scopes nest safely.
     /// </summary>

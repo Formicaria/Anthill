@@ -189,6 +189,16 @@ public static class EventTypes
     public const string EscalationAllowed = "escalation_allowed";
 
     /// <summary>
+    /// A project mission's reads and checks were bound to the project's own source tree.
+    /// v0.3.8.132 — the record of an identity that used to be decided by a fallback and stated
+    /// nowhere. Its absence on a project mission is now as readable as its presence.
+    /// </summary>
+    public const string MissionProjectSourceScope = "mission_project_source_scope";
+
+    /// <summary>The project's path could not be found, so the mission fell back to the configured workspace.</summary>
+    public const string MissionProjectSourceMissing = "mission_project_source_missing";
+
+    /// <summary>
     /// The other end of <see cref="EscalationRefused"/>. v0.3.8.110.
     ///
     /// Every prior release, a refusal was the last thing a paused mission ever said about the

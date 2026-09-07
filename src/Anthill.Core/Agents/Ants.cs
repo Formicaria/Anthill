@@ -858,7 +858,9 @@ public sealed class CoderAnt : BaseAnt
         // start independently, so this branch being edited away would not reopen the road.
         var actingRoute = AnthillRuntime.EnableActingCoder
             && _router.GetRoute("coder").Provider.StartsWith("agent:", StringComparison.OrdinalIgnoreCase);
-        if (actingRoute && Anthill.Core.Workspaces.MissionWorkspaceScope.CurrentRoot is { } actingTree)
+        // v0.3.8.132 — CurrentWritableRoot: a read-only project scope is not a worktree to act in,
+        // and must fall through to the refusal below rather than letting the agent edit the live tree.
+        if (actingRoute && Anthill.Core.Workspaces.MissionWorkspaceScope.CurrentWritableRoot is { } actingTree)
             return ExecuteActing(task, mission, codeContext, actingTree);
         if (actingRoute)
             return AntExecutionResult.Failed(FailureClass.PolicyDenial,
@@ -1676,7 +1678,7 @@ public sealed class VerifierAnt : BaseAnt
         // The first live qualification run reported "the verifier fails open — it returned PASS
         // without evidence". Investigating it, that is NOT what production does: `Queen` always
         // hands this ant the evidence store, and an empty evidence list resolves to `Unknown` with
-        // "no evidence was recorded for this mission — nothing has been verified". The PASS the
+        // "no deterministic evidence was recorded for this mission — nothing was reproduced". The PASS the
         // operator read was the BUILDER's prose, which is a different defect and is fixed by
         // `MissionReport`.
         //

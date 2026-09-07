@@ -166,7 +166,7 @@ public class MissionReportTests : IDisposable
 
         Assert.Equal(VerificationVerdict.Unknown, verdict.Verdict);
         Assert.False(verdict.IsPass);
-        Assert.Contains("nothing has been verified", verdict.Explanation);
+        Assert.Contains("nothing was reproduced", verdict.Explanation);
     }
 
     [Fact]

@@ -246,6 +246,10 @@ public sealed class TesterAnt : BaseAnt
         var judged = Workspaces.MissionWorkspaceScope.Current;
         var tree = judged?.MaterializedPatchSetId is { } patched
             ? $"patched tree (patch set {patched})"
+            // v0.3.8.132: three cases, not two. A read-only project scope is neither a mission
+            // workspace nor the configured fallback — it is the operator's own checkout, and
+            // calling it "mission workspace" misnames the one tree whose identity matters here.
+            : judged is { Writable: false } ? "the project source tree (read-only)"
             : judged is not null ? "mission workspace — UNPATCHED" : "the configured workspace";
         evidence.Add(new AntEvidence(AntEvidenceKinds.Workspace, "tree", tree));
         lines.Add($"checked in: {tree}");
