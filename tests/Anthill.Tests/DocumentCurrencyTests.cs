@@ -71,6 +71,12 @@ public class DocumentCurrencyTests
         "KNOWLEDGE_API.md",
         "KNOWLEDGE_SECURITY.md",
         "RAG.md",
+        // v0.3.8.140 — the shared FORAGER–ANTHILL contract. CURRENT: it is the standing agreement
+        // both products build against — required semantics plus the live reconciliation and the
+        // authoritative producer-requirement list — and it gets EDITED as versions are agreed,
+        // never left as a report on a moment. The moment-bound audit it leans on
+        // (FORAGER_A0_COMPATIBILITY.md) is classified HISTORICAL, which is the split doing its job.
+        "FORAGER_SHARED_CONTRACT.md",
     };
 
     /// <summary>
