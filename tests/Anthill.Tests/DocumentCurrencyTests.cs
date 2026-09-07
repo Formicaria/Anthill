@@ -71,7 +71,7 @@ public class DocumentCurrencyTests
         "KNOWLEDGE_API.md",
         "KNOWLEDGE_SECURITY.md",
         "RAG.md",
-        // v0.3.8.140 — the shared FORAGER–ANTHILL contract. CURRENT: it is the standing agreement
+        // v0.3.8.142 — the shared FORAGER–ANTHILL contract. CURRENT: it is the standing agreement
         // both products build against — required semantics plus the live reconciliation and the
         // authoritative producer-requirement list — and it gets EDITED as versions are agreed,
         // never left as a report on a moment. The moment-bound audit it leans on
@@ -94,7 +94,7 @@ public class DocumentCurrencyTests
         // first time somebody edits the file above them. It records what was true on one day.
         // The work items it implies live in `docs/PLAN.md` §2e, which IS current and is kept so.
         "ORCHESTRATION-FINDINGS.md",
-        // v0.3.8.139 — the FORAGER A0 gate artifact. HISTORICAL for the ORCHESTRATION-FINDINGS
+        // v0.3.8.142 — the FORAGER A0 gate artifact. HISTORICAL for the ORCHESTRATION-FINDINGS
         // reason: every row is an audit measured against two named commits (`8491fee` here,
         // `258baf8` in the FORAGER checkout) and a pinned artifact digest, and it records what was
         // true on that day. The living program state is the A0–A6 table in `docs/PLAN.md` §2e.

@@ -2,7 +2,7 @@
 
 **Contract version: 1-proposed, received 2026-09-07.** Part I is the operator-supplied contract,
 verbatim. Part II is ANTHILL's Phase-0 reconciliation of it against the audited producer and
-consumer (`docs/FORAGER_A0_COMPATIBILITY.md`, an audit pinned at v0.3.8.139): the wire-name
+consumer (`docs/FORAGER_A0_COMPATIBILITY.md`, shipped in the same release as this document): the wire-name
 resolution, the decisions the contract asks Phase 0 to make, and the full producer-side
 requirement list. The contract's own framing governs how to read Part I: names describe required
 semantics, not claims that endpoints already exist.
@@ -269,6 +269,17 @@ still two publications — and an explicit `completeness: complete|partial` (P8)
 the bind is non-loopback (P3). A1 consumes `/api/capabilities` and retires the interim
 endpoint+data_dir+version identity tuple.
 
+And it kept moving: `fc3a44b` **completes P1** — export schema versions enumerated per format as
+`capabilities.exports.<format>.package_version`, each with a `canonical` flag (Obsidian is
+`false`, which is §6's "must not reconstruct canonical knowledge from rendered Markdown" as a
+checkable field), and `capabilities.imports: []` so "cannot import" is distinguishable from "too
+old to say" — and lands producer-side scope enforcement on all 18 direct-id routes via an
+`X-Forager-Project` header (`enforceScope`; a foreign id is 404, not 403). Until P3 the header is
+a declaration rather than a credential, but the moment pairing lands the same call sites become
+authorization with no edit. **Consumer obligation adopted: from A1 on, ANTHILL sends
+`X-Forager-Project` on every direct-id call** — it costs nothing today and is the enforcement
+handshake tomorrow; the response-side project checks stay regardless, as the consumer's half.
+
 ## Wire-name resolution — contract semantics vs. producer 0.1.4
 
 | Contract requirement | Producer 0.1.4 reality | Resolution |
@@ -310,7 +321,7 @@ endpoint+data_dir+version identity tuple.
 
 | # | Requirement | Contract § | Until it lands |
 | --- | --- | --- | --- |
-| P1 | Versioned capability response: engine identity/version, protocol version, canonical schema version, supported export/import schema versions, auth requirements, optional operations | §3 | **Substantially landed at producer tip `566de69`** (`GET /api/capabilities`; export/import schema versions still to enumerate). ANTHILL consumes it in A1; until then `/api/ready` + `/api/settings` |
+| P1 | Versioned capability response: engine identity/version, protocol version, canonical schema version, supported export/import schema versions, auth requirements, optional operations | §3 | **COMPLETED at producer `fc3a44b`** (`GET /api/capabilities` incl. per-format export package versions with `canonical` flags and explicit `imports: []`). ANTHILL consumes it in A1; until then `/api/ready` + `/api/settings` |
 | P2 | Durable, scoped change feed with cursor replay, retention and expired-cursor recovery; optional push — agreed wire shape `GET /api/feed?cursor=` with typed `cursor_expired` | §5 | Polling reconciliation against jobs/exports with a durable ANTHILL watermark |
 | P3 | Authentication: `pairing_credentials` bearer tokens (scoped, revocable, off by default, REQUIRED on non-loopback bind), consuming the Bearer ANTHILL already sends; membership enforcement on direct-ID reads | §3 | Loopback-managed engine; authenticating proxy for remote; ANTHILL response-side project checks |
 | P4 | Zip-level checksum for exports + a portable (non-standalone) artifact per release | §4 (transfer integrity) | Verify inner-file sha256s after unzip; ship standalone |
