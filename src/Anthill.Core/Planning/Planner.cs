@@ -704,7 +704,18 @@ Required JSON:
                                 + "confidence — as something this answer can be held to having "
                                 + $"consulted: {goal}",
                     AssignedAnt = "web",
-                    TaskType = "research",
+                    // v0.3.8.135 — RECONCILED, and this line was the sharpest instance of the defect
+                    // this release is about. It read `"research"`; the web ant's contract declares
+                    // exactly one type, `"external_research"`. So the step that DEFINES the research
+                    // class — inserted here precisely because a plan that omits it builds a mission
+                    // the class gate must refuse — was itself blocked at dispatch every time it
+                    // fired, and the mission then failed its own gate for retrieving nothing.
+                    //
+                    // The comment directly above this branch says a plan omitting the defining step
+                    // produces "a mission built to fail". The insertion written to prevent that was
+                    // building one, and from `.134` it does so on every recognized class whether or
+                    // not the operator ever turned verification on.
+                    TaskType = Anthill.Core.Planning.TaskTypeVocabulary.Reconcile("web", "research"),
                     RequiredCapability = Anthill.Core.Missions.WorkerCapabilities.RetrieveSources,
                 });
 

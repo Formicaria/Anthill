@@ -2854,7 +2854,23 @@ public sealed class ExecutionService : IExecutionService
                 Description = $"Independently verify that the mission goal was met: {TextUtil.Truncate(mission.Goal, 400)} "
                             + $"[adaptive delta generation:{budget.ReplansUsed + 1}]",
                 AssignedAnt = "verifier",
-                TaskType = "verify",
+                // v0.3.8.135 — RECONCILED, NOT SPELLED. This line read `"verify"`, and the verifier
+                // contract declares exactly one type: `"verification"`. So the dispatch chokepoint
+                // blocked it, `Critical` failed the mission on it, and every adaptive replan that
+                // reached this line built a mission WIRED TO FAIL ITS OWN RECOVERY — the step
+                // inserted because the mission was already struggling.
+                //
+                // It is the same word that took a mission down at `.133`, in a path that release
+                // never touched: the reconciliation was wired into `AssignDefaultWorkers`, which is
+                // the funnel every PLANNER path goes through and no dynamic one does. A fix applied
+                // at one of two doors is a fix that is true of whoever remembered it, which is this
+                // repository's most-repeated defect stated in its own words.
+                //
+                // Reconcile rather than hardcode `"verification"`: hardcoding the right answer here
+                // makes THIS line correct and leaves the next one to be written wrong. The call is
+                // the standing rule — the contract decides, and a spelling it does not declare is
+                // still refused.
+                TaskType = Planning.TaskTypeVocabulary.Reconcile("verifier", "verify"),
                 Critical = true,
                 ParentTaskIds = verified,
                 DependsOn = verified,

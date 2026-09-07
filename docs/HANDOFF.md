@@ -4,7 +4,7 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-Shipping release: **v0.3.8.134**. Everything below the rule is a record, not a state.
+Shipping release: **v0.3.8.135**. Everything below the rule is a record, not a state.
 
 **This file is a POINTER, and the reason is written into `CONTRIBUTING.md`: a snapshot has to be
 rewritten every release to stay true, and will therefore be false most of the time.** It spent forty
@@ -26,7 +26,11 @@ tree; `.133` reconciled task-type synonyms at planning instead of failing on the
 is what made every mission a small local model planned die at its last step; `.134` gave a question
 with nothing to inspect a mission class of its own — `simple_answer`, authority `Observe` — so the
 colony can REFUSE to answer "how do you make tacos" with a source patch instead of merely being
-asked not to, and closed four review findings alongside it.
+asked not to, and closed four review findings alongside it; `.135` found two steps the colony
+inserts into its own plans that named task types their assigned role's contract does not declare —
+the adaptive controller's recovery step and the research class's defining step, both blocked at
+dispatch every time they fired — closed the handoff gate's half of the same hole, and added the
+sweep that reads every constructed pair instead of a hand-maintained list.
 
 ---
 

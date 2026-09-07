@@ -1,3 +1,48 @@
+## v0.3.8.135 - a task no ant can run should be impossible to build
+
+**TWO STEPS THIS COLONY INSERTS INTO ITS OWN PLANS WERE WIRED TO FAIL AT DISPATCH.** Both were one
+line. Both had been shipping. Both fired exactly when a mission was already in trouble, which is why
+they read as "missions just fail sometimes" rather than as a defect with an address.
+
+**THE ADAPTIVE CONTROLLER'S RECOVERY STEP.** When a mission struggles and the controller replans, it
+inserts a delta-verification task: `AssignedAnt = "verifier"`, `TaskType = "verify"`, `Critical =
+true`. The verifier's contract declares exactly one type — `"verification"`. So the dispatch
+chokepoint blocked it, `Critical` failed the mission on it, and every adaptive replan that reached
+that line built a mission WIRED TO FAIL ITS OWN RECOVERY.
+
+**AND THE RESEARCH CLASS'S DEFINING STEP.** `EnsureClassCoverage` inserts the retrieval task with
+`AssignedAnt = "web"`, `TaskType = "research"`. The web ant declares one type: `"external_research"`.
+The comment directly above that branch says a plan omitting its class's defining step produces "a
+mission built to fail" — the insertion written to prevent that was building one, and since `.134`
+made recognized classes verified whether or not the operator turned verification on, the mission then
+failed its own class gate for retrieving nothing it had been prevented from retrieving.
+
+**`verify` IS THE WORD THAT TOOK A MISSION DOWN AT `.133`.** That release traced a dead mission to
+`verify` versus `verification`, built `TaskTypeVocabulary`, and wired it into
+`Planner.AssignDefaultWorkers` — the funnel every PLANNER path goes through, and no dynamic one does.
+A fix applied at one of several doors is a fix that is true of whoever remembered it, which is this
+repository's most-repeated defect in its own words.
+
+**SO THE SECOND DOOR IS CLOSED TOO.** `HandoffGate` refused a handoff whose required type the
+destination did not declare, and never reconciled first — so a medic asking a builder to `summarize`,
+a word the builder's contract has a declared spelling for, was refused. A refused REQUIRED handoff is
+a deterministic block: the mission ends, over a synonym, one door over from where that was fixed. The
+gate now reconciles before it checks, and the task it creates carries the reconciled type, because the
+created task is what dispatch reads.
+
+**THE AUTHORITY DOES NOT MOVE, AND THE REFUSAL STILL FIRES.** `SupportedTaskTypes` decides, exactly as
+before. A type nothing resolves is still refused by name — a gate that always passes is not a gate,
+which is the argument `.133` had to make about its own fix after the first cut made the refusal
+unreachable.
+
+**AND THE GUARD IS THE ACTUAL RELEASE.** Two hand-maintained lists already checked two populations —
+the seven pairs `RosterContractTests` names, and the handoff routes `HandoffTaskTypeTests` reads. The
+tasks this colony CONSTRUCTS were a third population and nothing read it. `TaskTypeReachabilityTests`
+now pairs every `AssignedAnt` / `TaskType` literal in `src/` — brace-matched to its own initializer,
+not sliced by a character budget — against the live contract catalog. It found the second bug before
+it had run once. Forty-two pairs, and a new one fails on the day it is written rather than in the
+field on a mission that was already struggling.
+
 ## v0.3.8.134 - a question is not a change request
 
 **"HOW TO MAKE TACOS" CAME BACK AS A PROPOSED SOURCE PATCH.** Not a bad answer — a patch, offered
