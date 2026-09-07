@@ -1,3 +1,60 @@
+## v0.3.8.142 - Forager Phase 0: audited, pinned, contracted, and answered from both sides
+
+**THE FORAGER FIRST-PARTY PROGRAM OPENS (A0–A6, PLAN §2e), AND ITS PHASE 0 CLOSES IN ONE RELEASE —
+built as v0.3.8.139/.140 and renumbered on rebase, because two other releases landed on `main`
+while it was being written.** That collision resolved a mystery this release had already recorded:
+the planning audit's claimed base commit (`8394f18`), absent from history when A0 re-verified
+every claim against `8491fee` instead of trusting it, turned out to be another session's unpushed
+work — it landed days later as v0.3.8.140's closure-enforcement commit. The A0 provenance now says
+both halves.
+
+**A0 — the audit and the pin** (`docs/FORAGER_A0_COMPATIBILITY.md`, the gate artifact): FORAGER
+0.1.4 @ `258baf8`, schema_version 1, anthill package_version 1, artifact
+`forager-0.1.4-win-x64-standalone.zip` sha256 `63c345fe…` (digest verified; the only 0.1.4
+artifact — no portable build exists). Readiness is `GET /api/ready` — `/api/health` never fails
+and must not be treated as readiness; `openapi.json` covers 35 of the server's 42 real routes and
+is unsafe for codegen; the error/page envelopes are pinned. Real baselines on both products:
+ANTHILL's full suite green at `8491fee`, FORAGER 298/298 under a fresh Linux `npm install`. The
+reuse/gap map names what carries forward (the 13-operation provider, scope model, gate, durable
+queue, Director) and what the phases must close: no ingestion or upload surface in the UI;
+`knowledge_review_proposed` write-only with zero consumers; the knowledge tools REACHABLE BY NO
+AGENT (the researcher's contract grants five, `ResearcherAnt` hard-dispatches a fixed set, and the
+one `ToolCallingLoop` call site enters no knowledge scope); `IncludeRelationships` accepted and
+ignored everywhere; the project map file-only. Eight documentation sites — five docs, two in-code
+comments and the config catalog's own section note — claimed knowledge tools are not registered
+while disabled; the module has ALWAYS registered-and-refused, deliberately (three
+roster-qualification guards demand it), so all eight now tell the truth and
+`config.example.json` was regenerated via `--emit-config` after `ConfigCatalogTests` correctly
+rejected a hand edit.
+
+**The shared contract arrived while the audit was being recorded** — `01-SHARED-CONTRACT.md`,
+which A0 had honestly logged as never delivered. `docs/FORAGER_SHARED_CONTRACT.md` now carries it
+verbatim (version 1-proposed, received 2026-09-07) plus the Phase-0 reconciliation its first
+paragraph instructs: every requirement resolved against the producer that exists, interim
+delivery identities defined as LABELED consumer-side constructions (package-manifest hash, job-id
+watermark; rows say they were synthesized via `origin_kind`, upgradeable in place), and the
+producer-requirement list extended to the authoritative TEN — new over the audit's six: P7
+instance identity + generation, P8 immutable revisions + logical content hash + an atomic
+publication ledger, P9 a canonical package IMPORT adapter, P10 versioned contract fixtures. The
+sharpest decision: **the C# package provider is REJECTED, permanently** — contract §6 prefers the
+recipient engine's import adapter and §1 forbids a second implementation of FORAGER's search and
+conflict rules, which is what a C# JSONL provider would have to become; the dead,
+validation-skipping `KnowledgeOptions.PackagePath` is scheduled for REMOVAL in A1.
+
+**And the producer answered before ANTHILL asked twice.** FORAGER's own Phase 0 landed in its
+checkout while this release was being written: `566de69` brought `GET /api/capabilities` (honest
+all-false capability flags, instance identity whose id travels with the DATABASE, a generation
+that invalidates cursors after a restore, and a heartbeat store LOCK that refuses a second writer
+over the same data directory with exit 11 naming the holder), and `fc3a44b` completed P1
+(per-format export package versions with `canonical` flags — Obsidian `false`, §6 as a checkable
+field — and explicit `imports: []`) plus producer-side scope enforcement on all 18 direct-id
+routes via `X-Forager-Project`. ANTHILL adopts the producer's proposed wire names for the open
+rows (`GET /api/feed?cursor=` with typed `cursor_expired`; `knowledge_revisions` with
+counter-based ids and explicit completeness; `pairing_credentials`) and the consumer obligation
+to send `X-Forager-Project` on every direct-id call from A1 on — a declaration today, the
+authorization handshake the moment P3 lands. The cross-repository index joining the producer's
+F/G numbering to P1–P10 lives in the FORAGER checkout.
+
 ## v0.3.8.141 - a bound that stops the colony growing must not declare the mission broken
 
 **THIS ONE CAME FROM THE OPERATOR'S OWN COLONY, NOT FROM THE PLAN.** Sixty-six real missions, read

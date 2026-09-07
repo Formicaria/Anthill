@@ -4,7 +4,7 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-Shipping release: **v0.3.8.141**. Everything below the rule is a record, not a state.
+Shipping release: **v0.3.8.142**. Everything below the rule is a record, not a state.
 
 **This file is a POINTER, and the reason is written into `CONTRIBUTING.md`: a snapshot has to be
 rewritten every release to stay true, and will therefore be false most of the time.** It spent forty
@@ -44,7 +44,14 @@ release driven by the LIVE COLONY DATABASE rather than by this plan, and it foun
 dominant failure — 37 of 66 real missions escalated, all 39 `required_handoff_refused` events among
 them, 33 of those because the runtime's OWN growth bounds (task budget, dedupe, depth) were treated
 as evidence that the mission was broken. `HandoffGate.Refusal` now says which kind of no it is and
-only "nobody here can do this" blocks.
+only "nobody here can do this" blocks; `.142` opened the FORAGER first-party program (A0–A6, PLAN
+§2e) and closed its Phase 0 — the A0 audit and compatibility pin (FORAGER 0.1.4, artifact sha256
+verified) in `docs/FORAGER_A0_COMPATIBILITY.md`, the operator's shared contract recorded verbatim
+with the reconciliation and the authoritative producer queue P1–P10 in
+`docs/FORAGER_SHARED_CONTRACT.md` (P1 and P7 already landed producer-side, at `566de69` and
+`fc3a44b` in the FORAGER checkout, while this was being written), eight tool-registration
+documentation contradictions corrected, and the C# package provider REJECTED permanently in favour
+of the engine's import adapter.
 
 ---
 

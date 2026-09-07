@@ -15,10 +15,10 @@ against the actual trees rather than against any design document.
 | Fact | Value |
 |---|---|
 | ANTHILL commit audited | `8491fee` (v0.3.8.138, `main`, clean tree) |
-| Planning audit's claimed commit | `8394f18dc5db7a83b0c43cc9b2732a819499f4e7` — **not in this repository's history**; every observation was re-verified against `8491fee` rather than trusted |
+| Planning audit's claimed commit | `8394f18dc5db7a83b0c43cc9b2732a819499f4e7` — **not in this repository's history at audit time**; every observation was re-verified against `8491fee` rather than trusted. (Resolved after the fact: it landed on `main` days later as v0.3.8.140's closure-enforcement commit — the planning audit had inspected another session's unpushed work) |
 | FORAGER commit audited | `258baf8` (branch `fix/subject-less-attribute-key`, clean tree), sibling checkout `../forager` |
 | FORAGER version | 0.1.4 (`package.json`, `FORAGER_VERSION`), `SCHEMA_VERSION = 1` |
-| `01-SHARED-CONTRACT.md` | **Not delivered.** The execution prompt names it as attached; no such file exists in either repository or in the session's inputs. The reconciliation base is therefore `docs/FORAGER_INTEGRATION.md` (this repo, audited at v0.3.8.120 / FORAGER 0.1.0) plus FORAGER's own `docs/` — recorded here so a later session does not go hunting for a document that was never provided |
+| `01-SHARED-CONTRACT.md` | **Not delivered at audit time.** The execution prompt names it as attached; no such file existed in either repository or in the session's inputs, so this audit's reconciliation base was `docs/FORAGER_INTEGRATION.md` (audited at v0.3.8.120 / FORAGER 0.1.0) plus FORAGER's own `docs/`. (Delivered while the audit was being recorded — see the note above; `docs/FORAGER_SHARED_CONTRACT.md` reconciles it) |
 | ANTHILL baseline tests | Full suite green at `8491fee` (all 334 test classes, 0 failures — the v0.3.8.138 release run) |
 | FORAGER baseline tests | **298/298 green, 17 files** (`vitest run`, Linux, Node 22.23.2, fresh `npm install`). FORAGER's own `verification.md` says 290 — the branch has since added eight |
 
