@@ -1,3 +1,46 @@
+## v0.3.8.133 - a synonym is not a broken mission
+
+**"HOW TO MAKE TACOS" FAILED.** The researcher ran for 22 seconds and produced its brief. Then the
+verifier refused its own task — `task type 'verify' is outside the verifier execution contract (v1)`
+— the medic diagnosed it, the builder handed back to the medic, and the mission ended `failed` /
+`escalated` having answered nothing at all.
+
+**The verifier declares `verification`. The plan said `verify`.** Nothing in the colony compared
+those two words until the dispatch chokepoint, by which point the research was already spent and the
+only thing left to do with the mismatch was fail on it.
+
+**IT STAYED INVISIBLE BECAUSE A BIG MODEL GUESSES RIGHT.** A larger planner writes the declared
+spelling most of the time, so the hole was closed by luck rather than by anything in the tree. A
+small local model — which is the configuration this colony ships for, and the one an operator gets
+by default — writes the obvious English word, and then EVERY mission it plans dies at its last step.
+Nothing was misconfigured. Nothing reported a vocabulary disagreement. The operator saw a colony that
+could no longer finish a mission.
+
+**The authority does not move: `SupportedTaskTypes` decides, exactly as before.** What moves is WHEN
+it is consulted — from execution back to planning, in the one funnel every planner path already goes
+through, where a synonym is still cheap to correct. Three steps, each refusing to guess further than
+the last: a declared type is kept; a known synonym is taken only when the ROLE's own contract
+declares its target; and a role that declares exactly one type has nothing left to choose.
+
+**INFERENCE IS DELIBERATELY NOT ONE OF THEM, and the first cut of this release got that wrong.** It
+fell back to `TextUtil.InferTaskType` on the reasoning that an unrecognised spelling should be
+treated like no spelling. That function keys on the ROLE, so it answers for every role every time —
+which made the refusal below unreachable and turned the fix into the defect it was written to avoid.
+The guard asserting the gate still fires caught it on the first run, which is the whole argument for
+writing that guard before believing the fix. Inference is right for a BLANK type, where the planner
+said nothing and something must be chosen, and wrong for a stated one, where the planner DID say
+something and a word no contract knows is disagreement rather than absence.
+
+**AND IF NONE OF THAT RESOLVES IT, THE TYPE IS RETURNED UNCHANGED AND THE GATE STILL REFUSES.** That
+line is the whole safety of the change and it is pinned by its own test. A reconciliation that always
+succeeds is a gate that never does — it would have converted this outage into something worse: a
+task the colony runs, and reports, that nobody asked for. A plan naming work no role in this colony
+can execute is a real defect and it should still be loud.
+
+`verify` becomes `verification` for a verifier and stays `verify` for a builder, because the builder
+declares four types and none of them is a verification. An alias is never honoured because it looks
+plausible — only because the contract that will run the task declares its target.
+
 ## v0.3.8.132 - the mission that reviewed the wrong tree
 
 **AN OPERATOR ASKED THE COLONY TO REVIEW A REPOSITORY AND IT REVIEWED A DIFFERENT ONE.** It proposed

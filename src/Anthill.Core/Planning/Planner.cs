@@ -951,6 +951,14 @@ Required JSON:
             task.TaskType = string.IsNullOrWhiteSpace(task.TaskType)
                 ? TextUtil.InferTaskType(task.AssignedAnt, task.Title, task.Description)
                 : task.TaskType.Trim().ToLowerInvariant();
+            // v0.3.8.133 — AND RECONCILED AGAINST THE CONTRACT THAT WILL RUN IT. A plan naming
+            // `verify` for a verifier that declares `verification` used to reach the dispatch
+            // chokepoint, be refused there, and take the mission with it — after the research task
+            // had already run. The authority is unchanged (`SupportedTaskTypes`); what moved is
+            // WHEN it is consulted, from execution to planning, where a synonym is still cheap.
+            // Returns the input untouched when nothing can honestly decide, so a genuinely
+            // unexecutable type still fails loudly rather than defaulting into something wrong.
+            task.TaskType = TaskTypeVocabulary.Reconcile(task.AssignedAnt, task.TaskType);
             // v0.3.8.98 — THIS is where a blank worker is filled, and therefore where the mission's
             // declared capabilities have to be consulted. The capability branch used to live in
             // `PlanningService`, downstream of this line, where it could never fire: this call had
