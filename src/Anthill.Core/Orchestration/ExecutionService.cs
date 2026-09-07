@@ -2375,7 +2375,7 @@ public sealed class ExecutionService : IExecutionService
             if (!admission.Accepted || admission.CreatedTask is null)
             {
                 LogHandoffRejected(mission, sourceTask, handoff, admission.Reason, runtimeSelection);
-                RecordRequiredHandoffRefusal(mission, sourceTask, handoff, admission.Reason);
+                RecordRequiredHandoffRefusal(mission, sourceTask, handoff, admission.Reason, admission.Why);
                 continue;
             }
 
@@ -2385,7 +2385,11 @@ public sealed class ExecutionService : IExecutionService
             if (TryAdmitDynamicTask(mission, scheduler, created, constraints) is { Length: > 0 } refusal)
             {
                 LogHandoffRejected(mission, sourceTask, handoff, refusal, runtimeSelection);
-                RecordRequiredHandoffRefusal(mission, sourceTask, handoff, refusal);
+                // UNSERVABLE by construction: this path refuses on the ant registry's authorization
+                // verdict or a duplicate task id, and the first is the runtime saying no role may
+                // take this step. Neither is a growth bound, so neither gets the `.141` exemption.
+                RecordRequiredHandoffRefusal(mission, sourceTask, handoff, refusal,
+                    HandoffGate.Refusal.Unservable);
                 continue;
             }
 
@@ -2404,36 +2408,68 @@ public sealed class ExecutionService : IExecutionService
     }
 
     /// <summary>
-    /// A refused REQUIRED handoff is a deterministic block. v3.8.25.
+    /// A REQUIRED handoff that NOBODY COULD SERVE is a deterministic block. v3.8.25, narrowed at
+    /// v0.3.8.141 to the half that is a claim about the work.
     ///
-    /// <c>AntHandoff.Required</c> has existed since v2.21.0 and meant nothing. A refusal was written
-    /// to an event row and read by no gate, so a mission whose tester demanded a medic — and did not
-    /// get one — completed exactly as if the repair had happened. "Required" that nothing enforces is
-    /// a comment with a bool's type.
+    /// `AntHandoff.Required` existed since v2.21.0 and meant nothing: a refusal was written to an
+    /// event row and read by no gate, so a mission whose tester demanded a medic — and did not get
+    /// one — completed exactly as if the repair had happened. "Required" that nothing enforces is a
+    /// comment with a bool's type. `v3.8.25` made it enforce, using `Task.DeterministicBlock` rather
+    /// than inventing a second demotion path.
     ///
-    /// It demotes rather than fails the mission, and the distinction is deliberate. The work that ran
-    /// still ran and its results are still worth keeping; what cannot be claimed is that the mission
-    /// is VERIFIED, because a step its own roles declared necessary did not happen. That is precisely
-    /// what <c>Task.DeterministicBlock</c> means — a reproducible "no" the canonical evaluator honours
-    /// — so this reuses it rather than inventing a second demotion path beside it.
+    /// AND IT ENFORCED TOO MUCH, WHICH ITS OWN COMMENT PREDICTED. That release wrote: "treating a
+    /// declined suggestion as a block would make every capped or deduplicated handoff a mission
+    /// failure" — and drew the exemption around OPTIONAL handoffs only. For required ones exactly
+    /// that happened. On the operator's colony: 66 missions, 37 escalated, and all 39
+    /// `required_handoff_refused` events ended that way — 18 for `mission task budget exhausted
+    /// (12/12)`, 15 for `near-duplicate handoff suppressed`, 5 unsupported task type, 1 depth limit.
+    /// Thirty-three of thirty-nine were the runtime's own growth bounds killing the mission they
+    /// were protecting.
     ///
-    /// An OPTIONAL handoff refusal stays a log line. Optional means the colony proposed something it
-    /// can do without, and treating a declined suggestion as a block would make every capped or
-    /// deduplicated handoff a mission failure.
+    /// SO THE BLOCK NOW FOLLOWS THE KIND OF NO. `HandoffGate.Refusal` separates them and
+    /// `Admission.BlocksTheMission` decides:
+    ///
+    ///   • ALREADY SATISFIED — dedupe fires BECAUSE the destination task exists. The requirement is
+    ///     met. Blocking on it says a step did not happen when it demonstrably did.
+    ///   • BOUNDED — the task budget or the depth limit. A limit doing its job is a fact about the
+    ///     runtime, not a finding about the mission that reached it.
+    ///   • UNSERVABLE — no eligible role, or no contract declares the type. A step nobody can take,
+    ///     which is what `v3.8.25` was actually about. This still blocks, unchanged.
+    ///
+    /// ALL THREE ARE STILL RECORDED, each under its own event, because an operator whose missions
+    /// keep hitting the cap should be able to see that. What changes is that only one of them says
+    /// the work cannot be believed.
     /// </summary>
-    private void RecordRequiredHandoffRefusal(Mission mission, Task sourceTask, AntHandoff handoff, string reason)
+    private void RecordRequiredHandoffRefusal(Mission mission, Task sourceTask, AntHandoff handoff,
+        string reason, HandoffGate.Refusal why)
     {
         if (!handoff.Required) return;
 
-        var block = $"required handoff refused: {handoff.SourceRole} -> {handoff.DestinationRole} " +
-                    $"({handoff.RequiredTaskType}) — {TextUtil.Truncate(reason, 200)}";
+        var blocks = why == HandoffGate.Refusal.Unservable;
+        if (blocks)
+        {
+            var block = $"required handoff refused: {handoff.SourceRole} -> {handoff.DestinationRole} " +
+                        $"({handoff.RequiredTaskType}) — {TextUtil.Truncate(reason, 200)}";
 
-        // First reason wins, as everywhere else DeterministicBlock is set: a task can be blocked by
-        // more than one deterministic check and the earliest is as valid as the latest.
-        sourceTask.DeterministicBlock ??= block;
+            // First reason wins, as everywhere else DeterministicBlock is set: a task can be blocked
+            // by more than one deterministic check and the earliest is as valid as the latest.
+            sourceTask.DeterministicBlock ??= block;
+        }
 
-        _memory.LogEvent(mission.Id, "required_handoff_refused",
-            $"REQUIRED handoff refused, mission cannot be verified: {handoff.SourceRole} -> {handoff.DestinationRole} — {reason}",
+        var (eventType, headline) = why switch
+        {
+            HandoffGate.Refusal.AlreadySatisfied =>
+                (SDK.Events.EventTypes.RequiredHandoffSatisfied,
+                 "REQUIRED handoff already satisfied — the destination task it asked for exists"),
+            HandoffGate.Refusal.Bounded =>
+                (SDK.Events.EventTypes.RequiredHandoffBounded,
+                 "REQUIRED handoff stopped by a growth bound — the mission is bounded, not broken"),
+            _ => (SDK.Events.EventTypes.RequiredHandoffRefused,
+                 "REQUIRED handoff refused, mission cannot be verified"),
+        };
+
+        _memory.LogEvent(mission.Id, eventType,
+            $"{headline}: {handoff.SourceRole} -> {handoff.DestinationRole} — {reason}",
             sourceTask.Id, handoff.SourceRole,
             new()
             {
@@ -2441,7 +2477,8 @@ public sealed class ExecutionService : IExecutionService
                 ["required_task_type"] = handoff.RequiredTaskType,
                 ["dedupe_key"] = handoff.DedupeKey,
                 ["rejection_reason"] = reason,
-                ["blocks_verification"] = true,
+                ["refusal_kind"] = why.ToString(),
+                ["blocks_verification"] = blocks,
             });
     }
 
