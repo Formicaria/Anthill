@@ -159,13 +159,22 @@ public sealed record ProjectSchedule
     }
 }
 
-/// <summary>One execution of a schedule: when, how triggered, and the conversation it became.</summary>
+/// <summary>
+/// One execution of a schedule: when, how triggered, the conversation it became — and, since
+/// v0.3.8.137, the MISSION it started. The mission id is what makes a run's status the truth: a
+/// run used to be stamped "complete" the moment the mission ROW existed (the runner returns as
+/// soon as it does), so a schedule's history said finished-in-milliseconds about work that ran
+/// for minutes or failed, and the overlap check — which looks for a "running" row — could never
+/// see an occurrence that was actually still in flight. A run now stays running until its
+/// mission settles, and the id is the join an operator (or the reconciler) follows to ask how.
+/// </summary>
 public sealed record ScheduleRun(
     string Id,
     string ScheduleId,
     string ProjectId,
     string? ConversationId,
-    string Status,          // running | complete | failed | skipped_overlap | waiting_approval
+    string? MissionId,
+    string Status,          // running | complete | partial | failed | skipped_overlap | waiting_approval
     string Trigger,         // schedule | manual | missed_catchup
     string? Summary,
     DateTime StartedAt,

@@ -712,6 +712,9 @@ public sealed partial class SqliteMemory : IDisposable
         // sets carry it; model-proposed sets stay null. Attribution, and the idempotence key that
         // stops finalization re-harvesting a workspace already captured mid-mission.
         AddMissing("patch_sets", new() { ["workspace_id"] = "TEXT" });
+        // v0.3.8.137: the mission a schedule run started — the join that makes run status the
+        // truth and overlap detection real. Null for legacy rows and refused/skipped runs.
+        AddMissing("schedule_runs", new() { ["mission_id"] = "TEXT" });
         // v0.3.8.48: project-level defaults. The policy is ATTRIBUTED like the conversation's —
         // a standing permission with no author reads as Ask, fail closed, same rule everywhere.
         AddMissing("projects", new()
