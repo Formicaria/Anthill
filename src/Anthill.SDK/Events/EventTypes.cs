@@ -194,6 +194,9 @@ public static class EventTypes
     /// nowhere. Its absence on a project mission is now as readable as its presence.
     /// </summary>
     public const string MissionProjectSourceScope = "mission_project_source_scope";
+    /// <summary>v0.3.8.136: which knowledge base this mission's queries resolve to — or that they
+    /// resolve to nothing, which is a different fact from the event being absent (knowledge off).</summary>
+    public const string MissionKnowledgeScope = "mission_knowledge_scope";
 
     /// <summary>The project's path could not be found, so the mission fell back to the configured workspace.</summary>
     public const string MissionProjectSourceMissing = "mission_project_source_missing";
