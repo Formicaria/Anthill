@@ -1,3 +1,47 @@
+## v0.3.8.141 - a bound that stops the colony growing must not declare the mission broken
+
+**THIS ONE CAME FROM THE OPERATOR'S OWN COLONY, NOT FROM THE PLAN.** Sixty-six real missions, read
+from the live database: **37 escalated**, and every one of the 39 `required_handoff_refused` events
+ended that way. The reasons were not one kind of thing:
+
+    18  mission task budget exhausted (12/12)
+    15  near-duplicate handoff suppressed (dedupe 'medic:fsig:...')
+     5  destination does not support task type
+     1  handoff depth limit
+
+**THIRTY-THREE OF THIRTY-NINE WERE THE RUNTIME'S OWN GROWTH BOUNDS KILLING THE MISSION THEY EXIST TO
+PROTECT.** The "how to make tacos" run died this way: `required handoff refused: medic -> builder
+(build_answer) — near-duplicate handoff suppressed`.
+
+**`v3.8.25` PREDICTED THIS IN WRITING AND EXEMPTED HALF OF IT.** `RecordRequiredHandoffRefusal` says,
+verbatim: "treating a declined suggestion as a block would make every capped or deduplicated handoff
+a mission failure." It drew that exemption around OPTIONAL handoffs. For REQUIRED ones exactly what
+it described is what happened, and required is 33 of the 39.
+
+**THE CATEGORY ERROR: one bool carried three different findings.**
+
+- **"Nobody here can do this"** — no eligible role, or no contract declares the task type even after
+  `.135`'s reconciliation. A claim about the WORK. This is what `v3.8.25` was actually about and it
+  still blocks, unchanged.
+- **"You have grown as far as you may"** — the task budget, the handoff depth. A fact about the
+  RUNTIME. A limit doing the job it exists for is not evidence about the mission that reached it.
+- **"You already have it"** — and this one reads as a refusal and is the opposite of one. Dedupe
+  fires PRECISELY BECAUSE a task carrying the handoff's key already exists. The required step is
+  present. Refusing on those grounds says a step did not happen when it demonstrably did.
+
+**SO THE GATE SAYS WHICH KIND OF NO IT IS.** `HandoffGate.Refusal` — `AlreadySatisfied`, `Bounded`,
+`Unservable` — and `Admission.BlocksTheMission` is true for exactly one of them. A kind added later
+gets a decision rather than inheriting whichever branch it falls into, which is how one bool came to
+carry three findings in the first place.
+
+**NOTHING IS ADMITTED THAT WAS NOT ADMITTED BEFORE.** A deduped or capped handoff still creates no
+task — that half was always right and is what keeps a handoff loop from growing. What changes is
+what the refusal MEANS to the layer above it.
+
+**AND ALL THREE ARE STILL RECORDED, each under its own event** — `required_handoff_satisfied`,
+`required_handoff_bounded`, `required_handoff_refused`. An operator whose missions keep reaching the
+cap should be able to see that; it is just not a reason to call the work unverifiable.
+
 ## v0.3.8.140 - a mission may not close complete when its own verification said no
 
 **A MISSION WHOSE VERIFIER RETURNED "VERIFICATION FAILED" WAS REPORTED TO THE OPERATOR AS COMPLETE,**

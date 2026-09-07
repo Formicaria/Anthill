@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.140**.
+Shipping release: **v0.3.8.141**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -823,6 +823,27 @@ which every gate below still needs.
 
 **WHAT STILL WAITS:** the remainder of items 3–8 — artifact and evidence handoff, verification that
 reads execution rather than a narrative, and unsourced-claim rejection.
+
+### Read the colony before picking the next slice — v0.3.8.141
+
+`.141` was the first release chosen from the operator's LIVE DATABASE rather than from this document,
+and the result argues for making that the habit. The plan's queue had closure enforcement, evidence
+handoff and unsourced-claim rejection at the top; the colony's actual dominant failure was none of
+them.
+
+**66 real missions: 37 escalated.** Every one of the 39 `required_handoff_refused` events ended that
+way — 18 `mission task budget exhausted (12/12)`, 15 `near-duplicate handoff suppressed`, 5
+unsupported task type, 1 depth limit. Thirty-three of thirty-nine were the runtime's OWN growth
+bounds killing the mission they exist to protect, and `v3.8.25` had predicted exactly that in a
+comment while exempting only optional handoffs from it. Nothing in this plan named it, because
+nothing in this plan was reading what the colony actually does.
+
+**The check `.139` queued is also answered, and the answer is a deletion rather than a caller.**
+`IEvidenceStore.HasDeterministicPass` is "≥1 deterministic passing row exists"; `EvidenceVerdict.For`
+returns `Failed` when ANY deterministic row failed. It is strictly weaker — it would pass a mission
+holding a failed check — so it must never gate anything, and its doc comment claiming "every
+promotion path asks it" is false: nothing asks it. It survives as a store-level test probe and should
+be described as one.
 
 One structural fact a session starting that work needs, and it is not in the brief:
 

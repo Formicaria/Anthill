@@ -4,7 +4,7 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-Shipping release: **v0.3.8.140**. Everything below the rule is a record, not a state.
+Shipping release: **v0.3.8.141**. Everything below the rule is a record, not a state.
 
 **This file is a POINTER, and the reason is written into `CONTRIBUTING.md`: a snapshot has to be
 rewritten every release to stay true, and will therefore be false most of the time.** It spent forty
@@ -39,7 +39,12 @@ when its own verifier said no — which turned out not to need that record at al
 word doing two jobs, and splitting it from the new `inconclusive` (which demotes nothing, and is
 exactly what `.122` demoted on) needed no new fact. It also tried pointing the gate at the verifier's
 own recorded ruling and reverted that inside the release — that ruling answers a promotion question
-and is `Unknown` for every class with no deterministic evidence by design.
+and is `Unknown` for every class with no deterministic evidence by design; `.141` was the first
+release driven by the LIVE COLONY DATABASE rather than by this plan, and it found the colony's actual
+dominant failure — 37 of 66 real missions escalated, all 39 `required_handoff_refused` events among
+them, 33 of those because the runtime's OWN growth bounds (task budget, dedupe, depth) were treated
+as evidence that the mission was broken. `HandoffGate.Refusal` now says which kind of no it is and
+only "nobody here can do this" blocks.
 
 ---
 

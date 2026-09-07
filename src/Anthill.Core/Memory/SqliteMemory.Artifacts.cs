@@ -309,9 +309,22 @@ public sealed partial class SqliteMemory : IArtifactStore, IEvidenceStore
                     ("@needle", $"%\"{artifactId}\"%")).Select(ToEvidence).ToList();
 
     /// <summary>
-    /// One question, one place. Every promotion path asks it, and the v2.26.0 rule is that only
-    /// reproducible evidence may carry a mission to a verified outcome — so a model review, however
-    /// confident, cannot satisfy this.
+    /// A STORE-LEVEL PROBE: does this mission hold at least one deterministic PASSING row?
+    ///
+    /// v0.3.8.141 — WHAT THIS IS NOT, corrected because the previous comment said the opposite and
+    /// `docs/PLAN.md` §2e queued the check. It read "Every promotion path asks it". Nothing asks it:
+    /// it has no production call site at all, only tests.
+    ///
+    /// AND IT MUST NOT ACQUIRE ONE. `EvidenceVerdict.For` answers the neighbouring question properly
+    /// — it returns `Failed` when ANY deterministic row failed, `Passed` only when one passed and
+    /// none failed. This returns true as soon as one row passed, so a mission holding a passing
+    /// build and a FAILING test satisfies it. Wiring it into a gate would be a strictly weaker rule
+    /// standing beside the correct one, which is this repository's defect #5 with the weaker
+    /// implementation winning — and the plan's own instruction was to check that before giving it a
+    /// caller, not after.
+    ///
+    /// It stays because it is a fair probe of the evidence lane's shape, which is what the store's
+    /// own tests use it for.
     /// </summary>
     bool IEvidenceStore.HasDeterministicPass(string missionId) =>
         AsLong(Scalar("SELECT COUNT(*) FROM evidence WHERE mission_id = @m AND deterministic = 1 AND passed = 1",

@@ -454,6 +454,26 @@ public static class EventTypes
     public const string MissionReportUnavailable = "mission_report_unavailable";
     public const string MissionRevisionRegistered = "mission_revision_registered";
     public const string RequiredHandoffRefused = "required_handoff_refused";
+
+    /// <summary>
+    /// A REQUIRED handoff whose destination task already existed. v0.3.8.141.
+    ///
+    /// Its own row rather than a flavour of <see cref="RequiredHandoffRefused"/>, because the two
+    /// are opposite findings: that one says a step the colony declared necessary did not happen,
+    /// this one says it already had. Fifteen of the operator's missions escalated on the second
+    /// wearing the first's name.
+    /// </summary>
+    public const string RequiredHandoffSatisfied = "required_handoff_satisfied";
+
+    /// <summary>
+    /// A REQUIRED handoff stopped by the task budget or the handoff depth limit. v0.3.8.141.
+    ///
+    /// The mission is BOUNDED, not broken — a limit doing the job it exists for is a fact about the
+    /// runtime, not a finding about the mission that reached it. Recorded loudly, because an
+    /// operator whose missions keep reaching the cap should be able to see that; it just is not a
+    /// reason to call the work unverifiable.
+    /// </summary>
+    public const string RequiredHandoffBounded = "required_handoff_bounded";
     public const string TaskRanInRevision = "task_ran_in_revision";
     public const string UiChangeBlockedUnmapped = "ui_change_blocked_unmapped";
 
