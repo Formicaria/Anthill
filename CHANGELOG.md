@@ -1,3 +1,38 @@
+## v0.3.8.138 - the validated dispatch plan is the executed graph
+
+**THE PRE-DISPATCH PLAN WAS LOGGED AND THEN DISCARDED.** v0.3.8.118 built the whole stage — the
+`RequestedWorkflow` input contract, `DispatchPlanner` as a pure function whose authority is the
+typed role registry, refusal instead of substitution, the `mission_dispatch_planned` event persisted
+"before any worker is invoked … the record later stages are measured against". Then the very next
+line of `RunMission` called `PlanningService.CreatePlan`, which built the executed graph
+independently, from the goal text and the model planner. So the ONE case the stage exists for — an
+operator actually requested a workflow, every step of it resolved, the plan validated and persisted
+— executed whatever the planner invented, while the mission's own record claimed the validated plan
+was the reference. The review's item 7, the last open row of its table.
+
+An operator-requested plan now travels into planning on the `MissionContext` (a field, not a new
+`CreatePlan` signature — the "one plan construction, preview equals dispatch" guard keeps holding by
+construction), and the executed graph IS the plan: the same task ids, so the persisted
+`mission_dispatch_planned` record and the executed graph join row-for-row; the same types, the same
+roles, the operator's declared edges and nothing invented. No auto-wiring on this path — the
+dispatch planner's own contract says it "does not reorder steps it was given, and does not add work
+the operator did not ask for" — and no `EnsureClassCoverage` either: if an operator's plan is not
+positioned to deliver, preflight REFUSES it in those words, which is the house answer, where a
+silently repaired plan would be the substitution defect back one layer up.
+
+What survives the operator's authorship is runtime policy, on purpose: every materialized task goes
+through the SAME admission pipeline as a planner-authored one — worker resolution (a plan names
+roles, never workers), capability repair, trail tie-breaks, the registry's verdict — extracted to
+one `AdmitTask` rather than copied, because two admission pipelines is how a preview once came to
+describe a plan the dispatch would not run. And a consequential plan still gets the policy verifier
+appended: the dispatch planner refuses operator-authored verifier steps precisely because policy
+inserts one, so the two rules meet instead of fighting. The materialization is recorded as
+`mission_plan_from_dispatch` — the complement of `mission_plan_substituted`: that row says the
+requested plan was not used, this one says it was, naming the plan's task ids so the claim is
+checkable. `DispatchPlanMaterializationTests` pin all of it with plans obtained from
+`DispatchPlanner.Plan` itself, never hand-built to match; a `planner_chosen` plan on the context is
+proven to change nothing.
+
 ## v0.3.8.137 - a schedule run tells the truth, and the project survives the queue
 
 **A SCHEDULE RUN IS NO LONGER "COMPLETE" BEFORE ITS MISSION HAS DONE ANYTHING.** The conversation

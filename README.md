@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Formicaria/Anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/Formicaria/Anthill/actions/workflows/ci.yml)
 
-**Current version:** v0.3.8.137
+**Current version:** v0.3.8.138
 
 **Runs on:** Windows or Linux
 
