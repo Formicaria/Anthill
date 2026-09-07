@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.132**.
+Shipping release: **v0.3.8.133**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -693,7 +693,7 @@ either honour it or delete it rather than let it decay into a sentence nobody ap
 
 ---
 
-## 2e. What comes next — the shape of v0.3.8.132 and after
+## 2e. What comes next — the shape of v0.3.8.133 and after
 
 The universal-workflow program closed at `.113` and R0 closed at `.114`. There is no successor
 program: what remains is R-numbered work, standing hygiene, and a small number of findings the last
