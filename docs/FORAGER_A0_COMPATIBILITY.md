@@ -4,6 +4,12 @@ Phase A0 of the Forager-first-party integration program. This document is the ga
 compatibility decision, the runnable producer version, and the feature/API matrix, each verified
 against the actual trees rather than against any design document.
 
+> **The shared contract arrived after this audit shipped.** The operator delivered
+> `01-SHARED-CONTRACT.md` one release later; it is recorded verbatim, reconciled against this
+> audit, and extended in `docs/FORAGER_SHARED_CONTRACT.md` — which now carries the AUTHORITATIVE
+> producer-requirement list (P1–P10; this document's P1–P6 are its first six) and the Phase-0
+> decisions. This audit remains the measured ground truth for FORAGER 0.1.4 @ `258baf8`.
+
 ## Provenance — what was actually inspected
 
 | Fact | Value |
