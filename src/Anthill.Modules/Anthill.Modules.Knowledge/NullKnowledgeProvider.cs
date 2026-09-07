@@ -16,10 +16,11 @@ namespace Anthill.Modules.Knowledge;
 /// failure, the tools render it as an explicit unavailability, and the unavailability text tells the
 /// model not to substitute anything for what it did not get.
 ///
-/// In practice the module does not even register the knowledge tools when knowledge is disabled, so
-/// most callers never reach this. It exists for the paths that hold a provider reference regardless
-/// — the console's availability endpoint, and any future core consumer — so that "off" is a
-/// behaviour rather than a null check every caller has to remember.
+/// This IS the disabled path's voice: the module registers its tools whether or not knowledge is
+/// enabled (role readiness must not depend on a feature flag), and a disabled call flows through
+/// here to become the explicit unavailability above. It also serves the paths that hold a provider
+/// reference regardless — the console's availability endpoint, and any future core consumer — so
+/// that "off" is a behaviour rather than a null check every caller has to remember.
 /// </summary>
 internal sealed class NullKnowledgeProvider : IKnowledgeProvider
 {

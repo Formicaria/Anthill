@@ -189,8 +189,9 @@ next stage boundary and keeps completed work.
 
 ## Agent tools
 
-The same capability, reached by an agent instead of a browser. Registered only when
-`knowledge_enabled` is set, and dispatchable only by roles whose contract lists them.
+The same capability, reached by an agent instead of a browser. Always registered — with
+`knowledge_enabled` off they refuse at call time rather than being absent, so role readiness does
+not depend on a feature flag — and dispatchable only by roles whose contract lists them.
 
 | Tool | Does |
 | --- | --- |
