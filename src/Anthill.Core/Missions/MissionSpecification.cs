@@ -201,6 +201,42 @@ public sealed record MissionSpecification
     public const string ResearchClass = "research";
 
     /// <summary>
+    /// THE ANSWER CLASS v0.3.8.134 implements end to end: a question the colony can answer from what
+    /// it already knows, about nothing it can inspect and nothing it must retrieve. "How do you make
+    /// tacos" is the whole of it.
+    ///
+    /// WHY A CLASS AT ALL, when the honest description of such a request is "there is nothing to
+    /// constrain". Because `general` does not mean unconstrained — it means UNGOVERNED, and those
+    /// are different. A `general` mission declares no deliverable, no evidence and no authority
+    /// ceiling, so nothing downstream can refuse anything it does: the dynamic planner's standing
+    /// rule that a goal naming a file must produce a patch fired on a request that named no file,
+    /// and a recipe question came back as a proposed source change with nothing in the pipeline able
+    /// to say that was wrong. That is not a planning bug to be papered over with a better prompt; it
+    /// is the absence of a ceiling, and a ceiling only exists for a class.
+    ///
+    /// SO ITS AUTHORITY IS <see cref="MissionAuthority.Observe"/> — the same as the audit class, for
+    /// a different reason. There, Observe says the assessment must not repair what it finds. Here it
+    /// says the answer has nothing to change: `MissionAuthorityGate` refuses `apply_patch`,
+    /// `write_text_file` and `shell_command` by ceiling, at dispatch, before a model's opinion about
+    /// what the question needs can matter.
+    ///
+    /// THE BOUNDARY WITH <see cref="ResearchClass"/> is where the answer's evidence lives, which is
+    /// the same boundary that class already draws against the audit. Research goes and reads pages
+    /// and owes citations for them. This class reads nothing, and therefore requires no evidence at
+    /// all — the only class in this list that requires none. That is not a weaker promise, it is a
+    /// different one: it promises the answer rests on nothing, so nothing can be misrepresented as
+    /// having been established.
+    ///
+    /// AND THE BOUNDARY WITH `general` IS TARGETS AND SHAPE, NOT DIFFICULTY. A request that names
+    /// the repository, the runtime, a service or the world has something the colony could go and
+    /// look at, and answering it from memory would be the assertion `.98` exists to refuse. A
+    /// request that names no target must ALSO be a question — `Explain` is the fall-through intent,
+    /// so an imperative with no target ("document the deployment procedure") lands there too, and
+    /// admitting it would grade a creation request against a promise it never made.
+    /// </summary>
+    public const string SimpleAnswerClass = "simple_answer";
+
+    /// <summary>
     /// True when this specification carries enough to hold the mission to something. A `general`
     /// specification is a record that intake ran and found no class it could serve honestly — the
     /// downstream layers read this rather than testing the class name, so adding a class later

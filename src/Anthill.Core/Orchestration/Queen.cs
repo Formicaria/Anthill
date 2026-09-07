@@ -941,8 +941,7 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
             mission.Status = MissionStatus.Failed;
             mission.FinalResult = dispatch.Explanation;
             mission.UserResult = dispatch.Explanation;
-            Memory.SaveMission(mission);
-            Memory.SaveMissionEvaluation(new Outcomes.MissionEvaluation(
+            return FinalizeRefusedMission(mission, new Outcomes.MissionEvaluation(
                 MissionId: mission.Id,
                 OutcomeCode: Outcomes.MissionOutcome.BlockedMissingCapability,
                 StructuralStatus: mission.Status.Value(),
@@ -951,8 +950,7 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
                 StopReason: "dispatch_plan_refused",
                 EvaluatorVersion: Planning.DispatchPlan.Version,
                 EvaluatedAt: AnthillTime.NowUtc().ToIso(),
-                Explanation: dispatch.Explanation));
-            return mission.Id;
+                Explanation: dispatch.Explanation), onMissionFinished);
         }
 
         var plan = dispatch.Plan!;
@@ -1018,8 +1016,9 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
             mission.Status = MissionStatus.Failed;
             mission.FinalResult = preflight.Explanation;
             mission.UserResult = preflight.Explanation;
-            Memory.SaveMission(mission);
-            Memory.SaveMissionEvaluation(new Outcomes.MissionEvaluation(
+            // onMissionCreated already fired at admission — a refused plan is still a mission the
+            // caller was told about, and firing twice would make one mission look like two.
+            return FinalizeRefusedMission(mission, new Outcomes.MissionEvaluation(
                 MissionId: mission.Id,
                 OutcomeCode: preflight.IsCapabilityBlocked
                     ? Outcomes.MissionOutcome.BlockedMissingCapability
@@ -1030,10 +1029,7 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
                 StopReason: "preflight_refused",
                 EvaluatorVersion: "preflight-v1",
                 EvaluatedAt: AnthillTime.NowUtc().ToIso(),
-                Explanation: preflight.Explanation));
-            // onMissionCreated already fired at admission — a refused plan is still a mission the
-            // caller was told about, and firing twice would make one mission look like two.
-            return mission.Id;
+                Explanation: preflight.Explanation), onMissionFinished);
         }
 
         foreach (var task in mission.Tasks)
@@ -1157,6 +1153,61 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
 
     /// <summary>Plain-English mission result the console surfaces on each job. Keyed status + a short reason.</summary>
     public sealed record MissionOutcome(string Outcome, string Reason, string OutcomeCode = "");
+
+    /// <summary>
+    /// THE ONE EXIT A REFUSED MISSION TAKES. v0.3.8.134.
+    ///
+    /// WHAT WAS WRONG, and the operator saw it before anyone found it in the source: a mission the
+    /// colony refused to dispatch said "mission starting" and then said it forever. The two refusal
+    /// paths above — the dispatch plan and the preflight check — each saved the mission, saved an
+    /// evaluation, and RETURNED. Neither logged `mission_outcome`. Neither invoked
+    /// <c>onMissionFinished</c>. So a mission that was over the moment it was refused looked, to
+    /// every consumer that watches for an ending, exactly like one still running: the console job,
+    /// the API callback, the live view's own progress chip.
+    ///
+    /// AND IT WAS NOT A MISSING LINE, IT WAS A MISSING SEAM. The normal path's ending is thirty
+    /// lines of ordering commentary — evaluation before publication, report after evaluation,
+    /// archivist after that — and a refusal cannot reuse most of it: there is no execution to
+    /// release a revision for, no tasks for an archivist to draw a lesson from, no score for
+    /// learning to fold in. What it must share is the part that says the mission is OVER, and that
+    /// part had no name, so two call sites duplicated the half of it that was easy to see.
+    ///
+    /// This is the name. A refused mission is persisted, graded, reported and ANNOUNCED, and it
+    /// returns what the normal path returns, so a caller cannot tell a refusal from a failure by
+    /// the SHAPE of what it got back — before this, one returned rendered prose and the other
+    /// returned a bare mission id, which is the kind of difference a caller silently mishandles.
+    ///
+    /// The learning and archivist steps stay out, and that is a decision rather than an omission: a
+    /// mission that never dispatched has nothing to teach, and `.85`'s rule — a stopped mission is
+    /// not a lesson — is the same rule pointed one stage earlier.
+    /// </summary>
+    private string FinalizeRefusedMission(
+        Mission mission, Outcomes.MissionEvaluation evaluation, Action<MissionOutcome>? onMissionFinished)
+    {
+        Memory.SaveMission(mission);
+        // Evaluation AFTER SaveMission, for the reason the normal path carries a paragraph about:
+        // SaveMission is an INSERT OR REPLACE and a row replacement erases the evaluation columns.
+        Memory.SaveMissionEvaluation(evaluation);
+        RecordMissionReport(mission.Id);
+
+        var outcome = ComputeOutcome(mission, stopReason: null) with { OutcomeCode = evaluation.OutcomeCode };
+        Memory.LogEvent(mission.Id, "mission_outcome", outcome.Reason,
+            metadata: new()
+            {
+                ["outcome"] = outcome.Outcome, ["reason"] = outcome.Reason,
+                ["outcome_code"] = evaluation.OutcomeCode, ["mission_status"] = mission.Status.Value(),
+                ["verification_status"] = evaluation.VerificationStatus,
+                ["deliverable_status"] = evaluation.DeliverableStatus,
+                // The refusal's own reason, which `ComputeOutcome` cannot know: it grades task
+                // counts, and a refused mission has no tasks that ran. Without this the operator
+                // reads "Failed — a critical task did not succeed" about a mission that dispatched
+                // nothing.
+                ["stop_reason"] = evaluation.StopReason,
+                ["refusal"] = evaluation.Explanation,
+            });
+        onMissionFinished?.Invoke(outcome with { Reason = evaluation.Explanation });
+        return _results.ComposeCliResult(mission);
+    }
 
     /// <summary>
     /// Derives the operator-facing outcome from the executor's stop reason (authoritative for

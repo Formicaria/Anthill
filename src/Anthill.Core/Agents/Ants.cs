@@ -998,8 +998,9 @@ Prior context:
 {codeContext}";
 
     /// <summary>Classify the coder's own JSON artifact by its proposal count: proposals → success;
-    /// well-formed but empty → failed (the deliverable does not exist — an intentionally empty
-    /// result must say so in its summary); unparseable → failed (malformed output).</summary>
+    /// well-formed and empty WITH a summary → success, the reasoned no-change (v0.3.8.134, mirroring
+    /// the acting path's <c>NoChangesMarker</c>); well-formed and empty with NO summary → failed (a
+    /// silent empty result is indistinguishable from a broken coder); unparseable → failed.</summary>
     internal static AntExecutionResult ClassifyPatchJson(string response)
     {
         if (string.IsNullOrWhiteSpace(response))
@@ -1015,10 +1016,32 @@ Prior context:
                     Artifacts = new List<AntArtifact> { new("patch_json", "coder patch proposals", response) },
                     Metrics = new AntMetrics { OutputChars = response.Length },
                 };
-            var summary = parsed["summary"]?.GetValue<string>() ?? "";
+            // v0.3.8.134 — A REASONED "NOTHING TO CHANGE" IS A RESULT.
+            //
+            // Zero proposals and unparseable garbage graded identically — both `InternalDefect` —
+            // so a coder that read the workspace and concluded, correctly, that no safe and
+            // valuable change existed was indistinguishable to every downstream consumer from one
+            // that returned nonsense. The acting-coder path has modelled this since `.95` with
+            // `NoChangesMarker` and grades it a SUCCESS; the structured path was the only one left
+            // insisting every run must produce a patch, which optimises for activity over judgment.
+            //
+            // The distinction is the REASON. A refusal that says why is an answer and is graded as
+            // one; an empty or absent summary is still a defect, because "no proposals and nothing
+            // to say about it" is what a broken coder also looks like.
+            var summary = (parsed["summary"]?.GetValue<string>() ?? "").Trim();
+            if (summary.Length > 0)
+                return AntExecutionResult.Succeeded(
+                    $"Coder examined the target and proposed no changes: {TextUtil.Truncate(summary, 300)}",
+                    response) with
+                {
+                    Artifacts = new List<AntArtifact> { new("patch_json", "coder no-change result", response) },
+                    Metrics = new AntMetrics { OutputChars = response.Length },
+                };
+
             return AntExecutionResult.Failed(FailureClass.InternalDefect,
-                $"Coder returned zero patch proposals for a patch task. Coder's stated reason: "
-                + $"{TextUtil.Truncate(summary.Length > 0 ? summary : "(none given)", 300)}");
+                "Coder returned zero patch proposals for a patch task and gave no reason. An "
+              + "intentionally empty result must say why it is empty — a silent one is "
+              + "indistinguishable from a coder that failed.");
         }
         catch
         {

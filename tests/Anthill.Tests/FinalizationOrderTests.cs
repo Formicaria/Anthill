@@ -213,16 +213,40 @@ public class FinalizationOrderTests : IDisposable
     [Fact]
     public void ThePheromoneScore_IsPersistedWithoutErasingTheEvaluation()
     {
+        // v0.3.8.134 — SCOPED TO `RunMission`, and the widening is in what the guard LOOKS AT, never
+        // in what it accepts. It read from the first `SaveMissionEvaluation` to the END OF THE FILE,
+        // which was the same thing while every write lived in one method. `.134` gave the two refusal
+        // paths a shared exit, `FinalizeRefusedMission`, which sits BELOW this one and correctly does
+        // its own `SaveMission` then its own `SaveMissionEvaluation` — in that order, for this exact
+        // reason. The guard read across the member boundary and reported the ordering it was written
+        // to protect as a violation of itself. That is the budget-sliced-guard failure `SourceText`
+        // already carries two paragraphs about, and the fix is the one it prescribes: read the
+        // delimiters instead of running to the end of the text.
+        //
+        // The property is unchanged and is now asserted in BOTH members, because a second exit that
+        // wrote wide after writing the evaluation would erase it exactly as the first would.
         var source = QueenSource();
 
-        var evaluationSaved = source.IndexOf("Memory.SaveMissionEvaluation(evaluation)", StringComparison.Ordinal);
+        foreach (var signature in new[] { "public string RunMission(string goal, Action<string>? onMissionCreated",
+                                          "private string FinalizeRefusedMission" })
+        {
+            var at = source.IndexOf(signature, StringComparison.Ordinal);
+            Assert.True(at >= 0, $"Queen.cs no longer declares `{signature}`, so this guard is reading nothing.");
+
+            var body = SourceText.MemberBody(source, at);
+            var evaluationSaved = body.IndexOf("Memory.SaveMissionEvaluation(evaluation)", StringComparison.Ordinal);
+            Assert.True(evaluationSaved >= 0,
+                $"`{signature}` no longer persists the canonical evaluation.");
+
+            Assert.DoesNotContain("Memory.SaveMission(mission)", body[evaluationSaved..], StringComparison.Ordinal);
+        }
+
+        // And the score is still written after the evaluation, by the narrow update.
         var scoreSaved = source.IndexOf("Memory.SaveMissionScore(", StringComparison.Ordinal);
+        var firstEvaluation = source.IndexOf("Memory.SaveMissionEvaluation(evaluation)", StringComparison.Ordinal);
 
-        Assert.True(scoreSaved > evaluationSaved && evaluationSaved >= 0,
+        Assert.True(scoreSaved > firstEvaluation && firstEvaluation >= 0,
             "the pheromone score must be persisted after the evaluation, by the narrow update");
-
-        var afterEvaluation = source[evaluationSaved..];
-        Assert.DoesNotContain("Memory.SaveMission(mission)", afterEvaluation, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -340,4 +364,39 @@ public class FinalizationOrderTests : IDisposable
         return best;
     }
 
+
+    // -------------------------------------------------------------------------------------------
+    // A refused mission ends
+    // -------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// A REFUSED MISSION ANNOUNCES ITS ENDING. v0.3.8.134, and the operator found this one first:
+    /// a mission the colony refused to dispatch said "mission starting" and then said it forever.
+    ///
+    /// Both refusal paths — the dispatch plan and the preflight check — saved the mission, saved an
+    /// evaluation, and returned. Neither logged `mission_outcome`; neither invoked the finished
+    /// callback. To every consumer that watches for an ending, a mission that was over before it
+    /// began looked exactly like one still running.
+    ///
+    /// Source-read, for the reason the ordering tests above are: the property is that two call
+    /// sites go through one exit, and a behavioural test would need a fake for each service the
+    /// exit touches — at which point it asserts the order of the fakes.
+    /// </summary>
+    [Fact]
+    public void BothRefusalPaths_GoThroughTheSharedExit()
+    {
+        var source = QueenSource();
+
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(
+            source, @"return FinalizeRefusedMission\(").Count);
+
+        // And the exit is the thing that was missing, not merely a place to put what was there.
+        var exit = SourceText.MemberBody(source,
+            source.IndexOf("private string FinalizeRefusedMission", StringComparison.Ordinal));
+
+        Assert.Contains("mission_outcome", exit);
+        Assert.Contains("onMissionFinished?.Invoke", exit);
+        Assert.Contains("SaveMissionEvaluation", exit);
+        Assert.Contains("ComposeCliResult", exit);
+    }
 }

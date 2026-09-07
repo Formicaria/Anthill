@@ -336,14 +336,29 @@ public class PreV3HardeningTests : IDisposable
             + "cancellable after it has finished: " + string.Join(", ", notTerminal));
     }
 
-    /// <summary>The coder's classification parses its own JSON artifact — zero proposals on a
-    /// patch task is a failure, malformed output is a failure, proposals are a success.</summary>
+    /// <summary>
+    /// The coder's classification parses its own JSON artifact — malformed output is a failure,
+    /// proposals are a success, and a SILENT empty result is a failure.
+    ///
+    /// v0.3.8.134 — THE REASONED EMPTY RESULT MOVED, and the assertion moves with it rather than
+    /// being deleted. This test asserted that zero proposals is never a success, and that was the
+    /// defect: a coder that read the workspace and correctly concluded no safe and valuable change
+    /// existed graded `InternalDefect`, indistinguishable from one that returned nonsense — while
+    /// the acting path one file over had graded exactly that judgment a SUCCESS since `.95` via
+    /// `NO_CHANGES_NEEDED`. What the rule was actually protecting is the SILENT empty result, and
+    /// that half is unchanged and asserted below: "no proposals and nothing to say about it" is
+    /// what a broken coder also looks like.
+    /// </summary>
     [Fact]
-    public void CoderZeroPatchOutput_IsNotASuccess()
+    public void CoderZeroPatchOutput_IsASuccessOnlyWhenItSaysWhy()
     {
-        var zero = CoderAnt.ClassifyPatchJson("""{"summary":"nothing to do","proposals":[]}""");
-        Assert.False(zero.Success);
-        Assert.Contains("zero patch proposals", zero.Failure!.Reason);
+        var reasoned = CoderAnt.ClassifyPatchJson("""{"summary":"nothing to do","proposals":[]}""");
+        Assert.True(reasoned.Success);
+        Assert.Contains("nothing to do", reasoned.Summary, StringComparison.Ordinal);
+
+        var silent = CoderAnt.ClassifyPatchJson("""{"summary":"","proposals":[]}""");
+        Assert.False(silent.Success);
+        Assert.Contains("zero patch proposals", silent.Failure!.Reason);
 
         var malformed = CoderAnt.ClassifyPatchJson("this is not json at all {{{");
         Assert.False(malformed.Success);

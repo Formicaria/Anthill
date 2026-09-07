@@ -574,7 +574,10 @@ public class ActingMissionPipelineTests : IDisposable
     [Fact]
     public void AFailedChecksEvidence_KeepsItsDiagnosticDetail()
     {
-        var headline = "check 'dotnet_test' exited 1\n";
+        // The headline is what `Tools.RecordEvidence` composes: the runner's one-line error, then
+        // the tail of its output — which carries `exit_code=`, the line that says a process actually
+        // ran to completion (v0.3.8.134).
+        var headline = "check 'dotnet_test' exited 1\ncheck_id=dotnet_test\nexit_code=1\n";
         var tail = new string('x', 1700) + "\nFailed!  - Failed: 3, Passed: 2947";
         var evidence = Anthill.Core.Tools.ToolEvidence.For(
             "run_allowlisted_check", success: false, missionId: "m-detail", taskId: "t-detail",

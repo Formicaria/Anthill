@@ -237,6 +237,16 @@ public static class MissionEvaluator
             ? ResearchIntegrity.Evaluate(specification!, artifacts, evidence, assembled, recalledArtifacts)
             : null;
 
+        // v0.3.8.134 — AND AN ANSWER MUST HAVE ANSWERED, AND CHANGED NOTHING DOING IT. Specification-
+        // keyed like its class siblings and mutually exclusive with them by class. It is the only
+        // one whose finding is an absence rather than a presence: what it catches that no sibling
+        // can is a mission admitted as needing nothing done that reached for a change lane anyway —
+        // the recipe question answered with a proposed source patch, which no layer could refuse
+        // while such requests had no class and therefore no promise to contradict.
+        var answers = AnswerIntegrity.Applies(specification)
+            ? AnswerIntegrity.Evaluate(specification!, mission.Tasks.Select(t => t.TaskType), artifacts, assembled)
+            : null;
+
         // v0.3.8.104 — A RECOGNIZED CLASS IS VERIFIED WHATEVER THE SWITCH SAYS.
         //
         // `objective_verification_enabled` ships false, and every gate `.98` through `.103` built
@@ -257,7 +267,12 @@ public static class MissionEvaluator
                       && Missions.MissionContracts.RecognizedClasses.Contains(specification.MissionClass);
         var gateSpoke = assessment is not null || diagnosis is not null
                      || operations is not null || sends is not null
-                     || research is not null;   // v0.3.8.109
+                     || research is not null    // v0.3.8.109
+                     || answers is not null;    // v0.3.8.134 — see below; a class added to
+                                                // `RecognizedClasses` without a term here fails
+                                                // CLOSED, grading every mission of the new class
+                                                // NotSatisfied. Adding the class and adding its
+                                                // term are one change, never two.
 
         // v0.3.8.110 — THE UNRECOGNIZED LANE STOPS RE-READING THE COMPOSED GOAL. `mission.Goal`
         // carries the standing context and the conversation transcript below a `--- ` marker, and
@@ -292,6 +307,13 @@ public static class MissionEvaluator
         // the chain is ordered and it has to sit somewhere; the arms are mutually exclusive by
         // class, so no order among them can change an answer. It is placed FIRST of the class arms
         // so that a reader adding the next class finds the newest one where the pattern is clearest.
+        // v0.3.8.134 — placed first among the class arms for the reason `.109` gave when it took
+        // the same position: the arms are mutually exclusive by class so no order among them can
+        // change an answer, and the newest one sits where the next reader finds the pattern.
+        else if (answers is not null)
+            deliverable = answers.Satisfied
+                ? MissionEvaluation.Deliverable.Satisfied
+                : MissionEvaluation.Deliverable.NotSatisfied;
         else if (research is not null)
             deliverable = research.Satisfied
                 ? MissionEvaluation.Deliverable.Satisfied
@@ -393,6 +415,7 @@ public static class MissionEvaluator
                 + (citations is null || citations.Satisfied || research is not null
                     ? "" : $" {citations.Explanation}")
                 + (research is null || research.Satisfied ? "" : $" {research.Explanation}")
+                + (answers is null || answers.Satisfied ? "" : $" {answers.Explanation}")
                 + (sends is null || sends.Satisfied ? "" : $" {sends.Explanation}")
                 + (creations is null || creations.Satisfied ? "" : $" {creations.Explanation}")
                 + (diagnosis is null || diagnosis.Satisfied ? "" : $" {diagnosis.Explanation}")

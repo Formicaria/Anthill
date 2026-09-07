@@ -174,6 +174,37 @@ public static class ToolEvidence
         }
 
 
+        // v0.3.8.134 — A CHECK THAT DID NOT RUN IS NOT A FAILED CHECK.
+        //
+        // THE DEFECT, and it is the kind this file was written to prevent, arriving through the one
+        // tool the file trusts. `RunAllowlistedCheckTool` returns `Success: false` for four reasons
+        // that are not verdicts at all: the check id is not in the allowlisted catalog, the check is
+        // disabled, it timed out before finishing, or the process could not start. In every one of
+        // those the tool returns an EMPTY output — there is no `exit_code=` line, because nothing
+        // ever exited. And this method recorded all four as `command_check`, deterministic, passed
+        // false, indistinguishable from a build that compiled and failed.
+        //
+        // WHAT THAT COST, downstream and silently. `DiagnosisIntegrity` accepts any `command_check`
+        // row as proof that "the mission executed something", and a troubleshooting mission's whole
+        // premise is that its symptom was REPRODUCED. So a colony with a typo in a check id, or a
+        // disabled check, or a machine too slow to finish one, produced a row saying the symptom
+        // reproduced — and a diagnosis resting on it passed its gate. A false receipt is worse than
+        // no receipt: no receipt is refused, and this was believed.
+        //
+        // THE DISCRIMINATOR IS THE PRODUCER'S OWN, not a guess about the error text. `CheckRunner`
+        // emits `exit_code=` on exactly the two paths where a process ran to completion and on
+        // neither of the four where it did not, so the absence of that line IS the fact "no verdict
+        // was reached" — stated by the layer that would know.
+        //
+        // AND IT RECORDS NOTHING RATHER THAN RECORDING IT SOFTLY. A non-deterministic row would
+        // land in the inspection lane, where `AssessmentObjective` reads it as proof an audit looked
+        // at something — trading a false receipt in one class for a false receipt in another. This
+        // type's own opening rule is the answer: "the store is not an audit log — the event stream
+        // already is one", and `tool_called`/`tool_completed` have carried the attempt since v1.
+        // The check that could not run is fully recorded; it is just not evidence.
+        if (!success && !(detail ?? "").Contains("exit_code=", StringComparison.Ordinal))
+            return null;
+
         // v0.3.8.57 — the TREE this check actually ran in.
         //
         // Structural repair §3 stamps the revision on the TASK (`RanRevisionId`) and that is what

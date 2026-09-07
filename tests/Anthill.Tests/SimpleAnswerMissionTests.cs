@@ -1,0 +1,304 @@
+using Anthill.Core.Common;
+using Anthill.Core.Domain;
+using Anthill.Core.Missions;
+using Anthill.Core.Outcomes;
+using Anthill.Core.Planning;
+using Anthill.SDK.Artifacts;
+using Xunit;
+
+namespace Anthill.Tests;
+
+/// <summary>
+/// THE ANSWER CLASS, END TO END. v0.3.8.134.
+///
+/// WHAT WAS ACTUALLY WRONG, and it is worth stating in the terms the operator saw it in: "how do you
+/// make tacos" came back as a proposed source patch. Not a bad answer — a PATCH, offered for
+/// approval, against a repository the question never mentioned.
+///
+/// AND NOTHING IN THE RUNTIME WAS ABLE TO SAY THAT WAS WRONG. The cause was not the planner, though
+/// the planner is where it became visible: its standing rule says a goal that creates, adds, writes
+/// or edits any file must include a `patch_proposal` coder task, and a model reading that rule
+/// against a recipe found a verb it liked. What let the result through is that the mission had no
+/// class. `general` declares no deliverable, no evidence and no authority ceiling, so
+/// `MissionAuthorityGate` had nothing to enforce and `MissionEvaluator` had no promise to contradict.
+/// The mission was not ungrated by accident; it was ungoverned by construction.
+///
+/// SO THE FIX IS A CLASS, NOT A BETTER PROMPT. A prompt asks a model to behave; a class gives every
+/// layer underneath something to refuse. These tests assert the refusals, in the order they now
+/// stand: the class exists and carries `Observe`; the ceiling refuses the change tools; the planner
+/// stops building the change lane; and the gate refuses the record if one appears anyway.
+/// </summary>
+public class SimpleAnswerMissionTests
+{
+    private const string Request = "How do you make tacos?";
+
+    private static Mission Answered(MissionSpecification specification, params Task[] tasks) => new()
+    {
+        Id = "m_answer",
+        Goal = specification.OriginalRequest,
+        Status = MissionStatus.Complete,
+        UserResult = "You start with the tortillas.",
+        Tasks = tasks.Length > 0
+            ? tasks.ToList()
+            : new List<Task>
+            {
+                new()
+                {
+                    Id = "t_build", AssignedAnt = "builder", TaskType = "build_answer",
+                    Status = TaskStatus.Complete, Result = "You start with the tortillas.",
+                },
+            },
+    };
+
+    private static MissionEvaluation Evaluate(Mission mission, MissionSpecification specification,
+        IReadOnlyList<Artifact>? artifacts) =>
+        MissionEvaluator.Evaluate(mission, stopReason: null, patchProposalCount: 0,
+            MissionConstraints.None, objectiveVerificationEnabled: false,
+            evidence: Array.Empty<Evidence>(), specification: specification,
+            consumptions: Array.Empty<ArtifactConsumption>(), artifacts: artifacts);
+
+    // ---- classification ------------------------------------------------------------------------
+
+    /// <summary>
+    /// THE CLASS EXISTS, and it carries `Observe` — the same ceiling as the audit class, for the
+    /// opposite reason. There, Observe says the assessment must not repair what it finds. Here it
+    /// says there is nothing to repair: the answer changes nothing because the question asked for
+    /// nothing to be changed.
+    /// </summary>
+    [Fact]
+    public void ASimpleQuestion_ClassifiesAsSimpleAnswer_UnderObserveAuthority()
+    {
+        var specification = MissionIntake.Resolve(Request);
+
+        Assert.Equal(MissionSpecification.SimpleAnswerClass, specification.MissionClass);
+        Assert.Equal(MissionIntent.Explain, specification.Intent);
+        Assert.Equal(MissionTargets.None, specification.Targets);
+        Assert.Equal(MissionAuthority.Observe, specification.Authority);
+        Assert.NotEmpty(specification.Deliverables);
+        Assert.Contains(WorkerCapabilities.CompileResult, specification.RequiredCapabilities);
+    }
+
+    /// <summary>
+    /// AND IT REQUIRES NO EVIDENCE — the only recognized class that requires none, which is a
+    /// property worth pinning rather than leaving as an empty array somebody later "fixes". The
+    /// class's promise is that the answer rests on nothing retrieved and nothing inspected;
+    /// requiring an evidence kind would demand a receipt for a thing that did not happen.
+    /// </summary>
+    [Fact]
+    public void TheAnswerClass_RequiresNoEvidence() =>
+        Assert.Empty(MissionIntake.Resolve(Request).RequiredEvidence);
+
+    /// <summary>`.104`'s rule, which a new class joins rather than is exempt from.</summary>
+    [Fact]
+    public void TheAnswerClass_IsRecognized()
+    {
+        Assert.Contains(MissionSpecification.SimpleAnswerClass, MissionContracts.RecognizedClasses);
+        Assert.True(MissionContracts.ForPreview(Request).VerificationRequired);
+    }
+
+    // ---- the boundaries ------------------------------------------------------------------------
+
+    /// <summary>
+    /// THE BOUNDARY IS TARGETS, NOT DIFFICULTY — and this is the assertion that keeps the class
+    /// honest. A question naming something the colony can reach has something to inspect, and
+    /// answering it from memory would be the assertion `.98` exists to refuse. Those requests keep
+    /// whatever class they had; none of them arrives here.
+    /// </summary>
+    [Theory]
+    [InlineData("What does this repository do?")]
+    [InlineData("Refactor the retry helper in this codebase.")]
+    [InlineData("Restart the media-server container on pve1.")]
+    public void ARequestNamingATarget_IsNotASimpleAnswer(string request) =>
+        Assert.NotEqual(MissionSpecification.SimpleAnswerClass,
+            MissionIntake.Resolve(request).MissionClass);
+
+    /// <summary>
+    /// AND AN IMPERATIVE IS NOT A QUESTION — the condition the first cut of this release left out,
+    /// and the suite is what found it.
+    ///
+    /// `Explain` is the FALL-THROUGH intent: it says only that no change, diagnostic, research or
+    /// assessment verb claimed the request. That is a statement about what the request is NOT, and
+    /// plenty of imperatives land there. Both of these entered the class on the first cut — a
+    /// creation request and a colony instruction, admitted to a class whose gate forbids changing
+    /// anything, graded against a promise neither of them made.
+    /// </summary>
+    [Theory]
+    [InlineData("Document the deployment procedure in a runbook.")]
+    [InlineData("Exercise the coder and stop it while it works.")]
+    [InlineData("Draft a note for the team.")]
+    public void AnImperativeWithNoTarget_IsNotASimpleAnswer(string request) =>
+        Assert.NotEqual(MissionSpecification.SimpleAnswerClass,
+            MissionIntake.Resolve(request).MissionClass);
+
+    /// <summary>
+    /// A QUESTION REACHES IT BY EITHER ROUTE — a question mark anywhere, or an interrogative opener.
+    /// The opener must be FIRST: "the report on what can be done" contains `what` and asks nothing,
+    /// which is the same word-position discipline `RoutingWords` exists for, applied to a sentence.
+    /// </summary>
+    [Theory]
+    [InlineData("How do you make tacos?")]
+    [InlineData("Explain the difference between a mutex and a semaphore")]
+    [InlineData("What is a good ratio of yeast to flour")]
+    public void AQuestionWithNoTarget_ReachesTheClass(string request) =>
+        Assert.Equal(MissionSpecification.SimpleAnswerClass,
+            MissionIntake.Resolve(request).MissionClass);
+
+    /// <summary>
+    /// AND EVERY OTHER CLASS IS UNTOUCHED. The branch sits last, below every class that claims a
+    /// request by something the colony can do about it, so it can only take what nothing else
+    /// wanted. Asserted rather than argued from the source order, because an ordering that happens
+    /// to be safe today is one a later verb can quietly break.
+    /// </summary>
+    [Theory]
+    [InlineData("Assess the current health of the colony and report what is enabled.", MissionSpecification.SystemAuditClass)]
+    [InlineData("Why is the test suite failing in this repository right now?", MissionSpecification.TroubleshootingClass)]
+    [InlineData("Restart the media-server container on pve1.", MissionSpecification.SystemActionClass)]
+    [InlineData("Post the release summary to the team's incident webhook.", MissionSpecification.ExternalActionClass)]
+    public void EveryOtherClass_StillClaimsItsOwnRequests(string request, string expected) =>
+        Assert.Equal(expected, MissionIntake.Resolve(request).MissionClass);
+
+    /// <summary>
+    /// AND `general` DOES NOT GO AWAY. A request with an intent no class serves and a target it
+    /// could have inspected still lands there, ungraded, exactly as before — which is what makes
+    /// this release a narrowing of `general` rather than its removal.
+    /// </summary>
+    [Fact]
+    public void ATargetedRequestNoClassServes_IsStillGeneral() =>
+        Assert.Equal(MissionSpecification.GeneralClass,
+            MissionIntake.Resolve("Rewrite the retry helper in this repository.").MissionClass);
+
+    // ---- the ceiling ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// THE REFUSAL THAT ACTUALLY STOPS THE TACO PATCH, and it is a ceiling rather than a gate: the
+    /// gate below grades a finished mission, this refuses the call. `Observe` cannot reach the three
+    /// tools that change the operator's tree, at dispatch, before a model's opinion about what the
+    /// question needs can matter.
+    /// </summary>
+    [Theory]
+    [InlineData("apply_patch")]
+    [InlineData("write_text_file")]
+    [InlineData("shell_command")]
+    public void TheAnswerCeiling_RefusesEveryChangeTool(string action) =>
+        Assert.False(MissionAuthorityGate.Evaluate(
+            MissionIntake.Resolve(Request).Authority, action).Allowed);
+
+    // ---- the plan ------------------------------------------------------------------------------
+
+    /// <summary>
+    /// AND THE PLAN STOPS BUILDING THE LANE AT ALL. Nothing here is load-bearing for safety — the
+    /// ceiling above is — but a mission that proposes a patch card the operator must decline and
+    /// then grades itself not satisfied is a correct outcome nobody wanted to see. The coverage
+    /// pass drops the change-typed steps and leaves an answer to compile.
+    /// </summary>
+    [Fact]
+    public void TheCoveragePass_DropsTheChangeLane()
+    {
+        var specification = MissionIntake.Resolve(Request);
+        var planned = new List<Task>
+        {
+            new() { Title = "Create structured patch proposal", AssignedAnt = "coder", TaskType = "patch_proposal" },
+        };
+
+        var tasks = Planner.EnsureClassCoverage(planned, Request, specification);
+
+        Assert.DoesNotContain(tasks, t => AnswerIntegrity.ChangeTaskTypes.Contains(t.TaskType));
+        Assert.Contains(tasks, t => string.Equals(t.AssignedAnt, "builder", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(tasks, t => string.Equals(t.AssignedAnt, "verifier", StringComparison.OrdinalIgnoreCase));
+    }
+
+    // ---- the gate ------------------------------------------------------------------------------
+
+    /// <summary>An answered question that changed nothing is what the class promises. It passes.</summary>
+    [Fact]
+    public void AnAnsweredQuestionThatChangedNothing_IsSatisfied()
+    {
+        var specification = MissionIntake.Resolve(Request);
+
+        var evaluation = Evaluate(Answered(specification), specification, Array.Empty<Artifact>());
+
+        Assert.Equal(MissionEvaluation.Deliverable.Satisfied, evaluation.DeliverableStatus);
+    }
+
+    /// <summary>
+    /// THE PLAN'S OWN ACCOUNT. A change-typed step in a mission admitted as needing no change is
+    /// the taco defect at its source, and the gate names it whether or not the step produced
+    /// anything — the decision to plan it is the thing being contradicted.
+    /// </summary>
+    [Fact]
+    public void AChangeTypedStep_IsRefused()
+    {
+        var specification = MissionIntake.Resolve(Request);
+        var mission = Answered(specification,
+            new Task
+            {
+                Id = "t_patch", AssignedAnt = "coder", TaskType = "patch_proposal",
+                Status = TaskStatus.Complete, Result = "{}",
+            },
+            new Task
+            {
+                Id = "t_build", AssignedAnt = "builder", TaskType = "build_answer",
+                Status = TaskStatus.Complete, Result = "You start with the tortillas.",
+            });
+
+        var evaluation = Evaluate(mission, specification, Array.Empty<Artifact>());
+
+        Assert.Equal(MissionEvaluation.Deliverable.NotSatisfied, evaluation.DeliverableStatus);
+        Assert.Contains("patch_proposal", evaluation.Explanation);
+    }
+
+    /// <summary>
+    /// AND THE STORE'S. The second account, and the reason it is not redundant: a plan can be clean
+    /// and an artifact still record that a change was proposed. Two accounts of one mission that do
+    /// not agree is the finding, not a discrepancy to reconcile quietly.
+    /// </summary>
+    [Fact]
+    public void AChangeArtifact_IsRefused_EvenWhenThePlanIsClean()
+    {
+        var specification = MissionIntake.Resolve(Request);
+        var patch = Artifact.Create(
+            schema: ArtifactSchemas.PatchSet, producerRole: "coder",
+            missionId: "m_answer", payload: Json.Dumps(new { patches = Array.Empty<object>() }));
+
+        var evaluation = Evaluate(Answered(specification), specification, new[] { patch });
+
+        Assert.Equal(MissionEvaluation.Deliverable.NotSatisfied, evaluation.DeliverableStatus);
+    }
+
+    /// <summary>
+    /// AND A MISSION THAT ANSWERED NOTHING IS NOT RESCUED BY HAVING CHANGED NOTHING. The class's
+    /// content IS the answer; producing none leaves nothing for it to stand behind.
+    /// </summary>
+    [Fact]
+    public void AnUnansweredQuestion_IsRefused()
+    {
+        var specification = MissionIntake.Resolve(Request);
+        var mission = Answered(specification,
+            new Task
+            {
+                Id = "t_build", AssignedAnt = "builder", TaskType = "build_answer",
+                Status = TaskStatus.Failed, Result = "",
+            });
+        mission.UserResult = "";
+
+        var evaluation = Evaluate(mission, specification, Array.Empty<Artifact>());
+
+        Assert.Equal(MissionEvaluation.Deliverable.NotSatisfied, evaluation.DeliverableStatus);
+    }
+
+    /// <summary>
+    /// AND AN UNREADABLE STORE FAILS CLOSED, which reads oddly for a gate that mostly checks for
+    /// absence — surely an unreadable store is the same as an empty one — and is precisely why it
+    /// must not. "We could not see whether anything was changed" is not "nothing was changed", and
+    /// the second is this class's whole promise.
+    /// </summary>
+    [Fact]
+    public void AnUnreadableStore_IsNotAPass()
+    {
+        var specification = MissionIntake.Resolve(Request);
+
+        var evaluation = Evaluate(Answered(specification), specification, artifacts: null);
+
+        Assert.Equal(MissionEvaluation.Deliverable.NotSatisfied, evaluation.DeliverableStatus);
+    }
+}

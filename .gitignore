@@ -49,6 +49,7 @@ dotnet-install.sh
 RELEASE_MSG.txt
 test-*.txt
 build-*.txt
+TestResults/
 release-*.ps1
 _*logs/
 Claude outputs/
