@@ -65,6 +65,13 @@ public static class EventTypes
     /// be written into.</summary>
     public const string MissionPlanSubstituted = "mission_plan_substituted";
 
+    /// <summary>v0.3.8.138 — the executed task graph was MATERIALIZED FROM the validated dispatch
+    /// plan rather than invented by the planner. The complement of
+    /// <see cref="MissionPlanSubstituted"/>: that row says the requested plan was not used, this
+    /// one says it WAS — task ids identical to the plan's, so the record and the graph join. Only
+    /// ever logged for a mission that exists, for the reason that event gives.</summary>
+    public const string MissionPlanFromDispatch = "mission_plan_from_dispatch";
+
     /// <summary>v0.3.8.124 — this mission's model routing came from its PROJECT rather than from the
     /// colony. Recorded for the same reason a plan substitution is: the route a mission actually ran
     /// on is not visible anywhere in its transcript, and "the colony is configured for Claude" and
