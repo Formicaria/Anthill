@@ -206,7 +206,7 @@ Every failure is a typed refusal, never an invention.
 
 | Condition | Result |
 | --- | --- |
-| Disabled | `Disabled` — no tools are even registered |
+| Disabled | `Disabled` — tools stay registered and refuse at call time |
 | Unreachable / timeout / upstream 5xx | typed, retryable, mission continues |
 | Malformed response | `Malformed`, not retryable, nothing partial persisted |
 | Scope unresolvable | refusal naming the config key — never a widened query |

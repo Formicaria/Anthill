@@ -340,8 +340,8 @@ truthful* refusal — never to invention.
 
 | Condition | Behaviour |
 | --- | --- |
-| Knowledge disabled in config | `NullKnowledgeProvider`; tools are not registered at all |
-| FORAGER unreachable / connection refused | `FailureClass.ExternalUnavailable`, retryable; mission continues without knowledge |
+| Knowledge disabled in config | Tools stay REGISTERED and refuse at call time through `NullKnowledgeProvider` — role readiness must not depend on a feature flag (pinned by `WithKnowledgeDisabled_TheToolsRegisterAndRefuseRatherThanBeingAbsent`; corrected at A0, the doc previously claimed non-registration) |
+| FORAGER unreachable / connection refused | `FailureClass.TransientProviderFailure`, retryable; mission continues without knowledge |
 | Timeout | Typed timeout failure, retryable, budget-charged |
 | FORAGER returns 5xx | Typed failure carrying FORAGER's `request_id` for correlation |
 | Malformed / unparseable response | Typed validation failure; nothing partial is persisted |
@@ -371,8 +371,11 @@ That last sentence is load-bearing. The failure text is part of the safety desig
 - **No schema change to ANTHILL's SQLite database.** No new tables, no new columns, no new
   migration ledger entry. An existing database is byte-compatible in both directions, so a
   downgrade is also safe. Retrieved knowledge uses the existing artifact/evidence stores.
-- The module is not loaded when disabled, so the `knowledge.*` tools are never registered, never
-  offered to a model, and never appear in the tool inventory projection.
+- The module registers its tools whether or not knowledge is enabled, and they REFUSE at call time
+  when it is not — deliberately: three roster-qualification guards require a role's declared tools
+  to be registered for the role to report ready, and readiness must not depend on a feature flag.
+  (Corrected at A0 — this document previously said the module was not loaded and the tools never
+  registered, which the code has never done since the module shipped.)
 - The console's Knowledge section is present but reports the feature as unconfigured, with the
   reason — the same way the Micromound console reports an absent fleet. Since v0.3.8.124 it also
   carries the switch: `knowledge_enabled` is editable from the settings surface, so an operator who

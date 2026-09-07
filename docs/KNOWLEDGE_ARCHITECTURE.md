@@ -127,7 +127,7 @@ Full table in [`CONFIGURATION.md`](CONFIGURATION.md). The load-bearing ones:
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `knowledge_enabled` | `false` | Master switch. Off means no tools are registered at all. **The one key here the console can write** — Tools › Knowledge toggles it (v0.3.8.124). |
+| `knowledge_enabled` | `false` | Master switch. Off means every knowledge tool refuses at call time (they stay registered, so role readiness does not depend on the flag). **The one key here the console can write** — Tools › Knowledge toggles it (v0.3.8.124). |
 | `knowledge_forager_endpoint` | `http://127.0.0.1:8790` | Where FORAGER is. File-only. |
 | `knowledge_forager_allow_remote` | `false` | Permit a non-loopback endpoint. File-only, deliberately: FORAGER has no auth of its own. |
 | `knowledge_project_map` | `{}` | ANTHILL project id → FORAGER project id. **The scope boundary.** File-only. |

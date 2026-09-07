@@ -209,7 +209,8 @@ public static partial class ApiHost
             //
             // Constructed by InitKnowledge() rather than inline so ApiHost.Knowledge.cs's routes and
             // the tools registered here share ONE module, and therefore one HTTP client. With
-            // knowledge_enabled false it registers no tools at all and this line costs nothing.
+            // knowledge_enabled false the tools still register and refuse at call time, so this
+            // line costs one registration pass and no I/O.
             InitKnowledge());
 
         Host = RuntimeHost.Create(memory);
