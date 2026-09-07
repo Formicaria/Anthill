@@ -4,7 +4,7 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-Shipping release: **v0.3.8.136**. Everything below the rule is a record, not a state.
+Shipping release: **v0.3.8.137**. Everything below the rule is a record, not a state.
 
 **This file is a POINTER, and the reason is written into `CONTRIBUTING.md`: a snapshot has to be
 rewritten every release to stay true, and will therefore be false most of the time.** It spent forty
@@ -20,17 +20,20 @@ it stopped claiming to be the state of things:
 | What an outside review found, and which of it is real | `docs/PLAN.md` §2e, verified against the tree rather than adopted |
 | How a guard must be written | `docs/GUARDS.md`, enforced by `GuardHierarchyTests` |
 
-**The last four releases, in one line each.** `.131` and `.132` gave a proposal-only mission a
-read-only scope over its own project source, so a mission about project X stopped reading some other
-tree; `.133` reconciled task-type synonyms at planning instead of failing on them at dispatch, which
-is what made every mission a small local model planned die at its last step; `.134` gave a question
-with nothing to inspect a mission class of its own — `simple_answer`, authority `Observe` — so the
-colony can REFUSE to answer "how do you make tacos" with a source patch instead of merely being
-asked not to, and closed four review findings alongside it; `.135` found two steps the colony
-inserts into its own plans that named task types their assigned role's contract does not declare —
-the adaptive controller's recovery step and the research class's defining step, both blocked at
-dispatch every time they fired — closed the handoff gate's half of the same hole, and added the
-sweep that reads every constructed pair instead of a hand-maintained list.
+**The last four releases, in one line each.** `.134` gave a question with nothing to inspect a
+mission class of its own — `simple_answer`, authority `Observe` — so the colony can REFUSE to
+answer "how do you make tacos" with a source patch instead of merely being asked not to, and closed
+four review findings alongside it; `.135` found two steps the colony inserts into its own plans
+that named task types their assigned role's contract does not declare — both blocked at dispatch
+every time they fired — closed the handoff gate's half of the same hole, and added the sweep that
+reads every constructed pair; `.136` made missions actually ENTER the knowledge scope that had been
+designed, documented and entered by nobody since `.121` — resolution is a refusal, never a fallback
+to the operator's default project — built to `MissionKnowledgeScopeTests`, which the previous
+session left test-first in the working tree; `.137` closed review items 3 and 6: a schedule run now
+stays `running` until its mission SETTLES and takes its terminal status from the mission row (so
+overlap skipping works for the first time, and `ScheduleRun` carries the mission id), and a job's
+project survives submission → durable row → crash-requeue → `RunMission(projectId:)` through both
+the Director and `POST /missions` (which now accepts and validates `project_id`).
 
 ---
 
