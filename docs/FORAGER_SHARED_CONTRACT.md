@@ -238,6 +238,37 @@ requirement list. The audited ground truth is `docs/FORAGER_A0_COMPATIBILITY.md`
 arrived after that audit shipped, and this reconciliation supersedes the audit's interim P-list
 (P1–P6 below are the audit's, renumbered where extended).
 
+## The producer moved while Phase 0 was being recorded — F0 @ `566de69`
+
+FORAGER's own Phase 0 landed on its branch as this document was being written (producer phases are
+F-numbered; its gap list is G-numbered; its audit is `anthill-integration-audit.md` and it pins the
+contract verbatim as `01-SHARED-CONTRACT.md` in that repository — the both-repositories requirement
+is now met on both sides). What `566de69` actually implements, verified in source:
+
+- **`GET /api/capabilities`** — `protocol_version: 1`, `canonical_schema_version`, engine
+  identity/version, `instance {instance_id, generation, generation_reason, created_at, data_dir,
+  mode}`, capability flags that are HONEST (`publication`, `change_feed`, `push_delivery`,
+  `canonical_import`, `authentication` all `false` until each is real), and an explicit
+  `authentication {required: false, schemes: [], note}` block. **P1 substantially landed**
+  (remaining: supported export/import schema versions are not yet enumerated); **P7 landed** —
+  identity travels with the DATABASE (copy the data dir, same instance, deliberately) and the
+  generation exists to invalidate cursors after a restore/clone.
+- **A store lock as a ROW, not a lockfile** (migration 006): heartbeat-based, acquired inside
+  `BEGIN IMMEDIATE`, stale after 90s against a 20s beat; a second process over the same data
+  directory refuses at startup with exit code 11 naming the holder. Contract §2's
+  "two processes must never open the same database for competing writes" is enforced
+  producer-side; `recoverInterrupted` is gated on holding the store.
+- 308/308 producer tests at that tip (ten new over the baseline this document's audit recorded).
+
+Its §3 also proposes the wire names for the still-open rows, which ANTHILL ADOPTS now so both
+sides build toward the same surface: `GET /api/feed?cursor=` with stable ordering and a typed
+`cursor_expired` (P2); `knowledge_revisions` written in one transaction with counter-based
+`rev_…` ids — deliberately NOT content-derived, because two runs producing identical content are
+still two publications — and an explicit `completeness: complete|partial` (P8);
+`pairing_credentials` bearer tokens, scoped and revocable, off by default but REQUIRED the moment
+the bind is non-loopback (P3). A1 consumes `/api/capabilities` and retires the interim
+endpoint+data_dir+version identity tuple.
+
 ## Wire-name resolution — contract semantics vs. producer 0.1.4
 
 | Contract requirement | Producer 0.1.4 reality | Resolution |
@@ -279,14 +310,14 @@ arrived after that audit shipped, and this reconciliation supersedes the audit's
 
 | # | Requirement | Contract § | Until it lands |
 | --- | --- | --- | --- |
-| P1 | Versioned capability response: engine identity/version, protocol version, canonical schema version, supported export/import schema versions, auth requirements, optional operations | §3 | `/api/ready` + `/api/settings` pair, version-window refusal consumer-side |
-| P2 | Durable, scoped change feed with cursor replay, retention and expired-cursor recovery; optional push | §5 | Polling reconciliation against jobs/exports with a durable ANTHILL watermark |
-| P3 | Authentication: consume the Bearer token ANTHILL already sends; scoped credentials, rotation/revocation; membership enforcement on direct-ID reads | §3 | Loopback-managed engine; authenticating proxy for remote; ANTHILL response-side project checks |
+| P1 | Versioned capability response: engine identity/version, protocol version, canonical schema version, supported export/import schema versions, auth requirements, optional operations | §3 | **Substantially landed at producer tip `566de69`** (`GET /api/capabilities`; export/import schema versions still to enumerate). ANTHILL consumes it in A1; until then `/api/ready` + `/api/settings` |
+| P2 | Durable, scoped change feed with cursor replay, retention and expired-cursor recovery; optional push — agreed wire shape `GET /api/feed?cursor=` with typed `cursor_expired` | §5 | Polling reconciliation against jobs/exports with a durable ANTHILL watermark |
+| P3 | Authentication: `pairing_credentials` bearer tokens (scoped, revocable, off by default, REQUIRED on non-loopback bind), consuming the Bearer ANTHILL already sends; membership enforcement on direct-ID reads | §3 | Loopback-managed engine; authenticating proxy for remote; ANTHILL response-side project checks |
 | P4 | Zip-level checksum for exports + a portable (non-standalone) artifact per release | §4 (transfer integrity) | Verify inner-file sha256s after unzip; ship standalone |
 | P5 | `openapi.json` completeness (7 missing paths, 1 wrong status code, 2 missing query params at 0.1.4) | §9 | Hand-written C# client |
 | P6 | Idempotency keys on process/export POSTs | §7 | Consumer-side receipt dedupe + stable action keys |
-| P7 | Persistent `producer_instance_id` + `producer_generation` in the capability response | §2/§5 | Managed: process ownership. Attached: endpoint+data_dir+version tuple, verified each reconnect |
-| P8 | Immutable revision identity, deterministic logical content hash, and an atomic publication ledger (a completed job is not a publication) | §4 | Consumer-side interim identities: package-manifest hash / job-id watermark, labeled as synthesized |
+| P7 | Persistent `producer_instance_id` + `producer_generation` in the capability response | §2/§5 | **Landed at producer tip `566de69`** (identity travels with the database; generation invalidates cursors after restore/clone; store lock refuses a second writer with exit 11). ANTHILL consumes in A1 |
+| P8 | Immutable revision identity, deterministic logical content hash, and an atomic publication ledger (a completed job is not a publication) — agreed shape: `knowledge_revisions` in one transaction, counter-based `rev_…` ids, explicit `completeness: complete\|partial` | §4 | Consumer-side interim identities: package-manifest hash / job-id watermark, labeled as synthesized |
 | P9 | Canonical package IMPORT adapter (accept an `anthill`-format package into an engine, duplicate-safe, review-preserving, instance-namespaced) | §6 | Live-service delivery only; no package consumption path exists and none is faked |
 | P10 | Machine-readable contract fixtures (request/response/event/package, including invalid and cross-project cases), versioned `contract-1` | §9 | A6 builds ANTHILL's own fixture harness against the live API |
 
