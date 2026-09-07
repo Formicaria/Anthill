@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.135**.
+Shipping release: **v0.3.8.136**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -485,7 +485,10 @@ conflict, because an option to hide them is a way to hide them.
 else, so a knowledge tool learns its scope from an argument or from ambient state — and tool
 arguments are chosen by a MODEL. A `project_id` parameter would make the reach of a query something
 the model selects, and the no-cross-project rule would then be enforced by its discretion.
-`KnowledgeScopeContext` is entered by the core at intake, only ever narrows, and defaults to a scope
+`KnowledgeScopeContext` is entered by the core at intake (SINCE v0.3.8.136 — between `.121` and
+`.135` this sentence was the design and not the tree: only the console resolved a scope, and every
+knowledge tool an ant dispatched refused; `MissionKnowledgeScopeTests` now pins the resolution
+rules), only ever narrows, and defaults to a scope
 that retrieves nothing. Verified against a running FORAGER: `GET /api/knowledge/{id}` is NOT
 project-scoped upstream and returns another project's row with HTTP 200, so the provider checks
 `project_id` on the RESPONSE and answers `NotFound` — not a denial, because confirming an id exists
