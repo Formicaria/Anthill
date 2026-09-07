@@ -8,6 +8,11 @@ namespace Anthill.Core.Agents;
 /// contract supports the required task type, handoff depth is under the limit, the mission task
 /// budget holds, and no near-duplicate exists (dedupe key). Rejections carry the reason — nothing
 /// is dropped silently, and recursive unlimited task creation is structurally impossible.
+///
+/// v0.3.8.135 — the required task type is RECONCILED against the destination's contract before that
+/// check, by the same <see cref="Planning.TaskTypeVocabulary"/> the planner uses. See the comment at
+/// the check itself: `.133` fixed the synonym problem at the planner's door and this was the other
+/// one, where a refused REQUIRED handoff is a deterministic block and a mission died over a word.
 /// </summary>
 public static class HandoffGate
 {
@@ -56,8 +61,23 @@ public static class HandoffGate
         if (!AntRegistry.ExecutableRoleIds.Contains(handoff.DestinationRole))
             return new(false, $"destination role '{handoff.DestinationRole}' is not runtime-eligible (gate closed or not executable)", null);
 
+        // v0.3.8.135 — THE SECOND DOOR, and it had the same hole the first one did.
+        //
+        // `.133` built `TaskTypeVocabulary.Reconcile` for exactly this problem — a role's contract
+        // is the authority, a model writes the plain-English word, and the two are not compared
+        // until dispatch — and wired it into `AssignDefaultWorkers`, the funnel every PLANNER path
+        // goes through. A HANDOFF goes through this method instead. So a medic asking a builder to
+        // `summarize` was refused here for a spelling the builder's contract has a declared word
+        // for, and a refused REQUIRED handoff is a deterministic block: the mission fails, over a
+        // synonym, one door over from where that was fixed.
+        //
+        // RECONCILED BEFORE THE CHECK, NOT INSTEAD OF IT. The authority does not move — a type
+        // nothing resolves is still refused below, by name, exactly as before. What changes is that
+        // the refusal now means "no role here can do this", which is a real defect worth being loud
+        // about, rather than "you spelled it the way people spell it".
         var contract = AntExecutionCatalog.ContractFor(handoff.DestinationRole);
-        if (contract is not null && !contract.SupportsTaskType(handoff.RequiredTaskType))
+        var requiredType = Planning.TaskTypeVocabulary.Reconcile(handoff.DestinationRole, handoff.RequiredTaskType);
+        if (contract is not null && !contract.SupportsTaskType(requiredType))
             return new(false, $"destination '{handoff.DestinationRole}' does not support task type '{handoff.RequiredTaskType}'", null);
 
         if (mission.Tasks.Any(t => t.Description.Contains(handoff.DedupeKey, StringComparison.OrdinalIgnoreCase)))
@@ -68,7 +88,9 @@ public static class HandoffGate
             Title = $"Handoff: {handoff.SourceRole} -> {handoff.DestinationRole}",
             Description = $"{handoff.Reason} [handoff dedupe:{handoff.DedupeKey} depth:{handoff.Depth}]",
             AssignedAnt = handoff.DestinationRole,
-            TaskType = handoff.RequiredTaskType,
+            // The RECONCILED type, not the requested one — the created task is what dispatch will
+            // read, and handing it the unreconciled spelling would make the check above ceremonial.
+            TaskType = requiredType,
             Critical = handoff.Required,
         };
         return new(true, "", created);
