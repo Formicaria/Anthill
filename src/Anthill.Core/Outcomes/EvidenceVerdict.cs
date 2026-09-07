@@ -52,7 +52,7 @@ public static class EvidenceVerdict
     {
         if (evidence is null || evidence.Count == 0)
             return new(VerificationVerdict.Unknown, 0, 0, 0,
-                "no evidence was recorded for this mission — nothing has been verified");
+                "no deterministic evidence was recorded for this mission — nothing was reproduced");
 
         var deterministic = evidence.Where(e => e.Deterministic).ToList();
         var passed = deterministic.Count(e => e.Passed);

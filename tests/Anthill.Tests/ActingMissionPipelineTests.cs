@@ -147,6 +147,13 @@ public class ActingMissionPipelineTests : IDisposable
     /// closes was one expression: `confinedWorkspace: true` declared beside a workingDirectory
     /// that was the live project path — the comment and the runtime disagreeing on the single
     /// property that decides where an acting agent's edits land.
+    ///
+    /// v0.3.8.132 — AND IT MUST BE THE **WRITABLE** ROOT. `CurrentRoot` was the right answer while
+    /// every scope was a worktree. It stopped being one when a project mission began entering a
+    /// read-only scope over the operator's own checkout: `CurrentRoot` would have handed that
+    /// checkout to a writing agent CLI and declared it confined — the same expression, the same
+    /// disagreement, arriving from the other direction. The property this test defends is
+    /// unchanged; the accessor that satisfies it is now the one that can refuse.
     /// </summary>
     [Fact]
     public void TheAgentAccessScope_UsesTheMissionWorktree_WhenOneExists()
@@ -158,8 +165,11 @@ public class ActingMissionPipelineTests : IDisposable
         Assert.True(method >= 0, "EnterAgentAccess is no longer recognisable");
         var body = source[method..source.IndexOf("AgentAccessScope.Enter", method, StringComparison.Ordinal)];
 
-        Assert.Contains("MissionWorkspaceScope.CurrentRoot", body, StringComparison.Ordinal);
+        Assert.Contains("MissionWorkspaceScope.CurrentWritableRoot", body, StringComparison.Ordinal);
         Assert.Contains("grants = Array.Empty<string>()", body, StringComparison.Ordinal);
+
+        // And not the unqualified one, which is what a later edit would most plausibly restore.
+        Assert.DoesNotContain("MissionWorkspaceScope.CurrentRoot", body, StringComparison.Ordinal);
     }
 
     // -------------------------------------------------------------------------------------------

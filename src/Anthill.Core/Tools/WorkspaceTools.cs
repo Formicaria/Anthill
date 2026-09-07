@@ -218,7 +218,11 @@ public sealed class ChangedFilesSummaryTool : ITool
 
     public ToolResult Run(IReadOnlyDictionary<string, object?> args)
     {
-        var workspace = MissionWorkspaceScope.Current;
+        // v0.3.8.132 — CurrentWritable, so a read-only project scope refuses here exactly as no
+        // scope does. Summarising the operator's uncommitted work as "what this mission changed"
+        // is the confident, plausible lie this refusal exists to prevent, and a source scope would
+        // have walked straight past the three checks below.
+        var workspace = MissionWorkspaceScope.CurrentWritable;
         if (workspace is null || !workspace.Usable || workspace.Root.Length == 0)
             // A clear refusal rather than a diff of the live checkout. Summarising the operator's
             // uncommitted work as "what this mission changed" would be a confident, plausible lie.

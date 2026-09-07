@@ -1,3 +1,79 @@
+## v0.3.8.132 - the mission that reviewed the wrong tree
+
+**AN OPERATOR ASKED THE COLONY TO REVIEW A REPOSITORY AND IT REVIEWED A DIFFERENT ONE.** It proposed
+patches against paths inside that other tree, ran `dotnet test` in it, and reported all of it as
+findings about the repository. Nothing errored. Nothing was slow. The identity was wrong from the
+first tool call and the record had no field that would have said so.
+
+**`Project.Path` was loaded and used for exactly one thing: as the SOURCE OF A WORKTREE.** A
+worktree is prepared only when `EnableFileWriting`, `EnablePatchApplication` or `EnableActingCoder`
+is on, and all three default OFF — so under the shipped proposal-only configuration a project
+mission entered **no scope at all**, and every file and check tool fell back to
+`AnthillRuntime.AllowedWorkspaceRoot` (`agent_workspace_dir`, `.anthill/workspace` by default). The
+path the operator chose was read, stored, and never once consulted.
+
+**A mission that wants no worktree now gets a SCOPE ANYWAY: the project's own source, read-only.**
+It costs nothing — no git subprocess, no checkout, no temp directory, no row — because there is
+nothing to materialise. What it grants is what was missing: the path guard, `run_allowlisted_check`,
+the workspace capability manifest and `repository_index` all resolve to the project. A path that is
+missing gets no scope rather than a wrong one, because inventing a scope over a directory that is
+not there turns every read into a filesystem error; the record says which happened either way.
+
+**AND THAT CREATED A SHARPER HAZARD, WHICH IS MOST OF THIS RELEASE.** Nothing in the tree could tell
+"a tree I may look at" from "a tree I may change". Three predicates decided everything about a scope
+— `Usable`, `Root.Length > 0`, and a `Mode` string that two places read and none of the dangerous
+ones did. Handed the operator's live checkout, five consumers would each have produced a confident
+wrong answer rather than an error:
+
+- the agent-CLI working directory would have declared the **live project** a confined workspace and
+  handed it to a writing CLI — the exact inversion its own comments record as already fixed once;
+- the acting-coder branch would have edited that checkout directly, and its fail-closed refusal
+  would have stopped firing;
+- the change harvester would have diffed the operator's **uncommitted work** against `HEAD` — a
+  read-only scope has no base revision — and filed it as a patch set the mission produced;
+- the edit processor would have done the same one layer down;
+- and `changed_files_summary` would have reported it as "what this mission changed", which its own
+  comment calls the confident, plausible lie it exists to prevent.
+
+`MissionWorkspace.Writable` is the discriminator, and it **defaults to true** so every worktree ever
+prepared and both pinned apply-target scopes behave byte-identically. `CurrentWritable` and
+`CurrentWritableRoot` are what those five read now, so a read-only scope is indistinguishable from
+no scope to every one of them — the case they all already handle correctly. The guard is keyed on
+the SHAPE rather than the five examples, so a sixth consumer that reaches for the ambient scope in
+order to write is refused in the test suite instead of discovered in a mission report.
+
+The tester's tree label learned the third case too: a read-only project scope is neither a mission
+workspace nor the configured fallback, and calling it either would misname the one tree the evidence
+depends on.
+
+---
+
+**A RECORD THAT CONTRADICTED ITSELF, IN ONE WORD.** An operator read a mission record showing
+`outcome_code: completed_verified` six lines above
+`verification: no evidence was recorded for this mission — nothing has been verified`, and reported
+it as broken. Neither line was wrong. They were two senses of one word printed together: the
+outcome's "verified" means the verifier returned a PASS and the deliverable exists; that line meant
+the evidence store held reproducible rows. A mission that answers a question has the first and
+cannot have the second.
+
+The line is labelled `evidence:` now and says what it measured. **The grade is deliberately NOT
+changed.** Requiring deterministic evidence for `completed_verified` would demote every answer this
+colony has ever given, and the reconciliation that would make that correct needs the per-task
+execution record — `docs/PLAN.md` §2e, where it has been waiting since `.122` tried the join and
+withdrew it. Fixing the collision is honest; fixing the grade by guessing would not be.
+
+---
+
+**THE ANSWER AND THE RECORD ARE TWO BLOCKS.** `ConversationRunner` appends the compiled mission
+record beneath the answer in one content string — right for the audit trail, wrong for reading. A
+cookie recipe arrived with twenty lines of task ids under it, and the collapse toggle measured the
+WHOLE thing, so a three-sentence answer was clamped because of what followed it.
+
+Split at RENDER rather than at storage, on the record's own header — the marker `MissionReport`
+writes and nothing else does. The turn stays one auditable string, every already-stored turn gains
+the split without a migration, copy still yields the whole thing, and the response is the response.
+The record is a thing you open.
+
 ## v0.3.8.131 - the chip that could not tell "not yet" from "never"
 
 **THE OPERATOR REPORTED IT AS TWO BUGS AND IT WAS ONE.** `.130`'s mission chip sat on

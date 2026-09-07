@@ -809,7 +809,61 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
             }
             catch { /* a project row that cannot be read falls back to the configured source */ }
         }
+        // A PROJECT MISSION READS ITS OWN PROJECT. v0.3.8.132, and this is the defect an operator
+        // found from the outside: they asked the colony to review a repository, and it reviewed a
+        // different tree and said nothing.
+        //
+        // `Project.Path` was loaded above and then used for exactly one thing — as the source for a
+        // WORKTREE, which is only prepared when a write gate is on. All three default off, so under
+        // the shipped proposal-only configuration a project mission entered NO scope, and every
+        // file and check tool fell back to `AnthillRuntime.AllowedWorkspaceRoot`
+        // (`agent_workspace_dir`, `.anthill/workspace` by default). The mission then inspected that
+        // directory, proposed patches against paths inside it, ran `dotnet test` in it — and
+        // reported all of it as findings about the project. Nothing failed. The identity was simply
+        // wrong from the first tool call, and the record had no field that would have said so.
+        //
+        // So a mission that does not want a worktree still gets a SCOPE: the project's own source,
+        // marked read-only. It costs nothing — no git subprocess, no checkout, no temp directory,
+        // no row — because there is nothing to materialise. `Writable = false` is what keeps it
+        // honest: the agent-CLI path, the change harvester, the edit processor and the change
+        // summary all read `CurrentWritable` now and treat this exactly as they treat no scope at
+        // all. What it grants is what was missing — the path guard, `run_allowlisted_check`, the
+        // capability manifest and `repository_index` all resolve to the project.
+        //
+        // A path that is missing or gone gets no scope rather than a wrong one: falling back to the
+        // configured workspace is the behaviour being fixed, but inventing a scope over a directory
+        // that does not exist would turn every read into a filesystem error instead of the
+        // pre-existing fallback. The event says which happened.
         var missionWorkspace = wantsWorkspace ? PrepareWorkspace(mission.Id, projectSourceRoot) : null;
+        if (missionWorkspace is null && !string.IsNullOrWhiteSpace(projectSourceRoot))
+        {
+            var sourceRoot = projectSourceRoot!;
+            var exists = false;
+            try { exists = Directory.Exists(sourceRoot); } catch { }
+            if (exists)
+            {
+                missionWorkspace = new Anthill.Core.Workspaces.MissionWorkspace
+                {
+                    Id = "project-source-" + mission.Id,
+                    MissionId = mission.Id,
+                    Root = sourceRoot,
+                    SourceRoot = sourceRoot,
+                    Mode = "project-source",
+                    State = Anthill.Core.Workspaces.WorkspaceState.Active,
+                    Writable = false,
+                };
+                Memory.LogEvent(mission.Id, SDK.Events.EventTypes.MissionProjectSourceScope,
+                    "Reads and checks for this mission resolve to the project's own source tree.",
+                    metadata: new() { ["source_root"] = sourceRoot, ["writable"] = false });
+            }
+            else
+            {
+                Memory.LogEvent(mission.Id, SDK.Events.EventTypes.MissionProjectSourceMissing,
+                    "The project's path does not exist, so this mission reads the configured "
+                  + "workspace instead of the project.",
+                    metadata: new() { ["source_root"] = sourceRoot });
+            }
+        }
         using var workspaceScope = Anthill.Core.Workspaces.MissionWorkspaceScope.Enter(missionWorkspace);
         using var routingScope = Projects.ProjectRoutingScope.Enter(missionRouting);
         if (missionRouting is not null)
@@ -1492,7 +1546,10 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // caller could ever supply — while the scope already means exactly "the workspace this
         // mission is using". Outside a scope it is null and this is a no-op, which is correct for
         // the read-only missions that never get one.
-        HarvestWorkspaceChanges(mission, Anthill.Core.Workspaces.MissionWorkspaceScope.Current);
+        // v0.3.8.132 — CurrentWritable. Harvesting diffs the scope against its base revision, and a
+        // read-only project scope has no base revision, so `WorkspaceChangeSet` would fall back to
+        // HEAD and file the OPERATOR'S uncommitted work as a patch set this mission produced.
+        HarvestWorkspaceChanges(mission, Anthill.Core.Workspaces.MissionWorkspaceScope.CurrentWritable);
         var eventType = mission.Status == MissionStatus.Complete ? "mission_completed" : mission.Status == MissionStatus.Partial ? "mission_partial" : "mission_failed";
         Memory.LogEvent(mission.Id, eventType, $"Mission finished with status: {mission.Status.Value()}", metadata: new()
         {

@@ -251,7 +251,21 @@ public static class MissionReport
         sb.AppendLine($"mission_id: {r.MissionId}");
         sb.AppendLine($"status: {r.Status}");
         sb.AppendLine($"outcome_code: {r.OutcomeCode}");
-        sb.AppendLine($"verification: {r.VerificationBasis}");
+        // v0.3.8.132 — LABELLED `evidence`, because that is what it reads.
+        //
+        // It said `verification:` and printed `EvidenceVerdict`'s explanation, six lines under
+        // `outcome_code: completed_verified` — and an operator reported the pair, correctly, as a
+        // record contradicting itself. Neither line was wrong. They were two senses of one word
+        // printed together: the outcome's "verified" means the verifier returned a PASS and the
+        // deliverable exists, and this line means the evidence store held reproducible rows. A
+        // mission that answers a question has the first and cannot have the second.
+        //
+        // The grade is NOT changed here. Requiring deterministic evidence for
+        // `completed_verified` would demote every answer this colony has ever given, and the
+        // reconciliation that would make that correct needs the per-task execution record —
+        // `docs/PLAN.md` §2e, where it has been waiting since `.122` tried it and withdrew. What
+        // is fixed is the collision: the line says which question it answered.
+        sb.AppendLine($"evidence: {r.VerificationBasis}");
         sb.AppendLine($"started_at: {Stamp(r.StartedAt)}");
         sb.AppendLine($"finished_at: {Stamp(r.FinishedAt)}");
         sb.AppendLine($"elapsed_seconds: {(r.ElapsedSeconds is { } e ? e.ToString("F1") : "not recorded")}");

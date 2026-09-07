@@ -1566,7 +1566,7 @@ public sealed class ExecutionService : IExecutionService
     /// </summary>
     private void ProcessWorkspaceEdits(Mission mission, MissionContext context, Task task, TaskScheduler? scheduler)
     {
-        var workspace = Workspaces.MissionWorkspaceScope.Current;
+        var workspace = Workspaces.MissionWorkspaceScope.CurrentWritable;   // v0.3.8.132
         if (workspace is null || !workspace.Usable)
         {
             // The acting branch requires an ambient workspace to run at all, so reaching here
@@ -2179,7 +2179,10 @@ public sealed class ExecutionService : IExecutionService
         // live-tree grants are withheld with it — reach into the real checkout is precisely what a
         // disposable workspace exists to deny. Missions without a workspace (read-only runs, or
         // preparation rejected) keep the previous behaviour, stated by the scope's own fields.
-        var missionWorktree = Workspaces.MissionWorkspaceScope.CurrentRoot;
+        // v0.3.8.132 — WRITABLE, not merely current. A read-only project scope is the operator's
+        // own checkout; declaring it this agent's confined workspace would hand a writing CLI the
+        // live tree, which is the exact inversion the paragraph above records as already fixed once.
+        var missionWorktree = Workspaces.MissionWorkspaceScope.CurrentWritableRoot;
         IReadOnlyList<string>? checkStems = null;
         if (missionWorktree is not null)
         {
