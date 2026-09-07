@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.138**.
+Shipping release: **v0.3.8.139**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -698,11 +698,34 @@ either honour it or delete it rather than let it decay into a sentence nobody ap
 
 ## 2e. What comes next — the shape of v0.3.8.136 and after
 
-The universal-workflow program closed at `.113` and R0 closed at `.114`. There is no successor
-program: what remains is R-numbered work, standing hygiene, and a small number of findings the last
-several releases surfaced and deliberately did not chase. This section exists because "what is next"
-was being reconstructed from three documents every release, and the reconstruction kept losing the
-same items.
+The universal-workflow program closed at `.113` and R0 closed at `.114`. This section exists
+because "what is next" was being reconstructed from three documents every release, and the
+reconstruction kept losing the same items.
+
+### The FORAGER first-party program (A0–A6) — the successor program, opened at v0.3.8.139
+
+The operator's directive: the complete Forager workflow (sources → pipelines → progress → review →
+conflicts → exports) usable without leaving ANTHILL, published knowledge and exports reaching
+retrieval automatically, missions proposed and executed under standing project policy, and scoped
+memory/learning that later missions actually consume — while Forager remains an independently
+installable, usable and sellable product that stays sole owner of parsing, canonical knowledge,
+evidence, entities, conflicts and search.
+
+| Phase | What it delivers | State |
+|---|---|---|
+| A0 | Audit, compatibility decision, pinned producer version + artifact digest, feature/API matrix, reuse/gap map, baselines, producer-side requirements P1–P6 | ✅ **CLOSED at v0.3.8.139** — `docs/FORAGER_A0_COMPATIBILITY.md` is the gate artifact |
+| A1 | Integration modes: disabled / managed (ANTHILL starts, supervises and owns a bundled engine) / attached (existing instance, untouched); pairing, credential storage, project linking UI; module boundaries kept | open |
+| A2 | The complete native Knowledge workflow: upload + ingestion UI, run/inspect/cancel/retry, review with a REAL typed proposal lifecycle (pending→approved→applied/failed) that actually calls the producer, conflict operations, exports; honest progress from producer state | open |
+| A3 | Durable delivery: receipts/cursors with migrations, polling reconciliation (producer has no feed — requirement P2), package delivery validated by manifest sha256, revision-preserving invalidation, retrieval at real call sites (planning context, typed cited artifacts, reachable tools) | open |
+| A4 | Knowledge-change analysis vs a persisted watermark → validated mission proposals (identity, causation, evidence revisions, budgets) through the EXISTING queue/policy gates/Director; policy modes knowledge-only / suggest / auto-execute-within-limits | open |
+| A5 | Scoped memory + learning with real consumers: source-backed candidates with provenance and validation state, staleness on evidence change, tenant scope enforced at storage AND retrieval, no success credit from imported descriptions | open |
+| A6 | Both-product qualification fixture (dated update, conflict, unverified claim, procedure, adversarial embedded instruction) across the 14 scenarios; docs; paired release notes with artifact digest + contract versions | open |
+
+Standing constraints for every phase, from the directive: audit before replacing; refusal over
+substitution; document instructions are never authority to execute; producer capabilities that are
+genuinely absent get a precise producer-side requirement and a pending gate, never a fabricated
+success; the consumer lives in this repository and requests producer changes through handoffs
+rather than cloning engine logic into C#.
 
 ### The external review of the mission workflow — verified at `.129`, and what of it is real
 

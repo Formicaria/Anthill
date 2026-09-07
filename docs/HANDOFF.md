@@ -4,7 +4,7 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-Shipping release: **v0.3.8.138**. Everything below the rule is a record, not a state.
+Shipping release: **v0.3.8.139**. Everything below the rule is a record, not a state.
 
 **This file is a POINTER, and the reason is written into `CONTRIBUTING.md`: a snapshot has to be
 rewritten every release to stay true, and will therefore be false most of the time.** It spent forty
@@ -20,21 +20,21 @@ it stopped claiming to be the state of things:
 | What an outside review found, and which of it is real | `docs/PLAN.md` §2e, verified against the tree rather than adopted |
 | How a guard must be written | `docs/GUARDS.md`, enforced by `GuardHierarchyTests` |
 
-**The last four releases, in one line each.** `.135` found two steps the colony inserts into its
-own plans that named task types their assigned role's contract does not declare — both blocked at
-dispatch every time they fired — closed the handoff gate's half of the same hole, and added the
-sweep that reads every constructed pair; `.136` made missions actually ENTER the knowledge scope
-that had been designed, documented and entered by nobody since `.121` — resolution is a refusal,
-never a fallback to the operator's default project — built to `MissionKnowledgeScopeTests`, which
-the previous session left test-first in the working tree; `.137` closed review items 3 and 6: a
+**The last four releases, in one line each.** `.136` made missions actually ENTER the knowledge
+scope that had been designed, documented and entered by nobody since `.121` — resolution is a
+refusal, never a fallback to the operator's default project; `.137` closed review items 3 and 6: a
 schedule run now stays `running` until its mission SETTLES and takes its terminal status from the
 mission row (so overlap skipping works for the first time, and `ScheduleRun` carries the mission
 id), and a job's project survives submission → durable row → crash-requeue →
 `RunMission(projectId:)` through both the Director and `POST /missions`; `.138` closed item 7, the
-review table's LAST open row — an operator-requested dispatch plan now travels into planning on the
-`MissionContext` and the executed graph IS the plan (same task ids, types, roles and declared
-edges, admitted through the same pipeline, policy verifier still appended, recorded as
-`mission_plan_from_dispatch`).
+review table's LAST open row — an operator-requested dispatch plan now travels into planning on
+the `MissionContext` and the executed graph IS the plan; `.139` opened the FORAGER first-party
+program (A0–A6, PLAN §2e) and closed A0 — the compatibility pin (FORAGER 0.1.4 @ `258baf8`,
+artifact sha256 verified, schema 1, package 1), the feature/API matrix and reuse/gap map in
+`docs/FORAGER_A0_COMPATIBILITY.md`, real baselines on both products (ANTHILL suite green; FORAGER
+298/298 on fresh Linux install), six producer-side requirements handed off, and eight
+documentation sites corrected that claimed knowledge tools are not registered while disabled (they
+register-and-refuse, deliberately; `config.example.json` regenerated via `--emit-config`).
 
 ---
 

@@ -1,3 +1,51 @@
+## v0.3.8.139 - Forager A0: the integration audited, the compatibility pinned, the docs corrected
+
+**THE FORAGER FIRST-PARTY PROGRAM OPENS (A0–A6), AND A0 IS THE AUDIT.** The goal: the full Forager
+workflow — sources, pipelines, review, conflicts, exports — usable without leaving ANTHILL, while
+Forager stays an independently installable and sellable product that remains sole owner of parsing,
+canonical knowledge, evidence and search. `docs/FORAGER_A0_COMPATIBILITY.md` is the gate artifact:
+the compatibility decision, the runnable producer version, and the feature/API matrix, every row
+verified against the actual trees. Two provenance corrections it records up front: the planning
+audit's claimed base commit (`8394f18…`) is not in this repository's history — every observation
+was re-verified against `8491fee` instead of trusted — and the `01-SHARED-CONTRACT.md` the
+execution prompt names as attached was never delivered, so the reconciliation base is
+`docs/FORAGER_INTEGRATION.md` plus FORAGER's own docs, and the audit says so.
+
+**The pin:** FORAGER 0.1.4 @ `258baf8` (sibling checkout), `schema_version 1`, anthill package
+version 1, artifact `forager-0.1.4-win-x64-standalone.zip` sha256 `63c345fe…` (digest file verified
+against the zip; it is the ONLY 0.1.4 artifact — no portable build exists). Baselines are real:
+ANTHILL full suite green at `8491fee`; FORAGER 298/298 (17 files) under a fresh Linux
+`npm install`, eight more than its own `verification.md` claims. The load-bearing producer facts:
+readiness is `GET /api/ready` (`/api/health` never fails and must not be treated as readiness);
+`GET /api/settings` is the de-facto capability endpoint; there is NO authentication of any kind,
+NO event feed/cursor/revision counter anywhere (polling and the integrity-bearing `anthill` export
+package are the only delivery primitives, and A3's delivery identities are defined from exactly
+those); `openapi.json` covers 35 of the server's 42 real routes and is not safe as a codegen
+source; byte upload and job cancel/retry exist. Six producer-side requirements (capability
+endpoint, durable feed, auth consuming the Bearer ANTHILL already sends, zip-level checksum +
+portable artifact, OpenAPI completeness, idempotency keys) are recorded as the handoff, with the
+consumer-side fallback each one has until then.
+
+**The consumer reuse/gap map** names what carries forward unchanged (the 13-operation provider,
+scope model, gate, durable queue, Director, dispatch-plan materialization, the learning path) and
+the gaps the phases close — among them: no ingestion or upload surface in the UI; the
+`knowledge_review_proposed` event has one writer and zero consumers; the knowledge tools are
+REACHABLE BY NO AGENT (the researcher's contract grants five, `ResearcherAnt` hard-dispatches a
+fixed set and never projects tool schemas, and the one `ToolCallingLoop` call site enters no
+knowledge scope); `IncludeRelationships` is accepted and ignored at every layer;
+`KnowledgeOptions.PackagePath` is dead AND hazardous (a non-empty value skips endpoint/loopback
+validation and still routes to HTTP); and the project→FORAGER map is file-only.
+
+**Eight documentation sites contradicted the code about tool registration** — five docs, two
+in-code comments and the config catalog's own section note (which ships into
+`config.example.json`) all said knowledge tools are not registered while disabled. The module has
+ALWAYS registered-and-refused, deliberately: three roster-qualification guards require a role's
+declared tools registered for readiness, and readiness must not depend on a feature flag. The
+behavior is kept; every one of the eight sites now tells the truth, and the regenerated
+`config.example.json` came from `--emit-config`, not a hand edit — `ConfigCatalogTests` caught the
+first attempt, exactly as designed. Also corrected in `FORAGER_INTEGRATION.md`: the nonexistent
+`ExternalUnavailable` failure-class name (it is `TransientProviderFailure`).
+
 ## v0.3.8.138 - the validated dispatch plan is the executed graph
 
 **THE PRE-DISPATCH PLAN WAS LOGGED AND THEN DISCARDED.** v0.3.8.118 built the whole stage — the
