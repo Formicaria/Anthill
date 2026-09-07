@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.138**.
+Shipping release: **v0.3.8.139**.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -771,27 +771,49 @@ stage could read — which needs a join or an event, not a new table:
   supplied, and trading a known-bad heuristic for an unmeasurable one before the execution records
   exist would be a worse trade than leaving it.
 
-**WHAT STILL WAITS.** Items 3–8 — authoritative execution records, artifact and evidence handoff,
+**THE ROW LANDED AT `.139`, AND IT WAS NOT A NEW TABLE.** This paragraph said for eleven releases
+that items 3–8 "all consume the same missing row, and `.122` did not add it", and asked for "one
+record per task attempt, written where the scheduler already writes the terminal state, carrying the
+facts `Domain.Task` marks transient". Read against the tree, that describes `task_attempts` exactly —
+live and load-bearing since `v3.8.0`, because the atomic claim runs on it. What was missing was never
+the row; it was any fact about what the attempt DID. So `.139` extended the row the claim already
+writes rather than building a second one beside it, which would have been two records of one thing —
+defect #5 on this document's own list, shipped deliberately.
+
+`task_attempts` now carries `assigned_ant`, `task_type`, `worker_basis`, `deliverable_ids`,
+`required_capability`, `generation_degraded`, `produced_revision_id` and `ran_revision_id`, written
+at `ExecutionService.CloseAttempt` — the chokepoint whose own remark already explains why it is the
+right one, since every path that ends a task passes through it with its final status set. They are
+written there and not at claim time because they are properties of a FINISHED attempt: which tree a
+check judged is not known when the claim is taken. `TaskAttempt` was already typed, so the ratchet is
+satisfied without a new reader. `ExecutionRecordTests` asserts across a store close and reopen,
+because "transient" is the thing being fixed and a test reading the facts back through live objects
+would pass identically against the code this replaces.
+
+**NULL MEANS NOT RECORDED, NEVER "NO", and the gates built on top of this must honour that.** Legacy
+attempts migrate in place with no values. A closure gate reading those nulls as "this check ran in no
+revision" or "this generation was fine" would refuse every mission the colony has already run —
+inventing history to satisfy a guard, the direction `evidence.revision_id` and
+`patch_sets.base_fingerprint` both refused.
+
+**WHAT STILL WAITS, now unblocked:** items 3–8 themselves — artifact and evidence handoff,
 verification that reads execution rather than a narrative, closure ENFORCEMENT (a mission may not
 close complete when its plan declared a check that never produced a deterministic pass), and
-unsourced-claim rejection — all consume the same missing row, and `.122` did not add it. The shape
-the map argues for: one record per task attempt, written where the scheduler already writes the
-terminal state, carrying the facts `Domain.Task` marks transient and therefore drops on restart
-(`WorkerBasis`, `DeliverableIds`, `RequiredCapability`, `GenerationDegraded`, the produced and ran
-revision ids) plus the plan row the task came from. Note the ratchet: it must be a TYPED accessor,
-not another `Dictionary<string, object?>` reader, or it lands on the wrong side of
-`TheUntypedStoreSurface_OnlyShrinks`.
+unsourced-claim rejection. Closure enforcement is the next slice and is deliberately NOT part of
+`.139`: `Verification.Failed` still spans "a check said no" and "nothing could satisfy the check",
+`.122` tried to reconcile them and reverted, and splitting those two meanings is what the record was
+built for. Doing both in one release repeats `.122`.
 
-Two structural facts a session starting that work needs, and neither is in the brief:
+One structural fact a session starting that work needs, and it is not in the brief:
 
-- **`DispatchPlan.Tasks` is validated, logged, and then discarded.** `Queen` calls the planner, emits
-  `mission_dispatch_planned`, and then calls `PlanningService.CreatePlan`, which plans again from
-  scratch. So "what was decided" and "what was scheduled" are two independently produced artifacts
-  with no code path enforcing that they agree. The execution record is where they should be joined.
 - **`IEvidenceStore.HasDeterministicPass` is implemented and called only from tests.** Before giving
   it a production call site, check whether `EvidenceVerdict.For` already answers the same question —
   two implementations of one rule is this repository's defect #5, and adding a caller to close a
   "declared and reaching nobody" finding would be exactly the adjacent-question mistake if so.
+- ~~`DispatchPlan.Tasks` is validated, logged, and then discarded.~~ **Closed at `.138`** — the
+  executed graph IS the plan, same task ids, so an attempt row's `task_id` already joins to the
+  dispatch plan row. `.139` therefore did NOT add a `plan_task_id` column: a second identity for one
+  thing is the same defect this section keeps naming.
 
 `docs/ORCHESTRATION-FINDINGS.md` remains the evidence, measured against `fcf12a7`; the ▲ items below
 are kept because their reasoning is what redirects the work, not because they are all still open.

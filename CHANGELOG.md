@@ -1,3 +1,53 @@
+## v0.3.8.139 - the row that eleven releases were waiting on, and it already existed
+
+**`docs/PLAN.md` §2e HAS SAID SINCE `.118` THAT ITEMS 3-8 "ALL CONSUME THE SAME MISSING ROW".**
+Authoritative execution records, artifact and evidence handoff, verification that reads execution
+rather than a narrative, closure ENFORCEMENT, unsourced-claim rejection — five pieces of work queued
+behind one fact, and `.122` did not add it.
+
+**THE ROW WAS NOT MISSING.** `task_attempts` has been live and load-bearing since `v3.8.0`, because
+the atomic claim runs on it. What it carried was WHO was executing and HOW IT ENDED, and nothing at
+all about what the attempt DID. The plan asked for "one record per task attempt, written where the
+scheduler already writes the terminal state" — which describes that table exactly. Building a second
+one beside it would have been two records of one thing: defect #5 on this repository's own list,
+shipped deliberately.
+
+**AND THE FACTS WERE NEVER MISSING EITHER, WHICH IS THE PART WORTH SAYING OUT LOUD.** Every one of
+them is computed, correct, and sitting on `Domain.Task` — where four are marked TRANSIENT in their
+own doc comments, meaning the object holds them and the `tasks` row does not. So a restart forgot why
+a worker was chosen, which deliverable a task served, what capability was required of it, and WHICH
+TREE a check actually ran in. Every closure question after this release is asked of those four, and
+each was answerable only for as long as the process lived.
+
+**EIGHT COLUMNS, WRITTEN AT ONE PLACE.** `assigned_ant`, `task_type`, `worker_basis`,
+`deliverable_ids`, `required_capability`, `generation_degraded`, `produced_revision_id`,
+`ran_revision_id` — written at `ExecutionService.CloseAttempt`, whose own remark already explains why
+it is the right one: every path that ends a task passes through it with its final status set. They
+are written there and not at claim time because they are properties of a FINISHED attempt — which
+tree a check judged is not known when the claim is taken.
+
+**NULL MEANS NOT RECORDED, NEVER "NO".** Legacy attempts migrate in place with no values. A closure
+gate that read those nulls as "this check ran in no revision" or "this generation was fine" would
+refuse every mission the colony has already run — inventing history to satisfy a guard, which is the
+direction `evidence.revision_id` and `patch_sets.base_fingerprint` both refused. Every column is
+written through COALESCE for the same reason from the other side: `FinishAttempt` has three call
+sites that predate the record and pass none, and null from them means "this caller had nothing to
+record", never "there was nothing to record".
+
+**NO `plan_task_id` COLUMN.** `.138` made the executed graph the plan, same task ids — so an attempt
+row's `task_id` already joins to the dispatch plan row. Adding a second identity for one thing is the
+same defect, and the plan's request for "plus the plan row the task came from" was answered a release
+before this one without either document noticing.
+
+**THE TEST IS A RESTART, AND IT HAS TO BE.** "Transient" is exactly what is being fixed. A test that
+read the facts back through live objects would assert nothing — it would pass identically against the
+code this replaces — so `ExecutionRecordTests` closes the store and reopens it on the same file.
+
+**CLOSURE ENFORCEMENT IS DELIBERATELY NOT IN THIS RELEASE.** `Verification.Failed` still spans "a
+check said no" and "nothing could satisfy the check"; `.122` tried to reconcile them and reverted,
+and splitting those two meanings is what this record was built for. Doing both at once repeats `.122`
+exactly.
+
 ## v0.3.8.138 - the validated dispatch plan is the executed graph
 
 **THE PRE-DISPATCH PLAN WAS LOGGED AND THEN DISCARDED.** v0.3.8.118 built the whole stage — the

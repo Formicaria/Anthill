@@ -1050,8 +1050,20 @@ public sealed class ExecutionService : IExecutionService
 
         try
         {
+            // v0.3.8.139 — AND WHAT THE ATTEMPT DID, written from the task that is holding the
+            // answers. This method's own remark already says why it is the right place: "every path
+            // that ends a task passes through here with its final status already set". The
+            // execution facts are properties of a FINISHED attempt — which tree a check judged is
+            // not known when the claim is taken — so the chokepoint that knows the ending is the
+            // only one that can record them.
+            //
+            // Four of these are marked TRANSIENT on `Domain.Task`: the object holds them and the
+            // `tasks` row does not, so before this line a restart forgot why a worker was chosen,
+            // which deliverable a task served, what capability was required of it, and which tree it
+            // ran in. `docs/PLAN.md` §2e items 3-8 all wait on exactly those facts surviving.
             _memory.FinishAttempt(attemptId, state,
-                failureClass: task.FailureType, failureReason: task.FailureReason ?? task.BlockedReason);
+                failureClass: task.FailureType, failureReason: task.FailureReason ?? task.BlockedReason,
+                record: Workers.AttemptExecutionRecord.From(task));
         }
         catch (Exception error)
         {

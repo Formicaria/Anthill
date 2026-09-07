@@ -4,7 +4,7 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-Shipping release: **v0.3.8.138**. Everything below the rule is a record, not a state.
+Shipping release: **v0.3.8.139**. Everything below the rule is a record, not a state.
 
 **This file is a POINTER, and the reason is written into `CONTRIBUTING.md`: a snapshot has to be
 rewritten every release to stay true, and will therefore be false most of the time.** It spent forty
@@ -20,10 +20,7 @@ it stopped claiming to be the state of things:
 | What an outside review found, and which of it is real | `docs/PLAN.md` §2e, verified against the tree rather than adopted |
 | How a guard must be written | `docs/GUARDS.md`, enforced by `GuardHierarchyTests` |
 
-**The last four releases, in one line each.** `.135` found two steps the colony inserts into its
-own plans that named task types their assigned role's contract does not declare — both blocked at
-dispatch every time they fired — closed the handoff gate's half of the same hole, and added the
-sweep that reads every constructed pair; `.136` made missions actually ENTER the knowledge scope
+**The last four releases, in one line each.** `.136` made missions actually ENTER the knowledge scope
 that had been designed, documented and entered by nobody since `.121` — resolution is a refusal,
 never a fallback to the operator's default project — built to `MissionKnowledgeScopeTests`, which
 the previous session left test-first in the working tree; `.137` closed review items 3 and 6: a
@@ -34,7 +31,10 @@ id), and a job's project survives submission → durable row → crash-requeue �
 review table's LAST open row — an operator-requested dispatch plan now travels into planning on the
 `MissionContext` and the executed graph IS the plan (same task ids, types, roles and declared
 edges, admitted through the same pipeline, policy verifier still appended, recorded as
-`mission_plan_from_dispatch`).
+`mission_plan_from_dispatch`); `.139` gave `task_attempts` the eight columns that make an attempt's
+EXECUTION durable — the row §2e called missing for eleven releases already existed, and what it
+lacked was any fact about what the attempt did, four of which `Domain.Task` marks transient and a
+restart therefore forgot. Closure enforcement is the next slice and is deliberately not in it.
 
 ---
 
