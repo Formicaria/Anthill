@@ -1405,9 +1405,13 @@ public static partial class ApiHost
             return ApiJson.Ok(new Dictionary<string, object?>
             {
                 ["run_id"] = run.Id, ["status"] = run.Status,
-                ["conversation_id"] = run.ConversationId, ["summary"] = run.Summary,
+                ["conversation_id"] = run.ConversationId, ["mission_id"] = run.MissionId,
+                ["summary"] = run.Summary,
             }, run.Status == "skipped_overlap" ? "Skipped — the previous run is still in progress."
              : run.Status == "waiting_approval" ? "Started — waiting on your approval in its conversation."
+             // v0.3.8.137: a run stays "running" until its mission settles, so this endpoint now
+             // usually answers while the work is genuinely in flight — and says so.
+             : run.Status == "running" ? "Started — the mission is running; the run completes when it settles."
              : "Run finished.");
         });
 
@@ -1420,7 +1424,8 @@ public static partial class ApiHost
                 ["runs"] = Queen.Memory.LoadScheduleRuns(id).Select(r => new Dictionary<string, object?>
                 {
                     ["id"] = r.Id, ["status"] = r.Status, ["trigger"] = r.Trigger,
-                    ["conversation_id"] = r.ConversationId, ["summary"] = r.Summary,
+                    ["conversation_id"] = r.ConversationId, ["mission_id"] = r.MissionId,
+                    ["summary"] = r.Summary,
                     ["started_at"] = r.StartedAt.ToIso(), ["finished_at"] = r.FinishedAt?.ToIso(),
                 }).ToList(),
             });

@@ -136,7 +136,8 @@ public sealed class ConversationRunner
         ConversationMode requested = ConversationMode.Chat,
         IReadOnlyDictionary<string, string>? answers = null,
         CancellationToken cancel = default,
-        IReadOnlyList<(string Filename, string Content)>? attachments = null)
+        IReadOnlyList<(string Filename, string Content)>? attachments = null,
+        Action<string>? onMissionSettled = null)
     {
         if (conversation is null)
             return new ConversationOutcome(requested, false, null, "no conversation");
@@ -266,6 +267,24 @@ public sealed class ConversationRunner
             catch (Exception error) { idReady.TrySetException(error); }
             finally
             {
+                // v0.3.8.137: the caller who asked for settlement hears about it HERE — the one
+                // point that runs whether the pipeline returned or threw. This is what lets a
+                // schedule run stay "running" until the mission is actually over instead of being
+                // stamped complete the moment the row existed. The id may be empty (the pipeline
+                // died before creating a row); the callback still fires, because "it settled and
+                // there is no mission to ask" is exactly what that caller must record.
+                if (onMissionSettled is not null)
+                {
+                    var settledId = idReady.Task is { IsCompletedSuccessfully: true } t ? t.Result : "";
+                    try { onMissionSettled(settledId); }
+                    catch (Exception error)
+                    {
+                        Console.Error.WriteLine(
+                            $"[conversation] onMissionSettled callback threw: {error.Message} — "
+                          + "the mission itself is unaffected.");
+                    }
+                }
+
                 // The lease on this conversation's cancellation source ends when the work does.
                 lock (_running)
                 {

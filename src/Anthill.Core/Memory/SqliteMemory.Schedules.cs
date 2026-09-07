@@ -97,17 +97,24 @@ public sealed partial class SqliteMemory
             using var conn = Connect();
             NonQuery(conn, null,
                 @"INSERT OR REPLACE INTO schedule_runs
-                    (id, schedule_id, project_id, conversation_id, status, ""trigger"", summary,
+                    (id, schedule_id, project_id, conversation_id, mission_id, status, ""trigger"", summary,
                      started_at, finished_at)
-                  VALUES (@id, @sid, @pid, @cid, @status, @trig, @summary, @started, @finished)",
+                  VALUES (@id, @sid, @pid, @cid, @mid, @status, @trig, @summary, @started, @finished)",
                 ("@id", run.Id), ("@sid", run.ScheduleId), ("@pid", run.ProjectId),
                 ("@cid", (object?)run.ConversationId ?? DBNull.Value),
+                ("@mid", (object?)run.MissionId ?? DBNull.Value),
                 ("@status", run.Status), ("@trig", run.Trigger),
                 ("@summary", (object?)run.Summary ?? DBNull.Value),
                 ("@started", run.StartedAt.ToIso()),
                 ("@finished", (object?)run.FinishedAt?.ToIso() ?? DBNull.Value));
         }
     }
+
+    /// <summary>v0.3.8.137: one run by id — what the settle callback and the reconciler load
+    /// before finalizing, so finalization stays idempotent against the stored state.</summary>
+    public ScheduleRun? LoadScheduleRun(string id) =>
+        Query("SELECT * FROM schedule_runs WHERE id=@id", ("@id", id ?? ""))
+        .Select(ReadRun).FirstOrDefault();
 
     public IReadOnlyList<ScheduleRun> LoadScheduleRuns(string scheduleId, int limit = 50) =>
         Query("SELECT * FROM schedule_runs WHERE schedule_id=@sid ORDER BY started_at DESC LIMIT @limit",
@@ -146,6 +153,7 @@ public sealed partial class SqliteMemory
         row.GetValueOrDefault("schedule_id")?.ToString() ?? "",
         row.GetValueOrDefault("project_id")?.ToString() ?? "",
         Nullable(row, "conversation_id"),
+        Nullable(row, "mission_id"),
         row.GetValueOrDefault("status")?.ToString() ?? "running",
         row.GetValueOrDefault("trigger")?.ToString() ?? "schedule",
         Nullable(row, "summary"),

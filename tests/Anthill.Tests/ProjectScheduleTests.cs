@@ -1,5 +1,6 @@
 using Anthill.Core.Common;
 using Anthill.Core.Conversations;
+using Anthill.Core.Domain;
 using Anthill.Core.Memory;
 using Anthill.Core.Projects;
 using Xunit;
@@ -131,11 +132,47 @@ public class ProjectScheduleTests : IDisposable
 
     // ---- execution through the real runner -------------------------------------------------------
 
-    private static (ProjectScheduler Scheduler, SqliteMemory Memory) Rig(SqliteMemory memory)
+    /// <summary>
+    /// The pipeline fake persists a REAL mission row and can take real time before settling —
+    /// both on purpose. The old fake returned instantly and persisted nothing, which is exactly
+    /// how the "run stamped complete before its mission did anything" defect stayed invisible to
+    /// this harness: a synchronous fake makes started and finished the same instant by
+    /// construction. A run's terminal status is now read from the mission row, so the fake must
+    /// leave one, carrying whatever status the scenario says the mission lands on.
+    /// </summary>
+    private static (ProjectScheduler Scheduler, SqliteMemory Memory) Rig(
+        SqliteMemory memory,
+        MissionStatus missionLands = MissionStatus.Complete,
+        TimeSpan? missionTakes = null)
     {
-        var runner = new ConversationRunner(memory,
-            (_, _, onCreated, _) => { var id = Guid.NewGuid().ToString("N")[..12]; onCreated(id); return id; });
+        var runner = new ConversationRunner(memory, (goal, _, onCreated, _) =>
+        {
+            var id = Guid.NewGuid().ToString("N")[..12];
+            onCreated(id);
+            if (missionTakes is { } t) Thread.Sleep(t);
+            memory.SaveMission(new Mission
+            {
+                Id = id, Goal = goal, Status = missionLands, UserResult = "did the thing",
+            });
+            return id;
+        });
         return (new ProjectScheduler(memory, runner), memory);
+    }
+
+    /// <summary>
+    /// Settlement happens on the runner's background thread, so tests that assert a terminal
+    /// status wait for it — bounded, not forever.
+    /// </summary>
+    private static ScheduleRun WaitForTerminal(SqliteMemory memory, string runId)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            var run = memory.LoadScheduleRun(runId);
+            if (run is not null && run.Status != "running") return run;
+            Thread.Sleep(20);
+        }
+        return memory.LoadScheduleRun(runId) ?? throw new TimeoutException($"run {runId} never appeared");
     }
 
     [Fact]
@@ -147,13 +184,56 @@ public class ProjectScheduleTests : IDisposable
         var s = Daily() with { ApprovalMode = EscalationPolicy.AutoApprove, CreatedBy = "zwright" };
         memory.SaveSchedule(s);
 
-        var run = scheduler.RunNow(s, "zwright");
+        var run = WaitForTerminal(memory, scheduler.RunNow(s, "zwright").Id);
 
         Assert.Equal("complete", run.Status);
+        Assert.NotNull(run.MissionId);                 // the join to the work itself
+        Assert.NotNull(run.FinishedAt);
         var conversation = memory.LoadConversation(run.ConversationId!)!;
         Assert.Equal("p1", conversation.ProjectId);
         Assert.Equal(EscalationPolicy.AutoApprove, conversation.EffectivePolicy);   // attributed
         Assert.Equal("zwright", conversation.PolicySetBy);
+    }
+
+    /// <summary>
+    /// The review's item 3, pinned from both sides: while the mission is genuinely in flight the
+    /// run READS running — which is what lets the overlap check skip a second occurrence — and
+    /// the terminal status is the MISSION's, arriving only when it settles.
+    /// </summary>
+    [Fact]
+    public void ARunStaysRunning_UntilItsMissionSettles_AndOverlapSeesTheFlight()
+    {
+        using var memory = Memory();
+        var (scheduler, _) = Rig(memory, missionTakes: TimeSpan.FromMilliseconds(600));
+        var s = Daily() with { ApprovalMode = EscalationPolicy.AutoApprove, CreatedBy = "z" };
+        memory.SaveSchedule(s);
+
+        var first = scheduler.RunNow(s, "z");
+        Assert.Equal("running", first.Status);          // returned mid-flight, not "complete"
+        Assert.Null(first.FinishedAt);
+
+        var second = scheduler.RunNow(s, "z");          // occurrence fires while one is in flight
+        Assert.Equal("skipped_overlap", second.Status);
+
+        var settled = WaitForTerminal(memory, first.Id);
+        Assert.Equal("complete", settled.Status);
+        Assert.NotNull(settled.MissionId);
+        Assert.NotNull(settled.FinishedAt);
+    }
+
+    /// <summary>A mission that fails makes a run that says failed — not "complete" because it started.</summary>
+    [Fact]
+    public void AFailedMission_MakesAFailedRun()
+    {
+        using var memory = Memory();
+        var (scheduler, _) = Rig(memory, missionLands: MissionStatus.Failed);
+        var s = Daily() with { ApprovalMode = EscalationPolicy.AutoApprove, CreatedBy = "z" };
+        memory.SaveSchedule(s);
+
+        var run = WaitForTerminal(memory, scheduler.RunNow(s, "z").Id);
+
+        Assert.Equal("failed", run.Status);
+        Assert.NotNull(run.MissionId);
     }
 
     /// <summary>Ask-mode scheduled work WAITS, visibly — it never self-promotes to automatic.</summary>
@@ -178,7 +258,7 @@ public class ProjectScheduleTests : IDisposable
         var (scheduler, _) = Rig(memory);
         var s = Daily();
         memory.SaveSchedule(s);
-        memory.SaveScheduleRun(new ScheduleRun("r0", "s1", "p1", null, "running", "schedule", null,
+        memory.SaveScheduleRun(new ScheduleRun("r0", "s1", "p1", null, null, "running", "schedule", null,
             DateTime.UtcNow.AddMinutes(-2), null));
 
         var run = scheduler.RunNow(s, "zwright");
@@ -204,6 +284,7 @@ public class ProjectScheduleTests : IDisposable
         var runs = memory.LoadScheduleRuns("s1");
         Assert.Single(runs);
         Assert.Equal("missed_catchup", runs[0].Trigger);
+        WaitForTerminal(memory, runs[0].Id);   // let the background settle land before disposal
         var after = memory.LoadSchedule("s1")!;
         Assert.False(after.Enabled);          // one-time retired itself
         Assert.Null(after.NextRunAt);
@@ -216,7 +297,7 @@ public class ProjectScheduleTests : IDisposable
     {
         using var memory = Memory();
         memory.SaveSchedule(Daily() with { ClaimedBy = "host-dead", ClaimedAt = DateTime.UtcNow });
-        memory.SaveScheduleRun(new ScheduleRun("r1", "s1", "p1", null, "running", "schedule", null,
+        memory.SaveScheduleRun(new ScheduleRun("r1", "s1", "p1", null, null, "running", "schedule", null,
             DateTime.UtcNow.AddMinutes(-9), null));
 
         var (scheduler, _) = Rig(memory);
