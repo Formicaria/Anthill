@@ -70,7 +70,7 @@ public static class MissionVerification
         // steps too, but they report evidence and findings rather than the verifier's verdict
         // vocabulary, so parsing their output for a verdict would return Unknown and fail every
         // mission they touch. Their completion remains the signal, as before.
-        if (!tasks.Where(IsVerdictBearing).All(t => VerificationVerdict.TextIsPass(t.Result))) return false;
+        if (!tasks.Where(IsVerdictBearing).All(t => VerificationVerdict.IsPass(VerdictOf(t)))) return false;
 
         // Structural repair §4 — FRESH EVIDENCE FOR THE LATEST REVISION, fail closed.
         //
@@ -171,8 +171,69 @@ public static class MissionVerification
              .LastOrDefault()?.ProducedRevisionId;
 
     /// <summary>The verifier is the only role that emits the verdict vocabulary.</summary>
-    private static bool IsVerdictBearing(Task t) =>
+    public static bool IsVerdictBearing(Task t) =>
         t is not null && string.Equals(t.AssignedAnt, "verifier", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// THE VERDICT THIS GATE READS, NAMED ONCE. v0.3.8.140.
+    ///
+    /// Behaviour-identical to the `VerificationVerdict.TextIsPass(t.Result)` it replaced — the same
+    /// parse of the same text — and it exists so <see cref="SomethingSaidNo"/> below cannot drift
+    /// from what <see cref="IsSatisfied"/> decided. Two spellings of "what did the verifier say"
+    /// would eventually disagree, and this release draws a distinction on that answer.
+    ///
+    /// READING `VerifierAnt`'s OWN RECORDED RULING WAS TRIED IN THIS RELEASE AND REVERTED, and the
+    /// attempt is worth more than the change would have been.
+    ///
+    /// The reasoning looked airtight. The ant DECIDES a verdict (`v3.8.27`), records it as its own
+    /// evidence row, and downgrades a model-authored PASS with nothing behind it to `Unknown` — and
+    /// this gate ignored all of that and re-parsed the model's prose. Two implementations of one
+    /// rule, defect #5, with the authoritative one losing. So the gate was pointed at the ruling.
+    ///
+    /// TWENTY INTEGRATION TESTS ACROSS FIVE MISSION CLASSES FAILED IMMEDIATELY, AND THEY WERE RIGHT.
+    /// The ant's verdict answers a PROMOTION question — is there DETERMINISTIC evidence behind this
+    /// — because that is what auto-apply needs of it. `EvidenceVerdict.For` returns `Unknown` when a
+    /// mission holds only non-deterministic rows, and an audit, an external action and a system
+    /// action have no deterministic evidence BY DESIGN: their authority is `observe`, or their work
+    /// is an approved operation rather than a check. So the ruling is `Unknown` for entire classes
+    /// of legitimately verified mission, and pointing closure at it made every one unverifiable.
+    ///
+    /// The two are asking different questions — "may this be promoted" and "did the verifier judge
+    /// this acceptable" — and the second is not a weaker form of the first. The gate reads the prose
+    /// because that is the question it is asking, which is now a decision on the record rather than
+    /// an oversight left standing.
+    /// </summary>
+    public static string VerdictOf(Task task) =>
+        task is null ? VerificationVerdict.Unknown : VerificationVerdict.Parse(task.Result);
+
+    /// <summary>
+    /// WHY THE GATE REFUSED, AND WHETHER ANYTHING ACTUALLY SAID NO. v0.3.8.140.
+    ///
+    /// THE DISTINCTION `.122` DID NOT HAVE, and the reason its closure reconciliation was reverted.
+    /// It needed no new fact and no new field: `VerificationVerdict.Parse` has separated these since
+    /// `v2.19.0`, and only the mission-level status flattened them.
+    /// `docs/PLAN.md` §2e records it: "`Verification.Failed` does not mean 'a check said no' …
+    /// `failed` spans 'the check said no' and 'nothing could satisfy the check'. Demoting on it
+    /// reclassified a legitimately complete mission." The vocabulary to tell those apart has existed
+    /// one layer down the whole time — <see cref="VerificationVerdict"/> separates `Failed` from
+    /// `Unknown` and `Unavailable` — and the mission-level status flattened all three into one word.
+    ///
+    /// So this carries the distinction UP rather than inventing it. A verdict-bearing task whose
+    /// verdict is `Failed` or `NeedsImprovement` is something saying no, and a mission may not close
+    /// complete over it. `Unknown` is nothing being able to say anything — no verdict in the text,
+    /// or two, which `Parse` reads as ambiguous and refuses to guess between. Refusing on THAT is
+    /// exactly what `.122` did.
+    ///
+    /// Everything else this gate refuses for — a failed critical task, a verification step that
+    /// never completed, stale revision evidence — is also INCONCLUSIVE by this rule and not a
+    /// "no": none of them is a verdict. They are already refusals in their own right, and the
+    /// structural status is not the layer that should restate them.
+    /// </summary>
+    public static bool SomethingSaidNo(IReadOnlyList<Task>? tasks) =>
+        tasks is not null
+     && tasks.Where(IsVerdictBearing).Select(VerdictOf).Any(v =>
+            string.Equals(v, VerificationVerdict.Failed, StringComparison.Ordinal)
+         || string.Equals(v, VerificationVerdict.NeedsImprovement, StringComparison.Ordinal));
 
     /// <summary>
     /// Row-based overload, for callers reading persisted task rows rather than a live

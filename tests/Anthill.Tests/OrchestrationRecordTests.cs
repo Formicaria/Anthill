@@ -18,13 +18,16 @@ namespace Anthill.Tests;
 ///
 /// The FIRST is fixed and tested here, as a pure function: no database, no scheduler, no mission.
 ///
-/// The SECOND is not, and the attempt is worth more than the fix would have been.
-/// `Verification.Failed` does not mean "a check said no" — `MissionVerification.IsSatisfied` needs
+/// The SECOND was not, and the attempt was worth more than the fix would have been.
+/// `Verification.Failed` did not mean "a check said no" — `MissionVerification.IsSatisfied` needs
 /// the verifier's verdict to be a PASS, and `VerifierAnt` downgrades a model-authored pass to
-/// `Unknown` when no deterministic evidence backs it. So `failed` spans "the check said no" and
+/// `Unknown` when no deterministic evidence backs it. So `failed` spanned "the check said no" and
 /// "nothing could satisfy the check", and demoting on it reclassified a legitimately complete
-/// mission. `ScriptedProviderTests` caught that in one run. Closure enforcement needs those two
-/// separated first, which needs the per-task execution record — `docs/PLAN.md` §2e.
+/// mission. `ScriptedProviderTests` caught that in one run.
+///
+/// CLOSED AT v0.3.8.140, by splitting the word rather than the join — `failed` now means a
+/// verdict-bearing task said no and `inconclusive` means nothing could say anything, and only the
+/// first demotes. See `ClosureEnforcementTests`, which owns that half.
 /// </summary>
 public class OrchestrationRecordTests
 {

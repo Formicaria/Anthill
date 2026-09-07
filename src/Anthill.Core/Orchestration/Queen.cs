@@ -1610,26 +1610,37 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
             ["stop_reason"] = evaluation.StopReason,
             ["evaluator_version"] = evaluation.EvaluatorVersion,
         });
-        // v0.3.8.122 — WHY THE STRUCTURAL STATUS STILL DOES NOT CONSULT THE VERDICT.
+        // v0.3.8.122 → v0.3.8.140 — WHY THE STRUCTURAL STATUS DID NOT CONSULT THE VERDICT, AND
+        // WHAT IT TOOK TO MAKE IT SAFE TO. Kept as a record because the reasoning is the finding.
         //
         // `mission.Status` is computed ~80 lines above from task terminal states alone, and
-        // `evaluation.VerificationStatus` is computed here from the evidence. They do not meet, so
-        // `complete` can still be persisted beside `verification_status: failed`. This release TRIED
-        // to join them and the attempt was wrong in a way worth leaving written down.
+        // `evaluation.VerificationStatus` from the evidence. They did not meet, so `complete` could
+        // be persisted beside `verification_status: failed` — one record disagreeing with itself.
+        // `.122` TRIED to join them and the attempt was wrong in a way worth leaving written down.
         //
-        // `Verification.Failed` does not mean "a check said no". `MissionVerification.IsSatisfied`
+        // `Verification.Failed` did not mean "a check said no". `MissionVerification.IsSatisfied`
         // requires the verifier's own verdict to be a PASS, and `VerifierAnt` downgrades a
         // model-authored pass to `Unknown` whenever the evidence store has nothing deterministic to
         // back it (Ants.cs, the `modelWroteIt && IsPass(fromProse)` branch). So a mission with a
-        // verifier, a passing narrative and no tester grades `Failed` — meaning NOT PASSED, not
+        // verifier, a passing narrative and no tester graded `Failed` — meaning NOT PASSED, not
         // "actively failed". Demoting on it reclassified a legitimately complete scripted mission,
         // which `ScriptedProviderTests` caught immediately.
         //
-        // The three-way the evaluator exposes is `not_run` / `passed` / `failed`, and `failed`
-        // silently spans "the check said no" and "nothing could satisfy the check". Closure
-        // enforcement needs those separated, and separating them needs the per-task execution
-        // record — `docs/PLAN.md` §2e. This comment is here so the next attempt starts from what the
-        // code means rather than from what the finding assumed it meant.
+        // `.140` SPLIT THE WORD RATHER THAN THE JOIN, and needed nothing new to do it.
+        // `VerificationVerdict.Parse` has separated `Failed` and `NeedsImprovement` from `Unknown`
+        // since `v2.19.0`; only the mission-level status flattened them. Now `failed` means a
+        // verdict-bearing task said no and `inconclusive` means nothing could say anything, and the
+        // evaluator demotes a COMPLETE mission to Partial on the first only. The second is exactly
+        // the set `.122` demoted on, and it still demotes nothing.
+        //
+        // AND IT DID NOT NEED THE PER-TASK EXECUTION RECORD that §2e named as the prerequisite —
+        // `.139` built that row and every gate below still wants it, but this was never blocked on
+        // a missing fact.
+        //
+        // `.140` ALSO TRIED POINTING THIS GATE AT `VerifierAnt`'s OWN RECORDED RULING and reverted
+        // that within the release. See `MissionVerification.VerdictOf`: the ant's verdict answers a
+        // PROMOTION question, so it is `Unknown` for every class with no deterministic evidence by
+        // design, and closure read from it made audits, sends and operations unverifiable.
 
         if (evaluation.DeliverableStatus == Outcomes.MissionEvaluation.Deliverable.NotSatisfied)
             Memory.LogEvent(mission.Id, "objective_verification_failed",

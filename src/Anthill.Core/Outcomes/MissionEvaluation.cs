@@ -22,7 +22,8 @@ public sealed record MissionEvaluation(
     string MissionId,
     string OutcomeCode,           // MissionOutcome vocabulary — the closed set, never free text
     string StructuralStatus,      // MissionStatus.Value(): complete | partial | failed
-    string VerificationStatus,    // MissionEvaluation.Verification.*
+    string VerificationStatus,    // MissionEvaluation.Verification.* — v0.3.8.140 split `failed`
+                                  // ("something said no") from `inconclusive` ("nothing could say")
     string DeliverableStatus,     // MissionEvaluation.Deliverable.*
     string? StopReason,           // MissionStopReasons.* | null — see that type; adaptive_stop
                                   // and adaptive_stop_satisfied are NOT the same outcome
@@ -37,7 +38,32 @@ public sealed record MissionEvaluation(
     public static class Verification
     {
         public const string Passed = "passed";
+
+        /// <summary>
+        /// SOMETHING SAID NO. v0.3.8.140 narrowed this to its literal meaning: a verdict-bearing
+        /// task reached `Failed` or `NeedsImprovement`. It used to mean that AND every other way the
+        /// gate could refuse, which is what made it undemotable — see <see cref="Inconclusive"/>.
+        /// </summary>
         public const string Failed = "failed";
+
+        /// <summary>
+        /// NOTHING COULD SAY ANYTHING. v0.3.8.140, and it is the distinction `.122` needed and did
+        /// not have.
+        ///
+        /// `docs/PLAN.md` §2e records why that release's closure reconciliation was reverted:
+        /// "`Verification.Failed` does not mean 'a check said no' … `failed` spans 'the check said
+        /// no' and 'nothing could satisfy the check'. Demoting on it reclassified a legitimately
+        /// complete mission." A model-authored pass with no evidence behind it is downgraded to
+        /// `Unknown`; an unreadable store is `Unavailable`; a verification step that never completed
+        /// produced no ruling at all. None of those is a verdict, and treating them as one is how a
+        /// mission that genuinely finished got called failed.
+        ///
+        /// So they land here instead. This is NOT a pass and never softens into one — it is exactly
+        /// as unverified as <see cref="Failed"/> — but it does not demote the structural status,
+        /// because nothing established that anything went wrong.
+        /// </summary>
+        public const string Inconclusive = "inconclusive";
+
         public const string NotRun = "not_run";
     }
 
@@ -137,15 +163,41 @@ public static class MissionEvaluator
         if (awaiting && string.IsNullOrWhiteSpace(stopReason))
             stopReason = MissionStopReasons.AwaitingDecision;
 
-        var structural = mission.Status.Value();
-
         // Verification layer — verdict-gated (v2.19); "not run" is distinct from "failed" for the
         // operator, but neither is a pass. v0.3.8.66: and identity-gated — the evidence store's
         // own rows must judge the final revision and tree when the mission materialized a patch.
+        //
+        // v0.3.8.140 — AND A REFUSAL NOW SAYS WHICH KIND IT IS. `failed` used to mean both "a
+        // verdict-bearing task said no" and "nothing could establish a verdict", and those demand
+        // different responses from every reader — including, below, from the structural status.
         var hasVerifier = mission.Tasks.Any(MissionVerification.IsVerificationTask);
         var verification = !hasVerifier ? MissionEvaluation.Verification.NotRun
             : MissionVerification.IsSatisfied(mission.Tasks, evidence) ? MissionEvaluation.Verification.Passed
-            : MissionEvaluation.Verification.Failed;
+            : MissionVerification.SomethingSaidNo(mission.Tasks) ? MissionEvaluation.Verification.Failed
+            : MissionEvaluation.Verification.Inconclusive;
+
+        // v0.3.8.140 — CLOSURE ENFORCEMENT. `docs/PLAN.md` §2e has carried this since `.118`: a
+        // mission may not close COMPLETE when its own verification said no. `mission.Status` and
+        // `VerificationStatus` have never met, so a mission whose verifier returned "Verification
+        // Failed" was reported to the operator as `complete` with a `failed` verification beside it
+        // — two lines of one record disagreeing, and the one people read first winning.
+        //
+        // `.122` ATTEMPTED THIS AND REVERTED IT, and the plan's instruction to the next attempt is
+        // followed literally here: "Do not begin the next attempt by making the status line read
+        // `VerificationStatus`." It does not. It reads the one value that means something said no,
+        // which is why the demotion is now safe — an `Inconclusive` mission keeps its status, and
+        // `Inconclusive` is precisely the set of cases whose demotion reclassified legitimately
+        // complete missions last time.
+        //
+        // PARTIAL, NOT FAILED. The work happened and its tasks succeeded; what did not happen is
+        // verification. Calling it `failed` would say the mission broke, which is a different and
+        // wrong story about the same run — the same distinction `CloseAttempt` draws between an
+        // abandoned attempt and a failed one. And only from COMPLETE: a mission already Partial or
+        // Failed is not promoted by this line, which can therefore only ever reduce.
+        var structural = mission.Status.Value();
+        var closureRefused = mission.Status == MissionStatus.Complete
+                          && string.Equals(verification, MissionEvaluation.Verification.Failed, StringComparison.Ordinal);
+        if (closureRefused) structural = MissionStatus.Partial.Value();
 
         // Deliverable layer — "a patch proposal is a deliverable, not proof the patch is safe".
         //
@@ -383,7 +435,20 @@ public static class MissionEvaluator
             && mission.Tasks.Where(t => t.Status == TaskStatus.Failed)
                 .All(t => string.Equals(t.AssignedAnt, "tester", StringComparison.OrdinalIgnoreCase));
 
-        var outcome = Resolve(reproducedSymptom ? MissionStatus.Complete : mission.Status,
+        // v0.3.8.140 — THE DEMOTION REACHES THE GRADE, not only the recorded status line.
+        //
+        // `structural` above is what the record SAYS; this is what the outcome is COMPUTED from,
+        // and closure enforcement that moved one without the other would produce the same
+        // disagreement it exists to remove — a record reading `structural=partial` beside
+        // `outcome=completed_unverified`. `reproducedSymptom` already makes these two diverge in the
+        // opposite direction and says so in its own remark; this makes them move together.
+        //
+        // The two conditions cannot collide: a reproduced symptom requires `Partial`, closure
+        // refusal requires `Complete`.
+        var outcome = Resolve(
+            reproducedSymptom ? MissionStatus.Complete
+            : closureRefused ? MissionStatus.Partial
+            : mission.Status,
             stopReason, verification, deliverable, generationDegraded,
             deterministicBlock is not null);
         return new MissionEvaluation(
@@ -396,6 +461,12 @@ public static class MissionEvaluator
             EvaluatorVersion: Version,
             EvaluatedAt: AnthillTime.NowUtc().ToIso(),
             Explanation: Explain(outcome, structural, verification, deliverable, stopReason, generationDegraded)
+                // v0.3.8.140 — a demotion an operator cannot locate is one they cannot answer, and
+                // "structural=partial" on a mission whose every task succeeded names no cause.
+                + (closureRefused
+                    ? " Closure refused: the mission's own verification returned a verdict of no, so "
+                      + "it may not close complete. The tasks ran; what did not happen is verification."
+                    : "")
                 + (deterministicBlock is null ? "" : $" Deterministic block: {deterministicBlock}")
                 // The gate that said no, named. A demotion an operator cannot locate is one they
                 // cannot answer, and "deliverable=not_satisfied" alone names no gate.

@@ -85,11 +85,30 @@ public class CharacterizationTests : IDisposable
     /// <summary>
     /// The complete v3.0.0 outcome truth table. Every V3 phase that touches mission evaluation must
     /// reproduce this table exactly, or state in the same commit which row it changes and why.
+    ///
+    /// v0.3.8.140 CHANGES EXACTLY ONE ROW, and this is that statement.
+    ///
+    /// `(Complete, no stop, verifier says NO)` was `completed_unverified` and is now `partial`. That
+    /// row was the whole of the closure defect `docs/PLAN.md` §2e has carried since `.118`: a
+    /// mission whose own verifier returned "Verification Failed" was reported to the operator as
+    /// COMPLETE with `verification: failed` printed beside it — one record disagreeing with itself,
+    /// and the line people read first winning. A mission may not close complete when its own
+    /// verification said no.
+    ///
+    /// PARTIAL AND NOT FAILED, deliberately: the tasks ran and succeeded. What did not happen is
+    /// verification, and grading it `failed` would say the mission broke — a different and wrong
+    /// story about the same run.
+    ///
+    /// EVERY OTHER ROW IS UNCHANGED, including the ones that matter most for this not being a
+    /// regression: a mission with no verifier is still `not_run` and still `completed_unverified`,
+    /// and a verifier whose verdict could not be established is `inconclusive` and demotes nothing.
+    /// `.122` demoted on that second case and reclassified legitimately complete missions, which is
+    /// why the status had to be split before this row could move. See `ClosureEnforcementTests`.
     /// </summary>
     [Theory]
     // structural, stop reason, verifier, deliverable-relevant goal, patches -> outcome
     [InlineData(MissionStatus.Complete, null, true, "research a topic", 0, MissionOutcome.CompletedVerified)]
-    [InlineData(MissionStatus.Complete, null, false, "research a topic", 0, MissionOutcome.CompletedUnverified)]
+    [InlineData(MissionStatus.Complete, null, false, "research a topic", 0, MissionOutcome.Partial)]
     [InlineData(MissionStatus.Partial, null, true, "research a topic", 0, MissionOutcome.Partial)]
     [InlineData(MissionStatus.Failed, null, true, "research a topic", 0, MissionOutcome.FailedPermanent)]
     [InlineData(MissionStatus.Complete, "mission_cancelled", true, "research a topic", 0, MissionOutcome.Cancelled)]

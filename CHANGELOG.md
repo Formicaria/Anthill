@@ -1,3 +1,56 @@
+## v0.3.8.140 - a mission may not close complete when its own verification said no
+
+**A MISSION WHOSE VERIFIER RETURNED "VERIFICATION FAILED" WAS REPORTED TO THE OPERATOR AS COMPLETE,**
+with `verification: failed` printed beside it. One record disagreeing with itself, and the line
+people read first winning. `docs/PLAN.md` §2e has carried this since `.118`: `mission.Status` is
+computed from task terminal states alone, `VerificationStatus` from the evidence, and the two never
+met.
+
+**`.122` TRIED TO JOIN THEM AND REVERTED, and its note is why this release could succeed.**
+"`Verification.Failed` does not mean 'a check said no' … `failed` spans 'the check said no' and
+'nothing could satisfy the check'. Demoting on it reclassified a legitimately complete mission."
+
+**SO THIS RELEASE SPLIT THE WORD RATHER THAN THE JOIN, and needed nothing new to do it.**
+`VerificationVerdict.Parse` has separated `Failed` and `Needs Improvement` from `Unknown` since
+`v2.19.0`; only the mission-level status flattened them. Now `failed` means a verdict-bearing task
+said no, the new `inconclusive` means nothing could establish a verdict, and a COMPLETE mission is
+demoted to Partial on the first only.
+
+**IT DID NOT NEED THE PER-TASK EXECUTION RECORD.** §2e named that as the prerequisite for eleven
+releases and it was not one. `.139` built the row and every remaining gate still wants it, but this
+was never blocked on a missing fact — only on one word doing two jobs.
+
+**`inconclusive` IS NOT A SOFTER PASS.** It is exactly as unverified as `failed` — it just does not
+accuse the mission of having failed. It is precisely the set `.122` demoted on, and it still demotes
+nothing, which is how the plan's instruction to the next attempt gets followed literally: "do not
+begin the next attempt by making the status line read `VerificationStatus`."
+
+**PARTIAL, NOT FAILED.** The tasks ran and succeeded; what did not happen is verification. Grading it
+`failed` would say the mission broke, a different and wrong story about the same run — the same
+distinction `CloseAttempt` draws between an abandoned attempt and a failed one. And the line reads
+`Complete` and nothing else, so it can only ever reduce.
+
+**THE OTHER FIX THIS RELEASE TRIED AND REVERTED, kept because the reason is worth more than the
+change would have been.** `VerifierAnt` DECIDES a verdict (`v3.8.27`) and records it as its own
+evidence row; this gate re-parses the model's prose instead. That reads exactly like defect #5 — two
+implementations of one rule with the authoritative one losing — so the gate was pointed at the
+ruling. Twenty integration tests across five mission classes failed at once, and they were right: the
+ant's verdict answers a PROMOTION question, "is there DETERMINISTIC evidence behind this", because
+that is what auto-apply needs of it. An audit, an external action and a system action have no
+deterministic evidence BY DESIGN — their authority is `observe`, or their work is an approved
+operation rather than a check — so the ruling is `Unknown` for entire classes of legitimately
+verified mission. "May this be promoted" and "did the verifier judge this acceptable" are different
+questions, and the second is not a weaker form of the first. `MissionVerification.VerdictOf` and
+`ClosureEnforcementTests` both carry the finding so it is not re-tried.
+
+**THE TRUTH TABLE CHANGES EXACTLY ONE ROW.** `CharacterizationTests` requires that any phase touching
+mission evaluation either reproduce its table exactly or state in the same commit which row it
+changes and why. `(Complete, no stop, verifier says no)` moves from `completed_unverified` to
+`partial`, and the reason is written beside it. Every other row is unchanged.
+
+**And the demotion names itself.** "structural=partial" on a mission whose every task succeeded names
+no cause, and a demotion an operator cannot locate is one they cannot answer.
+
 ## v0.3.8.139 - the row that eleven releases were waiting on, and it already existed
 
 **`docs/PLAN.md` §2e HAS SAID SINCE `.118` THAT ITEMS 3-8 "ALL CONSUME THE SAME MISSING ROW".**
