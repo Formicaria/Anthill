@@ -1,3 +1,33 @@
+## v0.3.8.136 - the scope that was designed, documented, and never entered
+
+**A mission finally enters its knowledge scope.** v0.3.8.121 shipped the whole ambient design —
+`KnowledgeScopeContext`, the rule that a tool learns its reach from ambient state and never from an
+argument a model chooses, the tools reading `Current` — and PLAN.md §2k has said "entered by the
+core at mission intake" since. Nothing entered one. The console worked, because it resolves a scope
+per request; every knowledge tool an ANT dispatched read `Unresolved` and refused, so the surface a
+human used was fine and the surface an agent used was inert. Declared and reaching nobody, in its
+purest form yet: the security model was so sound that its absence looked like correct refusal.
+
+`Queen.ResolveKnowledgeScope` is the missing resolution, a pure function of the mission and the
+settings, and every rule is a refusal rather than a fallback: knowledge disabled resolves to
+nothing; a mission with no project has no tenant and gets nothing — NOT the operator's default
+project, which exists for a console operator with no context; an unmapped project (or one mapped to
+an empty string — a half-finished edit, not a grant) gets nothing, because borrowing the default
+would be project A's mission answering from project B's documents with full provenance, looking
+entirely correct — the single failure the scope model exists to prevent. A mapped project resolves
+to a MISSION-kind scope carrying the FORAGER project, the mission id (so an audit of what was
+retrieved can name the run that asked) and the ANTHILL project id.
+
+The entry sits in `RunMission` beside the workspace and routing scopes, so the ambient boundaries
+enter and unwind together, and an unqueryable resolution is ENTERED as the refusal rather than
+skipped — "a scope was set" and "knowledge is reachable" are different facts, and the tools read
+the second. `mission_knowledge_scope` records which base the mission resolved to, or that it
+resolved to nothing — a different fact from the event being absent, which means knowledge is off.
+
+The rules were pinned by `MissionKnowledgeScopeTests` before the resolver existed — the tests were
+found in the working tree, written test-first by the previous session, and the implementation was
+built to them.
+
 ## v0.3.8.135 - a task no ant can run should be impossible to build
 
 **TWO STEPS THIS COLONY INSERTS INTO ITS OWN PLANS WERE WIRED TO FAIL AT DISPATCH.** Both were one
