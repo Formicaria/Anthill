@@ -1,3 +1,37 @@
+## v0.3.8.137 - a schedule run tells the truth, and the project survives the queue
+
+**A SCHEDULE RUN IS NO LONGER "COMPLETE" BEFORE ITS MISSION HAS DONE ANYTHING.** The conversation
+runner returns as soon as the mission ROW exists — deliberately, so an HTTP request never blocks on
+a mission — and the scheduler stamped the run `complete` right there. Every schedule's history said
+finished-in-milliseconds about work that ran for minutes or failed outright, and the overlap check,
+which looks for a `running` row, could never see an occurrence that was actually still in flight:
+the `skip` policy has been shipping since v0.3.8.48 and never once had anything to skip. The
+scheduler's test fake made the defect invisible by construction — a synchronous fake makes started
+and finished the same instant.
+
+The runner now fires an `onMissionSettled` callback from the one point that runs whether the
+pipeline returned or threw, and the run's terminal status is read from the MISSION ROW — `complete`,
+`partial`, `failed` — rather than inferred from "it started". `ScheduleRun` carries the mission id
+(new `schedule_runs.mission_id` column, surfaced through `/schedules/{id}/runs` and run-now), so a
+run's history joins to the work it started from either direction. Run-now answers mid-flight with
+`running` and says so instead of "Run finished." Ask-mode runs still park as `waiting_approval` at
+the gate, where no callback is coming. The test fake now persists a real mission row and takes real
+time, and the new tests pin both sides: a run reads `running` while its mission is in flight — which
+is the overlap policy actually working, proven by a second occurrence skipping — and reads the
+mission's own status after it settles.
+
+**A JOB SUBMITTED FOR A PROJECT NO LONGER SHEDS THE PROJECT AT THE QUEUE.** `Queen.RunMission` has
+accepted `projectId` since v0.3.8.95 — it selects the project's worktree, routing and knowledge
+scope — and the API job path never passed it: `ApiMissionJob` had no project field, the durable
+`mission_jobs` row had no column, and both the Director (whose objectives carry `ProjectId`) and
+`POST /missions` submitted bare goals. Present and unreachable, again: the parameter existed and
+nothing on this path called it. The project now travels submission → durable row (migrated in
+place; legacy rows read back null) → requeue-after-crash → `RunMission`. `POST /missions` accepts
+`project_id` and refuses an unknown project at the door rather than running the mission colony-wide
+and letting someone discover it later; idempotent replay returns the ORIGINAL submission's project,
+not the retry's. `DurableMissionRuntimeTests` pin the survival across restart, replay, whitespace,
+and the legacy-database migration.
+
 ## v0.3.8.136 - the scope that was designed, documented, and never entered
 
 **A mission finally enters its knowledge scope.** v0.3.8.121 shipped the whole ambient design —
