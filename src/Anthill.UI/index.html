@@ -1206,6 +1206,21 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .chat-conv .conv-proj{display:block;margin-top:2px;font-size:9px;color:var(--dim);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .chat-conv .conv-proj svg{vertical-align:-1px;opacity:.7;}
+/* v0.3.8.144 — the tracker grouped by project: section labels, collapsible group heads with a
+   chevron + folder + count, and the group's conversations indented beneath. A collapsed group
+   hides its rows with CSS so expand/collapse is one class flip, not a re-layout of the rail. */
+.chat-sec{font-size:9px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);
+  margin:4px 0 -4px;}
+.chat-group-head{display:flex;align-items:center;gap:5px;padding:6px 7px;border-radius:6px;cursor:pointer;
+  font-size:11px;color:var(--muted);border:1px solid transparent;user-select:none;}
+.chat-group-head:hover{background:rgba(255,255,255,.04);color:var(--text);}
+.chat-group-head svg{opacity:.7;flex:none;}
+.chat-chev{display:inline-flex;flex:none;opacity:.55;}
+.chat-group-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;}
+.chat-group-count{flex:none;font-size:9px;color:var(--dim);background:rgba(255,255,255,.05);
+  border-radius:8px;padding:1px 6px;}
+.chat-group .chat-conv.grouped{margin-left:14px;border-left:1px solid var(--border);border-radius:0 6px 6px 0;}
+.chat-group.collapsed .chat-conv{display:none;}
 /* v0.3.8.46: search, pins. The pin is a per-row affordance that appears on hover (always shown
    when set), and the search box filters SERVER-SIDE over titles and transcript content. */
 .chat-search{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;
