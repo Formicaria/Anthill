@@ -47,7 +47,9 @@ public static partial class ApiHost
         app.MapGet("/ui", (HttpContext ctx) =>
         {
             ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
-            return Results.Content(UiHtml, "text/html");
+            // charset declared in the HEADER, not only in the meta tag (v0.3.8.144): every other
+            // asset route already says utf-8, and this one relying on sniffing was the odd one out.
+            return Results.Content(UiHtml, "text/html; charset=utf-8");
         });
 
         // v2.6.3: the console script, served same-origin ('self') so the page needs no inline JS.
