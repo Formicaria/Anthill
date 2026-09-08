@@ -193,7 +193,9 @@ public sealed class ConversationRunner
             RecordTurn(conversation, ordinal, message, null, attachments, reuseIdenticalPending: true);
             return new ConversationOutcome(ConversationMode.Mission, false, null,
                 $"conversation budget exhausted: {conversation.MissionIds.Count} of "
-              + $"{conversation.Budget.MaxMissions} missions already started");
+              + $"{conversation.Budget.MaxMissions} missions already started — raise "
+              + "conversation_max_missions in Settings (applies to new conversations), or start "
+              + "a fresh conversation");
         }
 
         var decision = EscalationGate.Evaluate(conversation, StartMissionAction,

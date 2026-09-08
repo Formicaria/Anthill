@@ -60,7 +60,15 @@ public sealed record ConversationBudget(
     int MaxSeconds = 900,
     int MaxMissions = 5)
 {
-    public static readonly ConversationBudget Default = new();
+    /// <summary>The operator's configured ceilings, read at CREATION time — a property, not a
+    /// static readonly, so a settings change reaches the next conversation without a restart
+    /// while every live conversation keeps the budget it was created with. v0.3.8.144: these
+    /// were compile-time constants before, and the fifth mission from one chat was a wall.</summary>
+    public static ConversationBudget Default => new(
+        MaxTurns: Configuration.AnthillRuntime.ConversationMaxTurns,
+        MaxToolCalls: Configuration.AnthillRuntime.ConversationMaxToolCalls,
+        MaxSeconds: Configuration.AnthillRuntime.ConversationMaxSeconds,
+        MaxMissions: Configuration.AnthillRuntime.ConversationMaxMissions);
 
     /// <summary>
     /// Whether another mission may start. The limit per-execution budgets structurally cannot
