@@ -4,7 +4,7 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-Shipping release: **v0.3.8.142**. Everything below the rule is a record, not a state.
+Shipping release: **v0.3.8.143**. Everything below the rule is a record, not a state.
 
 **This file is a POINTER, and the reason is written into `CONTRIBUTING.md`: a snapshot has to be
 rewritten every release to stay true, and will therefore be false most of the time.** It spent forty
@@ -51,7 +51,11 @@ with the reconciliation and the authoritative producer queue P1–P10 in
 `docs/FORAGER_SHARED_CONTRACT.md` (P1 and P7 already landed producer-side, at `566de69` and
 `fc3a44b` in the FORAGER checkout, while this was being written), eight tool-registration
 documentation contradictions corrected, and the C# package provider REJECTED permanently in favour
-of the engine's import adapter.
+of the engine's import adapter; `.143` opened A1 — the probe consumes `GET /api/capabilities`
+(instance identity + generation + declared versions, with a two-numbered incompatibility refusal
+and ready-only engines tolerated), every direct-id call declares `X-Forager-Project` (verified
+LIVE against a running engine: wrong project 404s), and the hazardous dead
+`KnowledgeOptions.PackagePath` is deleted.
 
 ---
 
