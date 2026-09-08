@@ -74,17 +74,17 @@ public sealed record KnowledgeOptions
     /// </summary>
     public string DefaultProjectRef { get; init; } = "";
 
-    /// <summary>
-    /// Read knowledge from an exported package on disk instead of a live service. For air-gapped
-    /// installs and for missions that must run against a pinned snapshot. Empty means live HTTP.
-    /// </summary>
-    public string PackagePath { get; init; } = "";
+    // v0.3.8.143 (A1): `PackagePath` is REMOVED, not implemented. It was declared for a package
+    // provider that was never built, read by nothing except the check below — where any non-empty
+    // value SKIPPED endpoint/loopback validation entirely and then still routed to HTTP, a hazard
+    // wearing a feature's name. The contract's Phase-0 decision (FORAGER_SHARED_CONTRACT.md) is
+    // that package consumption goes through the recipient engine's import adapter (P9), never a
+    // C# reader, so no field like this returns.
 
     /// <summary>Whether the loaded configuration can actually be used, and if not, why.</summary>
     public string? Unusable()
     {
         if (!Enabled) return "knowledge is disabled in configuration (knowledge_enabled)";
-        if (PackagePath.Length > 0) return null;
         if (string.IsNullOrWhiteSpace(Endpoint)) return "no knowledge endpoint is configured (knowledge_forager_endpoint)";
         if (!Uri.TryCreate(Endpoint, UriKind.Absolute, out var uri))
             return $"the configured knowledge endpoint is not a valid absolute URL: {Endpoint}";
