@@ -4,7 +4,7 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-Shipping release: **v0.3.8.143**. Everything below the rule is a record, not a state.
+Shipping release: **v0.3.8.144**. Everything below the rule is a record, not a state.
 
 **This file is a POINTER, and the reason is written into `CONTRIBUTING.md`: a snapshot has to be
 rewritten every release to stay true, and will therefore be false most of the time.** It spent forty
@@ -55,7 +55,13 @@ of the engine's import adapter; `.143` opened A1 — the probe consumes `GET /ap
 (instance identity + generation + declared versions, with a two-numbered incompatibility refusal
 and ready-only engines tolerated), every direct-id call declares `X-Forager-Project` (verified
 LIVE against a running engine: wrong project 404s), and the hazardous dead
-`KnowledgeOptions.PackagePath` is deleted.
+`KnowledgeOptions.PackagePath` is deleted; `.144` opened the operator's V&V campaign — the `?`
+glyph hunt closed (header charset on `/ui`, `Console.OutputEncoding=UTF8` at both entries, UI
+assets byte-verified UTF-8), the chat tracker grouped by project like the operator's reference
+app (collapsible groups, flat search, keyboard-operable heads), and the orchestration ceilings
+became editable settings (`conversation_*` budgets; the autonomy-concurrency cap of 8 removed in
+favour of the live ResourceGovernor). NEXT: the live browser sweep — every page, every button,
+child-simple to professor-deep — needs the operator's host up.
 
 ---
 

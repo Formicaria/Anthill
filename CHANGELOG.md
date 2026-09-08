@@ -1,3 +1,39 @@
+## v0.3.8.144 - glyphs stop dying, chats get their projects, and the ceilings become the operator's
+
+**THE V&V CAMPAIGN OPENS WITH THE `?` HUNT.** Every UI asset on disk is verified clean UTF-8 (a
+byte-level scan, not an assumption), so the damage was runtime, and three fixes close it: `/ui`
+now declares `charset=utf-8` in the HEADER like every other asset route (it was the one relying on
+meta-tag sniffing); the API host and the CLI both set `Console.OutputEncoding = UTF8` at entry
+(guarded for redirected streams) — the Windows console defaults to the OEM codepage, which
+rendered every em-dash, arrow and check glyph this host logs as `?`; and the process-spawn sweep
+was re-audited (v0.3.8.55's `StandardOutputEncoding = UTF8` covers every redirected child,
+including the agent CLI path through `SandboxWorkspace`; the Desktop's launches are
+`UseShellExecute` and redirect nothing). The chat tracker's new chevrons are SVG glyphs like every
+other icon, never text arrows — a codepage that cannot draw `▾` is exactly the defect class this
+release closes.
+
+**THE CHAT TRACKER NOW READS LIKE THE OPERATOR'S REFERENCE APP** (the provided design): a
+Projects section of collapsible groups — chevron, folder, name, count — with each project's
+conversations nested beneath, then an ungrouped "Chats & tasks" section. Server order is preserved
+inside every bucket and groups float by their most recent activity, so no second sort rule can
+disagree with the list's. A SEARCH stays FLAT on purpose, per-row project chips restored: results
+are candidates, and a match hidden under a collapsed group is a search that lies. Collapse state
+is a per-browser localStorage convenience (losing it costs one click); group heads are keyboard
+buttons (`Enter`/`Space`), because usable-by-everyone includes people who do not mouse.
+
+**THE ORCHESTRATION CEILINGS BECOME THE OPERATOR'S NUMBERS.** The per-conversation budget was four
+compile-time constants — and the fifth mission from one chat hit "conversation budget exhausted"
+with no remedy but a new conversation. All four are now editable settings
+(`conversation_max_missions` 25, `_max_turns` 96, `_max_tool_calls` 240, `_max_seconds` 3600),
+read at conversation CREATION so a change reaches the next conversation without a restart while
+live conversations keep the budget they were created with; the refusal now names the setting it
+is enforcing. `autonomy_concurrency`'s static ceiling of 8 is gone — it was a guess about every
+operator's machine, and the ResourceGovernor already lowers the EFFECTIVE value under real load;
+a static cap on top of a live governor was the weaker control second-guessing the stronger one.
+Floors stay everywhere (a zero ceiling is a feature toggle wearing a number). The editable-surface
+guard moved 100 → 104 deliberately, in its own words. Ceilings never widen AUTHORITY: the approval
+gate still decides every mission individually — a bigger budget buys room, not autonomy.
+
 ## v0.3.8.143 - A1 opens: the consumer speaks capabilities, declares its project, and sheds a hazard
 
 **THE PROBE NOW ASKS WHO THE PRODUCER IS, NOT ONLY WHETHER IT IS UP.** `ProbeAsync` reads
