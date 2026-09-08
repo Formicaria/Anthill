@@ -114,7 +114,37 @@ public sealed record KnowledgeAvailability
     /// <summary>Why it is not usable, when it is not. Present exactly when <see cref="Usable"/> is false.</summary>
     public string? Reason { get; init; }
 
-    public bool Usable => Enabled && Reachable;
+    /// <summary>
+    /// v0.3.8.143 (A1) — the producer's declared protocol version, from `GET /api/capabilities`.
+    /// Null when the engine predates the capability response; that absence is tolerated (the
+    /// contract's additive rule), while a PRESENT version outside the supported window makes the
+    /// availability incompatible rather than merely noted.
+    /// </summary>
+    public int? ProtocolVersion { get; init; }
+
+    /// <summary>Persistent producer instance identity (`fgi_…`). Travels with the DATABASE, not the
+    /// process — a copied data directory is the same instance on purpose, because it is the same
+    /// knowledge. Null when the engine predates identity.</summary>
+    public string? InstanceId { get; init; }
+
+    /// <summary>The instance's generation (`gen_…`). A changed generation on the SAME instance means
+    /// the store was restored or cloned and every consumer cursor against it is about a different
+    /// history — contract §5's restore rule, carried where the consumer can act on it.</summary>
+    public string? InstanceGeneration { get; init; }
+
+    /// <summary>How the producer says it is being run — `standalone`, or a managed/attached mode.</summary>
+    public string? InstanceMode { get; init; }
+
+    /// <summary>
+    /// False when the producer DECLARED versions outside this consumer's supported window
+    /// (protocol 1 / canonical schema 1). Distinct from unreachable: the service answered, and the
+    /// honest report is "up, and not speakable-with", never a silent downgrade — the contract's
+    /// "refuse incompatible required versions with actionable status". Defaults true so an engine
+    /// that predates the capability response (which declares nothing) stays usable.
+    /// </summary>
+    public bool Compatible { get; init; } = true;
+
+    public bool Usable => Enabled && Reachable && Compatible;
 
     public static KnowledgeAvailability Off(string reason) =>
         new() { Enabled = false, Reachable = false, Reason = reason };

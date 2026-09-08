@@ -168,6 +168,16 @@ public static partial class ApiHost
                 // The endpoint, never the token. This payload reaches the browser.
                 ["endpoint"] = availability.Endpoint,
                 ["reason"] = availability.Reason,
+
+                // v0.3.8.143 (A1) — who the producer says it is, from GET /api/capabilities.
+                // Null on an engine that predates the capability response, which is tolerated;
+                // `compatible` goes false only when a DECLARED version sits outside this build's
+                // window, and `usable` above already folds that in.
+                ["protocol_version"] = availability.ProtocolVersion,
+                ["instance_id"] = availability.InstanceId,
+                ["instance_generation"] = availability.InstanceGeneration,
+                ["instance_mode"] = availability.InstanceMode,
+                ["compatible"] = availability.Compatible,
                 ["projects"] = AnthillRuntime.Knowledge.ProjectMap.Keys.ToList(),
 
                 // ---- What the console's on/off toggle needs to tell the truth. v0.3.8.124 -------

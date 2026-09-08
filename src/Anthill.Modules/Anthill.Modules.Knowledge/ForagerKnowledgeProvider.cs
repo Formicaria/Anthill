@@ -46,12 +46,22 @@ internal sealed class ForagerKnowledgeProvider : IKnowledgeProvider, IKnowledgeI
 
     // ---------------------------------------------------------------- availability
 
+    /// <summary>The one protocol version this consumer speaks, and the one canonical schema. The
+    /// window is checked against what the producer DECLARES; an engine that declares nothing (no
+    /// capability route) is tolerated under the contract's additive rule.</summary>
+    internal const int SupportedProtocolVersion = 1;
+    internal const int SupportedCanonicalSchemaVersion = 1;
+
     public async Task<KnowledgeAvailability> ProbeAsync(CancellationToken cancellationToken)
     {
         var options = _options();
         var unusable = options.Unusable();
         if (unusable is not null) return KnowledgeAvailability.Off(unusable);
 
+        // v0.3.8.143 (A1) — readiness first, capabilities second, and the split is deliberate:
+        // /ready answers "can this instance serve" (it touches the database and 503s honestly),
+        // /capabilities answers "who is this and what does it speak". A probe needs both answers,
+        // and conflating them is how the launcher's own health-polling bug happened upstream.
         var ready = await _client.GetAsync<ForagerHealth>("ready", options.ProbeTimeoutMs, cancellationToken)
             .ConfigureAwait(false);
 
@@ -67,6 +77,25 @@ internal sealed class ForagerKnowledgeProvider : IKnowledgeProvider, IKnowledgeI
         }
 
         var health = ready.Value;
+        var reachable = string.Equals(health.Status, "ok", StringComparison.OrdinalIgnoreCase);
+
+        // The capability response is the producer's F0 (contract P1). A 404 here is an engine
+        // from before it existed: tolerated, nothing declared, the ready facts stand alone. Any
+        // OTHER failure is reported as the probe's weather, not swallowed — but does not unseat
+        // reachability, which /ready already established.
+        var caps = await _client.GetAsync<ForagerCapabilities>("capabilities", options.ProbeTimeoutMs, cancellationToken)
+            .ConfigureAwait(false);
+        var declared = caps.Ok ? caps.Value : null;
+
+        // The version window — checked ONLY against declarations. A declared version outside the
+        // window is an incompatibility stated to the operator in both numbers, never a silent
+        // downgrade to "we'll just use the old routes".
+        string? incompatible = null;
+        if (declared?.ProtocolVersion is int protocol && protocol != SupportedProtocolVersion)
+            incompatible = $"the knowledge service speaks protocol version {protocol}; this build speaks {SupportedProtocolVersion}";
+        else if (declared?.CanonicalSchemaVersion is int schema && schema != SupportedCanonicalSchemaVersion)
+            incompatible = $"the knowledge service publishes canonical schema {schema}; this build consumes {SupportedCanonicalSchemaVersion}";
+
         return new KnowledgeAvailability
         {
             Enabled = true,
@@ -75,15 +104,19 @@ internal sealed class ForagerKnowledgeProvider : IKnowledgeProvider, IKnowledgeI
             // pending, data directory missing. The client already turned that into a failure, so
             // reaching here means status was 2xx; we still read the field rather than assuming,
             // because "reachable" and "ready" are different claims and we are making the second.
-            Reachable = string.Equals(health.Status, "ok", StringComparison.OrdinalIgnoreCase),
+            Reachable = reachable,
             Version = health.Version,
             SchemaVersion = health.SchemaVersion,
             SearchBackend = health.SearchBackend,
             ModelProvider = health.ModelProvider,
             Endpoint = options.Endpoint,
-            Reason = string.Equals(health.Status, "ok", StringComparison.OrdinalIgnoreCase)
-                ? null
-                : $"the knowledge service reported status '{health.Status}'",
+            ProtocolVersion = declared?.ProtocolVersion,
+            InstanceId = declared?.Instance?.InstanceId,
+            InstanceGeneration = declared?.Instance?.Generation,
+            InstanceMode = declared?.Instance?.Mode,
+            Compatible = incompatible is null,
+            Reason = incompatible
+                ?? (reachable ? null : $"the knowledge service reported status '{health.Status}'"),
         };
     }
 
@@ -344,8 +377,13 @@ internal sealed class ForagerKnowledgeProvider : IKnowledgeProvider, IKnowledgeI
         if (string.IsNullOrWhiteSpace(knowledgeId))
             return KnowledgeOutcome<KnowledgeFact>.Failed(KnowledgeFailure.Invalid, "a knowledge id is required");
 
+        // The declared scope travels as X-Forager-Project (v0.3.8.143): FORAGER enforces it on
+        // its direct-id routes since fc3a44b, so a foreign id now 404s on the PRODUCER as well as
+        // in the response check below. Both fences stay — the response check is this consumer's
+        // own guarantee and survives an engine that predates the header.
         var result = await _client.GetAsync<ForagerKnowledgeItem>(
-            $"knowledge/{ForagerClient.Segment(knowledgeId)}", _options().RetrievalTimeoutMs, cancellationToken)
+            $"knowledge/{ForagerClient.Segment(knowledgeId)}", _options().RetrievalTimeoutMs, cancellationToken,
+            projectScope: scope.ProjectRef)
             .ConfigureAwait(false);
         if (!result.Ok || result.Value is null) return Propagate<ForagerKnowledgeItem, KnowledgeFact>(result);
 
@@ -377,7 +415,7 @@ internal sealed class ForagerKnowledgeProvider : IKnowledgeProvider, IKnowledgeI
 
         var result = await _client.GetAsync<ForagerPage<ForagerEvidence>>(
             $"knowledge/{ForagerClient.Segment(knowledgeId)}/evidence",
-            _options().RetrievalTimeoutMs, cancellationToken).ConfigureAwait(false);
+            _options().RetrievalTimeoutMs, cancellationToken, projectScope: scope.ProjectRef).ConfigureAwait(false);
         if (!result.Ok || result.Value is null)
             return Propagate<ForagerPage<ForagerEvidence>, IReadOnlyList<KnowledgeEvidence>>(result);
 
@@ -395,7 +433,8 @@ internal sealed class ForagerKnowledgeProvider : IKnowledgeProvider, IKnowledgeI
         foreach (var id in owner.Value!.EntityIds)
         {
             var one = await _client.GetAsync<ForagerEntity>(
-                $"entities/{ForagerClient.Segment(id)}", _options().RetrievalTimeoutMs, cancellationToken)
+                $"entities/{ForagerClient.Segment(id)}", _options().RetrievalTimeoutMs, cancellationToken,
+                projectScope: scope.ProjectRef)
                 .ConfigureAwait(false);
             if (one.Ok && one.Value is not null) entities.Add(ForagerMapping.ToEntity(one.Value));
         }
@@ -484,7 +523,8 @@ internal sealed class ForagerKnowledgeProvider : IKnowledgeProvider, IKnowledgeI
         if (scoped is not null) return scoped;
 
         var result = await _client.GetAsync<ForagerJob>(
-            $"jobs/{ForagerClient.Segment(jobId)}", _options().IngestionTimeoutMs, cancellationToken)
+            $"jobs/{ForagerClient.Segment(jobId)}", _options().IngestionTimeoutMs, cancellationToken,
+            projectScope: scope.ProjectRef)
             .ConfigureAwait(false);
         if (!result.Ok || result.Value is null) return Propagate<ForagerJob, KnowledgeJob>(result);
 
@@ -529,7 +569,8 @@ internal sealed class ForagerKnowledgeProvider : IKnowledgeProvider, IKnowledgeI
         if (!owned.Ok) return owned;
 
         var result = await _client.PostAsync<ForagerJob>(
-            $"jobs/{ForagerClient.Segment(jobId)}/{action}", null, _options().IngestionTimeoutMs, cancellationToken)
+            $"jobs/{ForagerClient.Segment(jobId)}/{action}", null, _options().IngestionTimeoutMs, cancellationToken,
+            projectScope: scope.ProjectRef)
             .ConfigureAwait(false);
         if (!result.Ok || result.Value is null) return Propagate<ForagerJob, KnowledgeJob>(result);
 

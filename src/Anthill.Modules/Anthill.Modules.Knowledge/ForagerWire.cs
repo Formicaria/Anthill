@@ -30,6 +30,74 @@ internal sealed class ForagerHealth
     [JsonPropertyName("migrations_applied")] public int? MigrationsApplied { get; set; }
 }
 
+/// <summary>
+/// `GET /api/capabilities` — the producer's F0 capability response (contract §3, requirement P1),
+/// read off a running engine on 2026-09-08. An engine that predates it 404s this route, which the
+/// probe tolerates: absence declares nothing, and the additive rule says tolerate silence and act
+/// on declarations.
+/// </summary>
+internal sealed class ForagerCapabilities
+{
+    [JsonPropertyName("protocol_version")] public int? ProtocolVersion { get; set; }
+    [JsonPropertyName("canonical_schema_version")] public int? CanonicalSchemaVersion { get; set; }
+    [JsonPropertyName("engine")] public ForagerEngineIdentity? Engine { get; set; }
+    [JsonPropertyName("instance")] public ForagerInstanceIdentity? Instance { get; set; }
+    [JsonPropertyName("capabilities")] public ForagerCapabilityFlags? Capabilities { get; set; }
+    [JsonPropertyName("authentication")] public ForagerAuthDeclaration? Authentication { get; set; }
+}
+
+internal sealed class ForagerEngineIdentity
+{
+    [JsonPropertyName("name")] public string? Name { get; set; }
+    [JsonPropertyName("version")] public string? Version { get; set; }
+}
+
+internal sealed class ForagerInstanceIdentity
+{
+    [JsonPropertyName("instance_id")] public string? InstanceId { get; set; }
+    [JsonPropertyName("generation")] public string? Generation { get; set; }
+    [JsonPropertyName("generation_reason")] public string? GenerationReason { get; set; }
+    [JsonPropertyName("created_at")] public string? CreatedAt { get; set; }
+    [JsonPropertyName("data_dir")] public string? DataDir { get; set; }
+    [JsonPropertyName("mode")] public string? Mode { get; set; }
+}
+
+internal sealed class ForagerCapabilityFlags
+{
+    [JsonPropertyName("retrieval")] public bool Retrieval { get; set; }
+    [JsonPropertyName("ingestion")] public bool Ingestion { get; set; }
+
+    /// <summary>Per-format export descriptors. The `canonical: false` on Obsidian is contract §6's
+    /// "never reconstruct canonical knowledge from rendered Markdown" as a checkable field.</summary>
+    [JsonPropertyName("exports")] public Dictionary<string, ForagerExportDescriptor>? Exports { get; set; }
+
+    /// <summary>Empty list, not omitted — "cannot import" made distinguishable from "too old to say".</summary>
+    [JsonPropertyName("imports")] public List<string>? Imports { get; set; }
+
+    // HONEST flags: each stays false until the capability is real and tested producer-side. A flag
+    // ahead of its implementation turns a clean 404 into a consumer that planned around a lie.
+    [JsonPropertyName("publication")] public bool Publication { get; set; }
+    [JsonPropertyName("change_feed")] public bool ChangeFeed { get; set; }
+    [JsonPropertyName("push_delivery")] public bool PushDelivery { get; set; }
+    [JsonPropertyName("canonical_import")] public bool CanonicalImport { get; set; }
+    [JsonPropertyName("authentication")] public bool Authentication { get; set; }
+}
+
+internal sealed class ForagerExportDescriptor
+{
+    [JsonPropertyName("package_version")] public int? PackageVersion { get; set; }
+    [JsonPropertyName("canonical")] public bool Canonical { get; set; }
+    [JsonPropertyName("manifest")] public string? Manifest { get; set; }
+    [JsonPropertyName("checksums")] public string? Checksums { get; set; }
+}
+
+internal sealed class ForagerAuthDeclaration
+{
+    [JsonPropertyName("required")] public bool Required { get; set; }
+    [JsonPropertyName("schemes")] public List<string>? Schemes { get; set; }
+    [JsonPropertyName("note")] public string? Note { get; set; }
+}
+
 /// <summary>FORAGER's uniform error envelope. <c>request_id</c> is the field that matters — it is
 /// echoed in its log, so it is what turns "knowledge call failed" into a line an operator can find.</summary>
 internal sealed class ForagerErrorEnvelope

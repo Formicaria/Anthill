@@ -59,17 +59,28 @@ internal sealed class ForagerClient : IDisposable
     /// GET a JSON document. <paramref name="path"/> is the API-relative path with its query string
     /// already built and escaped — the caller owns escaping because the caller knows which segments
     /// are identifiers and which are user text.
+    ///
+    /// <paramref name="projectScope"/> (v0.3.8.143, A1): the FORAGER project this call is scoped
+    /// to, sent as `X-Forager-Project` when non-empty. FORAGER's direct-id routes
+    /// (`/api/knowledge/:id`, `/api/jobs/:id`, `/api/entities/:id`, …) enforce it since its
+    /// `fc3a44b` — a foreign id answers 404. Until producer authentication lands the header is a
+    /// declaration rather than a credential; the moment it does, these same calls become
+    /// authorization with no consumer edit, which is why it is sent NOW. Project-rooted paths
+    /// carry the project in the URL and pass null.
     /// </summary>
-    public async Task<KnowledgeOutcome<T>> GetAsync<T>(string path, int timeoutMs, CancellationToken cancellationToken)
+    public async Task<KnowledgeOutcome<T>> GetAsync<T>(string path, int timeoutMs, CancellationToken cancellationToken,
+        string? projectScope = null)
         where T : class
-        => await SendAsync<T>(HttpMethod.Get, path, null, timeoutMs, cancellationToken).ConfigureAwait(false);
+        => await SendAsync<T>(HttpMethod.Get, path, null, timeoutMs, cancellationToken, projectScope).ConfigureAwait(false);
 
-    public async Task<KnowledgeOutcome<T>> PostAsync<T>(string path, object? body, int timeoutMs, CancellationToken cancellationToken)
+    public async Task<KnowledgeOutcome<T>> PostAsync<T>(string path, object? body, int timeoutMs, CancellationToken cancellationToken,
+        string? projectScope = null)
         where T : class
-        => await SendAsync<T>(HttpMethod.Post, path, body, timeoutMs, cancellationToken).ConfigureAwait(false);
+        => await SendAsync<T>(HttpMethod.Post, path, body, timeoutMs, cancellationToken, projectScope).ConfigureAwait(false);
 
     private async Task<KnowledgeOutcome<T>> SendAsync<T>(
-        HttpMethod method, string path, object? body, int timeoutMs, CancellationToken cancellationToken)
+        HttpMethod method, string path, object? body, int timeoutMs, CancellationToken cancellationToken,
+        string? projectScope = null)
         where T : class
     {
         var options = _options();
@@ -101,6 +112,8 @@ internal sealed class ForagerClient : IDisposable
         using var request = new HttpRequestMessage(method, uri);
         if (options.Token.Length > 0)
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.Token);
+        if (!string.IsNullOrWhiteSpace(projectScope))
+            request.Headers.TryAddWithoutValidation("X-Forager-Project", projectScope);
         if (body is not null)
             request.Content = new StringContent(JsonSerializer.Serialize(body, Json), Encoding.UTF8, "application/json");
 
