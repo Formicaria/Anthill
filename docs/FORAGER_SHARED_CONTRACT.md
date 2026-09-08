@@ -304,8 +304,8 @@ handshake tomorrow; the response-side project checks stay regardless, as the con
    provider would have to become to satisfy the same evidence, scope, revision and temporal
    semantics. In managed mode the recipient engine is already running; package transfer becomes:
    validate manifest digests → import into the local engine (P9) → the existing HTTP provider
-   serves it. `KnowledgeOptions.PackagePath` (dead, and hazardous — a non-empty value skips
-   endpoint validation) is removed in A1 rather than implemented.
+   serves it. `KnowledgeOptions.PackagePath` (dead, and hazardous — a non-empty value skipped
+   endpoint validation) was removed at v0.3.8.143 rather than implemented.
 2. **Contract version pinned: `1-proposed` (this document), fixture version `contract-1` reserved
    for the P10 fixture set.** Producer-version window unchanged from A0: `>= 0.1.4`,
    `schema_version == 1`, anthill `package_version == 1`.

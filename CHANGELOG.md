@@ -1,3 +1,41 @@
+## v0.3.8.143 - A1 opens: the consumer speaks capabilities, declares its project, and sheds a hazard
+
+**THE PROBE NOW ASKS WHO THE PRODUCER IS, NOT ONLY WHETHER IT IS UP.** `ProbeAsync` reads
+`GET /api/capabilities` (the producer's F0, requirement P1) after `/api/ready`, and
+`KnowledgeAvailability` carries what it learns: the declared protocol version, the persistent
+instance identity (`fgi_…` — travelling with the DATABASE, so a copied data directory is the same
+instance on purpose), the generation (`gen_…` — the fact that invalidates every cursor after a
+restore or clone), and the run mode. The version window is enforced against DECLARATIONS: a
+producer declaring protocol or canonical schema outside 1/1 makes the availability
+`Compatible: false` — reachable, honestly reported with both numbers, and not usable — never a
+silent downgrade to the old routes; an engine that predates the capability route 404s it, declares
+nothing, and is tolerated on `/ready` alone, which is the contract's additive rule working in both
+directions. `/knowledge/status` surfaces all of it to the console.
+
+**EVERY DIRECT-ID CALL NOW DECLARES ITS PROJECT.** The client grew a per-call `X-Forager-Project`
+header and the provider sends it on the six direct-id call sites (`knowledge/{id}`, its evidence,
+`entities/{id}`, `jobs/{id}`, cancel, retry) — the header FORAGER enforces on those routes since
+its `fc3a44b`, verified LIVE against a running engine in this release: no header 200, right
+project 200, wrong project **404**, exactly as its handoff documents. Until producer pairing (P3)
+the header is a declaration; the moment pairing lands these same calls become authorization with
+no consumer edit, which is why it is sent now. The response-side project checks stay untouched —
+they are this consumer's own guarantee and survive engines that predate the header. Project-rooted
+paths carry the project in the URL and send nothing.
+
+**`KnowledgeOptions.PackagePath` IS REMOVED.** Declared for a package provider that was never
+built, read by nothing but its own escape hatch in `Unusable()` — where any non-empty value
+SKIPPED endpoint/loopback validation entirely and then still routed to HTTP. The contract's
+Phase-0 decision made the removal permanent policy (package consumption goes through the recipient
+engine's import adapter, P9), and this release deletes the field rather than leaving a hazard
+wearing a feature's name.
+
+`ForagerCapabilitiesTests` pins the slice with a capability fixture captured VERBATIM from a
+running engine (the ForagerWire habit — field names read off a running instance, never invented):
+whole-fixture parse including the per-format export descriptors (`anthill` canonical with
+per-file sha256; `obsidian` declaring `canonical: false`, contract §6 as a checkable field),
+identity on the probe, ready-only tolerance, the two-numbered incompatibility refusal, the header
+on every direct-id call, and its absence on project-rooted ones.
+
 ## v0.3.8.142 - Forager Phase 0: audited, pinned, contracted, and answered from both sides
 
 **THE FORAGER FIRST-PARTY PROGRAM OPENS (A0–A6, PLAN §2e), AND ITS PHASE 0 CLOSES IN ONE RELEASE —
