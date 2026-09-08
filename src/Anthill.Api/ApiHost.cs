@@ -94,6 +94,12 @@ public static partial class ApiHost
 
     public static int Run(string[] args)
     {
+        // v0.3.8.144 — the Windows console defaults to the OEM codepage, which renders every
+        // em-dash, arrow and check glyph this host logs as '?'. Declaring UTF-8 is the whole fix;
+        // guarded because a redirected or detached stdout (CI, a service host) can refuse it, and
+        // an aesthetic preference must never stop the server.
+        try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch { /* redirected/CI */ }
+
         AnthillRuntime.Initialize();
 
         // v0.3.8.91: a config file that exists and cannot be parsed stops the server.

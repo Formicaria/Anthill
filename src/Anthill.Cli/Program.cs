@@ -9,6 +9,10 @@ using Anthill.Core.Orchestration;
 // views, or launches the secured API/UI host — all over the same Anthill.Core engine.
 // ----------------------------------------------------------------------------
 
+// v0.3.8.144 — same rule as the API host: a Windows console left on the OEM codepage turns
+// every glyph in mission output into '?'. Guarded for redirected streams.
+try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch { /* redirected/CI */ }
+
 AnthillRuntime.Initialize();
 
 if (args.Length == 0)
