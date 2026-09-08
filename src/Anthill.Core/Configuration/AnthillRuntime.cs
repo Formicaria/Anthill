@@ -15,7 +15,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "0.3.8.143";
+    public const string Version = "0.3.8.144";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -67,6 +67,14 @@ public static class AnthillRuntime
     public static string ApiHost = "0.0.0.0";
     public static int ApiPort = 8713;
     public static int ApiJobWorkers = 1;
+
+    // v0.3.8.144 — conversation budget ceilings, operator-editable (see AnthillConfig). Read at
+    // conversation creation via ConversationBudget.Default; a live conversation keeps its own.
+    public static int ConversationMaxMissions = 25;
+    public static int ConversationMaxTurns = 96;
+    public static int ConversationMaxToolCalls = 240;
+    public static int ConversationMaxSeconds = 3600;
+
     public static string ApiAuthToken = Environment.GetEnvironmentVariable("ANTHILL_API_TOKEN") ?? "change-me-local-token";
 
     public const int ApiTokenMinLength = 32;
@@ -1068,6 +1076,14 @@ public static class AnthillRuntime
 
         ApiJobWorkers = Math.Max(1, config.ApiJobWorkers);
 
+        // v0.3.8.144 — conversation ceilings. Floors of 1 (30s for the clock): a zero budget is a
+        // conversation that can do nothing, which is a state an operator reaches by disabling
+        // features, not by typing 0 into a ceiling.
+        ConversationMaxMissions = Math.Max(1, config.ConversationMaxMissions);
+        ConversationMaxTurns = Math.Max(1, config.ConversationMaxTurns);
+        ConversationMaxToolCalls = Math.Max(1, config.ConversationMaxToolCalls);
+        ConversationMaxSeconds = Math.Max(30, config.ConversationMaxSeconds);
+
         // THE TOKEN'S FALLBACK WAS ITSELF. v0.3.8.91 — the security-adjacent one.
         //
         // This read `Environment.GetEnvironmentVariable(config.ApiTokenEnv) ?? ApiAuthToken`, and
@@ -1280,7 +1296,11 @@ public static class AnthillRuntime
         AutonomyMaxFollowupsPerRun = Math.Max(0, config.AutonomyMaxFollowupsPerRun);
         AutonomyMaxObjectiveDepth = Math.Max(0, config.AutonomyMaxObjectiveDepth);
         AutonomyMaxBacklog = Math.Max(0, config.AutonomyMaxBacklog);
-        AutonomyConcurrency = Math.Clamp(config.AutonomyConcurrency, 1, 8);
+        // v0.3.8.144: the ceiling of 8 is gone. It was a guess about every operator's machine,
+        // and the ResourceGovernor already lowers the EFFECTIVE value under real load — a static
+        // cap on top of a live governor was the weaker control second-guessing the stronger one.
+        // The floor stays: zero concurrency is autonomy_enabled=false wearing a number.
+        AutonomyConcurrency = Math.Max(1, config.AutonomyConcurrency);
         AutonomyAgingMinutes = Math.Clamp(config.AutonomyAgingMinutes, 0, 10080);
         AutonomyLearningEnabled = config.AutonomyLearningEnabled;
         AutonomyPriorityBiasMax = Math.Clamp(config.AutonomyPriorityBiasMax, 0, 10);
@@ -1629,6 +1649,11 @@ public static class AnthillRuntime
         ["max_section_tasks"] = MaxSectionTasks,
         ["max_db_backups"] = MaxDbBackups,
         ["event_retention_days"] = EventRetentionDays,
+        // v0.3.8.144 — conversation budget ceilings, editable (see AnthillConfig).
+        ["conversation_max_missions"] = ConversationMaxMissions,
+        ["conversation_max_turns"] = ConversationMaxTurns,
+        ["conversation_max_tool_calls"] = ConversationMaxToolCalls,
+        ["conversation_max_seconds"] = ConversationMaxSeconds,
         ["autonomy_enabled"] = EnableAutonomy,
         ["autonomy_poll_seconds"] = AutonomyPollSeconds,
         ["autonomy_max_missions_per_hour"] = AutonomyMaxMissionsPerHour,

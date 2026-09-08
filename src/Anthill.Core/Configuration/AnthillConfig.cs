@@ -48,6 +48,22 @@ public sealed class AnthillConfig
     [JsonPropertyName("api_token_env")] public string ApiTokenEnv { get; set; } = "ANTHILL_API_TOKEN";
     [JsonPropertyName("api_job_workers")] public int ApiJobWorkers { get; set; } = 1;
 
+    // ---- Conversation budgets (v0.3.8.144) --------------------------------------------------
+    // The per-conversation ceilings used to be compile-time constants (24/60/900/5), which meant
+    // the fifth mission a chat started hit "conversation budget exhausted" and the only remedy
+    // was a new conversation. The ceilings exist to stop runaway loops, not to ration an
+    // operator's own work — so they are the operator's numbers now, colony-wide defaults applied
+    // to every NEW conversation (a live conversation keeps the budget it was created with).
+    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Safety,
+        Section = "conversations", SectionNote = """v0.3.8.144: per-conversation ceilings, applied to every new conversation. conversation_max_missions is the one operators hit in practice -- it is how many missions ONE chat may start over its lifetime (the guard against a runaway escalate loop). Raise it if your workflow drives many missions from a single long-lived chat; the approval gate still decides each mission individually, so a bigger budget never means more autonomy, only more room.""")]
+    [JsonPropertyName("conversation_max_missions")] public int ConversationMaxMissions { get; set; } = 25;
+    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Safety)]
+    [JsonPropertyName("conversation_max_turns")] public int ConversationMaxTurns { get; set; } = 96;
+    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Safety)]
+    [JsonPropertyName("conversation_max_tool_calls")] public int ConversationMaxToolCalls { get; set; } = 240;
+    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Safety)]
+    [JsonPropertyName("conversation_max_seconds")] public int ConversationMaxSeconds { get; set; } = 3600;
+
     [ConfigKey(Exposure = ConfigExposure.Editable,
         Section = "ollama", SectionNote = """Set ollama_host to the IP:port of the machine running Ollama. If Ollama runs on the same machine as ANTHILL, use http://localhost:11434. If Ollama runs on a different machine (or ANTHILL runs in a container in bridge-network mode), use http://OLLAMA_MACHINE_IP:11434 (and make sure Ollama is bound to 0.0.0.0, not just 127.0.0.1). Can also be set via ANTHILL_OLLAMA_HOST / ANTHILL_OLLAMA_MODEL env vars, which take precedence over this file.""")]
     [JsonPropertyName("use_ollama")] public bool UseOllama { get; set; } = true;
