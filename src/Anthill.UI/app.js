@@ -2308,6 +2308,10 @@ const GLYPH={
   star:     INLINE_ICON('<polygon points="12 3 14.9 8.9 21.4 9.8 16.7 14.4 17.8 20.9 12 17.8 6.2 20.9 7.3 14.4 2.6 9.8 9.1 8.9"/>'),
   starFill: INLINE_ICON('<polygon fill="currentColor" points="12 3 14.9 8.9 21.4 9.8 16.7 14.4 17.8 20.9 12 17.8 6.2 20.9 7.3 14.4 2.6 9.8 9.1 8.9"/>'),
   refresh:  INLINE_ICON('<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>'),
+  // v0.3.8.144 — the chat tracker's group chevrons. SVG like every other glyph, never a text
+  // arrow: a codepage that cannot draw '▾' is exactly the class of defect this release closes.
+  chevRight: INLINE_ICON('<polyline points="9 6 15 12 9 18"/>'),
+  chevDown:  INLINE_ICON('<polyline points="6 9 12 15 18 9"/>'),
 };
 
 async function pollModelInfo(){
@@ -3649,6 +3653,70 @@ async function chatActivityLine(missionId){
 // rendered. Kept as module state so the poll's refresh respects an in-progress search.
 let chatSearchQuery='';
 
+/* v0.3.8.144 — the tracker groups by PROJECT, the way the operator's reference app does: a
+ * Projects section of collapsible groups (folder, name, count, chevron) with each project's
+ * conversations nested inside, then an ungrouped "Chats & tasks" section below. A SEARCH stays
+ * FLAT on purpose: results are candidates, and a match hidden under a collapsed group is a search
+ * that lies. Collapse state is a per-browser convenience in localStorage — losing it costs one
+ * click, so it earns no server round-trip. */
+const CHAT_GROUPS_KEY='anthill.chat.groups.collapsed';
+function chatCollapsedGroups(){
+  try{ return new Set(JSON.parse(localStorage.getItem(CHAT_GROUPS_KEY)||'[]')); }catch(_){ return new Set(); }
+}
+function chatToggleGroup(pid){
+  const s=chatCollapsedGroups(); s.has(pid)?s.delete(pid):s.add(pid);
+  try{ localStorage.setItem(CHAT_GROUPS_KEY, JSON.stringify([...s])); }catch(_){ /* per-viewer nicety */ }
+}
+
+/* One conversation row. `grouped` drops the per-row project chip — inside a group the header
+ * already says where the row lives, and repeating it on every line is the clutter the grouping
+ * exists to remove. The flat (search) view keeps the chip, exactly as before. */
+function chatConvRowHtml(c, grouped){
+  return `<div class="chat-conv${c.id===chatActiveId?' active':''}${grouped?' grouped':''}" data-id="${escapeHtml(c.id)}">
+    ${escapeHtml(c.title||'Conversation')}
+    <button class="conv-pin${c.pinned?' pinned':''}" data-pin="${escapeHtml(c.id)}" data-pinned="${c.pinned?'1':'0'}"
+      title="${c.pinned?'Unpin this conversation':'Pin this conversation to the top'}"
+      aria-label="${c.pinned?'Unpin':'Pin'}">${c.pinned?GLYPH.starFill:GLYPH.star}</button>
+    ${c.cancelled?`<span class="attn" style="color:var(--dim)">Stopped</span>`
+      :(c.doing||'').startsWith('running mission')?`<span class="attn">Working…</span>`:''}
+    ${!grouped&&c.project_name?`<span class="conv-proj" title="Project: ${escapeHtml(c.project_name)}">${GLYPH.folder} ${escapeHtml(c.project_name)}</span>`:''}
+  </div>`;
+}
+
+function chatGroupedListHtml(convs){
+  // Server order is preserved inside every bucket (the list arrives pinned-first, newest-first);
+  // groups appear in the order their first conversation does, so the most recently active project
+  // floats up without a second sort rule to disagree with the list's.
+  const groups=new Map(); const loose=[];
+  for(const c of convs){
+    if(c.project_id){
+      if(!groups.has(c.project_id)) groups.set(c.project_id,{ name:c.project_name||c.project_id, rows:[] });
+      groups.get(c.project_id).rows.push(c);
+    } else loose.push(c);
+  }
+  const collapsed=chatCollapsedGroups();
+  let html='';
+  if(groups.size){
+    html+='<div class="chat-sec">Projects</div>';
+    for(const [pid,g] of groups){
+      const closed=collapsed.has(pid);
+      html+=`<div class="chat-group${closed?' collapsed':''}" data-gid="${escapeHtml(pid)}">
+        <div class="chat-group-head" data-group="${escapeHtml(pid)}" role="button" tabindex="0"
+          aria-expanded="${closed?'false':'true'}" title="${closed?'Expand':'Collapse'} ${escapeHtml(g.name)}">
+          <span class="chat-chev">${closed?GLYPH.chevRight:GLYPH.chevDown}</span>
+          ${GLYPH.folder} <span class="chat-group-name">${escapeHtml(g.name)}</span>
+          <span class="chat-group-count">${g.rows.length}</span>
+        </div>
+        ${g.rows.map(c=>chatConvRowHtml(c,true)).join('')}
+      </div>`;
+    }
+  }
+  if(loose.length){
+    html+=`<div class="chat-sec">Chats &amp; tasks</div>`+loose.map(c=>chatConvRowHtml(c,false)).join('');
+  }
+  return html;
+}
+
 async function loadChat(){
   const list=document.getElementById('chat-conv-list'); if(!list) return;
   try{
@@ -3661,20 +3729,18 @@ async function loadChat(){
         : '<div class="hud-state">Nothing yet — your first message starts one.</div>';
     }else{
       convs.forEach(c=>{ chatTitles[c.id]=c.title||'Conversation'; });
-      // v0.3.8.52 (field report: "cannot tell what conversations go where") — every row carries
-      // its project's name on a second line, dim and small, so the tracker reads as
-      // what-it-is-about over where-it-lives without stealing width from the title.
-      list.innerHTML=convs.map(c=>`<div class="chat-conv${c.id===chatActiveId?' active':''}" data-id="${escapeHtml(c.id)}">
-        ${escapeHtml(c.title||'Conversation')}
-        <button class="conv-pin${c.pinned?' pinned':''}" data-pin="${escapeHtml(c.id)}" data-pinned="${c.pinned?'1':'0'}"
-          title="${c.pinned?'Unpin this conversation':'Pin this conversation to the top'}"
-          aria-label="${c.pinned?'Unpin':'Pin'}">${c.pinned?GLYPH.starFill:GLYPH.star}</button>
-        ${c.cancelled?`<span class="attn" style="color:var(--dim)">Stopped</span>`
-          :(c.doing||'').startsWith('running mission')?`<span class="attn">Working…</span>`:''}
-        ${c.project_name?`<span class="conv-proj" title="Project: ${escapeHtml(c.project_name)}">${GLYPH.folder} ${escapeHtml(c.project_name)}</span>`:''}
-      </div>`).join('');
+      // v0.3.8.144 — grouped by project (see chatGroupedListHtml above); a search renders FLAT
+      // with per-row project chips so no match can hide under a collapsed group.
+      list.innerHTML=chatSearchQuery
+        ? convs.map(c=>chatConvRowHtml(c,false)).join('')
+        : chatGroupedListHtml(convs);
       list.querySelectorAll('.chat-conv').forEach(el=>
         el.addEventListener('click',()=>{ chatComposingNew=false; chatOpen(el.dataset.id); }));
+      list.querySelectorAll('.chat-group-head').forEach(el=>{
+        const toggle=()=>{ chatToggleGroup(el.dataset.group); loadChat(); };
+        el.addEventListener('click',toggle);
+        el.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggle(); } });
+      });
       // The pin is inside the clickable row; stop propagation so pinning never ALSO opens.
       list.querySelectorAll('.conv-pin').forEach(el=>
         el.addEventListener('click', async e=>{
