@@ -195,10 +195,34 @@ public sealed class ResultAssembler : IResultAssembler
     /// explicit than <c>[UNSOURCED]</c> ever was, not less. Text that does not parse as claims is
     /// returned byte for byte, exactly as before.
     /// </summary>
-    private static string Readable(string result) =>
-        Anthill.SDK.Artifacts.SourcedAnswer.TryParse(result)?.Render() is { Length: > 0 } rendered
-            ? rendered
-            : result;
+    private static string Readable(string result)
+    {
+        var answer = Anthill.SDK.Artifacts.SourcedAnswer.TryParse(result);
+        if (answer is null || answer.Claims.Count == 0) return result;
+
+        // v0.3.8.153 — AN ANSWER WITH NO SOURCES IS PROSE, NOT AN ANNOTATED LIST.
+        //
+        // `.151` rendered the claim format instead of showing the operator the wire protocol, and
+        // stopped one step short. What they read was still a stack of separate assertions, each
+        // followed by `[UNSOURCED — this claim is not attributed to anything the mission
+        // retrieved]`, for a question that never had a source to attribute anything to. Their words:
+        // "i dont wanna see the unsourced claims, and have it broken into a bunch of different
+        // responses, just a single condensed response is good enough."
+        //
+        // They are right, and the marker was doing real work in the wrong place. `[UNSOURCED]` is
+        // how a claim tells the GATE it is unattributed, and the gate reads the artifact — which is
+        // untouched and still carries every claim with its attribution or its absence. Repeating it
+        // to a person who asked what an ant does is telling them the mission had no sources four
+        // times, in brackets, instead of once by not citing anything.
+        //
+        // WHERE THERE ARE REAL SOURCES, NOTHING CHANGES. A research answer keeps its per-claim
+        // provenance, because there the attribution IS the content — the whole promise of that class
+        // is an answer that can say where it came from. The split is on whether the mission has
+        // anything to show, never on who is reading.
+        if (answer.Claims.Any(c => c.Sourced)) return answer.Render();
+
+        return string.Join(" ", answer.Claims.Select(c => c.Text.Trim()));
+    }
 
     public static string ComposeDebugResult(Mission mission) => string.Join("\n", mission.Tasks.Select(t =>
         $"Task: {t.Title}\nTask ID: {t.Id}\nAnt: {t.AssignedAnt}\nTask Type: {t.TaskType}\nDepends On: [{string.Join(", ", t.DependsOn)}]\n" +

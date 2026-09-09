@@ -111,22 +111,11 @@ public class ConsoleRouteCoverageTests
         // "/missions/plan" — the dry-run preview renders inside chat's escalation gate, at the
         //   moment of the yes/no it informs.
 
-        // --- UI GAP, opened at v0.3.8.148 -------------------------------------------------------
-        //
-        // `.148` shipped the BINDING half of project→knowledge-base mapping: until this release the
-        // map was config-file-only (`KnowledgeOptions.ProjectMap` is `init`-only), so the Knowledge
-        // tab could say "No knowledge base is mapped for this project" and offer no way to answer it.
-        // The route now exists and is Manage-gated.
-        //
-        // The panel control is deliberately NOT built yet, and this entry is what makes that a
-        // recorded deferral rather than a forgotten one: a picker needs something to pick FROM, and
-        // enumerating a FORAGER server's projects is producer-side work — specified this release as
-        // P11 in docs/FORAGER_SHARED_CONTRACT.md, not yet served. Inventing a client-side listing
-        // here would be the second implementation of one rule the contract's §1 forbids. When P11
-        // lands, the picker and this entry go together.
-        ["/knowledge/project-map"] = "UI GAP — binds a project to a knowledge base; the Knowledge tab "
-            + "shows the unmapped refusal but has no control to answer it. The picker waits on the "
-            + "producer-side project listing specified as P11 this release.",
+        // The v0.3.8.148 UI GAP entry left this ledger at v0.3.8.153, the release that built the
+        // control: the Knowledge page now renders every binding, binds, rebinds and unbinds, and
+        // starts ingestion. It was recorded here for exactly five releases so the deferral could be
+        // checked on every run rather than remembered, which is the whole argument for the ledger.
+
     };
 
     /// <summary>Every route literal the API maps, normalised so `{id}` segments compare.</summary>

@@ -1515,12 +1515,38 @@ Create a practical final response.
             var mine = _artifacts.ForMission(missionId);
             var resolvable = Outcomes.CitationIntegrity.Resolvable(mine, id => _artifacts.ForMission(id));
 
-            return mine
+            var citable = mine
                 .Where(a => Anthill.SDK.Artifacts.ArtifactSchemas.CitableRecords.Contains(a.Schema))
                 .SelectMany(a => Anthill.SDK.Artifacts.SourceSetPayload.Read(a.Payload))
                 .Where(s => resolvable.Contains(s.Url))
                 .DistinctBy(s => s.Url, StringComparer.OrdinalIgnoreCase)
                 .ToList();
+
+            // v0.3.8.153 — A RECALLED MISSION ALONE IS NOT A REASON TO WRITE CITED CLAIMS.
+            //
+            // `.150` filtered this offer to citations the gate can resolve, which was right and not
+            // enough. A chat question still recalls prior missions, so a `recall_set` still existed,
+            // so `retrieved.Count` was still non-zero and the CLAIM directive still fired — and the
+            // operator's colony showed what that costs. Asked "what is something the coder ant can
+            // do", the builder was handed one citable url (a prior mission about PLANETS) and told
+            // to cite only from that list, and it answered about planets: eight of them, Pluto's
+            // reclassification, all attributed to a mission id. The question was not answered at
+            // all. A later turn invented `https://anthill.docs/mission` outright, which is the exact
+            // failure the directive's own wording forbids — because the directive had put a model in
+            // a position where it had to cite something and had nothing real to cite.
+            //
+            // THE RULE, STATED ONCE: the claim format exists so an answer built FROM THE WORLD can
+            // be checked against what the mission retrieved from the world. A mission that retrieved
+            // nothing has nothing to check and nothing to attribute; its answer is prose. ANTHILL's
+            // own prior missions are HISTORY, not sources — that is the same judgement
+            // `CitationIntegrity.TracesToRetrieval` already makes when it refuses a recall that
+            // rests on nothing, applied one step earlier so the model is never asked for it.
+            //
+            // A recalled mission stays citable ALONGSIDE real retrieval, which is `.109`'s property
+            // and is untouched: what changed is that a recall cannot be the ONLY thing on the list.
+            return citable.Any(s => !Outcomes.CitationIntegrity.IsRecalledMission(s.Url))
+                ? citable
+                : new List<Anthill.SDK.Artifacts.RetrievedSource>();
         }
         catch (Exception error)
         {
