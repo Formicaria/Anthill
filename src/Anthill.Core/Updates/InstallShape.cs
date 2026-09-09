@@ -62,6 +62,25 @@ public sealed record InstallSite(
     string Explanation)
 {
     /// <summary>
+    /// This copy lives under Program Files, so replacing it needs elevation no matter how quiet the
+    /// installer is. v0.3.8.152.
+    ///
+    /// This question was already being asked and answered — in <c>UpdateService.IsMachineWide</c>,
+    /// inside the desktop tray. That put it in the wrong layer twice over. It ran only on the path
+    /// that shows a menu, so <c>ApplyStagedIfAny</c> — which runs before any window exists and is
+    /// the code that actually launches setup — never consulted it and would have run an installer
+    /// silently against a directory the user cannot write. And it required
+    /// <see cref="InstallShape.WindowsInstalled"/>, which is decided by a marker file the installer
+    /// drops; a machine-wide copy from BEFORE v0.3.8.149 has no marker, reads as
+    /// <see cref="InstallShape.WindowsPortable"/>, and was therefore reported as able to update
+    /// itself. That is exactly the copy an operator is most likely to still be running.
+    ///
+    /// It belongs on the site because it is a property of WHERE THIS COPY IS, which is the one
+    /// thing an <see cref="InstallSite"/> exists to know.
+    /// </summary>
+    public bool MachineWide { get; init; }
+
+    /// <summary>
     /// Where a download is staged. Always under the DATA directory, never beside the binaries:
     /// the data directory is the one place every shape agrees is writable by the running process
     /// (the systemd unit's `ReadWritePaths` names exactly it), and a half-finished download must
@@ -98,8 +117,17 @@ public static class InstallDetector
         dataDirectory: AnthillRuntime.PathFromScript(AnthillRuntime.DefaultWorkspace),
         os: Environment.OSVersion.Platform);
 
-    /// <summary>The testable form: everything it reads is a parameter or a file it is told about.</summary>
-    public static InstallSite Detect(string programDirectory, string dataDirectory, PlatformID os)
+    /// <summary>
+    /// The testable form: everything it reads is a parameter or a file it is told about.
+    ///
+    /// <paramref name="programFilesRoots"/> is the one addition that is not a fact of this process:
+    /// <c>Environment.GetFolderPath(ProgramFiles)</c> returns the empty string off Windows, so a
+    /// Linux test host could not otherwise reach the machine-wide branch at all — and the CI that
+    /// runs this suite is Linux. Passing the roots keeps the promise made above.
+    /// </summary>
+    public static InstallSite Detect(
+        string programDirectory, string dataDirectory, PlatformID os,
+        IEnumerable<string>? programFilesRoots = null)
     {
         var program = Path.GetFullPath(programDirectory);
         var data = Path.GetFullPath(dataDirectory);
@@ -133,6 +161,18 @@ public static class InstallDetector
 
         if (windows)
         {
+            // A COPY UNDER PROGRAM FILES CANNOT REPLACE ITSELF, WHATEVER ELSE IS TRUE OF IT.
+            // v0.3.8.152. Checked before the marker, because it outranks it: a machine-wide
+            // install that DOES carry the marker is still one Windows will not let this user
+            // overwrite, and answering "installed, can self-update" would send the updater to run
+            // setup.exe silently against a directory it will be refused by.
+            if (IsUnderProgramFiles(program, programFilesRoots))
+                return Site(InstallShape.WindowsInstalled, false,
+                    "Installed for all users, under Program Files. Windows will not let Anthill "
+                  + "replace its own files there without administrator approval, so it will not try. "
+                  + "Move to a per-user install to get silent updates — Anthill offers this once, and "
+                  + "your colony's memory and settings are kept either way.") with { MachineWide = true };
+
             // The installer drops a marker beside the exe. Its presence is the difference between
             // "an install that owns its directory" and "a folder somebody unzipped", and that
             // difference decides whether the whole directory may be replaced.
@@ -177,6 +217,30 @@ public static class InstallDetector
         }
         catch { /* an unreadable /proc is not evidence of a container */ }
         return false;
+    }
+
+    /// <summary>
+    /// Both Program Files roots, because a 32-bit package on a 64-bit machine lands in the x86 one
+    /// and is no more writable for it. Compared with the same containment test the updater uses to
+    /// decide whether an archive entry escapes its target, so "inside" means one thing in this
+    /// codebase rather than two nearly-identical string comparisons.
+    /// </summary>
+    public static bool IsUnderProgramFiles(string programDirectory, IEnumerable<string>? roots = null)
+    {
+        foreach (var root in roots ?? DefaultProgramFilesRoots())
+            if (!string.IsNullOrEmpty(root) && UpdateApplier.IsInside(programDirectory, root)) return true;
+        return false;
+    }
+
+    private static IEnumerable<string> DefaultProgramFilesRoots()
+    {
+        foreach (var folder in new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86 })
+        {
+            string root;
+            try { root = Environment.GetFolderPath(folder); }
+            catch { continue; }
+            if (!string.IsNullOrEmpty(root)) yield return root;
+        }
     }
 
     private static bool LooksLikeDevelopment(string program)
