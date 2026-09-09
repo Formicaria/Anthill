@@ -4,7 +4,7 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-Shipping release: **v0.3.8.145**. Everything below the rule is a record, not a state.
+Shipping release: **v0.3.8.146**. Everything below the rule is a record, not a state.
 
 **This file is a POINTER, and the reason is written into `CONTRIBUTING.md`: a snapshot has to be
 rewritten every release to stay true, and will therefore be false most of the time.** It spent forty
@@ -20,60 +20,18 @@ it stopped claiming to be the state of things:
 | What an outside review found, and which of it is real | `docs/PLAN.md` §2e, verified against the tree rather than adopted |
 | How a guard must be written | `docs/GUARDS.md`, enforced by `GuardHierarchyTests` |
 
-**The last four releases, in one line each.** `.136` made missions actually ENTER the knowledge scope
-that had been designed, documented and entered by nobody since `.121` — resolution is a refusal,
-never a fallback to the operator's default project — built to `MissionKnowledgeScopeTests`, which
-the previous session left test-first in the working tree; `.137` closed review items 3 and 6: a
-schedule run now stays `running` until its mission SETTLES and takes its terminal status from the
-mission row (so overlap skipping works for the first time, and `ScheduleRun` carries the mission
-id), and a job's project survives submission → durable row → crash-requeue →
-`RunMission(projectId:)` through both the Director and `POST /missions`; `.138` closed item 7, the
-review table's LAST open row — an operator-requested dispatch plan now travels into planning on the
-`MissionContext` and the executed graph IS the plan (same task ids, types, roles and declared
-edges, admitted through the same pipeline, policy verifier still appended, recorded as
-`mission_plan_from_dispatch`); `.139` gave `task_attempts` the eight columns that make an attempt's
-EXECUTION durable — the row §2e called missing for eleven releases already existed, and what it
-lacked was any fact about what the attempt did, four of which `Domain.Task` marks transient and a
-restart therefore forgot; `.140` closed closure enforcement — a mission may no longer close complete
-when its own verifier said no — which turned out not to need that record at all: `failed` was one
-word doing two jobs, and splitting it from the new `inconclusive` (which demotes nothing, and is
-exactly what `.122` demoted on) needed no new fact. It also tried pointing the gate at the verifier's
-own recorded ruling and reverted that inside the release — that ruling answers a promotion question
-and is `Unknown` for every class with no deterministic evidence by design; `.141` was the first
-release driven by the LIVE COLONY DATABASE rather than by this plan, and it found the colony's actual
-dominant failure — 37 of 66 real missions escalated, all 39 `required_handoff_refused` events among
-them, 33 of those because the runtime's OWN growth bounds (task budget, dedupe, depth) were treated
-as evidence that the mission was broken. `HandoffGate.Refusal` now says which kind of no it is and
-only "nobody here can do this" blocks; `.142` opened the FORAGER first-party program (A0–A6, PLAN
-§2e) and closed its Phase 0 — the A0 audit and compatibility pin (FORAGER 0.1.4, artifact sha256
-verified) in `docs/FORAGER_A0_COMPATIBILITY.md`, the operator's shared contract recorded verbatim
-with the reconciliation and the authoritative producer queue P1–P10 in
-`docs/FORAGER_SHARED_CONTRACT.md` (P1 and P7 already landed producer-side, at `566de69` and
-`fc3a44b` in the FORAGER checkout, while this was being written), eight tool-registration
-documentation contradictions corrected, and the C# package provider REJECTED permanently in favour
-of the engine's import adapter; `.143` opened A1 — the probe consumes `GET /api/capabilities`
-(instance identity + generation + declared versions, with a two-numbered incompatibility refusal
-and ready-only engines tolerated), every direct-id call declares `X-Forager-Project` (verified
-LIVE against a running engine: wrong project 404s), and the hazardous dead
-`KnowledgeOptions.PackagePath` is deleted; `.144` opened the operator's V&V campaign — the `?`
-glyph hunt closed (header charset on `/ui`, `Console.OutputEncoding=UTF8` at both entries, UI
-assets byte-verified UTF-8), the chat tracker grouped by project like the operator's reference
-app (collapsible groups, flat search, keyboard-operable heads), and the orchestration ceilings
-became editable settings (`conversation_*` budgets; the autonomy-concurrency cap of 8 removed in
-favour of the live ResourceGovernor); `.145` was the live browser sweep of the real console —
-every page and button, first-user to professor — and closed four screens that lied: a pure
-question now answers itself instead of stopping at the start_mission gate (a recognized Observe
-mission is structurally side-effect-free, so it needs no approval; anything that could change a
-file still asks), the header no longer reads "idle" while a chat-started mission runs (it consults
-the task graph, not just the /jobs queue), the four `conversation_*` ceilings render in Settings at
-last, and the 40-line config-rename migration persists once at load instead of re-announcing every
-boot. It also rebuilt the SETTINGS domain to the operator's design handoff: one page with its own
-rail (eleven destinations in four groups, search that `/` focuses, per-setting help,
-changed-from-default markers, one sticky save bar posting only dirty keys, a separate Danger zone),
-with Security/Users/Readiness/Terminal folded in as panes, `settings.js` split out under the app.js
-line guard, a `GET /settings/defaults` projection of the catalog's declared defaults, and the Danger
-zone's colony-name confirmation checked SERVER-side (`confirmation_mismatch`) with the wipe refused
-on running missions counted from the mission table.
+**The last releases, in one line each.** `.141` was the first release driven by the LIVE COLONY
+DATABASE rather than by this plan, and it found the colony's dominant real failure: of 66 missions,
+37 escalated, and all 39 `required_handoff_refused` events among them — 33 because the runtime's own
+growth bounds (task budget, dedupe, depth) were read as evidence the mission was broken;
+`HandoffGate.Refusal` now says which kind of no it is and only "nobody here can do this" blocks.
+`.142`-`.145` (another session) narrowed `simple_answer` so a trivial message yields a trivial plan
+and no planner model is called for it at all, swept the live config, and rebuilt Settings as one page
+with a rail. `.146` returned to the live database and found the rest of it: two of
+`Planner.CreateTasks`' five return paths left without calling `EnsureClassCoverage`, so a rejected
+plan reached preflight unable to satisfy its own class gate — and `FallbackTasks` routed on the
+COMPOSED goal, so a failed mission's own record, quoted into the next request's transcript, planned a
+plain question as fourteen tasks with a coder.
 
 ---
 
