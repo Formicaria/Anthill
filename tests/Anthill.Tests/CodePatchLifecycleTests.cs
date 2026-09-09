@@ -771,10 +771,41 @@ public class CodePatchLifecycleTests : IDisposable
                 .FirstOrDefault(t => (t.GetValueOrDefault("assigned_ant")?.ToString() ?? "") == ant)
                 ?.GetValueOrDefault("status")?.ToString() ?? "<no task>";
 
+            // v0.3.8.145 — WHEN A ROLE DOES NOT COMPLETE, SAY WHY. This assertion read
+            // `Assert.Equal("complete", Status("coder"))`, and on the one CI run where the coder
+            // ended `failed` that is all anyone learned: expected complete, actual failed, on a
+            // thirteen-role scripted mission that passes locally and had passed this same job on
+            // the pull request minutes earlier. The row already carries the reason — the runtime
+            // writes `status_message` precisely so a stopped task can account for itself — and the
+            // assertion threw it away.
+            //
+            // Failure messages must name the layer that said no. This one now names the role, the
+            // status it actually reached, the runtime's own explanation, and the result summary,
+            // so the NEXT occurrence is diagnosed from the log instead of costing an investigation
+            // that cannot reproduce it. Deliberately NOT a retry or a loosened assertion: the
+            // scenario's promise is unchanged, only its account of a broken promise.
+            string Detail(string ant)
+            {
+                var row = tasks.FirstOrDefault(t => (t.GetValueOrDefault("assigned_ant")?.ToString() ?? "") == ant);
+                if (row is null) return "no task was assigned to this role at all";
+                var message = row.GetValueOrDefault("status_message")?.ToString();
+                var summary = row.GetValueOrDefault("result_summary")?.ToString();
+                var failure = row.GetValueOrDefault("failure_type")?.ToString();
+                var parts = new List<string>();
+                if (!string.IsNullOrWhiteSpace(failure)) parts.Add($"failure_type={failure}");
+                if (!string.IsNullOrWhiteSpace(message)) parts.Add($"status_message={message}");
+                if (!string.IsNullOrWhiteSpace(summary)) parts.Add($"result_summary={summary}");
+                return parts.Count == 0 ? "the row records no reason" : string.Join(" | ", parts);
+            }
+
+            void AssertCompleted(string ant, string didWhat) =>
+                Assert.True(Status(ant) == "complete",
+                    $"the {ant} was expected to {didWhat}, and its task ended '{Status(ant)}'. {Detail(ant)}");
+
             // 1. THE CARTOGRAPHER DID CARTOGRAPHY. Not "ran": succeeded, and its map is EXTRACTED
             //    from the console page above — the route id, the API call site. Change that file and
             //    this assertion changes with it, which is the difference between a map and a stub.
-            Assert.Equal("complete", Status("ui_cartographer"));
+            AssertCompleted("ui_cartographer", "map the console page it was given");
             var maps = ((IArtifactStore)queen.Memory).ForMission(missionId!, ArtifactSchemas.UiMap).ToList();
             Assert.True(maps.Count > 0, "the cartographer produced no ui_map artifact");
             Assert.Contains("colony", maps[0].Payload);              // the route id, from the real file
@@ -790,13 +821,13 @@ public class CodePatchLifecycleTests : IDisposable
                     maps[0].Schema, maps[0].Payload).Conforms,
                 "the ui_map exists but would not satisfy UiChangeGate, so the coder's UI change "
               + "reached the patch path without a usable map");
-            Assert.Equal("complete", Status("coder"));
+            AssertCompleted("coder", "propose the patch its ui_map made reachable");
 
             // 2. THE WEB ANT DID RESEARCH. It asked a query derived from the real goal, and the
             //    production source pipeline — SSRF refusal, dedupe, domain scoring, persistence —
             //    kept what came back. The previous scenario's web task ended `blocked`, its reason
             //    being the gate rather than anything about the mission.
-            Assert.Equal("complete", Status("web"));
+            AssertCompleted("web", "run a real search through the source pipeline");
             Assert.True(search.Queries.Count > 0, "the web ant never reached the search tool");
             Assert.Contains("accessible name", search.Queries[0], StringComparison.OrdinalIgnoreCase);
             Assert.True(queen.Memory.CountSourcesForMission(missionId!) > 0,
