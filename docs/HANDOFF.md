@@ -67,7 +67,13 @@ mission is structurally side-effect-free, so it needs no approval; anything that
 file still asks), the header no longer reads "idle" while a chat-started mission runs (it consults
 the task graph, not just the /jobs queue), the four `conversation_*` ceilings render in Settings at
 last, and the 40-line config-rename migration persists once at load instead of re-announcing every
-boot.
+boot. It also rebuilt the SETTINGS domain to the operator's design handoff: one page with its own
+rail (eleven destinations in four groups, search that `/` focuses, per-setting help,
+changed-from-default markers, one sticky save bar posting only dirty keys, a separate Danger zone),
+with Security/Users/Readiness/Terminal folded in as panes, `settings.js` split out under the app.js
+line guard, a `GET /settings/defaults` projection of the catalog's declared defaults, and the Danger
+zone's colony-name confirmation checked SERVER-side (`confirmation_mismatch`) with the wipe refused
+on running missions counted from the mission table.
 
 ---
 

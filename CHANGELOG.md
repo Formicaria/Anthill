@@ -1,4 +1,4 @@
-## v0.3.8.145 - the live sweep: a question answers itself, and four screens stop lying
+## v0.3.8.145 - the live sweep, and Settings becomes one page with a rail
 
 **FIVE FINDINGS FROM DRIVING THE REAL CONSOLE, EVERY PAGE AND BUTTON.** The console was exercised
 against a running colony from a first-time user's path — create a project, group chats, send a
@@ -32,6 +32,44 @@ shows the running mission's goal. Only a genuinely running graph counts, so 9/9 
 editable in v0.3.8.144 but the hand-curated Colony settings panel had no rows for them — editable
 by API, invisible in the UI. They now render under a Conversations section ("Missions per
 conversation" and the rest) and save with the others.
+
+**A GREETING IS A QUESTION TOO.** Found by driving the console as a first-time user, after the fix
+above: "hello" is not question-shaped, so it resolved `general` and stopped the colony to ask
+permission to start a mission — the wall a new user hits before anything else. `simple_answer`
+gained a fourth condition, `GreetingShape`, anchored at BOTH ends: a salutation or acknowledgement
+that is the WHOLE message is answered from what is already known, and "hello, document the
+deployment procedure in a runbook" is not admitted on the strength of its first word (that would
+put a creation request into a class whose ceiling forbids writing the runbook — the `.134`
+regression in a new coat). The header also stopped showing a conversation mission's composed goal
+verbatim: it is the operator's own first line now, not the project block beneath it.
+
+**THE SETTINGS RAIL.** The console's Settings domain is one page with its own left rail, built to
+the operator's design handoff. Eleven destinations in four groups (Console: Account, Connection ·
+Colony: Models, Colony, Automation · Access: Security & Gates, Users · System: Diagnostics,
+Readiness, Terminal, Danger zone), a search box that `/` focuses and that counts matches on the
+pages you are not looking at, per-setting help with "Learn more", changed-from-default markers with
+"default N · reset", one sticky save bar that posts ONLY the dirty keys, and a toast. Security,
+Users, Readiness and Terminal stopped being separate pages — they are panes of the same page, and
+their old routes and page ids redirect. The domain sub-nav is suppressed for this domain because
+the rail IS that row: v0.3.8.127's "one row of choices, not two", finished. "Report an issue" left
+Settings for a `?` button in the header.
+
+Three scopes, and a row says which it is: server keys (`/settings`, merged partially), model routes
+(`POST /routes/{role}`, the one path that keeps the live table and the config in step), and device
+settings — palette, reduce motion, API base URL, fallback poll interval — marked "saved in this
+browser only". Two new endpoints back it honestly: `GET /settings/defaults` projects the catalog's
+own declared defaults and ranges for the editable surface (the reset affordance needed a source of
+truth, and a second hand-typed table in the console is not one), and the Danger zone's confirmation
+is checked BY THE SERVER — `POST /maintenance/{reset-config,delete-backups,wipe-memory}` each read
+`{"confirm": "<colony name>"}` and refuse a mismatch with `confirmation_mismatch` before touching
+anything, because a disabled button is not a gate. `colony_name` is a new editable setting (kept
+across a reset: a reset that renamed the colony would change the password to its own confirmation).
+`WipeColonyMemory` takes exactly what its row says — missions, conversations, evidence, artifacts
+and the pheromone trails learned from them — and keeps projects, objectives, schedules, users and
+providers. It is refused while a mission is RUNNING, counted from the mission table rather than the
+API job queue: a chat-started mission never enters that queue, which is the same hole the header
+had above, in the one place it would have destroyed data instead of misreporting it.
+`/maintenance/clear-missions` gained the same count.
 
 **THE CONFIG-RENAME MIGRATION HAPPENS ONCE, NOT EVERY BOOT.** Forty `[config-rename]` lines
 (homelab_* → infrastructure_*) re-announced on every single start, each promising a rewrite "on the
