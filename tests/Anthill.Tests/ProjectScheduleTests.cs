@@ -242,7 +242,10 @@ public class ProjectScheduleTests : IDisposable
     {
         using var memory = Memory();
         var (scheduler, _) = Rig(memory);
-        var s = Daily() with { ApprovalMode = EscalationPolicy.Ask };
+        // A SIDE-EFFECTING prompt, so Ask mode genuinely waits (v0.3.8.145): a read-only prompt now
+        // auto-starts without asking, which is correct but is not what this test is about. "delete
+        // the logging module" is a change — an unrecognized `general` mission that takes the gate.
+        var s = Daily() with { ApprovalMode = EscalationPolicy.Ask, Prompt = "delete the logging module" };
         memory.SaveSchedule(s);
 
         var run = scheduler.RunNow(s, "zwright");

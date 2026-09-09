@@ -286,7 +286,8 @@ public static class EscalationGate
     /// to persist would be able to satisfy the check and leave no trace. Here the permission IS the
     /// record.
     /// </summary>
-    public static EscalationDecision Evaluate(Conversation conversation, string action, string? operatorAnswer = null)
+    public static EscalationDecision Evaluate(Conversation conversation, string action,
+        string? operatorAnswer = null, bool sideEffectFree = false)
     {
         var policy = conversation.EffectivePolicy;
         var now = AnthillTime.NowUtc();
@@ -297,6 +298,26 @@ public static class EscalationGate
         if (!NeedsDecision(action))
             return new EscalationDecision(Guid.NewGuid().ToString("N")[..12], conversation.Id, action,
                 Allowed: true, policy, DecidedBy: "system", now, "not a side-effecting action");
+
+        // v0.3.8.145 — a READ-ONLY mission's start is not a side effect to approve.
+        //
+        // start_mission is in SideEffecting because it turns a conversation into AUTONOMOUS
+        // execution — but a mission the classifier admits at Observe authority in a recognized class
+        // is one the runtime STRUCTURALLY forbids from changing anything: MissionAuthorityGate
+        // refuses apply_patch / write_text_file / shell_command / execute above Observe. Starting
+        // such a mission answers a question; it does not begin side-effecting work, so it needs no
+        // more approval than a search does — and gating it is the approval-fatigue the whole
+        // authority system exists to avoid, the thing that made "hello" stop the colony to ask.
+        //
+        // The caller establishes side-effect-freedom from the mission CONTRACT (the same string the
+        // ceiling is derived from, so auto-start can never outrun the ceiling); the gate records WHY
+        // it did not ask. Anything that COULD change a file, run a command or reach outside — and
+        // anything unclassified, which is the coding lane by design — is not side-effect-free and
+        // falls through to the operator's policy below, exactly as before.
+        if (sideEffectFree && string.Equals(action, ConversationRunner.StartMissionAction, StringComparison.Ordinal))
+            return new EscalationDecision(Guid.NewGuid().ToString("N")[..12], conversation.Id, action,
+                Allowed: true, policy, DecidedBy: "system", now,
+                "read-only mission (observe authority): starting it changes nothing that needs approval");
 
         return policy switch
         {

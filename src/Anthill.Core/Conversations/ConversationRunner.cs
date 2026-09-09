@@ -90,6 +90,39 @@ public sealed class ConversationRunner
         && candidate!.Length <= MaxMissionIdLength
         && !candidate.Any(char.IsWhiteSpace);
 
+    /// <summary>
+    /// v0.3.8.145 — is this goal one the runtime STRUCTURALLY forbids from a side effect?
+    ///
+    /// True only when intake admits it to a RECOGNIZED class at OBSERVE authority — `simple_answer`,
+    /// `system_audit`, `research`. For those, `MissionAuthorityGate` reads the ceiling at dispatch
+    /// and refuses `apply_patch`, `write_text_file`, `shell_command` and the execute tools above
+    /// Observe, so the mission cannot change a file, run a command or reach outside no matter what a
+    /// plan or a model tries. That is the exact condition that makes auto-starting it safe: not a
+    /// promise about the goal's wording, an enforced ceiling on what the mission may do.
+    ///
+    /// The recognized-class requirement is load-bearing and mirrors `ToolRegistry.RunTool` exactly:
+    /// `MissionSpecification.General` (the coding lane, and anything unclassified) also DEFAULTS to
+    /// Observe, but that value means "intake did not classify this", not "read-only" — its ceiling
+    /// is not enforced, so a general goal is never side-effect-free here. Only a class intake
+    /// actually decided on, and decided was read-only, qualifies.
+    /// </summary>
+    public static bool IsObserveOnlyGoal(string? goal)
+    {
+        if (string.IsNullOrWhiteSpace(goal)) return false;
+        try
+        {
+            var spec = Missions.MissionContracts.ForPreview(goal).Specification;
+            return Missions.MissionContracts.RecognizedClasses.Contains(spec.MissionClass)
+                && spec.Authority == Missions.MissionAuthority.Observe;
+        }
+        catch
+        {
+            // Classification is a pure regex pass, but a defect here must fail CLOSED: an
+            // unclassifiable goal is gated, never auto-started.
+            return false;
+        }
+    }
+
     private readonly SqliteMemory _memory;
     /// <summary>
     /// (goal, projectId, onMissionCreated, cancel) → mission report. v0.3.8.95 added the second
@@ -198,8 +231,18 @@ public sealed class ConversationRunner
               + "a fresh conversation");
         }
 
+        // v0.3.8.51's composed goal, computed HERE so the escalation gate can classify the EXACT
+        // string the mission will be admitted from — see IsObserveOnly. Reused at dispatch below;
+        // ComposeMissionGoal is a pure read, so computing it once before the gate costs nothing.
+        var missionGoal = ComposeMissionGoal(conversation, message, attachments);
+
+        // v0.3.8.145 — a pure question answers itself without asking to "start a mission". The flag
+        // is true only for a mission the runtime structurally forbids from side effects (recognized
+        // class, Observe ceiling); the gate records why it did not ask. Everything else still stops.
+        var sideEffectFree = IsObserveOnlyGoal(missionGoal);
+
         var decision = EscalationGate.Evaluate(conversation, StartMissionAction,
-            answers?.GetValueOrDefault(StartMissionAction));
+            answers?.GetValueOrDefault(StartMissionAction), sideEffectFree: sideEffectFree);
         try { _memory.SaveEscalationDecision(decision); } catch { }
 
         // v0.3.8.46, found live: every OTHER answer the operator gave is recorded NOW, not only
@@ -247,12 +290,11 @@ public sealed class ConversationRunner
         // is persisted. Waiting for THAT is bounded and quick; waiting for the work is neither.
         var idReady = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        // v0.3.8.51, found live in mission 46f1acb7: the goal was the operator's bare words —
-        // "Make all of these changes" — and the coder honestly refused, because "these changes"
-        // referred to a plan that lived in the CONVERSATION and the mission never saw it. The
-        // goal now carries the operator's message plus the bounded recent transcript, so what
-        // "this" and "these" point at travels with the work.
-        var missionGoal = ComposeMissionGoal(conversation, message, attachments);
+        // The composed goal (v0.3.8.51, found live in mission 46f1acb7: the goal was the operator's
+        // bare words — "Make all of these changes" — and the coder honestly refused, because "these
+        // changes" referred to a plan that lived in the CONVERSATION and the mission never saw it)
+        // was computed above, before the gate, so the gate could classify the same string the
+        // mission is admitted from. Reused here.
 
         _ = ThreadingTask.Run(() =>
         {
