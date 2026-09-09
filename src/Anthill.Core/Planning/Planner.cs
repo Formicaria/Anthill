@@ -409,7 +409,7 @@ public sealed class Planner
         {
             Substituted(PlanSubstitutions.NoModelRouter,
                 _router is null ? "no model router is composed" : "model use is disabled for this runtime");
-            return AssignDefaultWorkers(EnsureClassCoverage(EnforceConstraints(FallbackTasks(goal), goal, constraints), goal, specification), goal, constraints, specification);
+            return AssignDefaultWorkers(EnsureClassCoverage(EnforceConstraints(FallbackTasks(goal, specification), goal, constraints), goal, specification), goal, constraints, specification);
         }
 
 
@@ -515,7 +515,27 @@ Required JSON:
         {
             Substituted(PlanSubstitutions.ModelCallFailed,
                 $"planner model call returned {result.Status.Name()}: {TextUtil.Truncate(response ?? "", 300)}");
-            return EnforceConstraints(FallbackTasks(goal), goal, constraints);
+            // v0.3.8.146 — THROUGH THE CHAIN, like the other four. This path and the plan-rejected
+            // one below returned a bare fallback: no `EnsureClassCoverage`, no
+            // `AssignDefaultWorkers`. The comment 180 lines above says "every one of the five return
+            // paths below funnels through" it, and for these two that was false.
+            //
+            // WHAT IT COST, from the operator's own colony. "explain to me what science is" logged
+            // `plan_rejected`, took the sibling path, and reached preflight with no verifier:
+            // "'simple_answer' is objectively verified and this plan has no verifier, so its
+            // integrity gate could never be satisfied however well the work went" — `failed_permanent`
+            // on a plain question. The class made the mission gradeable; the missing call made it
+            // ungradeable.
+            //
+            // `.145`'s `ClassNeedsNoPlan` short-circuit means `simple_answer` no longer reaches
+            // here, which fixed that operator's two missions and left the defect standing for every
+            // OTHER recognized class — audit, troubleshooting, system action, external action,
+            // research all still come through this method, and a failed model call hands each of
+            // them a class-less plan that preflight then refuses. The narrower reach is worse, not
+            // better: it moved the failure onto the classes that do the consequential work.
+            return AssignDefaultWorkers(
+                EnsureClassCoverage(EnforceConstraints(FallbackTasks(goal, specification), goal, constraints), goal, specification),
+                goal, constraints, specification);
         }
         try
         {
@@ -530,7 +550,10 @@ Required JSON:
                 Substituted(PlanSubstitutions.PlanRejected,
                     $"{plan.Rejections.Count} problem(s): "
                     + string.Join("; ", plan.Rejections.Select(r => r.Describe())));
-                return EnforceConstraints(FallbackTasks(goal), goal, constraints);
+                // v0.3.8.146 — through the chain; see the model-call path above for what this cost.
+                return AssignDefaultWorkers(
+                    EnsureClassCoverage(EnforceConstraints(FallbackTasks(goal, specification), goal, constraints), goal, specification),
+                    goal, constraints, specification);
             }
             var tasks = plan.Tasks.ToList();
             // Belt-and-suspenders: even with the prompt directive, a small model may still emit a
@@ -540,7 +563,7 @@ Required JSON:
         catch (Exception error)
         {
             Substituted(PlanSubstitutions.PlanParseFailed, error.Message);
-            return AssignDefaultWorkers(EnsureClassCoverage(EnforceConstraints(FallbackTasks(goal), goal, constraints), goal, specification), goal, constraints, specification);
+            return AssignDefaultWorkers(EnsureClassCoverage(EnforceConstraints(FallbackTasks(goal, specification), goal, constraints), goal, specification), goal, constraints, specification);
         }
     }
 
@@ -1539,9 +1562,43 @@ Required JSON:
         return chunks.Where(c => c.Trim().Length > 0).ToList();
     }
 
-    private static List<Task> FallbackTasks(string goal)
+    /// <summary>
+    /// The deterministic plan, and — v0.3.8.146 — IT ROUTES ON THE OPERATOR'S ASK, NOT THE
+    /// TRANSCRIPT.
+    ///
+    /// `.110` FIXED THIS ONE LAYER OVER AND NEVER PROPAGATED IT. `mission.Goal` is COMPOSED: the
+    /// operator's request, then the project's standing context, then the conversation below a
+    /// `--- ` marker. That release found `MissionEvaluation` substring-matching verbs like
+    /// "refactor" against all of it, so a mission whose TRANSCRIPT contained the word acquired a
+    /// deliverable requirement nobody asked for. It moved the evaluator onto
+    /// `specification.OriginalRequest` — the operator's own words, resolved once at intake — and
+    /// left every routing decision in this file reading the whole string.
+    ///
+    /// WHAT THAT COST, from the operator's colony, and it is a LOOP. "explain to me what science is"
+    /// failed. The retry carried the first run's MISSION RECORD as conversation context — a record
+    /// naming `builder`, `coder`, `file`, `patch_sets`, `tester`, `verifier`, because that is what a
+    /// mission record says. Those words tripped `isCodeGoal` below, and a plain question was planned
+    /// as fourteen tasks with a coder, patch proposals, testers, soldiers and medics.
+    ///
+    /// `.96` PAID FOR THIS EXACT SHAPE ONCE: a refusal that enters the transcript and re-trips the
+    /// gate on every later mission, a self-sustaining failure seeded by the record quoting itself.
+    /// It arrives here through a different door — the failure record rather than the refusal prose —
+    /// and the answer is the same one `.110` already found.
+    ///
+    /// THE GOAL IS STILL USED FOR DESCRIPTIONS. A task's description SHOULD carry the standing
+    /// context and the conversation; that is what gives a worker the thread. Only the routing
+    /// DECISION — which lane this mission belongs in — stops reading them, because that decision is
+    /// about what the operator asked for and nothing else.
+    /// </summary>
+    /// <param name="specification">The mission's specification, whose `OriginalRequest` is the
+    /// operator's ask. Null falls back to the composed goal, which is exactly the pre-`.146`
+    /// behaviour for every caller outside the engine.</param>
+    private static List<Task> FallbackTasks(string goal, Missions.MissionSpecification? specification = null)
     {
-        var lowered = goal.ToLowerInvariant();
+        var routingText = string.IsNullOrWhiteSpace(specification?.OriginalRequest)
+            ? goal
+            : specification!.OriginalRequest;
+        var lowered = routingText.ToLowerInvariant();
         /* v0.3.8.126: word-bounded, for the reason `RoutingWords` records. As bare substrings
            these decided the CODE lane on "req·ui·ring" ("ui"), "addr·ess" ("add"),
            "un·change·d" ("change") and "class·ification" ("class") — the same defect that sent a
@@ -1575,7 +1632,11 @@ Required JSON:
 
         // A goal that creates/edits a file must reach the coder — check it BEFORE the web branch,
         // so "create a docs file" produces a patch rather than a research answer that never lands.
-        if (!isCodeGoal && AnthillRuntime.EnableWebSearch && TextUtil.ShouldUseWebSearch(goal))
+        // `routingText`, not `goal`, for the same reason `lowered` is: whether this mission needs
+        // the outside world is a fact about the OPERATOR'S ASK. Read against the composed goal, a
+        // transcript that happens to mention a price or a version number sends a local question to
+        // the web ant.
+        if (!isCodeGoal && AnthillRuntime.EnableWebSearch && TextUtil.ShouldUseWebSearch(routingText))
             return new()
             {
                 new() { Title = "Frame research need", Description = $"Identify what current/public information is needed for: {goal}", AssignedAnt = "researcher", AssignedWorker = "researcher.mission_researcher", TaskType = "research" },

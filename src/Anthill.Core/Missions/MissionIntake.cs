@@ -133,7 +133,23 @@ public static class MissionIntake
     /// </summary>
     private static readonly Regex QuestionShape = new(
         @"\?|^\s*(?:who|what|when|where|why|how|which|whose|whom|can|could|should|would|will|"
-      + @"do|does|did|is|are|was|were|am|explain|describe|define|tell me|teach me)\b",
+      + @"do|does|did|is|are|was|were|am|explain|describe|define|tell me|teach me|"
+      // v0.3.8.146 — THE ASK THAT IS NOT SHAPED LIKE A QUESTION, found in the operator's colony.
+      //
+      // "give me a briefing of 1990s historical events in the US" resolved `general`: Explain
+      // intent, no target, and no interrogative opener. `general` is UNGOVERNED, so the request
+      // reached the planner model — and whether it worked came down to whether that model's JSON
+      // happened to parse. The same message, sent twice a minute apart, produced a clean two-task
+      // answer once and a fourteen-task plan with a coder, patch proposals, testers and soldiers
+      // the other time. That is the coin flip the operator experienced as "sometimes it works".
+      //
+      // THE OBJECT IS AN EXPLANATION, WHICH IS WHY THESE ARE SAFE AND A BARE "give me" IS NOT.
+      // "give me a python script that parses CSV" names no target either, so a bare verb would
+      // pull a genuine creation request into the class that refuses to create. Requiring the noun
+      // keeps the boundary where `.134` put it: this class answers, it does not make things.
+      + @"summari[sz]e|brief me|walk me through|help me understand|"
+      + @"give me (?:an?\s+)?(?:brief|briefing|summary|overview|rundown|explanation|breakdown)|"
+      + @"(?:an?\s+)?overview of)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     /// <summary>

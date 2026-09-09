@@ -126,6 +126,10 @@ public class SimpleAnswerMissionTests
     [InlineData("Document the deployment procedure in a runbook.")]
     [InlineData("Exercise the coder and stop it while it works.")]
     [InlineData("Draft a note for the team.")]
+    // v0.3.8.146 — THE BOUNDARY THE WIDENED SHAPE HAD TO KEEP. This names no target either, so a
+    // bare "give me" opener would have pulled a genuine creation request into the class that
+    // refuses to create. The object has to be an EXPLANATION, not an artifact.
+    [InlineData("give me a python script that parses CSV")]
     public void AnImperativeWithNoTarget_IsNotASimpleAnswer(string request) =>
         Assert.NotEqual(MissionSpecification.SimpleAnswerClass,
             MissionIntake.Resolve(request).MissionClass);
@@ -140,6 +144,30 @@ public class SimpleAnswerMissionTests
     [InlineData("Explain the difference between a mutex and a semaphore")]
     [InlineData("What is a good ratio of yeast to flour")]
     public void AQuestionWithNoTarget_ReachesTheClass(string request) =>
+        Assert.Equal(MissionSpecification.SimpleAnswerClass,
+            MissionIntake.Resolve(request).MissionClass);
+
+    /// <summary>
+    /// AND AN ASK THAT IS NOT SHAPED LIKE A QUESTION IS STILL A QUESTION. v0.3.8.146, from the
+    /// operator's live colony.
+    ///
+    /// "give me a briefing of 1990s historical events in the US" resolved `general`: Explain intent,
+    /// no target, no interrogative opener. `general` is UNGOVERNED, so it reached the planner model
+    /// — and whether it worked came down to whether that model's JSON happened to parse. The SAME
+    /// message, sent twice a minute apart, produced a clean two-task answer once and a fourteen-task
+    /// plan with a coder, patch proposals, testers and soldiers the other time. Same text, same
+    /// intake, opposite outcomes: the coin flip the operator reported as "sometimes it works".
+    ///
+    /// A class removes the coin flip, because `.145` answers a `simple_answer` without calling the
+    /// planner at all.
+    /// </summary>
+    [Theory]
+    [InlineData("give me a briefing of 1990s historical events in the US")]
+    [InlineData("summarize the french revolution")]
+    [InlineData("walk me through how a jet engine works")]
+    [InlineData("brief me on the cuban missile crisis")]
+    [InlineData("help me understand compound interest")]
+    public void AnAnswerRequestWithNoTarget_ReachesTheClass(string request) =>
         Assert.Equal(MissionSpecification.SimpleAnswerClass,
             MissionIntake.Resolve(request).MissionClass);
 

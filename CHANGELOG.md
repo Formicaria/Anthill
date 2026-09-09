@@ -1,3 +1,75 @@
+## v0.3.8.146 - two planning paths left without asking the class what it needed
+
+**"explain to me what science is" ENDED `failed_permanent` IN 13.7 SECONDS**, with one pending task
+and a record that said exactly why:
+
+    preflight refused this plan — unverified_criterion [simple_answer]: 'simple_answer' is
+    objectively verified and this plan has no verifier, so its integrity gate could never be
+    satisfied however well the work went.
+
+**`Planner.CreateTasks` HAS FIVE RETURN PATHS AND TWO OF THEM LEFT BARE.** A failed planner model
+call and a plan the parser rejected both returned `EnforceConstraints(FallbackTasks(goal), ...)` and
+nothing else — no `EnsureClassCoverage`, no `AssignDefaultWorkers`. The mission logged
+`mission_plan_substituted (plan_rejected)`, took one of those two, and arrived at preflight holding a
+plan its own class could never satisfy. The class made the mission gradeable; the missing call made
+it ungradeable.
+
+**AND THE FILE SAID OTHERWISE IN WRITING.** The comment above those paths reads: "the step itself is
+guaranteed by `EnsureClassCoverage`, which every one of the five return paths below funnels through
+— that is where it belongs, because a guarantee written on one path is a guarantee the other four do
+not have." Right about the principle, wrong about the code, which is the most expensive combination:
+nobody re-checks a claim that is already written down. It is now a source guard.
+
+**`.145` DID NOT CLOSE THIS, AND MADE ITS REACH NARROWER RATHER THAN SMALLER.** `ClassNeedsNoPlan`
+short-circuits `simple_answer` before the planner is called, which fixed the two missions that
+prompted it — and audit, troubleshooting, system action, external action and research all still come
+through this method. A failed model call now hands a class-less plan to the classes that propose real
+operations instead of to the one that answers questions.
+
+**THE SECOND HALF IS A LOOP, AND `.96` PAID FOR ITS SHAPE ONCE ALREADY.** The retry of that same
+question was planned as FOURTEEN tasks with a coder, patch proposals, testers, soldiers and medics.
+`mission.Goal` is composed — the request, the project's standing context, then the conversation below
+a `--- ` marker — and the retry's transcript carried the first run's MISSION RECORD, a record naming
+`builder`, `coder`, `file`, `patch_sets`, `tester`, `verifier`, because that is what a mission record
+says. `FallbackTasks` routed on all of it, so those words tripped the code lane. The failure's own
+record is what turned a plain question into a patch mission.
+
+**`.110` FOUND THIS EXACT DEFECT AND FIXED ONE LAYER.** It moved `MissionEvaluation` onto
+`specification.OriginalRequest` — the operator's words, resolved once at intake — after a mission
+whose TRANSCRIPT contained "refactor" acquired a deliverable requirement nobody asked for. Every
+routing decision in the planner kept reading the whole string. Both of them now read the ask:
+the code-lane match and the web-search decision.
+
+**THE GOAL IS STILL USED FOR DESCRIPTIONS,** and should be — that is what gives a worker the thread.
+Only the routing DECISION stops reading the transcript, because that decision is about what the
+operator asked for and nothing else.
+
+**AND THE COIN FLIP THE OPERATOR ACTUALLY REPORTED — "sometimes it works, sometimes it doesn't."**
+The same message, `give me a briefing of 1990s historical events in the US`, sent twice a minute
+apart, produced two different missions: one a clean two-task answer, the other FOURTEEN tasks with a
+coder, patch proposals, testers, soldiers and medics. Same text, same intake, opposite outcomes.
+
+The record says why. Both resolved `general` — Explain intent, no target, no interrogative opener —
+and `general` is UNGOVERNED, so both reached the planner model. One logged
+`mission_plan_substituted (plan_rejected)` and one did not. Whether the request worked came down to
+whether a small local model's JSON happened to parse, and the losing side falls into `FallbackTasks`,
+which was reading 4,326 characters of composed goal and finding the code lane in it.
+
+**THAT IS ALSO THE "patch proposal of the output" — it is not memory.** Nothing writes memory through
+the coder. It is `FallbackTasks`' code lane, reached because the request had no class to protect it
+and the transcript had the words.
+
+**SO THE ANSWER SHAPE WIDENS TO THE ASK THAT IS NOT SHAPED LIKE A QUESTION.** `summarize`,
+`brief me`, `walk me through`, `help me understand`, `give me a briefing/summary/overview/rundown/
+explanation/breakdown`, `an overview of`. The object must be an EXPLANATION, which is why a bare
+"give me" is not enough: "give me a python script that parses CSV" names no target either, and a
+looser opener would pull a genuine creation request into the class that refuses to create. A class
+removes the coin flip outright, because `.145` answers a `simple_answer` without calling the planner
+at all.
+
+**Found by reading the operator's live colony**, not this repository's plan — the second release
+running in that habit.
+
 ## v0.3.8.145 - the live sweep, and Settings becomes one page with a rail
 
 **FIVE FINDINGS FROM DRIVING THE REAL CONSOLE, EVERY PAGE AND BUTTON.** The console was exercised
