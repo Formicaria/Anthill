@@ -4,7 +4,7 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-Shipping release: **v0.3.8.144**. Everything below the rule is a record, not a state.
+Shipping release: **v0.3.8.145**. Everything below the rule is a record, not a state.
 
 **This file is a POINTER, and the reason is written into `CONTRIBUTING.md`: a snapshot has to be
 rewritten every release to stay true, and will therefore be false most of the time.** It spent forty
@@ -60,8 +60,14 @@ glyph hunt closed (header charset on `/ui`, `Console.OutputEncoding=UTF8` at bot
 assets byte-verified UTF-8), the chat tracker grouped by project like the operator's reference
 app (collapsible groups, flat search, keyboard-operable heads), and the orchestration ceilings
 became editable settings (`conversation_*` budgets; the autonomy-concurrency cap of 8 removed in
-favour of the live ResourceGovernor). NEXT: the live browser sweep — every page, every button,
-child-simple to professor-deep — needs the operator's host up.
+favour of the live ResourceGovernor); `.145` was the live browser sweep of the real console —
+every page and button, first-user to professor — and closed four screens that lied: a pure
+question now answers itself instead of stopping at the start_mission gate (a recognized Observe
+mission is structurally side-effect-free, so it needs no approval; anything that could change a
+file still asks), the header no longer reads "idle" while a chat-started mission runs (it consults
+the task graph, not just the /jobs queue), the four `conversation_*` ceilings render in Settings at
+last, and the 40-line config-rename migration persists once at load instead of re-announcing every
+boot.
 
 ---
 
