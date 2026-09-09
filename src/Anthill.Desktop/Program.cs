@@ -35,6 +35,18 @@ internal static class Program
         try
         {
             DesktopLog.Attach();   // Console.Out/Error → %LOCALAPPDATA%\Anthill\desktop.log
+
+            // v0.3.8.146 — A STAGED UPDATE IS APPLIED BEFORE ANYTHING OPENS.
+            //
+            // Here, and not later, for a mechanical reason: the installer replaces THIS program's
+            // own files, and Windows will not let it while they are in use. Before the window, the
+            // WebView2 runtime, or the colony's own API host exists, this process holds nothing
+            // that setup needs — so the handover is clean, and the operator's first sign of an
+            // update is being on the new version rather than a dialog asking permission for one
+            // they already granted. `ApplyStagedIfAny` re-verifies the payload's checksum before
+            // running it: staging checked it at download, and the disk is not a trusted place.
+            if (UpdateService.ApplyStagedIfAny()) return 0;
+
             ApplicationConfiguration.Initialize();
             System.Windows.Forms.Application.Run(new ShellForm());
             return 0;

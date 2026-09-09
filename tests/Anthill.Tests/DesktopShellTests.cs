@@ -175,15 +175,32 @@ public class DesktopShellTests
     }
 
     /// <summary>
-    /// v0.3.8.47 pinned an update check that only ever TOLD; v0.3.8.50 (field report) replaced
-    /// the policy deliberately: the check now PROMPTS, and a yes downloads the installer and
-    /// hands over to it. What this test pins is the part that must never change — the tray
-    /// stays polite (minimize hides, the X still quits), and NOTHING downloads or installs
-    /// without the operator's explicit yes: the download call sites are reachable only behind
-    /// the DialogResult.Yes branch of the offer.
+    /// THE CONSENT MOVED; THE PROTECTION DID NOT. v0.3.8.146, and this test is rewritten
+    /// deliberately rather than relaxed — the version it replaces existed to make exactly this
+    /// change impossible by accident, and it worked.
+    ///
+    /// It used to require a per-release `MessageBoxButtons.YesNo` and the sentence "Nothing ever
+    /// downloads or installs without a yes". The operator's instruction was that an already
+    /// installed Anthill should update itself without a wizard and without an administrator
+    /// prompt. Granting that removes a human from a loop they stood in for TWO reasons, and the
+    /// reasons deserve different answers:
+    ///
+    ///   · PERMISSION to install — granted once by installing Anthill, and re-asked every release.
+    ///     That is the ritual the operator is right to resent. It moves to a setting.
+    ///   · A HUMAN IN FRONT OF A DOWNLOADED EXECUTABLE — the only thing standing between a
+    ///     compromised release channel and code running on the machine. With nobody watching this
+    ///     matters MORE, not less, so it is not removed: it is done by machine.
+    ///
+    /// So what this test now pins is the replacement. The updater must verify a published SHA-256
+    /// before anything runs, must never execute an unverified payload, and must never silently
+    /// request elevation — the one prompt it may still raise is the machine-wide install being
+    /// offered the move to a per-user one, which is a real decision with a real cost.
+    ///
+    /// If a later change deletes the verification, this test fails, and the correct reading is
+    /// that silent updating has become unsafe again — not that the assertion is inconvenient.
     /// </summary>
     [Fact]
-    public void TheTray_IsPolite_AndTheUpdaterNeedsAYes()
+    public void TheTray_IsPolite_AndTheUpdaterVerifiesBeforeItRuns()
     {
         var shell = Read("src", "Anthill.Desktop", "ShellForm.cs");
         Assert.Contains("NotifyIcon", shell);
@@ -197,16 +214,31 @@ public class DesktopShellTests
 
         var updater = Read("src", "Anthill.Desktop", "UpdateService.cs");
         Assert.Contains("releases/latest", updater);
-        Assert.Contains("UseShellExecute = true", updater);
-        // Consent gates the download: the offer asks, and anything but Yes returns before
-        // DownloadAndRun can be reached.
-        Assert.Contains("MessageBoxButtons.YesNo", updater);
-        Assert.Contains("if (choice != DialogResult.Yes)", updater);
-        Assert.Contains("Nothing ever downloads or installs without a yes", updater);
-        // Version comparison still fails toward "no update" on anything unparsable.
-        Assert.Contains("latest <= mine", updater);
-        // And the installer asset is matched by NAME SHAPE, never guessed.
-        Assert.Contains("anthill-setup-", updater);
+
+        // THE DIGEST IS CHECKED, AND IT IS WHAT MAKES THE SILENCE DEFENSIBLE.
+        Assert.Contains("VerifyOrDelete", updater);
+        Assert.Contains("ParseDigest", updater);
+        Assert.Contains(".sha256", updater);
+        // A release with no published checksum yields no silent update. The refusal is explicit.
+        Assert.Contains("could not be verified", updater);
+
+        // NOTHING RUNS BEFORE IT IS VERIFIED. The only Process.Start on a downloaded payload is in
+        // ApplyStagedIfAny, and Pending() re-verifies on the way out — so the staging path may
+        // write files and a manifest, and may not execute one.
+        var staging = Read("src", "Anthill.Core", "Updates", "UpdateStaging.cs");
+        Assert.Contains("VerifyOrDelete(staged.PayloadPath, staged.Sha256", staging);
+        Assert.Contains("File.Delete", staging);
+
+        // ELEVATION IS NEVER REQUESTED QUIETLY. The installer runs unattended only where no
+        // elevation is needed; the one prompt left is the migration, and it says what it costs.
+        Assert.Contains("/VERYSILENT", updater);
+        Assert.DoesNotContain("Verb = \"runas\"", updater);
+        Assert.Contains("administrator approval once", updater);
+
+        // The asset is matched by the name the release workflow writes, per shape — never guessed.
+        Assert.Contains("site.AssetFor(latest)", updater);
+        // And one version comparison serves every shape (see UpdateVersions).
+        Assert.Contains("UpdateVersions.Compare", updater);
     }
 
     /// <summary>The window claims a writable WebView2 profile — the install dir may be
