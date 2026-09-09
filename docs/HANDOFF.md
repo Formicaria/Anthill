@@ -4,7 +4,7 @@ Paste the block below into a fresh session. Overwrite this file when it goes sta
 
 ---
 
-Shipping release: **v0.3.8.146**. Everything below the rule is a record, not a state.
+Shipping release: **v0.3.8.147**. Everything below the rule is a record, not a state.
 
 **This file is a POINTER, and the reason is written into `CONTRIBUTING.md`: a snapshot has to be
 rewritten every release to stay true, and will therefore be false most of the time.** It spent forty
@@ -31,7 +31,7 @@ with a rail. `.146` returned to the live database and found the rest of it: two 
 `Planner.CreateTasks`' five return paths left without calling `EnsureClassCoverage`, so a rejected
 plan reached preflight unable to satisfy its own class gate — and `FallbackTasks` routed on the
 COMPOSED goal, so a failed mission's own record, quoted into the next request's transcript, planned a
-plain question as fourteen tasks with a coder.
+plain question as fourteen tasks with a coder. `.147` came from a session of real chat traffic on that colony after `.146` landed: the class worked (three questions, three `class_needs_no_plan` plans, no coder), and everything AROUND the answer was wrong — all three good answers graded `partial` because their verifiers said `Needs Improvement` and `.140` counted that as a verdict of no; `[d1]` was an internal deliverable id printed above the operator's own question on a one-part answer; and a plan of `researcher + verifier` had nobody to compile an answer at all, which `EnforceConstraints` now guarantees the way it has always guaranteed the verifier.
 
 ---
 

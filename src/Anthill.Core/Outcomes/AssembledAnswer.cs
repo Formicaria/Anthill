@@ -110,15 +110,33 @@ public sealed record AssembledAnswer(IReadOnlyList<AnswerSection> Sections, bool
         if (!Specified)
             return Sections.Count == 0 ? "" : Sections[0].Content;
 
+        // v0.3.8.147 — THE HEADING IS FOR TELLING SECTIONS APART, so a single section gets none.
+        //
+        // The operator saw this and asked what `[d1]` was, which is the whole argument: it is an
+        // internal deliverable id, printed above their own question quoted back at them, on an
+        // answer that has exactly one part. Three facts, none of which they needed — they asked the
+        // question a moment ago, there is nothing for it to be distinguished FROM, and `d1` is a
+        // handle for the ledger.
+        //
+        // WITH TWO OR MORE SECTIONS THE HEADING EARNS ITS PLACE and is kept: an answer to "what is
+        // good about it? what is bad?" must say which half is which, and `AnswerCoverage` grades
+        // those requests separately. The REQUEST is what does that work; the id is not, so it goes
+        // in both cases and the question stays only where it disambiguates.
+        //
+        // A NOT-ANSWERED SECTION ALWAYS NAMES ITS REQUEST, single or not. There the request is not
+        // a restatement — it is the whole content of the finding, because the operator cannot see
+        // from the surrounding prose which thing went unanswered.
+        var headed = Sections.Count > 1;
+
         var parts = Sections.Select(s => s.State switch
         {
-            AnswerSectionState.Answered => $"[{s.DeliverableId}] {s.Request}\n{s.Content}",
+            AnswerSectionState.Answered => headed ? $"{s.Request}\n{s.Content}" : s.Content,
 
             AnswerSectionState.Empty =>
-                $"[{s.DeliverableId}] {s.Request}\nNOT ANSWERED — the step that owned this request "
+                $"{s.Request}\nNOT ANSWERED — the step that owned this request "
               + $"({string.Join(", ", s.ServingTaskIds)}) completed and produced no output.",
 
-            _ => $"[{s.DeliverableId}] {s.Request}\nNOT ANSWERED — "
+            _ => $"{s.Request}\nNOT ANSWERED — "
                + (s.ServingTaskIds.Count == 0
                    ? "no step in this mission was answerable for it."
                    : $"the step(s) that owned it ({string.Join(", ", s.ServingTaskIds)}) did not complete."),

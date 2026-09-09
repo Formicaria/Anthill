@@ -114,15 +114,34 @@ public class ClosureEnforcementTests : IDisposable
         Assert.Contains("Closure refused", evaluation.Explanation, StringComparison.Ordinal);
     }
 
-    /// <summary>NEEDS IMPROVEMENT IS ALSO A NO. The verifier looked and declined to pass it.</summary>
+    /// <summary>
+    /// NEEDS IMPROVEMENT IS A NOTE, NOT A NO — CORRECTED AT v0.3.8.147, and this test asserted the
+    /// opposite for seven releases because I wrote it that way.
+    ///
+    /// `.140` read "the verifier looked and declined to pass it" as a refusal. The operator's colony
+    /// answered that within one session: three chat questions, three good answers, three
+    /// `Needs Improvement` verdicts, three missions demoted from complete to partial. The verdict on
+    /// the 1980s briefing read "provides a partial summary of the 1980s, covering key politi[cal]…"
+    /// — an editorial note on an answer it accepted.
+    ///
+    /// IT IS A CONSTANT, NOT A SIGNAL. The verifier prompt offers three options and a model asked to
+    /// critique a short answer reaches for the middle one essentially always, so demoting on it
+    /// demotes everything. That is the over-reach `.122` was reverted for, which `.140` re-committed
+    /// one enum value over — inside the very split it had just drawn to prevent it.
+    ///
+    /// STILL NOT A PASS: `IsSatisfied` needs an unambiguous `Passed`, so this is `inconclusive` —
+    /// unverified, and not accused of having failed.
+    /// </summary>
     [Fact]
-    public void NeedsImprovement_IsAlsoAVerdictOfNo()
+    public void NeedsImprovement_IsANote_NotAVerdictOfNo()
     {
         var evaluation = Evaluate(MissionWith(Work(),
             Verifier("Needs Improvement\nReasoning: thin.")));
 
-        Assert.Equal(MissionEvaluation.Verification.Failed, evaluation.VerificationStatus);
-        Assert.Equal(MissionOutcome.Partial, evaluation.OutcomeCode);
+        Assert.Equal(MissionEvaluation.Verification.Inconclusive, evaluation.VerificationStatus);
+        Assert.Equal(MissionStatus.Complete.Value(), evaluation.StructuralStatus);
+        Assert.Equal(MissionOutcome.CompletedUnverified, evaluation.OutcomeCode);
+        Assert.False(evaluation.IsPositive);
     }
 
     // ---- what `.122` got wrong, and must stay right ---------------------------------------------
@@ -225,7 +244,8 @@ public class ClosureEnforcementTests : IDisposable
     [Theory]
     [InlineData("Verification Passed\nReasoning: ok.", false)]
     [InlineData("Verification Failed\nReasoning: no.", true)]
-    [InlineData("Needs Improvement\nReasoning: thin.", true)]
+    // v0.3.8.147 — a note, not a no. See `NeedsImprovement_IsANote_NotAVerdictOfNo`.
+    [InlineData("Needs Improvement\nReasoning: thin.", false)]
     [InlineData("no verdict here at all", false)]
     public void SomethingSaidNo_ReadsTheSameVerdictTheGateDid(string prose, bool saidNo)
     {
