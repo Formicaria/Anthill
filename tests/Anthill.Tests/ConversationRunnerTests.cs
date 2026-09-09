@@ -175,6 +175,65 @@ public class ConversationRunnerTests : IDisposable
             d => d.Action == ConversationRunner.StartMissionAction && !d.Allowed);
     }
 
+    // ---- a read-only question answers itself (v0.3.8.145) -----------------------------------
+
+    /// <summary>
+    /// A PURE QUESTION does not stop the colony to ask permission to start. Under Ask — the policy
+    /// that gates everything — "how do you make tacos?" classifies to `simple_answer`, an Observe
+    /// authority in a recognized class, which `MissionAuthorityGate` structurally forbids from any
+    /// side effect. Starting it answers a question; it begins no side-effecting work, so it needs no
+    /// approval, and the decision records WHY it did not ask. This is what made "hello" reachable to
+    /// a first-time user instead of a wall reading "the colony wants to start_mission".
+    /// </summary>
+    [Fact]
+    public void AReadOnlyQuestion_AnswersWithoutAskingToStart()
+    {
+        var outcome = Runner().Run(Chat(), "how do you make tacos?");
+        _release.Set();
+
+        Assert.True(outcome.Started);
+        Assert.Equal(1, _missionsStarted);
+        var decision = Assert.Single(_memory.LoadEscalationDecisions("c1"),
+            d => d.Action == ConversationRunner.StartMissionAction);
+        Assert.True(decision.Allowed);
+        Assert.Equal("system", decision.DecidedBy);   // not "operator" — nobody was asked
+        Assert.Contains("read-only", decision.Reason);
+    }
+
+    /// <summary>
+    /// And a request that COULD change something still stops. "delete the logging module" is a
+    /// change to the repository — an unrecognized `general` mission whose Observe default is NOT
+    /// enforced (the coding lane is unclassified by design), so it is never side-effect-free and
+    /// falls through to the operator's Ask policy exactly as before. The boundary is what changed
+    /// nothing can cross without asking, not whether anything asks at all.
+    /// </summary>
+    [Fact]
+    public void AChangeRequest_StillStopsAtTheGate()
+    {
+        var outcome = Runner().Run(Chat(), "delete the logging module");
+
+        Assert.False(outcome.Started);
+        Assert.Equal(0, _missionsStarted);
+        Assert.Contains(_memory.LoadEscalationDecisions("c1"),
+            d => d.Action == ConversationRunner.StartMissionAction && !d.Allowed);
+    }
+
+    /// <summary>
+    /// The predicate itself, at the boundary it guards. Recognized read-only classes are
+    /// side-effect-free; the coding lane (`general`, unrecognized) and anything that reaches a
+    /// service or the outside world (Modify authority) are not — even though `general` also
+    /// DEFAULTS its authority to Observe, because that default means "unclassified", not
+    /// "read-only", and its ceiling is not enforced.
+    /// </summary>
+    [Theory]
+    [InlineData("how do you make tacos?", true)]              // simple_answer, Observe, recognized
+    [InlineData("what is the capital of France?", true)]       // simple_answer (no target word)
+    [InlineData("delete the logging module", false)]           // general (coding) — unrecognized
+    [InlineData("add a retry to the uploader", false)]         // general (coding)
+    [InlineData("", false)]                                    // nothing to classify — fail closed
+    public void IsObserveOnlyGoal_IsTrueOnlyForEnforcedReadOnlyClasses(string goal, bool expected)
+        => Assert.Equal(expected, ConversationRunner.IsObserveOnlyGoal(goal));
+
     /// <summary>
     /// The operator's message reaches the mission as its GOAL, with the conversation context that
     /// tells the colony what "this" and "these" point at.
@@ -303,7 +362,11 @@ public class ConversationRunnerTests : IDisposable
     [InlineData(EscalationPolicy.Bypass)]
     public void UnderAStandingPolicy_EscalationProceedsWithoutAsking(EscalationPolicy policy)
     {
-        var outcome = Runner().Run(Chat(policy), "do the work", ConversationMode.Mission);
+        // A SIDE-EFFECTING goal, so the standing policy is what proceeds — not the v0.3.8.145
+        // read-only auto-start, which attributes to "system" and would be tested here by accident.
+        // "delete the logging module" is a change to the repository: an unrecognized `general`
+        // mission, never side-effect-free, so it takes the operator-policy path this test is about.
+        var outcome = Runner().Run(Chat(policy), "delete the logging module", ConversationMode.Mission);
 
         Assert.True(outcome.Started);
         Assert.Equal(1, _missionsStarted);
@@ -628,15 +691,17 @@ public class ConversationRunnerTests : IDisposable
         var conversation = Chat();   // Ask: the first attempt is refused and recorded
         var runner = Runner();
 
-        Assert.False(runner.Run(conversation, "do the thing", ConversationMode.Mission).Started);
+        // A side-effecting goal, so the FIRST attempt is genuinely refused (Ask) rather than
+        // read-only auto-started (v0.3.8.145) — the refusal-then-approve path this test is about.
+        Assert.False(runner.Run(conversation, "delete the logging module", ConversationMode.Mission).Started);
         Assert.Single(_memory.LoadConversationTurns("c1"));
 
-        var outcome = runner.Run(conversation, "do the thing", ConversationMode.Mission, Approve());
+        var outcome = runner.Run(conversation, "delete the logging module", ConversationMode.Mission, Approve());
         _release.Set();
 
         Assert.True(outcome.Started);
         var userTurns = _memory.LoadConversationTurns("c1")
-            .Where(t => t.Role == "user" && t.Content == "do the thing").ToList();
+            .Where(t => t.Role == "user" && t.Content == "delete the logging module").ToList();
         var only = Assert.Single(userTurns);
         Assert.Equal(outcome.MissionId, only.MissionId);   // the attempt gained its mission link
     }
