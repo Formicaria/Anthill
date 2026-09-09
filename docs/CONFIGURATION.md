@@ -128,6 +128,7 @@ directory. `anthill --config` prints the active path.
 | `autonomy_retire_score_threshold` | number | `0.25` | yes | — | **changes what the colony may do** |
 | `autonomy_loop_window` | int | `4` | yes | — | **changes what the colony may do** |
 | `autonomy_escalation_policy` | string | `"ask"` | yes | — | Escalation policy for missions with no conversation (scheduled, CLI, Director): ask | auto_approve | bypass.; **changes what the colony may do** |
+| `auto_update` | string | `"silent"` | yes | — | What to do when a newer release exists: silent | notify | off.; **changes what the colony may do** |
 | `autonomy_autoapply_enabled` | bool | `false` | yes | — | **changes what the colony may do** |
 | `autonomy_autoapply_paths` | string[] | `[]` | yes | — | **changes what the colony may do** |
 | `autonomy_autoapply_max_lines` | int | `40` | yes | — | **changes what the colony may do** |

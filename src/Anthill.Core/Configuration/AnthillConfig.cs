@@ -600,6 +600,25 @@ public sealed class AnthillConfig
         Summary = "Escalation policy for missions with no conversation (scheduled, CLI, Director): ask | auto_approve | bypass.")]
     [JsonPropertyName("autonomy_escalation_policy")] public string AutonomyEscalationPolicy { get; set; } = "ask";
 
+    // ---- Updates (v0.3.8.146) ------------------------------------------------------------------
+    // WHERE THE CONSENT LIVES NOW. The Windows updater used to ask "install v0.3.8.145?" once per
+    // release; the operator's instruction was that an already-installed Anthill should not beg for
+    // permission it was granted at install time. So permission is given ONCE, here, and the
+    // per-release prompt is gone.
+    //
+    // What did NOT move is the check that a downloaded payload is the one the release published:
+    // silence removes the human who was watching, so the SHA-256 verification stands in their
+    // place, and it is not optional at any setting.
+    //
+    //   silent — download, verify, and apply at the next start. Nothing to click.
+    //   notify — check and say so; install nothing. The right answer for a shape that cannot
+    //            safely replace itself, and for an operator who wants the last word.
+    //   off    — do not even ask GitHub.
+    [ConfigKey(Exposure = ConfigExposure.Editable, Security = ConfigSecurity.Safety,
+        Section = "updates", SectionNote = "v0.3.8.146: auto_update decides what this colony does when a newer release exists. 'silent' downloads it, verifies it against the SHA-256 the release publishes, and installs it at the next start - no prompt and no administrator approval, because the Windows app installs per-user and can replace its own files. 'notify' checks and tells you, installing nothing. 'off' does not check at all. A payload that fails its checksum is deleted and refused at every setting: verification is not a preference.",
+        Summary = "What to do when a newer release exists: silent | notify | off.")]
+    [JsonPropertyName("auto_update")] public string AutoUpdate { get; set; } = "silent";
+
     // ---- Phase 5: gated auto-apply ----
     // The Director may auto-approve + apply a coder patch WITHOUT human review, but only when the
     // patch clears a strict allowlist AND the workspace still builds + tests green afterward; a

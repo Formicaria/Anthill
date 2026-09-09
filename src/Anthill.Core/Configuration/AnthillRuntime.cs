@@ -606,6 +606,9 @@ public static class AnthillRuntime
     /// </summary>
     public static string AutonomyEscalationPolicy = "ask";
 
+    /// <summary>v0.3.8.146 - silent | notify | off. See AnthillConfig.AutoUpdate.</summary>
+    public static string AutoUpdate { get; private set; } = "silent";
+
     public static bool AutonomyAutoApplyEnabled = false;
     /// <summary>Workspace-relative globs a patch file_path must match to be auto-appliable. Empty = nothing eligible.</summary>
     public static List<string> AutonomyAutoApplyPaths = new();
@@ -1338,6 +1341,12 @@ public static class AnthillRuntime
         AutonomyLoopWindow = Math.Clamp(config.AutonomyLoopWindow, 0, 20);
         AutonomyOneShotCompletion = config.AutonomyOneShotCompletion;
         AutonomyEscalationPolicy = config.AutonomyEscalationPolicy;
+        // Anything unrecognised reads as `notify`: a typo must not silently install software, and
+        // it must not silently stop checking for one either.
+        AutoUpdate = (config.AutoUpdate ?? "").Trim().ToLowerInvariant() switch
+        {
+            "silent" => "silent", "off" => "off", _ => "notify",
+        };
         AutonomyAutoApplyEnabled = config.AutonomyAutoApplyEnabled;
         AutonomyAutoApplyPaths = (config.AutonomyAutoApplyPaths ?? new())
             .Select(p => (p ?? "").Trim()).Where(p => p.Length > 0).ToList();
@@ -1706,6 +1715,7 @@ public static class AnthillRuntime
         ["autonomy_loop_window"] = AutonomyLoopWindow,
         ["autonomy_oneshot_completion"] = AutonomyOneShotCompletion,
         ["autonomy_escalation_policy"] = AutonomyEscalationPolicy,
+        ["auto_update"] = AutoUpdate,
         ["autonomy_autoapply_enabled"] = AutonomyAutoApplyEnabled,
         ["autonomy_autoapply_paths"] = AutonomyAutoApplyPaths.ToList(),
         ["autonomy_autoapply_max_lines"] = AutonomyAutoApplyMaxLines,
