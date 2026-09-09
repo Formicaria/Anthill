@@ -111,6 +111,27 @@ switch (command)
         // rather than shipping a stale surface.
         return Anthill.Cli.EmitConfigCommand.Run(rest);
 
+    case "--apply-staged-update":
+    {
+        // v0.3.8.146 — the systemd unit's ExecStartPre. Runs in the one moment a service CAN
+        // replace its own binaries: after the old process has stopped and before the new one
+        // starts. Re-verifies the staged payload's SHA-256 first — staging checked it at download
+        // time, and the disk between then and now is not a trusted place.
+        //
+        // Exits 0 on every ordinary outcome, INCLUDING "there was nothing to apply" and "the
+        // staged payload failed its checksum", because this is a pre-start hook: a non-zero exit
+        // here would refuse to start a colony that is perfectly able to run the version it
+        // already has. A failed update must cost an update, never an outage.
+        var site = Anthill.Core.Updates.InstallDetector.Detect();
+        var staged = Anthill.Core.Updates.UpdateStaging.Pending(site);
+        if (staged is null) return 0;
+
+        var applied = Anthill.Core.Updates.UpdateApplier.ApplyArchive(site, staged.PayloadPath);
+        Console.Error.WriteLine($"[update] {(applied.Applied ? "applied" : "not applied")}: {applied.Message}");
+        Anthill.Core.Updates.UpdateStaging.Clear(site);
+        return 0;
+    }
+
     case "--status":
     {
         using var queen = NewQueen();
@@ -215,6 +236,10 @@ Usage:
   anthill --qualification        Can this install run missions? Temp-workspace-only; exit 0 = yes.
   anthill --live-qualification <mission-id> [--json <path>]
                                 Export the live qualification record for a mission that RAN.
+  anthill --apply-staged-update  Install a verified, already-downloaded update, then exit.
+                                Run by the systemd unit before the service starts, because that
+                                is the only moment a program can replace its own binaries. Does
+                                nothing (exit 0) when no verified update is waiting.
   anthill --status               Print colony system status.
   anthill --config               Print effective configuration and safety gates.
   anthill --routes               Print model routing table.
