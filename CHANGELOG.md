@@ -1,3 +1,46 @@
+## v0.3.8.145 - the live sweep: a question answers itself, and four screens stop lying
+
+**FIVE FINDINGS FROM DRIVING THE REAL CONSOLE, EVERY PAGE AND BUTTON.** The console was exercised
+against a running colony from a first-time user's path — create a project, group chats, send a
+message — through power scenarios, and the boot log, the header, the settings surface and the chat
+flow each said something untrue. Four were bugs; the fifth (the planner-preview "this can take a
+minute" text on a slow local model) was already honest and is left alone, because animating it
+would be the fake-spinner anti-pattern this codebase named and removed.
+
+**A PURE QUESTION NO LONGER STOPS THE COLONY TO ASK PERMISSION TO START.** The sharpest finding: a
+first-time user typing "hello" got "The colony is waiting for you — it wants to start_mission." The
+architecture is right (v0.3.8.58: every message is a mission; the planner decides the shape), but
+the `start_mission` escalation gate fired for EVERY mission, including one the classifier admits at
+Observe authority in a recognized class — `simple_answer`, `system_audit`, `research` — which
+`MissionAuthorityGate` structurally forbids from any side effect (it refuses apply_patch /
+write_text_file / shell_command / execute above Observe). Starting such a mission answers a
+question; it begins no side-effecting work, so it needs no more approval than a search does. The
+gate now takes a `sideEffectFree` verdict, computed from the SAME composed goal the mission's
+ceiling is derived from (so auto-start can never outrun the ceiling), and records WHY it did not
+ask. A request that could change a file, run a command or reach outside — and the coding lane,
+which is `general` and unrecognized by design, its Observe default NOT enforced — still stops at
+the gate exactly as before. `ConversationRunnerTests` pin both directions and the predicate itself.
+
+**THE HEADER STOPPED SAYING "IDLE" WHILE A MISSION RAN.** A mission started from a chat never
+becomes a `/jobs` row — it goes straight through `ConversationRunner`, not the API job queue — so
+the top status bar read "Idle — no active mission" while the colony was plainly working. The task
+graph knows the truth for both paths; the header now consults it when the job queue is quiet, and
+shows the running mission's goal. Only a genuinely running graph counts, so 9/9 never sits beside
+"idle".
+
+**THE CONVERSATION CEILINGS RENDER IN SETTINGS.** The four `conversation_*` budgets shipped
+editable in v0.3.8.144 but the hand-curated Colony settings panel had no rows for them — editable
+by API, invisible in the UI. They now render under a Conversations section ("Missions per
+conversation" and the rest) and save with the others.
+
+**THE CONFIG-RENAME MIGRATION HAPPENS ONCE, NOT EVERY BOOT.** Forty `[config-rename]` lines
+(homelab_* → infrastructure_*) re-announced on every single start, each promising a rewrite "on the
+next settings save" that only a Settings click delivered — so an operator who never opened that page
+saw the migration reported forever. The rewrite now happens at load: `SaveConfig` serializes the
+already-migrated config under the new names when a config file exists, and the next boot is silent.
+Best-effort and file-existence-guarded — a read-only or defaults-only run keeps announcing rather
+than minting a file nobody asked for.
+
 ## v0.3.8.144 - glyphs stop dying, chats get their projects, and the ceilings become the operator's
 
 **THE V&V CAMPAIGN OPENS WITH THE `?` HUNT.** Every UI asset on disk is verified clean UTF-8 (a
