@@ -1,3 +1,67 @@
+## v0.3.8.151 - a question about a person, answered as a refusal about ANTHILL
+
+**BOTH FINDINGS ARE `.150`'s AND `.149`'s OWN, AND BOTH SHIPPED INSIDE THE RELEASE THAT ANNOUNCED
+THE FEATURE THEY BROKE.**
+
+---
+
+**"who is charlie kirk" CAME BACK: "the colony's records do not provide a verified definition of
+Charlie Kirk".** The next message got the same treatment, in two languages. A general-knowledge
+question was being answered as a refusal about ANTHILL, twice in a row, in the operator's own colony.
+
+`.150` gave the builder the colony's shipped self-description whenever the goal named something the
+corpus documents — and gated it on `mission.Goal`, which is the COMPOSED goal:
+`ComposeMissionGoal` appends the project's description and the conversation transcript to the
+operator's sentence. That trailing material is written BY THE COLONY and is full of the colony's own
+words — "mission", "project", prior answers about ANTHILL. So every chat message matched, and the
+model was handed a wall of ANTHILL documentation along with an instruction to say plainly when
+something was not documented in it.
+
+`MissionIntake` has read the operator's ask alone since `.96`, and wrote down why: the UI gate's own
+refusal prose entered a transcript and re-tripped the gate on every later mission, a self-sustaining
+refusal seeded by the gate quoting itself. `.150` reached for the composed goal one release after
+that comment was written, and reproduced it exactly. Same rule now, same helper, no second spelling.
+
+Two smaller halves of the same defect go with it. The block selected entries with `Find`, which falls
+back to matching an entry's BODY — ordinary English, so a long request matches most of the corpus;
+selection is now by NAME only. And its directive said to report anything "not documented here",
+which is right for a question about ANTHILL and catastrophic for any other: the absence of a person
+from a corpus about ANTHILL is not a fact about that person. The block now states what it is
+authoritative about, and says a question about anything else is answered as it otherwise would be.
+
+---
+
+**AND THE DESKTOP UPDATE STILL SHOWED A LICENSE PAGE.** `.149` shipped `auto_update`, a checksum
+sidecar and an unattended install; the operator reported that updating still walked them through a
+wizard. It did.
+
+`UpdateService` started the installer in TWO places. `ApplyStagedIfAny` passed
+`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOCANCEL`. The migration path — the one branch that asks a
+question — called a bare `Process.Start(payload)` with no arguments at all, which is the full Inno
+wizard: license page, destination page, tasks page. Answering "yes" to "shall I update" bought a
+second, longer consent for the same decision.
+
+`DesktopShellTests` asserted `/VERYSILENT` appeared SOMEWHERE in the file, and it did — in the other
+method. "The switch is in this file" was never the property worth checking. There is now exactly one
+method that starts an installer, and the guard is structural: one `ProcessStartInfo` of a payload in
+the whole file, and no direct launch of a staged path.
+
+That path also reinstalled into the directory it was migrating away from, because Inno's
+`UsePreviousAppDir` is on by default — so the prompt promising "you will not see this again" would
+have appeared every release. It now names the per-user directory, which is the whole point of
+answering yes.
+
+**AND THE SETTING REACHED NOTHING ON A DESKTOP.** `auto_update` was consulted only by the headless
+stager, while `ShellForm` called the check unconditionally at load — so `off` still downloaded and
+installed, and `notify` still behaved like `silent`. A control that reads as a switch and reaches
+nobody is the defect this repository names most often, and it shipped inside the release that
+introduced the switch. `off` now means no unasked check; `notify` asks once and installing follows
+from the answer; `silent` is unchanged. A check the operator asks for from the tray is never
+suppressed — a person who asks is not governed by a preference about what happens unasked.
+
+`/RESTARTAPPLICATIONS` is gone too: `anthill-setup.iss` sets `RestartApplications=no`, so the switch
+asked the package for something the package had turned off.
+
 ## v0.3.8.150 - the question the colony could not hear, and the plumbing it printed instead
 
 **EVERY FINDING IN THIS RELEASE CAME FROM SIX CONSECUTIVE CHAT MESSAGES IN THE OPERATOR'S OWN COLONY,

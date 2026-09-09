@@ -68,15 +68,8 @@ internal static class UpdateService
                 return false;   // files are already swapped; this process keeps starting, now on them
             }
 
-            // The installed shape hands to setup, which owns shortcuts and uninstall registration.
-            // /VERYSILENT: no wizard. /SUPPRESSMSGBOXES: no dialog can block an unattended run.
-            // /NORESTART: the machine is not ours to reboot. /NOCANCEL: nothing half-applied.
             DesktopLog.Write($"update-apply: running {staged.Asset} silently for v{staged.Version}.");
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(staged.PayloadPath)
-            {
-                Arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOCANCEL /RESTARTAPPLICATIONS",
-                UseShellExecute = true,
-            });
+            RunInstaller(staged.PayloadPath);
             UpdateStaging.Clear(site);
             return true;
         }
@@ -93,6 +86,24 @@ internal static class UpdateService
             if (Interlocked.Exchange(ref _busy, 1) == 1) return;
             try
             {
+                // THE SETTING THE DESKTOP WAS NOT READING. v0.3.8.151.
+                //
+                // `.149` shipped `auto_update` (silent | notify | off) and only the HEADLESS stager
+                // ever consulted it. `ShellForm` called this method unconditionally at load, so on a
+                // desktop the setting decided nothing at all: `off` still downloaded and installed.
+                // A control that reads as a switch and reaches nothing is the defect this repository
+                // names most often, and it shipped inside the release that introduced the switch.
+                //
+                // An EXPLICIT check is never suppressed. `announceUpToDate` is true only when the
+                // operator picked "Check for updates…" from the tray; a person who asks is not
+                // governed by a preference about what happens unasked.
+                var policy = AnthillRuntime.AutoUpdate;
+                if (!announceUpToDate && string.Equals(policy, "off", StringComparison.OrdinalIgnoreCase))
+                {
+                    DesktopLog.Write("update-check: skipped — auto_update is off.");
+                    return;
+                }
+
                 var site = InstallDetector.Detect();
                 var (latest, tag, asset) = QueryLatest(site);
                 if (latest is null)
@@ -125,6 +136,19 @@ internal static class UpdateService
                     if (announceUpToDate) owner.BeginInvoke(() => System.Diagnostics.Process.Start(
                         new System.Diagnostics.ProcessStartInfo(
                             $"https://github.com/Formicaria/Anthill/releases/tag/{tag}") { UseShellExecute = true }));
+                    return;
+                }
+
+                // NOTIFY ASKS ONCE, AND "YES" MEANS DONE — not "yes, now read a license".
+                //
+                // This is the operator's own sentence for what the feature should be: it opens, it
+                // asks whether to update, and confirming updates it. `silent` skips the asking;
+                // `off` never got here. Either way the install itself is unattended, because the
+                // consent being sought is consent to UPDATE, and a wizard is not a second consent —
+                // it is the same one collected again with more clicks.
+                if (!announceUpToDate && string.Equals(policy, "notify", StringComparison.OrdinalIgnoreCase))
+                {
+                    owner.BeginInvoke(() => OfferUpdateNow(owner, site, latest, asset.Value));
                     return;
                 }
 
@@ -187,6 +211,46 @@ internal static class UpdateService
         }
     }
 
+    /// <summary>
+    /// The `notify` prompt: one question, and confirming installs. v0.3.8.151.
+    ///
+    /// Declining is remembered for this run only, deliberately. A preference already exists for
+    /// "stop asking" — `auto_update: off` — and inventing a second, invisible one here would leave
+    /// an operator with a colony that had quietly stopped updating and no setting saying so.
+    /// </summary>
+    private static void OfferUpdateNow(Form owner, InstallSite site, string latest, Asset asset)
+    {
+        var choice = MessageBox.Show(owner,
+            $"Anthill v{latest} is available — you are on v{AnthillRuntime.Version}.\n\n"
+          + "Update now? The download is checked against the release's published checksum and "
+          + "installs without any further questions. Your colony's memory and settings are kept.",
+            "Update available", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+
+        if (choice != DialogResult.Yes) return;
+
+        var staged = StageQuietly(site, latest, asset);
+        if (!staged.Staged)
+        {
+            MessageBox.Show(owner, staged.Message, "Update not applied",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        // A portable copy is swapped in place at the next launch; there is no installer to run and
+        // nothing to hand over to, so saying "restart to finish" is the honest end of this path.
+        if (site.Shape == InstallShape.WindowsPortable)
+        {
+            MessageBox.Show(owner,
+                $"Anthill v{latest} has been downloaded and checked. Restart Anthill to finish.",
+                "Update ready", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        UpdateStaging.Clear(site);
+        RunInstaller(staged.Update!.PayloadPath);
+        Application.Exit();
+    }
+
     /// <summary>The one prompt left: a machine-wide install asking to become a per-user one.</summary>
     private static void OfferMigration(Form owner, NotifyIcon tray, string latest, string tag, Asset? asset)
     {
@@ -226,9 +290,60 @@ internal static class UpdateService
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
-        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(staged.Update!.PayloadPath)
-        { UseShellExecute = true });
+        // SILENTLY, AND INTO THE PER-USER LOCATION — v0.3.8.151, and `.150` did neither.
+        //
+        // This line was a bare `Process.Start(payload)` with no arguments, so answering "yes" to the
+        // one prompt this class raises launched the full Inno wizard: a license page, a destination
+        // page, a tasks page. The operator reported it as "I thought silent updates were added and
+        // they did not work", and they were right — `ApplyStagedIfAny` passed the silent switches
+        // and this path passed nothing. Two launch sites for one installer, agreeing about nothing,
+        // which is why there is now exactly one method that starts it.
+        //
+        // `/DIR` is what makes the migration a migration. Inno's `UsePreviousAppDir` is on by
+        // default, so a copy already under Program Files would reinstall itself right back there —
+        // the prompt would keep appearing every release, having promised it would not. Naming the
+        // per-user directory is the whole point of answering yes.
+        RunInstaller(staged.Update!.PayloadPath, PerUserProgramDirectory);
         Application.Exit();
+    }
+
+    /// <summary>Where a per-user install lives; the `[Setup] DefaultDirName` in `anthill-setup.iss`.</summary>
+    private static string PerUserProgramDirectory =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                     "Programs", "Anthill");
+
+    /// <summary>
+    /// THE ONLY PLACE THIS PROGRAM STARTS AN INSTALLER. v0.3.8.151.
+    ///
+    /// There were two, and they disagreed: the apply path passed the silent switches and the
+    /// migration path passed none, so the release that announced silent updates still showed a
+    /// license page to anyone whose copy sat under Program Files. `DesktopShellTests` asked only
+    /// that `/VERYSILENT` appear SOMEWHERE in this file, and it did — in the other method.
+    ///
+    /// The switches, and why each is here:
+    ///   /VERYSILENT        no wizard at all, which is the entire promise of the feature.
+    ///   /SUPPRESSMSGBOXES  no dialog can block a run nobody is watching.
+    ///   /NORESTART         the machine is not ours to reboot.
+    ///   /NOCANCEL          nothing half-applied.
+    ///
+    /// The restart-applications switch is deliberately GONE. `anthill-setup.iss` sets
+    /// `RestartApplications=no`, so it asked the package for something the package had turned off —
+    /// a statement of intent contradicted by the file it was addressed to, which is the same defect
+    /// in miniature as the two launch sites. It is named in words rather than spelled here, because
+    /// `DesktopShellTests` asserts the switch is absent and a comment quoting it would read as its
+    /// presence — the mistake this whole method exists to stop being possible.
+    /// </summary>
+    private static void RunInstaller(string payloadPath, string? installDirectory = null)
+    {
+        var arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOCANCEL";
+        if (!string.IsNullOrWhiteSpace(installDirectory))
+            arguments += $" /DIR=\"{installDirectory}\"";
+
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(payloadPath)
+        {
+            Arguments = arguments,
+            UseShellExecute = true,
+        });
     }
 
     /// <summary>An install under Program Files: replaceable only with elevation, by anyone.</summary>

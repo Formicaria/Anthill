@@ -1559,16 +1559,46 @@ Create a practical final response.
     /// </summary>
     private static string SelfDescriptionBlock(string? goal)
     {
-        if (!Tools.ColonySelfKnowledge.NamesSubjectOf(goal)) return "";
+        // THE OPERATOR'S ASK, NOT THE COMPOSED GOAL — v0.3.8.151, and `.150` shipped without it.
+        //
+        // `mission.Goal` is what `ComposeMissionGoal` built: the operator's sentence, then the
+        // project's description, then the conversation transcript. That trailing material is written
+        // BY THE COLONY and is full of the colony's own vocabulary — "mission", "project", prior
+        // answers about ANTHILL. So on `.150` every chat message matched, and asked "who is charlie
+        // kirk" the builder was handed the ANTHILL corpus and replied that "the colony's records do
+        // not provide a verified definition of Charlie Kirk". The next message got the same
+        // treatment. A general-knowledge question became a refusal about ANTHILL.
+        //
+        // `MissionIntake` has read the ask alone since `.96`, and wrote down why: the UI gate's own
+        // refusal prose entered a transcript and re-tripped the gate on every later mission — a
+        // self-sustaining refusal seeded by the gate quoting itself. This block reached for
+        // `mission.Goal` and inherited exactly that, one release after the comment explaining it was
+        // in front of me. Same rule, same helper, no second spelling of it.
+        var ask = Missions.MissionIntake.OperatorAskOnly(goal ?? "").Trim();
 
-        var entries = Tools.ColonySelfKnowledge.Find(goal);
+        // NAME MATCHES ONLY. `Find` falls back to matching an entry's BODY, which is right for a
+        // lookup an operator drives and wrong for a prompt: the bodies are ordinary English, so a
+        // long request matches most of the corpus. `.150` used `Find` and put a wall of
+        // documentation in front of a model that had been asked about a person.
+        var entries = Tools.ColonySelfKnowledge.EntriesNamedIn(ask);
         if (entries.Count == 0) return "";
 
+        // AND THE DIRECTIVE IS SCOPED, which is the other half of the same defect. `.150` told the
+        // model to say plainly when something "is not documented here" — correct for a question
+        // about ANTHILL, and catastrophic for any other question, because the absence of Charlie
+        // Kirk from a corpus about ANTHILL is not a fact about Charlie Kirk. What these entries are
+        // authoritative ABOUT is ANTHILL, and the block now says only that.
         return $@"
-ANTHILL's own shipped description of itself (documentation compiled into this build — not a
-recollection, not something this mission retrieved). Where it and your own knowledge disagree, THIS
-is correct: it describes the software you are running inside. If the operator asks about something
-ANTHILL does not document here, say so plainly rather than supplying a definition of your own.
+ANTHILL's own shipped description of itself, included because the request names something this build
+documents. It is documentation compiled into this binary — not a recollection, and not something this
+mission retrieved.
+
+It is authoritative about ANTHILL AND ABOUT NOTHING ELSE. Where it and your own knowledge disagree
+about ANTHILL, this is correct: it describes the software you are running inside. It says nothing
+about the wider world, and a subject's absence from it is not evidence about that subject — answer a
+question about anything else exactly as you otherwise would, without mentioning these entries. If the
+operator asks about a part of ANTHILL that is not described here, say plainly that it is not
+documented rather than inventing a definition.
 
 {string.Join("\n\n", entries.Select(e => $"    {e.Title} ({e.Topic}): {e.Body}"))}
 ";

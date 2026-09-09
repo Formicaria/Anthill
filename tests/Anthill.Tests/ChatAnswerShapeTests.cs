@@ -120,6 +120,80 @@ public class ChatAnswerShapeTests
     // ---- 2. the answering role can reach the description ---------------------------------------
 
     /// <summary>
+    /// AND IT MUST NOT REACH A QUESTION THAT IS NOT ABOUT THE COLONY. v0.3.8.151.
+    ///
+    /// `.150` gated the builder's block on `mission.Goal` — the COMPOSED goal, which
+    /// `ComposeMissionGoal` builds from the operator's sentence plus the project description plus
+    /// the conversation transcript. That trailing material is written BY THE COLONY and is full of
+    /// the colony's own words. So every chat message matched, and "who is charlie kirk" came back
+    /// "the colony's records do not provide a verified definition of Charlie Kirk" — a general
+    /// question answered as a refusal about ANTHILL, twice in a row, from the operator's own colony.
+    ///
+    /// This is the fixture as the runtime actually composes it, transcript and all.
+    /// </summary>
+    [Fact]
+    public void TheComposedGoalsColonyNarration_IsNotTheOperatorsSubject()
+    {
+        const string composed =
+            "who is charlie kirk\n"
+          + "--- project \"Questions\" --- The operator describes its purpose as: Plain questions to "
+          + "the colony — conversations that are not tied to a piece of work.\n"
+          + "--- conversation context (what the request above refers to) ---\n"
+          + "Colony: The ANTHILL colony plans a mission into tasks and grades the result against "
+          + "evidence the runtime recorded.";
+
+        // The composed goal DOES name the colony's vocabulary — that is the trap, not a mistake.
+        Assert.True(ColonySelfKnowledge.NamesSubjectOf(composed));
+
+        // The operator's ask does not, and the ask is what the block is gated on.
+        var ask = MissionIntake.OperatorAskOnly(composed).Trim();
+        Assert.Equal("who is charlie kirk", ask);
+        Assert.False(ColonySelfKnowledge.NamesSubjectOf(ask));
+        Assert.Empty(ColonySelfKnowledge.EntriesNamedIn(ask));
+    }
+
+    /// <summary>
+    /// THE GATE READS THE ASK, and a source guard is the only rung that can see it — reaching this
+    /// at runtime needs a router. `.96` wrote the rule down (a classifier reading colony narration
+    /// inherits the colony's own words) and `.150` reached for `mission.Goal` one release later, so
+    /// the helper is pinned by name rather than trusted to stay.
+    /// </summary>
+    [Fact]
+    public void TheSelfDescriptionBlock_ReadsTheOperatorAskAlone()
+    {
+        var source = SourceText.CodeOnly(
+            File.ReadAllText(Path.Combine(SourceText.RepoRoot(), "src", "Anthill.Core", "Agents", "Ants.cs")));
+
+        var at = source.IndexOf("private static string SelfDescriptionBlock", StringComparison.Ordinal);
+        Assert.True(at > 0, "SelfDescriptionBlock is gone; the builder can no longer describe the colony.");
+
+        var body = SourceText.MemberBody(source, at);
+
+        Assert.Contains("OperatorAskOnly", body, StringComparison.Ordinal);
+
+        // NAME MATCHES ONLY. `Find` also matches an entry's BODY, so gating a prompt on it hands the
+        // model most of the corpus for any long request — which is the other half of what `.150` did.
+        Assert.Contains("EntriesNamedIn", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("ColonySelfKnowledge.Find", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// AND THE ENTRIES IT SELECTS ARE THE ONES NAMED, not the ones whose prose happens to share a
+    /// word. "what is micromound" gets MICROMOUND; it does not get the other ten.
+    /// </summary>
+    [Fact]
+    public void OnlyTheNamedEntriesAreSelected()
+    {
+        var named = ColonySelfKnowledge.EntriesNamedIn("what is micromound");
+
+        Assert.Single(named);
+        Assert.Equal("micromound", named[0].Topic);
+
+        // `Find` returns more, and that difference is the point of having two methods.
+        Assert.True(ColonySelfKnowledge.Find("what is micromound").Count >= named.Count);
+    }
+
+    /// <summary>
     /// THE DEFECT `.148` LEFT, AND THE REASON IT SURVIVED A GREEN SUITE.
     ///
     /// `.148` granted `colony_self_knowledge` to the researcher and dispatched it there, and every
@@ -167,8 +241,17 @@ public class ChatAnswerShapeTests
 
         var body = SourceText.MemberBody(source, at);
 
-        Assert.Contains("ColonySelfKnowledge.Find", body, StringComparison.Ordinal);
-        Assert.Contains("ColonySelfKnowledge.NamesSubjectOf", body, StringComparison.Ordinal);
+        // v0.3.8.151 — THIS NAMED `Find` AND `NamesSubjectOf`, AND THE TEST WAS THE THING THAT WAS
+        // WRONG. `.150` pinned the two methods the block happened to call rather than the property
+        // the guard exists for, so when `.151` had to stop using `Find` — it also matches an entry's
+        // BODY, which handed a model most of the corpus for any long request — a correct change
+        // failed a guard that was describing an implementation.
+        //
+        // The property is ONE CORPUS, not one method: the researcher's tool and the builder's block
+        // must both read `ColonySelfKnowledge` and neither may keep its own table of the same facts.
+        // Named that way, the guard survives the next change to how entries are selected.
+        Assert.Contains("ColonySelfKnowledge.", body, StringComparison.Ordinal);
+        Assert.Contains("EntriesNamedIn", body, StringComparison.Ordinal);
     }
 
     // ---- 3. the wire format is not the answer ---------------------------------------------------
