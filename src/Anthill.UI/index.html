@@ -718,16 +718,126 @@ a.nav-logo-link:focus-visible{outline:2px solid var(--logo-node,#93bdf2);outline
 .ev-msg{font-size:10px;color:var(--muted);word-break:break-word;}
 
 /* -- Settings Page ----------------------------------------------------------- */
-.settings-tabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0;margin-bottom:16px;}
 /* v0.3.8.127: the settings strip is the domain row now. The markup stays because clicking a
    `.settings-tab` is still what switches a pane — one implementation of the switch, driven by the
    route — but it is never shown, and hiding it here as well as in script stops it painting once
    before the script runs. */
-.settings-tabs{display:none !important;}
-.settings-tab{padding:9px 16px;font-size:12px;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;transition:color var(--t),border-color var(--t);cursor:pointer;}
-.settings-tab.active{color:var(--queen);border-color:var(--queen);}
-.settings-pane{display:none;}
-.settings-pane.active{display:block;}
+/* ---- Settings rail (v0.3.8.145) — same topology as .chat-rail ------------------------------- */
+#page-settings{min-height:0;overflow:hidden;}
+.sr-wrap{display:flex;flex:1;min-height:0;}
+.sr-rail{width:230px;flex-shrink:0;border-right:1px solid var(--border);padding:12px;background:var(--panel);display:flex;flex-direction:column;gap:2px;overflow-y:auto;}
+.sr-search{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:var(--r);background:var(--bg);border:1px solid var(--border);font-size:11px;color:var(--dim);margin-bottom:10px;}
+.sr-search input{flex:1;min-width:0;background:transparent;border:none;color:var(--text);font-size:11px;outline:none;font-family:var(--font);}
+.sr-search:focus-within{border-color:var(--queen);}
+.sr-kbd{font-size:9px;font-family:var(--mono);border:1px solid var(--border);border-radius:3px;padding:0 4px;color:var(--dim);}
+.sr-group{font-size:9px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);padding:10px 9px 4px;}
+.sr-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 9px;border-radius:var(--r);cursor:pointer;font-size:11px;line-height:1.4;color:var(--muted);border:1px solid transparent;transition:background var(--t),color var(--t);}
+.sr-item:hover{background:rgba(255,255,255,.04);}
+.sr-item.active{color:var(--text);background:rgba(var(--queen-rgb),.08);border-color:rgba(var(--queen-rgb),.3);}
+.sr-item.danger{color:var(--red);}
+.sr-item.dim{opacity:.5;}
+.sr-dirty-dot{width:6px;height:6px;border-radius:50%;background:var(--queen);flex-shrink:0;}
+.sr-hits{font-size:9px;color:var(--dim);background:rgba(255,255,255,.05);border-radius:8px;padding:1px 6px;}
+.sr-main{flex:1;min-width:0;display:flex;flex-direction:column;position:relative;min-height:0;}
+.sr-scroll{flex:1;overflow-y:auto;padding:24px 32px 96px;}
+.sr-inner{max-width:760px;}
+.sr-pagehead{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:22px;}
+.sr-title{font-size:20px;font-weight:700;color:var(--text);margin:0;}
+.sr-title.danger{color:var(--red);}
+.sr-sub{font-size:12px;color:var(--muted);margin-top:4px;text-wrap:pretty;}
+.sr-hdr-acts{display:flex;gap:8px;flex-shrink:0;}
+.sr-section{margin-bottom:28px;}
+.sr-sechead{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:0 0 8px;border-bottom:1px solid var(--border);margin-bottom:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);}
+.sr-sechead .btn{text-transform:none;letter-spacing:0;font-weight:500;}
+.sr-section.danger .sr-sechead{color:var(--red);border-bottom-color:rgba(239,68,68,.35);}
+.sr-secnote,.sr-rawacts{font-size:11px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;display:flex;gap:6px;}
+.sr-intro{font-size:11px;color:var(--muted);padding:8px 0 2px;text-wrap:pretty;}
+.sr-row{display:flex;align-items:center;gap:16px;padding:12px;margin-left:-14px;border-bottom:1px solid rgba(255,255,255,.04);border-left:2px solid transparent;}
+.sr-row.dirty{border-left-color:var(--queen);}
+.sr-left{flex:1;min-width:0;}
+.sr-label{font-size:13px;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.sr-badge{font-size:9px;font-weight:700;border-radius:3px;padding:0 5px;letter-spacing:.04em;}
+.sr-badge.caution{color:var(--amber);border:1px solid rgba(245,158,11,.4);}
+.sr-badge.risk{color:var(--red);border:1px solid rgba(239,68,68,.45);}
+.sr-changed{font-size:9px;color:var(--queen);}
+.sr-help{font-size:11px;color:var(--muted);margin-top:2px;text-wrap:pretty;}
+.sr-help a,.sr-meta a{color:var(--queen);}
+.sr-moretext{font-size:11px;color:var(--muted);margin-top:8px;padding:8px 10px;border-radius:var(--r);background:var(--inner);border:1px solid var(--border);line-height:1.55;text-wrap:pretty;}
+.sr-right{display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0;}
+.sr-meta{font-size:10px;color:var(--dim);display:flex;gap:8px;white-space:nowrap;}
+.sr-toggle{width:34px;height:19px;border-radius:10px;background:var(--inner);border:1px solid var(--border);position:relative;cursor:pointer;transition:background 200ms,border-color 200ms;}
+.sr-toggle .sr-knob{position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:var(--dim);transition:transform 200ms,background 200ms;}
+.sr-toggle.on{background:rgba(var(--queen-rgb),.18);border-color:rgba(var(--queen-rgb),.45);}
+.sr-toggle.on .sr-knob{background:var(--queen);transform:translateX(15px);}
+.sr-toggle:focus-visible{outline:2px solid var(--queen);outline-offset:2px;}
+.sr-numwrap{display:flex;align-items:center;background:var(--inner);border:1px solid var(--border);border-radius:var(--r);}
+.sr-numwrap.changed,.sr-text.changed,.sr-select.changed{border-color:rgba(var(--queen-rgb),.55);}
+.sr-numwrap input{width:90px;padding:6px 8px;background:transparent;border:none;color:var(--text);font-size:12px;font-family:var(--mono);text-align:right;outline:none;}
+.sr-unit{font-size:10px;color:var(--dim);padding-right:8px;white-space:nowrap;}
+.sr-text{width:280px;padding:7px 10px;border-radius:var(--r);background:var(--inner);border:1px solid var(--border);color:var(--text);font-size:12px;font-family:var(--mono);}
+textarea.sr-text{resize:vertical;min-height:58px;line-height:1.5;}
+.sr-select{width:280px;padding:7px 10px;border-radius:var(--r);background:var(--inner);border:1px solid var(--border);color:var(--text);font-size:12px;font-family:var(--font);}
+.sr-input:focus{outline:none;border-color:var(--queen);}
+.sr-numwrap:focus-within{border-color:var(--queen);}
+.sr-info{font-size:12px;font-family:var(--mono);color:var(--text);display:flex;align-items:center;gap:6px;}
+.sr-dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0;}
+.sr-mono{font-size:11px;font-family:var(--mono);color:var(--muted);}
+.sr-dim{color:var(--dim);}
+.sr-dangerctl{display:flex;gap:8px;align-items:center;}
+.sr-confirm{width:140px;}
+.sr-danger-btn{padding:6px 12px;border-radius:var(--r);font-size:12px;font-weight:500;border:1px solid var(--red);background:var(--red);color:#fff;cursor:pointer;white-space:nowrap;font-family:var(--font);}
+.sr-danger-btn:disabled{border-color:rgba(239,68,68,.25);color:rgba(239,68,68,.5);background:transparent;cursor:not-allowed;}
+.sr-savebar{position:absolute;left:0;right:0;bottom:0;padding:12px 32px;background:color-mix(in srgb,var(--panel) 92%,transparent);border-top:1px solid var(--border);display:flex;align-items:center;gap:12px;backdrop-filter:blur(6px);z-index:5;}
+.sr-savedot{width:7px;height:7px;border-radius:50%;background:var(--queen);box-shadow:0 0 6px var(--queen);flex-shrink:0;}
+.sr-savecount{font-size:12px;color:var(--text);white-space:nowrap;}
+.sr-savelist{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;}
+.sr-saveacts{margin-left:auto;display:flex;gap:8px;flex-shrink:0;}
+.sr-toast{position:absolute;left:32px;bottom:16px;padding:8px 12px;border-radius:var(--r);background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.4);color:var(--green);font-size:12px;display:flex;align-items:center;gap:8px;z-index:6;}
+.sr-toast.err{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.4);color:var(--red);}
+.sr-empty{font-size:12px;color:var(--muted);padding:24px 0;}
+.sr-empty.sr-err{color:var(--red);}
+.sr-note{background:rgba(var(--queen-rgb),.08);border:1px solid var(--queen);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:var(--queen);}
+.sr-user{display:grid;grid-template-columns:32px 1fr 170px 110px auto;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.04);}
+.sr-user.inactive{opacity:.6;}
+.sr-avatar{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:#080808;background:var(--blue);}
+.sr-avatar.me{background:linear-gradient(135deg,var(--queen),var(--queen-deep));}
+.sr-uname{font-size:13px;color:var(--text);}
+.sr-you{font-size:10px;color:var(--dim);}
+.sr-user .sr-select{width:100%;padding:5px 8px;font-size:11px;}
+.sr-useracts{display:flex;gap:6px;justify-self:end;}
+.sr-useracts .btn{padding:4px 10px;font-size:11px;}
+.sr-remove{color:var(--red);}
+.sr-invite{display:flex;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.04);flex-wrap:wrap;}
+.sr-invite .sr-text,.sr-invite .sr-select{width:180px;}
+.sr-raw{font-family:var(--mono);font-size:10.5px;color:var(--muted);white-space:pre-wrap;word-break:break-all;line-height:1.65;padding:10px 0;max-height:120px;overflow:hidden;mask-image:linear-gradient(#000 55%,transparent);margin:0;}
+.sr-raw.open{max-height:none;mask-image:none;}
+.sr-statement{font-size:12px;font-family:var(--mono);color:var(--red);padding:10px 12px;border:1px solid rgba(239,68,68,.35);border-radius:var(--r);margin-bottom:18px;}
+.sr-statement.ok{color:var(--green);border-color:rgba(16,185,129,.4);}
+.sr-check{display:grid;grid-template-columns:18px 1fr 120px 120px;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.04);}
+.sr-glow{width:8px;height:8px;border-radius:50%;display:inline-block;}
+.sr-attest{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+.sr-attest .sr-text{width:320px;}
+.sr-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+.sr-chip{font-size:11px;color:var(--muted);background:var(--inner);border:1px solid var(--border);border-radius:var(--r);padding:3px 8px;}
+.sr-chip b{color:var(--text);font-weight:600;}
+.sr-term{border:1px solid var(--border);border-radius:var(--r);background:var(--bg);overflow:hidden;margin-bottom:8px;}
+.sr-termhead{display:flex;align-items:center;gap:10px;padding:7px 12px;border-bottom:1px solid var(--border);background:var(--panel);font-size:11px;color:var(--muted);}
+.sr-termmeta{margin-left:auto;display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10px;}
+.sr-termcwd{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);font-size:10px;color:var(--dim);}
+.sr-termcwd input{flex:1;font-family:var(--mono);font-size:11px;padding:4px 8px;}
+.sr-termout{font-family:var(--mono);font-size:12px;line-height:1.55;padding:12px 14px;height:420px;overflow-y:auto;white-space:pre-wrap;color:var(--text);}
+.sr-termin{display:flex;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid var(--border);}
+.sr-termin input{flex:1;font-family:var(--mono);font-size:12px;padding:6px 8px;}
+.sr-prompt{color:var(--green);font-family:var(--mono);}
+.sr-termquick{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center;font-size:10px;}
+/* Reduce motion (Account → This device): the same rule prefers-reduced-motion applies, chosen by the operator. */
+html[data-reduce-motion] *,html[data-reduce-motion] *::before,html[data-reduce-motion] *::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important;}
+/* Header help popover (v0.3.8.145) — the status popover's shape. */
+.hdr-pop{position:absolute;top:46px;right:14px;width:340px;background:var(--card);border:1px solid var(--border);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.5);z-index:820;display:none;padding:14px;}
+.hdr-pop.show{display:block;}
+.hdr-pop-title{font-weight:600;font-size:13px;color:var(--text);}
+.hdr-pop-sub{font-size:11px;color:var(--muted);margin:4px 0 12px;}
+@media (max-width:900px){ .sr-rail{width:170px;} .sr-scroll{padding:16px 16px 96px;} .sr-text,.sr-select{width:200px;} .sr-user{grid-template-columns:32px 1fr;} .sr-check{grid-template-columns:18px 1fr;} }
 .set-label{font-size:10px;color:var(--muted);font-weight:600;margin-bottom:5px;display:block;}
 .set-input{width:100%;padding:8px 10px;border-radius:var(--r);background:var(--inner);border:1px solid var(--border);color:var(--text);font-size:12px;margin-bottom:12px;}
 .set-input:focus{outline:none;border-color:var(--queen);}
@@ -1930,6 +2040,25 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="sp-btn" id="sp-recheck">Re-check update</div>
           </div>
         </div>
+        <!-- v0.3.8.145: help & report an issue — moved out of Settings into the header. The composer
+             keeps its ids (report-category / report-desc / report-send) because console-extras.js
+             binds #report-send at parse time. -->
+        <button class="hdr-btn" id="hdr-help" title="Help &amp; report an issue" aria-label="Help and report an issue" aria-haspopup="true" aria-expanded="false">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+        </button>
+        <div id="help-pop" class="hdr-pop" role="dialog" aria-label="Report an issue">
+          <div class="hdr-pop-title">Report an issue</div>
+          <div class="hdr-pop-sub">Opens your mail app with the details filled in. No tokens or keys, please.</div>
+          <label class="set-label" for="report-category">Category</label>
+          <select class="set-input" id="report-category">
+            <option value="Bug report">Bug report</option>
+            <option value="Security issue">Security issue</option>
+            <option value="Feedback">Feedback</option>
+          </select>
+          <label class="set-label" for="report-desc">What happened?</label>
+          <textarea class="set-input" id="report-desc" rows="4" placeholder="What you did, what you expected, what happened instead."></textarea>
+          <button class="btn btn-ghost" id="report-send">✉ Compose email to info@formicaria.us</button>
+        </div>
         <!-- v1.8.25 UI Phase 10: notification center -->
         <button class="hdr-btn" id="notif-bell" title="Colony activity — open the Colony view" aria-label="Open Colony activity view">
           <!-- v0.3.8.49 (§17): a colony/nodes glyph, not a bell. It opens the ambient Colony view. -->
@@ -2634,39 +2763,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         </div>
       </div><!-- /page-pheromones -->
 
-      <!-- --------------------------------------------------------------------
-           PAGE: READINESS (v0.3.8.46)
-           The qualification snapshot, the colony's own account of its wiring,
-           and the two report actions — surfaces for endpoints that spent
-           releases computing results nobody could see.
-      --------------------------------------------------------------------- -->
-      <div class="page page-scroll" id="page-readiness">
-        <div class="page-hdr">
-          <div>
-            <h1>Readiness</h1>
-            <div class="sub" id="rd-statement">Loading…</div>
-          </div>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <span class="save-msg text-green" id="rd-msg"></span>
-            <button class="btn btn-ghost" id="rd-reload">↺ Reload</button>
-            <button class="btn btn-ghost" id="rd-cert" title="Download the certification report — truthful even when unready">⇩ Certification</button>
-            <button class="btn btn-ghost" id="rd-report" title="Write the machine-generated qualification report to disk">Write qualification report</button>
-          </div>
-        </div>
-        <div class="card" style="margin-bottom:12px;">
-          <div style="padding:10px;">
-            <h2 style="font-size:12px;margin:0 0 8px;">Thresholds</h2>
-            <div id="rd-checks" style="font-size:11px;">Loading…</div>
-          </div>
-        </div>
-        <div class="card">
-          <div style="padding:10px;">
-            <h2 style="font-size:12px;margin:0 0 8px;">Colony Introspection</h2>
-            <div class="sub" style="margin-bottom:8px;">The colony's own account of its wiring — what is switched on, what is stopped, and whether the configuration can work.</div>
-            <div id="rd-introspection" style="font-size:11px;">Loading…</div>
-          </div>
-        </div>
-      </div><!-- /page-readiness -->
+      
 
       <!-- --------------------------------------------------------------------
            PAGE: PROJECT WORKSPACE (v0.3.8.48)
@@ -3686,275 +3783,46 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 
 
       <!-- --------------------------------------------------------------------
-           PAGE: SETTINGS
+           PAGE: SETTINGS (v0.3.8.145 — the settings rail)
+           One page with its own rail, the same topology as the Chat rail. Every
+           destination, section and row is rendered by settings.js from a
+           declarative schema; only the Terminal keeps static markup here,
+           because the shell functions in app.js bind its ids.
       --------------------------------------------------------------------- -->
-      <div class="page page-scroll" id="page-settings">
-        <div class="page-hdr">
-          <div><h1 id="set-title">Settings</h1><div class="sub" id="set-sub">Colony configuration, model routes, and system diagnostics</div></div>
-        </div>
-
-        <div class="settings-tabs" id="settings-tabs">
-          <div class="settings-tab active" data-tab="connection">Connection</div>
-          <!-- v0.3.8.55: the Providers tab moved to Tools → Providers (route /tools/providers);
-               the pane below stays and that route opens it directly. -->
-          <div class="settings-tab" data-tab="colony">Colony</div>
-          <div class="settings-tab" data-tab="models">Models</div>
-          <div class="settings-tab" data-tab="info">System Info</div>
-        </div>
-
-        <!-- Tab: Connection -->
-        <div class="settings-pane active" id="tab-connection">
-          <div class="card" style="padding:16px 18px;max-width:540px;">
-            <div class="section-head" style="margin-top:0;">Operator Account</div>
-            <div class="info-row"><span class="info-key">Username</span><span class="info-val" id="si-username">—</span></div>
-            <div class="info-row" style="margin-bottom:14px;"><span class="info-key">Role</span><span class="info-val" id="si-role">—</span></div>
-
-            <!-- v0.3.8.55: theme picker. The default is the website's own palette; themes apply
-                 instantly, persist per device, and load before first paint (head script). -->
-            <div class="section-head">Theme</div>
-            <label class="set-label" for="settings-theme">Console palette <span style="font-weight:400;color:var(--dim)">(saved on this device)</span></label>
-            <select class="set-input" id="settings-theme" style="margin-bottom:16px;">
-              <option value="default">Formicaria — cream on ink, magenta action (default)</option>
-              <option value="classic">Classic — blue-grey slate</option>
-              <option value="light">Light — paper &amp; ink</option>
-              <option value="hermes">Hermes — warm amber on umber</option>
-              <option value="contrast">High contrast — black &amp; bright</option>
-            </select>
-
-            <!-- v0.3.8.55 (field report): report a bug or security issue from inside the app.
-                 Deliberately a mailto: — no server-side mail, no stored report, works from every
-                 deployment shape, and the operator sees exactly what leaves their machine. -->
-            <div class="section-head">Report an Issue</div>
-            <label class="set-label" for="report-category">Category</label>
-            <select class="set-input" id="report-category">
-              <option value="Bug report">Bug report</option>
-              <option value="Security issue">Security issue</option>
-              <option value="Feedback">Feedback</option>
-            </select>
-            <label class="set-label" for="report-desc">What happened? <span style="font-weight:400;color:var(--dim)">(no tokens or keys, please)</span></label>
-            <textarea class="set-input" id="report-desc" rows="3" placeholder="What you did, what you expected, what happened instead."></textarea>
-            <button class="btn btn-ghost" id="report-send" style="margin-bottom:4px;">✉ Compose email to info@formicaria.us</button>
-            <div style="font-size:10px;color:var(--dim);margin-bottom:16px;">Opens your own mail app with the report pre-filled — nothing is sent by ANTHILL itself. Security issues: please report privately by email rather than a public GitHub issue.</div>
-
-            <div class="section-head">API Endpoint</div>
-            <label class="set-label">API Base URL <span style="font-weight:400;color:var(--dim)">(blank = local relative)</span></label>
-            <input class="set-input" id="settings-apibase" type="url" placeholder="http://host:8713">
-            <button class="btn btn-primary" id="settings-save" style="margin-bottom:16px;">Save & Test Connection</button>
-
-            <div class="section-head">Ollama Status</div>
-            <div class="info-row"><span class="info-key">Host</span><span class="info-val" id="si-ollama-host">—</span></div>
-            <div class="info-row"><span class="info-key">Active Model</span><span class="info-val" id="si-model">—</span></div>
-            <div class="info-row">
-              <span class="info-key">Reachability</span>
-              <span class="info-val"><span class="ollama-dot err" id="si-ollama-dot"></span><span id="si-ollama-status">—</span></span>
+      <div class="page" id="page-settings">
+        <div class="sr-wrap">
+          <aside class="sr-rail" id="sr-rail" aria-label="Settings">
+            <div class="sr-search">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input id="sr-search" type="text" placeholder="Search settings" autocomplete="off" spellcheck="false" aria-label="Search settings">
+              <kbd class="sr-kbd" title="Press / to search">/</kbd>
             </div>
-          </div>
-        </div>
-
-        <!-- Tab: Providers -->
-        <div class="settings-pane" id="tab-providers">
-          <div class="card" style="padding:16px 18px;">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-              <div class="section-head" style="margin-top:0;padding:0;">Model Provider Connections</div>
-              <button class="btn btn-ghost" id="providers-refresh" style="font-size:11px;padding:4px 10px;">↺ Refresh</button>
-            </div>
-            <div style="font-size:10px;color:var(--dim);margin-bottom:14px;">
-              Connect API keys so ants can route to paid cloud models alongside free local Ollama.
-              Keys are encrypted at rest and never sent back to the browser after saving.
-            </div>
-            <div class="provider-grid" id="providers-grid">
-              <div style="font-size:10px;color:var(--dim);text-align:center;padding:20px;grid-column:1/-1;">Loading...</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Tab: Colony -->
-        <div class="settings-pane" id="tab-colony">
-          <div class="card" style="padding:16px 18px;max-width:600px;">
-            <div class="section-head" style="margin-top:0;">Ollama Connection</div>
-            <label class="set-label">Ollama Host</label>
-            <input class="set-input" id="set-ollama-host" type="text" placeholder="http://127.0.0.1:11434">
-            <label class="set-label">Default Model</label>
-            <input class="set-input" id="set-ollama-model" type="text" placeholder="llama3.1:8b">
-
-            <div class="section-head">Feature Toggles</div>
-            <div id="set-toggles"></div>
-
-            <div class="section-head">Limits</div>
-            <div id="set-nums"></div>
-
-            <!-- v0.3.8.145 — the per-conversation ceilings, editable at last (they were compile-time
-                 constants, and the fifth mission from one chat hit a wall no page could raise). -->
-            <div class="section-head">Conversations</div>
-            <div id="set-conversations"></div>
-
-            <div class="section-head">Automation</div>
-            <div id="set-autonomy"></div>
-
-            <div style="display:flex;align-items:center;gap:10px;margin-top:14px;">
-              <button class="btn btn-primary" id="colony-save">Save Colony Settings</button>
-              <button class="btn btn-ghost" id="colony-reload">↺ Reload</button>
-              <span class="save-msg text-green" id="colony-save-msg"></span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Tab: Models -->
-        <div class="settings-pane" id="tab-models">
-          <div class="card" style="padding:16px 18px;max-width:700px;">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-              <div class="section-head" style="padding:0;">Active Routes</div>
-              <button class="btn btn-ghost" id="models-refresh" style="font-size:11px;padding:4px 10px;">↺ Refresh</button>
-            </div>
-            <div id="route-grid" style="margin-bottom:20px;"></div>
-
-            <div class="section-head">Available Models (Ollama)</div>
-            <div style="font-size:10px;color:var(--dim);margin-bottom:8px;">Click a model name to copy it.</div>
-            <div id="model-grid"></div>
-          </div>
-        </div>
-
-        <!-- Tab: System Info -->
-        <div class="settings-pane" id="tab-info">
-          <div class="card" style="padding:16px 18px;max-width:700px;">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-              <div class="section-head" style="padding:0;">System Information</div>
-              <button class="btn btn-ghost" id="diag-refresh" style="font-size:11px;padding:4px 10px;">↺ Refresh</button>
-            </div>
-            <div class="info-row"><span class="info-key">Version</span><span class="info-val" id="si-version">—</span></div>
-            <div class="info-row"><span class="info-key">Native Kernel</span><span class="info-val" id="si-kernel">—</span></div>
-            <div class="info-row"><span class="info-key">Safety Profile</span><span class="info-val" id="si-safety">—</span></div>
-            <div class="info-row"><span class="info-key">Job Workers</span><span class="info-val" id="si-workers">—</span></div>
-            <div class="info-row"><span class="info-key">Web Search</span><span class="info-val" id="si-web">—</span></div>
-            <div class="info-row"><span class="info-key">File Writing</span><span class="info-val" id="si-filewrite">—</span></div>
-            <div class="info-row" style="margin-bottom:14px;"><span class="info-key">Patch Application</span><span class="info-val" id="si-patch">—</span></div>
-            <div class="section-head">Diagnostics</div>
-            <pre id="si-diag" style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:pre-wrap;word-break:break-all;line-height:1.6;max-height:400px;overflow-y:auto;"></pre>
-          </div>
-
-          <!-- Maintenance / disk hygiene -->
-          <div class="card" style="padding:16px 18px;max-width:700px;margin-top:16px;">
-            <div style="display:flex;align-items:center;justify-content:space-between;">
-              <div class="section-head" style="padding:0;">Maintenance</div>
-              <span class="save-msg" id="maint-msg" style="font-size:11px;"></span>
-            </div>
-            <div style="font-size:11px;color:var(--muted);margin:6px 0 10px;">A full DB backup is written before every mission; only the newest <b id="maint-keep">—</b> are kept. Flush Cache prunes old backups (and old events, if a retention window is set) and compacts the database.</div>
-            <div class="info-row"><span class="info-key">Disk free</span><span class="info-val" id="maint-disk">—</span></div>
-            <div class="info-row"><span class="info-key">Database</span><span class="info-val" id="maint-db">—</span></div>
-            <div class="info-row" style="margin-bottom:12px;"><span class="info-key">Backups</span><span class="info-val" id="maint-backups">—</span></div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button class="btn btn-primary" id="maint-flush">Flush Cache</button>
-              <button class="btn btn-ghost" id="maint-refresh" style="font-size:11px;">↺ Refresh</button>
-              <button class="btn btn-ghost" id="maint-reset" style="font-size:11px;color:var(--red);border-color:rgba(239,68,68,.3);margin-left:auto;">Reset Config</button>
-            </div>
-          </div>
-        </div>
-
-      </div><!-- /page-settings -->
-
-      <!-- --------------------------------------------------------------------
-           PAGE: SECURITY — app security posture + gates (admin only)
-      --------------------------------------------------------------------- -->
-      <div class="page page-scroll" id="page-security">
-        <div class="page-hdr">
-          <div><h1>Security</h1><div class="sub">Application security posture, capability gates, and the workspace boundary</div></div>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <span class="save-msg text-green" id="sec-msg"></span>
-            <button class="btn btn-ghost" id="sec-refresh">↺ Refresh</button>
-            <button class="btn btn-primary" id="sec-save">Save changes</button>
-          </div>
-        </div>
-
-        <div class="card" style="padding:16px 18px;margin-bottom:16px;">
-          <div class="section-head" style="margin-top:0;padding:0;">Posture</div>
-          <div class="kpi-grid" style="margin-top:12px;">
-            <div class="kpi-card" style="border-left-color:var(--green)"><div class="kpi-label">Auth</div><div class="kpi-num" id="sec-auth" style="font-size:16px">—</div><div class="kpi-sub">operator login</div></div>
-            <div class="kpi-card" style="border-left-color:var(--blue)"><div class="kpi-label">Safety Profile</div><div class="kpi-num" id="sec-profile" style="font-size:16px">—</div><div class="kpi-sub">shipped default</div></div>
-            <div class="kpi-card" style="border-left-color:var(--purple)"><div class="kpi-label">Bind</div><div class="kpi-num" id="sec-bind" style="font-size:16px">—</div><div class="kpi-sub">network exposure</div></div>
-            <div class="kpi-card" style="border-left-color:var(--queen)"><div class="kpi-label">Encryption</div><div class="kpi-num" id="sec-enc" style="font-size:16px">—</div><div class="kpi-sub">secrets at rest</div></div>
-          </div>
-        </div>
-
-        <div class="card" style="padding:16px 18px;margin-bottom:16px;">
-          <div class="section-head" style="margin-top:0;">Capability Gates</div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Each gate is off-by-default and fail-closed. Turning one on widens what the colony (or an admin) can do — review before enabling on a network-reachable install.</div>
-          <div id="sec-toggles"></div>
-        </div>
-
-        <div class="card" style="padding:16px 18px;margin-bottom:16px;">
-          <div class="section-head" style="margin-top:0;">Workspace Boundary</div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">The only directory the file/coder ants may read from and propose patches against. Paths outside it are always rejected.</div>
-          <div class="form-field"><label>agent_workspace_dir</label><input class="form-input" id="sec-workspace" type="text" placeholder="/opt/anthill/.anthill/workspace" style="width:100%;font-family:var(--mono);"></div>
-        </div>
-
-        <div class="card" style="padding:16px 18px;margin-bottom:16px;">
-          <div class="section-head" style="margin-top:0;">Operator Shell</div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Controls the admin-only <b>Shell</b> console (Settings → Terminal) · a direct terminal into this host. This is remote code execution; keep it off on anything you don't fully trust on the network.</div>
-          <div id="sec-shell-toggle"></div>
-          <div class="form-field" style="margin-top:10px;"><label>Default shell working directory <span style="color:var(--dim);font-weight:400">(blank = workspace root)</span></label><input class="form-input" id="sec-shell-dir" type="text" placeholder="/opt/anthill/src" style="width:100%;font-family:var(--mono);"></div>
-        </div>
-
-        <div class="card" style="padding:16px 18px;border-color:var(--queen);">
-          <div class="section-head" style="margin-top:0;color:var(--queen);">Autonomous Auto-Apply <span style="font-size:9px;background:rgba(var(--queen-rgb),.14);color:var(--queen);padding:1px 6px;border-radius:3px;margin-left:6px;">HIGHEST RISK · PHASE 5</span></div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">
-            Lets the 24/7 Director apply coder patches <b>without human review</b> — but only ones matching the allowlist below, and only if the workspace still <b>builds + tests green</b> afterward (a red verify auto-rolls-back from backup). Inert until you add at least one path glob. Also requires the File Writing + Patch Application gates above.
-          </div>
-          <div id="sec-autoapply-toggle"></div>
-          <div class="form-field" style="margin-top:10px;"><label>Allowlist path globs <span style="color:var(--dim);font-weight:400">(one per line; empty = nothing eligible)</span></label>
-            <textarea class="form-input" id="sec-autoapply-paths" rows="3" placeholder="docs/**&#10;src/**/*.cs" style="width:100%;font-family:var(--mono);font-size:11px;"></textarea></div>
-          <div class="form-row" style="margin-top:8px;">
-            <div class="form-field"><label>Max lines / patch</label><input class="form-input" id="sec-autoapply-maxlines" aria-label="Auto-apply maximum changed lines" type="number" value="40" style="width:90px"></div>
-            <div class="form-field"><label>Verify timeout (s)</label><input class="form-input" id="sec-autoapply-timeout" aria-label="Auto-apply verification timeout (seconds)" type="number" value="900" style="width:100px"></div>
-            <div class="form-field" style="flex:1;min-width:220px;"><label>Verify command <span style="color:var(--dim);font-weight:400">(blank = dotnet build &amp;&amp; dotnet test)</span></label><input class="form-input" id="sec-autoapply-verify" type="text" placeholder="dotnet build && dotnet test" style="width:100%;font-family:var(--mono);"></div>
-          </div>
-          <div id="sec-autoapply-git" style="margin-top:8px;"></div>
-          <div id="sec-autoapply-gitcfg" style="margin-top:8px;border-top:1px solid var(--border);padding-top:10px;">
-            <div style="font-size:10px;color:var(--dim);margin-bottom:8px;">Git integration commits verified changes to a <b>standalone branch — never main</b>, and can push it via an <b>SSH deploy key</b> (referenced by path on the host; the key is never stored, shown, or logged). Keep the workspace clone checked out on the branch below; ANTHILL refuses to commit if it is on main.</div>
-            <div class="form-row">
-              <div class="form-field"><label>GitHub username <span style="color:var(--dim);font-weight:400">(→ branch)</span></label><input class="form-input" id="sec-autoapply-git-user" type="text" placeholder="your-username" data-oninput="secSyncGitBranch()" style="width:150px"></div>
-              <div class="form-field"><label>Standalone branch</label><input class="form-input" id="sec-autoapply-git-branch" type="text" readonly style="width:180px;font-family:var(--mono);color:var(--dim);" placeholder="&lt;username&gt;-anthill"></div>
-              <div class="form-field"><label>Remote</label><input class="form-input" id="sec-autoapply-git-remote" type="text" placeholder="origin" style="width:90px"></div>
-            </div>
-            <div class="form-field" style="margin-top:8px;"><label>SSH deploy key path <span style="color:var(--dim);font-weight:400">(on the host; write-scoped to this repo)</span></label><input class="form-input" id="sec-autoapply-git-key" type="text" placeholder="/opt/anthill/.ssh/anthill_deploy" style="width:100%;font-family:var(--mono);font-size:11px;"></div>
-            <div id="sec-autoapply-git-push" style="margin-top:8px;"></div>
-          </div>
-        </div>
-      </div><!-- /page-security -->
-
-      <!-- --------------------------------------------------------------------
-           PAGE: SHELL — admin-only interactive host terminal
-      --------------------------------------------------------------------- -->
-      <div class="page page-scroll" id="page-shell">
-        <div class="page-hdr">
-          <div><h1>Terminal</h1><div class="sub">Direct terminal into this host <span id="sh-host" style="color:var(--dim)"></span> — administrators only, every command is audit-logged</div></div>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <span class="save-msg" id="sh-msg"></span>
-            <button class="btn btn-ghost" id="sh-clear">Clear</button>
-          </div>
-        </div>
-        <div id="sh-disabled-note" style="display:none;background:rgba(var(--queen-rgb),.08);border:1px solid var(--queen);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:var(--queen);">
-          The operator shell is disabled. Enable it in <b>Settings → Security → Operator Shell</b> to use this terminal.
-        </div>
-        <div class="card" style="padding:0;overflow:hidden;">
-          <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);">
-            <span style="font-size:10px;color:var(--dim);">cwd</span>
-            <input class="form-input" id="sh-dir" type="text" placeholder="working directory" style="flex:1;font-family:var(--mono);font-size:11px;padding:4px 8px;">
-          </div>
-          <div id="sh-output" style="font-family:var(--mono);font-size:12px;line-height:1.55;padding:12px 14px;height:460px;overflow-y:auto;white-space:pre-wrap;color:var(--text);background:#0a121e;"></div>
-          <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid var(--border);">
-            <span style="color:var(--green);font-family:var(--mono);">$</span>
-            <input class="form-input" id="sh-input" type="text" autocomplete="off" spellcheck="false" placeholder="type a command and press Enter…" style="flex:1;font-family:var(--mono);font-size:12px;padding:6px 8px;" disabled>
-            <button class="btn btn-primary" id="sh-run" disabled>Run</button>
-          </div>
-        </div>
-        <!-- v0.3.8.49 (§14): quick actions are rendered from /shell/info's platform-aware list, not
-             hardcoded Linux buttons. Populated by initShell(); the label reflects the target OS. -->
-        <div id="sh-quick" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
-          <span id="sh-quick-label" style="font-size:10px;color:var(--dim);align-self:center;">Quick:</span>
-        </div>
-        <div style="font-size:10px;color:var(--dim);margin-top:8px;">Commands run as the ANTHILL service user on <b id="sh-host2"></b>. Bounded to 60s each; use ↑/↓ for history. Quick actions adapt to the host platform (<span id="sh-platform">—</span>); service control works via the scoped rule installed by the platform setup script.</div>
-        <!-- ANTHILL shell banner source (hidden; rendered into the terminal on open). Injected verbatim from deploy/anthill-banner.txt -->
-        <pre id="sh-banner-src" style="display:none">                                                                                                  
+            <div id="sr-rail-list"></div>
+          </aside>
+          <div class="sr-main">
+            <div class="sr-scroll" id="sr-scroll">
+              <div class="sr-inner">
+                <div class="sr-pagehead" id="sr-head"></div>
+                <div id="sr-content"><div class="sr-empty">Loading settings…</div></div>
+                <!-- Terminal: static, because app.js's shell functions address these ids. -->
+                <div id="sr-static-terminal" style="display:none">
+                  <div id="sh-disabled-note" class="sr-note" style="display:none">The operator shell is disabled. Enable it under <b>Security &amp; Gates → Operator shell</b> to use this terminal.</div>
+                  <div class="sr-term">
+                    <div class="sr-termhead">
+                      <span class="sr-dot" style="background:var(--green)"></span>
+                      <span>ANTHILL service user <span id="sh-host"></span> · <span id="sh-platform">—</span></span>
+                      <span class="sr-termmeta"><span class="save-msg" id="sh-msg"></span><button class="btn btn-ghost" id="sh-clear">Clear</button></span>
+                    </div>
+                    <div class="sr-termcwd"><span>cwd</span><input class="form-input" id="sh-dir" type="text" placeholder="working directory"></div>
+                    <div id="sh-output" class="sr-termout"></div>
+                    <div class="sr-termin"><span class="sr-prompt">$</span><input class="form-input" id="sh-input" type="text" autocomplete="off" spellcheck="false" placeholder="type a command and press Enter…" disabled><button class="btn btn-primary" id="sh-run" disabled>Run</button></div>
+                  </div>
+                  <!-- v0.3.8.49 (§14): quick actions are rendered from /shell/info's platform-aware list, not
+                       hardcoded Linux buttons. Populated by initShell(); the label reflects the target OS. -->
+                  <div id="sh-quick" class="sr-termquick"><span id="sh-quick-label" class="sr-dim">Quick:</span></div>
+                  <div class="sr-help" style="margin-top:8px;">Commands run as the ANTHILL service user on <b id="sh-host2"></b>. Bounded to 60s each; use ↑/↓ for history. Quick actions adapt to the host platform; service control works via the scoped rule installed by the platform setup script. Every command is audit-logged.</div>
+                  <!-- ANTHILL shell banner source (hidden; rendered into the terminal on open). Injected verbatim from deploy/anthill-banner.txt -->
+                  <pre id="sh-banner-src" style="display:none">                                                                                                  
                                                                                     :=:                           
                    +#%:                                                          :,=#:=#:                         
               :%@@=:. ,;+                            .:: ,::.,,,               .*@@#.  =@;                        
@@ -4000,7 +3868,23 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
  (__)..@c     (__)..@c     (__)..@c           (_ |  |  |  _)o.(__)c       (__)..@c     (__)..@c     (__)..@c      
   / | \        / | \        / | \               `--------'    / | \        / | \        / | \        / | \        
 </pre>
-      </div><!-- /page-shell -->
+                </div>
+              </div>
+            </div>
+            <div class="sr-savebar" id="sr-savebar" hidden>
+              <span class="sr-savedot"></span>
+              <span class="sr-savecount">0 unsaved changes</span>
+              <span class="sr-savelist"></span>
+              <div class="sr-saveacts"><button class="btn btn-ghost" id="sr-discard">Discard</button><button class="btn btn-primary" id="sr-save">Save changes</button></div>
+            </div>
+            <div class="sr-toast" id="sr-toast" hidden></div>
+          </div>
+        </div>
+      </div><!-- /page-settings -->
+
+      
+
+      
 
       <!-- --------------------------------------------------------------------
            PAGE: USERS
@@ -4325,59 +4209,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <!-- v0.3.8.56 (field report): the hidden Coding Agents page is gone — its cards render
            inside Tools → Integrations, populating each agent integration's own row. -->
 
-      <div class="page page-scroll" id="page-users">
-        <div class="page-hdr">
-          <div>
-            <h1>User Management</h1>
-            <div class="sub" id="users-count"></div>
-          </div>
-          <button class="btn btn-ghost" id="users-reload">↺ Reload</button>
-        </div>
-
-        <!-- Add user form -->
-        <div class="card" style="padding:14px 16px;">
-          <div class="section-head" style="margin-top:0;">Add Operator Account</div>
-          <div class="form-row">
-            <div class="form-field">
-              <label>Username</label>
-              <input class="form-input" id="nu-user" type="text" placeholder="username" autocomplete="off">
-            </div>
-            <div class="form-field">
-              <label>Password</label>
-              <input class="form-input" id="nu-pass" type="password" placeholder="min 8 chars" autocomplete="new-password">
-            </div>
-            <div class="form-field">
-              <label>Role</label>
-              <select class="form-select" id="nu-role" aria-label="New user role">
-                <option value="coordinator">Coordinator</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
-            <div class="form-field" style="justify-content:flex-end;">
-              <button class="btn btn-primary" id="nu-add">Add Account</button>
-            </div>
-          </div>
-          <div class="save-msg text-green" id="nu-msg" style="margin-top:6px;"></div>
-        </div>
-
-        <!-- Users table -->
-        <div class="card" style="overflow-x:auto;">
-          <table class="users-table">
-            <thead>
-              <tr>
-                <th>Username</th>
-                <th>Role</th>
-                <th>Status</th>
-                <th>Last Login</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="users-tbody">
-              <tr><td colspan="5" style="color:var(--dim);text-align:center;padding:16px;">Loading...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div><!-- /page-users -->
+      
 
     </main><!-- /main-area -->
 
@@ -4468,6 +4300,8 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 <script src="/ui/mission-thread.js" defer></script>
 <script src="/ui/dashboard-grid.js" defer></script>
 <script src="/ui/app.js" defer></script>
+  <!-- v0.3.8.145: the Settings domain (rail, search, save bar, danger zone). -->
+  <script src="/ui/settings.js" defer></script>
 <!-- v0.3.8.55: inspector routing + themes, split out of app.js (the size guard). Classic deferred
      scripts like the rest: everything in them is reached at call time, never at parse time. -->
 <script src="/ui/routing-controls.js" defer></script>

@@ -62,6 +62,7 @@ public class UiAbsenceTests
     [InlineData("colony-host.js")]
     [InlineData("colony-home.js")]
     [InlineData("micromound.js")]
+    [InlineData("settings.js")]
     public void EveryShippedAsset_IsEmbeddedAndFound(string asset)
     {
         var content = ApiHost.LoadUiAsset(asset);
@@ -93,6 +94,7 @@ public class UiAbsenceTests
     [InlineData("colony-home.js")]
     [InlineData("colony-topology.js")]
     [InlineData("micromound.js")]
+    [InlineData("settings.js")]
     [InlineData("index.html")]
     public void NoConsoleAsset_LoadsCodeFromAnywhereButThisOrigin(string asset)
     {

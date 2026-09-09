@@ -68,6 +68,7 @@ public static partial class ApiHost
     private static string UiRoutingControlsJs = "";
     private static string UiThemesJs = "";
     private static string UiConsoleExtrasJs = "";
+    private static string UiSettingsJs = "";   // v0.3.8.145: the Settings domain
     // Colony Live (design doc §17, stage 3) — projection layer + 3D renderer, split assets like the rest.
     private static string UiColonyTopologyJs = "";
     private static string UiColonyLiveJs = "";
@@ -286,6 +287,7 @@ public static partial class ApiHost
         UiRoutingControlsJs = LoadUiAsset("routing-controls.js");
         UiThemesJs = LoadUiAsset("themes.js");
         UiConsoleExtrasJs = LoadUiAsset("console-extras.js");
+        UiSettingsJs = LoadUiAsset("settings.js");
         UiColonyTopologyJs = LoadUiAsset("colony-topology.js");
         UiColonyLiveJs = LoadUiAsset("colony-live.js");
         UiColonyHostJs = LoadUiAsset("colony-host.js");
