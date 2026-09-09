@@ -174,6 +174,29 @@ public sealed class ResearcherAnt : BaseAnt
         var pheromoneContext = _memory.FormatPheromoneContext(8);
         var toolResults = new List<ToolResult> { _tools.RunTool("system_info", mission.Id, task.Id, Name) };
 
+        // v0.3.8.148 — WHAT ANTHILL IS, dispatched every time, like `system_info` on the line above.
+        //
+        // THE FAILURE: asked "what is micromound? and how does it benefit the colony", this handler
+        // searched mission memory, found prior missions about tacos and 1990s history, and reported
+        // that the colony had no record of the term. The verifier failed the mission, correctly.
+        // Every layer behaved properly and the operator got nothing.
+        //
+        // UNCONDITIONAL, AND THAT IS THE DESIGN. The obvious alternative is a keyword trigger — fire
+        // it when the goal mentions anthill or micromound — and keyword triggers on the COMPOSED
+        // goal have caused three separate defects in recent releases: a recipe planned as a patch, a
+        // briefing planned as fourteen tasks, a question routed to the web ant. This tool costs one
+        // in-memory lookup over text that ships with the build, so it needs no trigger to be worth
+        // running.
+        //
+        // THE GOAL IS THE QUERY, and a miss is cheap by construction: an unmatched request returns a
+        // two-line index of what ANTHILL documents about itself rather than an error or the whole
+        // corpus, so a mission about tacos pays almost nothing and a mission about MICROMOUND gets
+        // the definition. Passing the composed goal is safe HERE in a way it was not in the planner:
+        // this is a search query, not a routing decision — the worst case is one extra definition in
+        // context, not a different lane.
+        toolResults.Add(_tools.RunTool(Tools.ColonySelfKnowledgeTool.ToolName, mission.Id, task.Id, Name,
+            new() { ["topic"] = mission.Goal }));
+
         // v0.3.8.98 — THE RUNTIME HALF, dispatched when the TASK says that is what it is for.
         //
         // Branching on the task's declared capability rather than on its worker id or on words in

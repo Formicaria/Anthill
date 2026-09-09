@@ -1,3 +1,69 @@
+## v0.3.8.148 - a colony that cannot say what it is
+
+**ASKED "what is micromound? and how does it benefit the colony", A REAL COLONY SEARCHED ITS MISSION
+MEMORY, FOUND TACOS AND 1990s HISTORY, AND REPORTED THAT IT HAD NO RECORD OF THE TERM.** The verifier
+then failed the mission, correctly. Every layer behaved properly and the operator got nothing.
+
+**A FRESH INSTALL IS THE CASE THAT MATTERS.** It has no mission history to recall, no checkout to
+inspect — the shipped build is a binary, not a repository — and no knowledge base mapped. Every
+source the colony can read is empty on day one, which is exactly when a new operator asks what it is.
+
+**SO ANTHILL NOW SHIPS A DESCRIPTION OF ITSELF, AS A RECORD RATHER THAN A PROMPT.** Eleven entries —
+what ANTHILL is, missions, the ants, the mission classes, evidence and verification, approvals and
+authority, memory and pheromones, MICROMOUND, FORAGER, knowledge scope, and what it will not do —
+read through `colony_self_knowledge`.
+
+The cheaper fix was to put that text in the system prompt and let the model recite it, and that
+produces an answer nothing can check: the failure mode this entire codebase exists to refuse. Shipped
+as data and read through a tool, the answer has a source, the text is versioned with the binary, and
+a model that embellishes can be contradicted by the entry it was handed.
+
+**IT RECORDS NO EVIDENCE, AND THAT IS THE LOAD-BEARING DECISION.** The tempting move is to put it in
+`ToolEvidence.ObservationTools` so consulting it leaves an `inspection` row. `AssessmentObjective`
+requires those rows before an audit's conclusions can be believed, and the point of that requirement
+is that the colony LOOKED AT THE OPERATOR'S TREE — so admitting this tool would let an audit of what
+is implemented be satisfied by a paragraph that ships with every copy. That is the error
+`ToolEvidence` already names for `web_search`, in a different disguise. `system_info` is the exact
+precedent and is excluded in the same words: "reporting the OS and the process is not evidence that
+anything about the colony was examined."
+
+**DISPATCHED EVERY TIME, WITH NO KEYWORD TRIGGER.** The obvious alternative is to fire it when the
+goal mentions ANTHILL or MICROMOUND — and keyword triggers on the COMPOSED goal have caused three
+separate defects in recent releases: a recipe planned as a patch, a briefing planned as fourteen
+tasks, a question routed to the web ant. A miss is cheap by construction: an unmatched request
+returns a two-line index of what ANTHILL documents about itself, so a mission about tacos pays
+almost nothing and a mission about MICROMOUND gets the definition. The index also tells the model
+NOT to invent a definition for anything ANTHILL does not document, because "no entry" alone invites
+exactly that.
+
+Contract and handler in the same release, as this file has demanded eight times: the researcher's
+`AllowedTools` gains it and `ResearcherAnt` dispatches it, and a test pins both halves.
+
+---
+
+**AND A KNOWLEDGE BASE CAN BE BOUND WITHOUT EDITING A FILE.** Every Knowledge panel in the operator's
+build read "No knowledge base is mapped for this project. Map it in `knowledge_project_map`, or set
+`knowledge_default_project`" — a refusal naming a config key, shown by a UI with no way to set it.
+Correct, and unactionable without a text editor and a restart.
+
+`FORAGER_SHARED_CONTRACT.md` §3 already required otherwise: "Project mapping is an authorized server
+operation." An operation the contract calls authorized and server-side was living in a hand-edited
+file, which is not a weaker version of that — it is a different thing wearing its name.
+`POST /knowledge/project-map` binds, rebinds and unbinds, persists immediately (`KnowledgeOptions`
+re-reads per call, so no restart), and is MANAGE-gated and deliberately not a tool: scope is the one
+thing the contract insists an agent may never choose. It widens nothing — every read still goes
+through `ResolveKnowledgeScope` and the provider's `RequireScope`, and an unmapped project still
+refuses rather than falling back.
+
+**WHAT IT DELIBERATELY DID NOT BUILD: the project LISTING.** The operator wants to see FORAGER's
+projects and click one. The entire integration is project-ROOTED — every path is
+`projects/{id}/…` — and assumes the consumer already knows the id; there has never been a specified
+way to find out which ids exist. Nothing in P1–P10 covers it and no capability flag advertises it.
+Inventing `GET /api/projects` on the consumer side would be the second implementation §1 forbids,
+arriving as a 404 in the field. It is now **P11** (with **P12** for a per-project publication
+watermark), with the wire shape and capability flag agreed in the contract, so the producer has a
+target and the consumer has a spec.
+
 ## v0.3.8.147 - the answer the operator reads, and the grade it gets
 
 **ALL THREE OF THESE CAME FROM ONE SESSION OF REAL CHAT TRAFFIC**, after `.146` stopped sending

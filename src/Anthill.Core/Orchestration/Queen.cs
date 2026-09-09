@@ -406,6 +406,13 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // "what is enabled right now", and unlike file reads that is not an optional capability.
         // The tool list is read through a lambda because module tools arrive after this call.
         registry.Register(new ColonyStateTool(Memory, () => registry.Names.ToList()));
+        // v0.3.8.148 — and what ANTHILL IS AT ALL, which `colony_state` cannot answer because it
+        // reads live state and a fresh install has none. Registered unconditionally and in the CORE
+        // for `colony_state`'s own reason: a colony that cannot say what it is has no honest answer
+        // to "what is micromound", and on a fresh binary — no mission history, no checkout, no
+        // knowledge base — every other source it could read is empty. It takes no dependencies
+        // because its content ships with the build.
+        registry.Register(new ColonySelfKnowledgeTool());
         // v0.3.8.106 — cross-mission continuity, registered in the CORE for `colony_state`'s reason:
         // the artifact store is core state, and work building on verified work is not an optional
         // capability. It gates on the producing mission's PERSISTED grade, so registering it

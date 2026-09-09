@@ -69,6 +69,11 @@ public static partial class ApiHost
     private sealed record KnowledgeRetrieveRequest(string? Query, string? Project, int? TopK, bool? IncludeHistorical);
     private sealed record KnowledgeIngestRequest(string? Project, string[]? Paths, bool? Force);
 
+    /// <param name="Project">The ANTHILL project id to bind. Empty binds the DEFAULT instead, which
+    /// is the scope a mission that names no project resolves to.</param>
+    /// <param name="KnowledgeBase">The FORAGER project ref to bind it to. Empty UNBINDS.</param>
+    private sealed record KnowledgeMapRequest(string? Project, string? KnowledgeBase);
+
     /// <summary>
     /// Build the module. Called from <c>Run()</c> before <c>builder.Build()</c>, and the result is
     /// passed to <c>Modules.LoadAll</c> — constructing it here rather than inline there is what lets
@@ -450,6 +455,78 @@ public static partial class ApiHost
 
         // Start ingestion. Returns as soon as FORAGER has QUEUED the work — this request never waits
         // for a document to be parsed, however large the archive.
+        // v0.3.8.148 — BIND AN ANTHILL PROJECT TO A FORAGER ONE, WITHOUT EDITING A FILE.
+        //
+        // The operator's colony showed the gap as a dead end: every Knowledge panel read
+        // "No knowledge base is mapped for this project. Map it in knowledge_project_map, or set
+        // knowledge_default_project" — a refusal naming a config key, from a UI with no way to set
+        // it. Correct, and unactionable without a text editor and a restart.
+        //
+        // THE CONTRACT ALREADY REQUIRED THIS. `FORAGER_SHARED_CONTRACT.md` §3: "Project mapping is an
+        // authorized server operation. Bind the Anthill project to the specific Forager instance and
+        // project; enforce user/project membership on every read and mutation." An operation the
+        // contract calls authorized and server-side was living in a hand-edited file, which is not a
+        // weaker version of that — it is a different thing wearing its name.
+        //
+        // MANAGE, NOT READ, AND NEVER AN AGENT. This decides SCOPE, and scope is the one thing the
+        // contract insists an agent may never choose: "Agent-selected arguments cannot choose
+        // arbitrary Forager project IDs". It is an operator action reached through the authenticated
+        // API and it is deliberately not a tool — no role's `AllowedTools` names it and none should.
+        //
+        // IT WIDENS NOTHING BY ITSELF. Binding a project only makes retrieval RESOLVABLE; every read
+        // still goes through `ResolveKnowledgeScope` and the provider's own `RequireScope`, and an
+        // unmapped project still refuses rather than falling back. What changes is that an operator
+        // can answer the refusal the UI has been showing them.
+        app.MapPost("/knowledge/project-map", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, KnowledgePermissions.Manage); if (auth is not null) return auth;
+
+            KnowledgeMapRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<KnowledgeMapRequest>().ConfigureAwait(false); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+
+            var project = (body?.Project ?? "").Trim();
+            var knowledgeBase = (body?.KnowledgeBase ?? "").Trim();
+
+            // AN EMPTY KNOWLEDGE BASE UNBINDS, and unbinding is a real operation rather than an
+            // error: an operator who mapped the wrong project must be able to say so, and the
+            // honest end state of that is an unmapped project that refuses — never a silent
+            // fallback to whatever was there before.
+            if (project.Length == 0)
+            {
+                AnthillRuntime.Config.KnowledgeDefaultProject = knowledgeBase;
+            }
+            else if (knowledgeBase.Length == 0)
+            {
+                AnthillRuntime.Config.KnowledgeProjectMap.Remove(project);
+            }
+            else
+            {
+                AnthillRuntime.Config.KnowledgeProjectMap[project] = knowledgeBase;
+            }
+
+            // PERSISTED IMMEDIATELY. `KnowledgeOptions` re-reads the runtime per call, so the next
+            // retrieval sees this without a restart — and writing the file in the same breath means
+            // a mapping an operator made cannot survive only until the process ends, which is how a
+            // setting comes to disagree with the file that is supposed to define it.
+            AnthillRuntime.SaveConfig();
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["project"] = project,
+                ["knowledge_base"] = knowledgeBase,
+                ["bound"] = knowledgeBase.Length > 0,
+                ["project_map"] = AnthillRuntime.Config.KnowledgeProjectMap,
+                ["default_project"] = AnthillRuntime.Config.KnowledgeDefaultProject,
+            }, knowledgeBase.Length > 0
+                ? (project.Length == 0
+                    ? $"Default knowledge base set to '{knowledgeBase}'."
+                    : $"Project '{project}' is now mapped to knowledge base '{knowledgeBase}'.")
+                : (project.Length == 0
+                    ? "Default knowledge base cleared."
+                    : $"Project '{project}' is no longer mapped to a knowledge base."));
+        });
+
         app.MapPost("/knowledge/jobs", async (HttpContext ctx) =>
         {
             var auth = RequireAuth(ctx, KnowledgePermissions.Manage); if (auth is not null) return auth;
