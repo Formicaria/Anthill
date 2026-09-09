@@ -287,6 +287,34 @@ public class SimpleAnswerMissionTests
     }
 
     /// <summary>
+    /// AND THE PLANNER MODEL IS NEVER CALLED FOR ONE. v0.3.8.145, measured on the operator's own
+    /// colony: the taco question sat for two and a half minutes with an empty graph while a local
+    /// 35B composed a plan whose every step the reduction above was about to drop. The model cannot
+    /// contribute to this class by construction, so the call is not made — and the substitution is
+    /// RECORDED, because "the plan has a shape nobody proposed" is what that vocabulary is for.
+    ///
+    /// Asserted through a planner with NO router, which is the only honest way to prove a model was
+    /// not consulted: if this branch were removed, the no-router branch would answer instead and the
+    /// recorded reason would be `no_model_router` rather than `class_needs_no_plan`.
+    /// </summary>
+    [Fact]
+    public void AQuestion_IsNotPlanned_ItIsAnswered()
+    {
+        var specification = MissionIntake.Resolve(Request);
+        var planner = new Planner(useOllama: true, router: null);
+        var substitutions = new List<string>();
+
+        var tasks = planner.CreateTasks(Request, MissionConstraints.None, specification: specification,
+            onSubstituted: (reason, _) => substitutions.Add(reason));
+
+        Assert.Contains(PlanSubstitutions.ClassNeedsNoPlan, substitutions);
+        Assert.DoesNotContain(PlanSubstitutions.NoModelRouter, substitutions);
+        Assert.Contains(tasks, t => string.Equals(t.AssignedAnt, "builder", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(tasks, t => string.Equals(t.AssignedAnt, "verifier", StringComparison.OrdinalIgnoreCase));
+        Assert.All(tasks, t => Assert.True(Planner.ConsumesEvidence(t), $"'{t.TaskType}' is not an answer step"));
+    }
+
+    /// <summary>
     /// A plan that was ALREADY only an answer is left alone — the reduction removes what does not
     /// belong, it does not rebuild what does.
     /// </summary>

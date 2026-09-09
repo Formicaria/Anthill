@@ -45,6 +45,14 @@ public static class PlanSubstitutions
     /// <summary>No model was available to plan with — disabled, or no router composed.</summary>
     public const string NoModelRouter = "no_model_router";
 
+    /// <summary>
+    /// v0.3.8.145 — the class needs no plan, so no planner call was made. `simple_answer` is
+    /// reduced by `EnsureClassCoverage` to the two steps its specification names; a planner model
+    /// can therefore contribute nothing to it but steps that are then dropped. Recorded, because a
+    /// plan nobody proposed is exactly what this vocabulary exists to explain.
+    /// </summary>
+    public const string ClassNeedsNoPlan = "class_needs_no_plan";
+
     /// <summary>The planner model was asked and did not answer usably.</summary>
     public const string ModelCallFailed = "model_call_failed";
 
@@ -363,12 +371,47 @@ public sealed class Planner
             return AssignDefaultWorkers(EnsureClassCoverage(CreateSpecIngestionTasks(goal), goal, specification), goal, constraints, specification);
         }
 
+        /* v0.3.8.145 — A QUESTION IS NOT PLANNED, IT IS ANSWERED. Measured, not assumed: on the
+         * operator's own colony (a local 35B) the taco question sat for two and a half minutes with
+         * an EMPTY graph — the planner model was still composing a plan whose every step
+         * `EnsureClassCoverage` was about to drop, because this class is reduced to the two steps
+         * its specification names. The model cannot contribute to a `simple_answer` plan: anything
+         * it adds beyond the answer and its check is removed a few lines later, by construction.
+         *
+         * So the call is not made. This is the same judgement the long-input and no-router branches
+         * above make — plan without the model when the model's answer cannot matter — and it is
+         * RECORDED like them, because "the plan has a shape nobody proposed" is precisely what
+         * `PlanSubstitutions` exists to explain to an operator reading the record later.
+         *
+         * PLACED ABOVE THE NO-ROUTER BRANCH, and the ordering is the honest one: for this class the
+         * router's presence never mattered, so a colony with no model composed must record
+         * `class_needs_no_plan` rather than `no_model_router` — the second would name a cause that
+         * did not decide anything. The long-input gate above still runs first, because chunking is
+         * a mechanical bound on context rather than a judgement about what the request needs.
+         *
+         * `EnsureClassCoverage` is still what builds the plan, from an empty list, so the shape has
+         * ONE author rather than two that must be kept in agreement. `EnforceConstraints` still
+         * runs: an operator's "read only" or "no patches" is theirs to state on any request, and a
+         * class that plans no change tasks does not make their instruction untrue.
+         */
+        if (specification?.MissionClass == Anthill.Core.Missions.MissionSpecification.SimpleAnswerClass)
+        {
+            Substituted(PlanSubstitutions.ClassNeedsNoPlan,
+                "the request is a question this colony answers from what it already knows "
+              + $"({Anthill.Core.Missions.MissionSpecification.SimpleAnswerClass}); the plan is the answer and its "
+              + "completeness check, so no planner model was called");
+            return AssignDefaultWorkers(
+                EnsureClassCoverage(EnforceConstraints(new List<Task>(), goal, constraints), goal, specification),
+                goal, constraints, specification);
+        }
+
         if (!_useOllama || _router is null)
         {
             Substituted(PlanSubstitutions.NoModelRouter,
                 _router is null ? "no model router is composed" : "model use is disabled for this runtime");
             return AssignDefaultWorkers(EnsureClassCoverage(EnforceConstraints(FallbackTasks(goal), goal, constraints), goal, specification), goal, constraints, specification);
         }
+
 
         // v0.3.8.98 — THE REQUESTED DELIVERABLES, BY ID, so a task can say which one it serves.
         //
