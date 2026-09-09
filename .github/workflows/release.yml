@@ -115,10 +115,30 @@ jobs:
             tar -czf "anthill-${VERSION}-${{ matrix.rid }}.tar.gz" -C ./publish/${{ matrix.rid }} .
           fi
 
+      # v0.3.8.146 — THE HASH IS PUBLISHED BECAUSE THE UPDATE IS SILENT.
+      #
+      # An unattended updater downloads and runs this file with nobody watching, so "it came over
+      # TLS from a URL GitHub gave us" is the only thing standing between a compromised release
+      # channel and code execution on every operator's machine. It is not enough on its own and it
+      # is not nothing: the sidecar is generated HERE, from the bytes that were actually archived,
+      # in the same job, and the updater refuses to execute anything whose digest does not match.
+      #
+      # `sha256sum` writes "<hex>  <name>", which is the format the updater parses and the format
+      # an operator can verify by hand with the same tool. Deliberately NOT a signature: signing
+      # needs a key this workflow does not have, and pretending a hash is a signature would be the
+      # more dangerous mistake. See docs/DEPLOYMENT.md.
+      - name: Checksum the archive
+        run: |
+          ARCHIVE="anthill-${{ needs.verify-version.outputs.version }}-${{ matrix.rid }}.${{ matrix.archive }}"
+          sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
+          cat "$ARCHIVE.sha256"
+
       - uses: actions/upload-artifact@v4
         with:
           name: anthill-${{ matrix.rid }}
-          path: anthill-*.${{ matrix.archive }}
+          path: |
+            anthill-*.${{ matrix.archive }}
+            anthill-*.${{ matrix.archive }}.sha256
 
   # Field report: "an ACTUAL INSTALL". A real setup.exe — license agreement, Program Files,
   # desktop icon by default, Start Menu, standard uninstall — compiled from the same publish
@@ -169,10 +189,25 @@ jobs:
             /DPublishDir=..\..\publish\win-x64 `
             deploy\windows\anthill-setup.iss
 
+      # The installer's digest, for the same reason the archives get one — and this is the asset
+      # the Windows updater actually runs, unattended, so it is the one that matters most.
+      # Get-FileHash emits uppercase hex; the sidecar is written in the `sha256sum` shape so every
+      # consumer (the updater, and an operator with sha256sum or certutil) reads one format.
+      - name: Checksum the installer
+        shell: pwsh
+        run: |
+          $version = "${{ needs.verify-version.outputs.version }}"
+          $exe = "deploy/windows/anthill-setup-$version.exe"
+          $hash = (Get-FileHash -Algorithm SHA256 -Path $exe).Hash.ToLower()
+          "$hash  anthill-setup-$version.exe" | Set-Content -NoNewline -Encoding ascii "$exe.sha256"
+          Get-Content "$exe.sha256"
+
       - uses: actions/upload-artifact@v4
         with:
           name: anthill-installer
-          path: deploy/windows/anthill-setup-*.exe
+          path: |
+            deploy/windows/anthill-setup-*.exe
+            deploy/windows/anthill-setup-*.exe.sha256
 
   build-docker:
     name: Build + push Docker image (GHCR)
