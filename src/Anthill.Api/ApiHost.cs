@@ -447,6 +447,20 @@ public static partial class ApiHost
         Queen.Scheduler.Start();
         Console.WriteLine("Project scheduler started (runs execute while this host is running).");
 
+        // v0.3.8.146 — updates arrive without being asked for, on the shapes that can install one.
+        //
+        // This downloads and VERIFIES only; the swap happens at the next start, because a running
+        // program cannot replace its own files. A colony whose auto_update is `notify` or `off`,
+        // or whose shape cannot safely replace itself (a container, an unidentified install),
+        // downloads nothing — the stager asks both questions before it reaches the network.
+        UpdateStager.Start();
+        Console.WriteLine(AnthillRuntime.AutoUpdate switch
+        {
+            "silent" => "Automatic updates: on. New releases download, are checksum-verified, and install at the next start.",
+            "off" => "Automatic updates: off (auto_update=off) - this colony will not check for new releases.",
+            _ => "Automatic updates: notify only - new releases are reported, never installed.",
+        });
+
         if (autostart)
         {
             // v2.26.0: autostart honours a durable STOP. The Director process starts (so status,

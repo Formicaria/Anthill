@@ -116,15 +116,19 @@ public class ConfigCatalogTests
     {
         var editable = ConfigCatalog.EditableKeys;
 
-        Assert.True(editable.Count == 105,
+        Assert.True(editable.Count == 106,
             $"the settings surface now exposes {editable.Count} writable keys; it exposed 98 when "
           + "the hand-kept set was replaced by a projection at v0.3.8.114, 99 since v0.3.8.124 "
           + "added `knowledge_enabled`, 100 since v0.3.8.130 added "
           + "`autonomy_escalation_policy`, 104 since v0.3.8.144 added the four "
           + "`conversation_*` budget ceilings — editable BECAUSE the ceilings exist to stop "
           + "runaway loops, not to ration an operator's own work, and hitting one mid-flow must "
-          + "not cost a restart — and 105 since v0.3.8.145 added `colony_name`, the word the "
-          + "Danger zone's server-side confirmation checks. Widening what an operator can change "
+          + "not cost a restart — 105 since v0.3.8.145 added `colony_name`, the word the "
+          + "Danger zone's server-side confirmation checks — and 106 since v0.3.8.146 added "
+          + "`auto_update`, which is WHERE THE PER-RELEASE CONSENT WENT when the installer "
+          + "stopped asking: permission to install is given once here instead of once per "
+          + "release, and the SHA-256 verification that replaced the human in front of the "
+          + "download is deliberately NOT a setting. Widening what an operator can change "
           + "live without a restart is a decision, not a side effect — say so here and in the "
           + "changelog.\n  " + string.Join("\n  ", editable.OrderBy(k => k, StringComparer.Ordinal)));
 

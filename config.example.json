@@ -169,6 +169,8 @@
   "autonomy_retire_score_threshold": 0.25,
   "autonomy_loop_window": 4,
   "autonomy_escalation_policy": "ask",
+  "_comment_updates": "v0.3.8.146: auto_update decides what this colony does when a newer release exists. \u0027silent\u0027 downloads it, verifies it against the SHA-256 the release publishes, and installs it at the next start - no prompt and no administrator approval, because the Windows app installs per-user and can replace its own files. \u0027notify\u0027 checks and tells you, installing nothing. \u0027off\u0027 does not check at all. A payload that fails its checksum is deleted and refused at every setting: verification is not a preference.",
+  "auto_update": "silent",
   "_comment_autoapply": "Phase 5: the Director may auto-approve\u002Bapply a coder patch WITHOUT human review, but ONLY when it clears the strict allowlist below AND the workspace still builds\u002Btests green afterward (a red verify auto-rolls-back from the pre-apply backup). Highest-risk capability: OFF by default, forced off in every safety profile, and inert while autonomy_autoapply_paths is empty. Also requires patch_application_enabled \u002B file_writing_enabled. autonomy_autoapply_paths = workspace-relative globs a patch must match (e.g. [\u0022docs/**\u0022,\u0022src/**/*.cs\u0022]); autonomy_autoapply_max_lines caps a single change; autonomy_autoapply_verify_cmd overrides the built-in \u0027dotnet build \u0026\u0026 dotnet test\u0027; autonomy_autoapply_git_commit optionally commits verified changes locally (never pushed).",
   "autonomy_autoapply_enabled": false,
   "autonomy_autoapply_paths": [],

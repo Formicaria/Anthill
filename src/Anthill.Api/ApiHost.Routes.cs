@@ -280,11 +280,31 @@ public static partial class ApiHost
         });
 
         // Is a newer release published on the public GitHub repo? Cached; ?force=1 bypasses.
+        //
+        // v0.3.8.146 — AND WHAT THIS INSTALL SHOULD DO ABOUT IT. The answer used to be one
+        // hardcoded sentence in the console: "on the LXC, git pull and run setup.sh" — shown to
+        // every operator, including the ones running the Windows app, an unzipped folder, or a
+        // container, for whom it is simply false. What an install should do about an update is a
+        // fact about how it was installed, so it is answered here, where that is known.
         app.MapGet("/update/check", (HttpContext ctx) =>
         {
             var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
             var force = ctx.Request.Query["force"].FirstOrDefault() is "1" or "true";
-            return ApiJson.Ok(UpdateChecker.Check(force));
+            var result = new Dictionary<string, object?>(UpdateChecker.Check(force));
+
+            var site = Anthill.Core.Updates.InstallDetector.Detect();
+            result["install_shape"] = site.Shape.ToString().ToLowerInvariant();
+            result["can_self_update"] = site.CanSelfUpdate;
+            result["remediation"] = site.Explanation;
+            // A staged, verified update already waiting is a different state from "one exists":
+            // the operator has nothing left to do but restart when it suits them.
+            try
+            {
+                var staged = Anthill.Core.Updates.UpdateStaging.Pending(site);
+                result["staged_version"] = staged?.Version;
+            }
+            catch { result["staged_version"] = null; }
+            return ApiJson.Ok(result);
         });
 
         // Consolidated header status: version, what's actually online (API + Ollama reachability),
