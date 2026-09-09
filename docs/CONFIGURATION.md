@@ -25,6 +25,7 @@ directory. `anthill --config` prints the active path.
 | `api_auth_enabled` | bool | `true` | no | — | **changes what the colony may do** |
 | `api_token_env` | string | `"ANTHILL_API_TOKEN"` | no | — |  |
 | `api_job_workers` | int | `1` | no | — |  |
+| `colony_name` | string | `"anthill"` | yes | — |  |
 | `conversation_max_missions` | int | `25` | yes | — | **changes what the colony may do** |
 | `conversation_max_turns` | int | `96` | yes | — | **changes what the colony may do** |
 | `conversation_max_tool_calls` | int | `240` | yes | — | **changes what the colony may do** |

@@ -57,6 +57,32 @@ public static partial class ApiHost
             }, $"Updated {applied.Count} setting(s).");
         });
 
+        // v0.3.8.145 — THE DEFAULT OF EVERY EDITABLE KEY, so the settings page can mark a value
+        // "changed" and offer "default N · reset" from the catalog's own declaration rather than
+        // from a second hand-typed table in the console. Read from ConfigCatalog, the one place
+        // the defaults are declared (config.example.json is generated from the same source), and
+        // limited to the editable surface: a default for a key the page cannot write is a
+        // decoration. Secret-free by construction — nothing in the catalog's defaults is a secret.
+        app.MapGet("/settings/defaults", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_config"); if (auth is not null) return auth;
+            var defaults = new Dictionary<string, object?>();
+            foreach (var d in ConfigCatalog.Declarations)
+                if (d.Exposure == ConfigExposure.Editable) defaults[d.Key] = d.Default;
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["defaults"] = defaults,
+                // Only keys whose declaration names a bound; NaN is "no bound declared".
+                ["ranges"] = ConfigCatalog.Declarations
+                    .Where(d => d.Exposure == ConfigExposure.Editable && (!double.IsNaN(d.Min) || !double.IsNaN(d.Max)))
+                    .ToDictionary(d => d.Key, d => (object?)new Dictionary<string, double?>
+                    {
+                        ["min"] = double.IsNaN(d.Min) ? null : d.Min,
+                        ["max"] = double.IsNaN(d.Max) ? null : d.Max,
+                    }),
+            });
+        });
+
         // ---- Maintenance / data hygiene (admin-only, audited) ----
         app.MapGet("/maintenance/stats", (HttpContext ctx) =>
         {
@@ -101,10 +127,12 @@ public static partial class ApiHost
             // Run mid-mission it deletes rows a worker is still writing, and the audit trail that
             // would explain what the mission did goes with them. The console disabled its button;
             // the endpoint accepted the call from anywhere, and a disabled button is not a gate.
-            var active = Jobs.ActiveJobIds();
-            if (active.Count > 0)
+            // v0.3.8.145: AND the mission table, because a chat-started mission never enters the
+            // API job queue — the `.38` guard had a hole exactly the shape of ConversationRunner.
+            var active = Math.Max(Jobs.ActiveJobIds().Count, Queen.Memory.CountRunningMissions());
+            if (active > 0)
                 return ApiJson.Error(
-                    $"{active.Count} mission(s) are still queued or running. Cancel or wait for them "
+                    $"{active} mission(s) are still queued or running. Cancel or wait for them "
                     + "before clearing history — deleting now would destroy the record of work that "
                     + "is still happening.", "conflict");
 
@@ -115,14 +143,81 @@ public static partial class ApiHost
                 $"Cleared {missions} mission(s); freed {HumanBytes(freed)}.");
         });
 
-        app.MapPost("/maintenance/reset-config", (HttpContext ctx) =>
+        /*
+         * v0.3.8.145 — THE DANGER ZONE, and its gate is on the SERVER.
+         *
+         * The settings redesign puts the three irreversible actions on one page behind a typed
+         * confirmation: the operator types the colony's name to unlock a button. A confirmation the
+         * page enforces and the endpoint does not is this repository's named defect — a disabled
+         * button is not a gate (the `.38` note on clear-missions above says exactly this) — so every
+         * one of these reads `{"confirm": "<colony_name>"}` from the body and refuses a mismatch
+         * before touching anything. `reset-config` gained the requirement in this release; its only
+         * caller is the console, which now sends it.
+         */
+        static async Task<Microsoft.AspNetCore.Http.IResult?> RequireColonyNameConfirmation(HttpContext ctx)
+        {
+            Dictionary<string, System.Text.Json.JsonElement>? body = null;
+            try { if (ctx.Request.ContentLength is > 0) body = await ctx.Request.ReadFromJsonAsync<Dictionary<string, System.Text.Json.JsonElement>>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var typed = body is not null && body.TryGetValue("confirm", out var c) && c.ValueKind == System.Text.Json.JsonValueKind.String
+                ? (c.GetString() ?? "").Trim() : "";
+            if (!string.Equals(typed, AnthillRuntime.ColonyName, StringComparison.Ordinal))
+                return ApiJson.Error(
+                    $"Confirmation did not match: type the colony's name ('{AnthillRuntime.ColonyName}') exactly to unlock this action.",
+                    "confirmation_mismatch");
+            return null;
+        }
+
+        app.MapPost("/maintenance/reset-config", async (HttpContext ctx) =>
         {
             var auth = RequireAuth(ctx, "manage_settings"); if (auth is not null) return auth;
+            var gate = await RequireColonyNameConfirmation(ctx); if (gate is not null) return gate;
             var preserved = AnthillRuntime.ResetConfig();
             Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "maintenance_reset_config",
                 "Config reset to safe defaults (connection settings preserved).", antName: "operator");
             return ApiJson.Ok(new Dictionary<string, object?> { ["preserved"] = preserved, ["settings"] = AnthillRuntime.SettingsSnapshot() },
                 "Config reset to defaults. Connection settings preserved.");
+        });
+
+        // v0.3.8.145 — every DB backup, gone. The live database is untouched and the next mission
+        // writes a fresh backup before it starts, so the cost is only the ability to roll back to a
+        // point before now.
+        app.MapPost("/maintenance/delete-backups", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_settings"); if (auth is not null) return auth;
+            var gate = await RequireColonyNameConfirmation(ctx); if (gate is not null) return gate;
+            var (deleted, freed) = FileSecurity.DeleteAllBackups(AnthillRuntime.BackupDir, AnthillRuntime.PathFromScript);
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "maintenance_delete_backups",
+                $"Deleted all backups: {deleted} file(s), freed {freed} bytes.", antName: "operator",
+                metadata: new() { ["backups_deleted"] = deleted, ["bytes_freed"] = freed });
+            return ApiJson.Ok(new Dictionary<string, object?> { ["backups_deleted"] = deleted, ["bytes_freed"] = freed },
+                $"Deleted {deleted} backup(s); freed {HumanBytes(freed)}.");
+        });
+
+        // v0.3.8.145 — WIPE COLONY MEMORY: mission history plus conversations, evidence, artifacts
+        // and the pheromone trails learned from them (SqliteMemory.MemoryWipeTables names the list
+        // and the console quotes it). Projects, objectives, schedules, users and providers remain.
+        //
+        // Refused while ANY mission is running — by the mission table, not the API job queue, because
+        // a chat-started mission is invisible to the queue (v0.3.8.145's header finding, in the one
+        // place it would have destroyed data instead of misreporting it).
+        app.MapPost("/maintenance/wipe-memory", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_settings"); if (auth is not null) return auth;
+            var gate = await RequireColonyNameConfirmation(ctx); if (gate is not null) return gate;
+            var queued = Jobs.ActiveJobIds().Count;
+            var running = Queen.Memory.CountRunningMissions();
+            if (queued > 0 || running > 0)
+                return ApiJson.Error(
+                    $"{Math.Max(queued, running)} mission(s) are still queued or running. Cancel or wait for them "
+                    + "before wiping memory — deleting now would destroy the record of work that is still happening.",
+                    "conflict");
+            var (freed, missions) = Queen.Memory.WipeColonyMemory();
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "maintenance_wipe_memory",
+                $"Wiped colony memory: {missions} mission(s), conversations, evidence, artifacts and pheromone trails; freed {freed} bytes.",
+                antName: "operator", metadata: new() { ["missions_deleted"] = missions, ["bytes_freed"] = freed });
+            return ApiJson.Ok(new Dictionary<string, object?> { ["missions_deleted"] = missions, ["bytes_freed"] = freed },
+                $"Wiped colony memory: {missions} mission(s); freed {HumanBytes(freed)}.");
         });
 
         // Completed Objectives: the Director's loop-retired objectives (collapsed rows) — shown

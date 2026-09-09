@@ -105,6 +105,30 @@ public static class FileSecurity
         catch { return (0, 0); }
     }
 
+    /// <summary>
+    /// v0.3.8.145 — deletes EVERY DB backup in the backup directory. The live database is not
+    /// touched; the next mission writes a fresh backup before it starts (<see cref="BackupDb"/>).
+    /// Separate from <see cref="PruneBackups"/> rather than `keep: 0`, because that method reads
+    /// zero as "leave everything" — the safe reading for a tunable, and the opposite of this one's
+    /// only purpose. Returns how many files were deleted and how many bytes that freed.
+    /// </summary>
+    public static (int Deleted, long BytesFreed) DeleteAllBackups(string backupDir, Func<string, string> pathResolver)
+    {
+        try
+        {
+            var dir = pathResolver(backupDir);
+            if (!Directory.Exists(dir)) return (0, 0);
+            var deleted = 0; long freed = 0;
+            foreach (var f in new DirectoryInfo(dir).GetFiles("anthill_*.db"))
+            {
+                var size = f.Length;
+                try { f.Delete(); deleted++; freed += size; } catch { /* skip locked/removed */ }
+            }
+            return (deleted, freed);
+        }
+        catch { return (0, 0); }
+    }
+
     /// <summary>Total size (bytes) and file count of the DB backup directory — for maintenance stats.</summary>
     public static (int Count, long Bytes) BackupStats(string backupDir, Func<string, string> pathResolver)
     {

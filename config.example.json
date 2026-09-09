@@ -15,6 +15,8 @@
   "_comment_token_env": "v0.3.8.91: api_token_env names the environment variable the optional programmatic bearer token is read from. It is now the ONLY source - it used to fall back to whatever ANTHILL_API_TOKEN held, so repointing this at a variable you had not set kept authenticating against the one you had just stopped using. Unset means no static token, which is a safe state: operator accounts are the real boundary.",
   "api_token_env": "ANTHILL_API_TOKEN",
   "api_job_workers": 1,
+  "_comment_identity": "v0.3.8.145: colony_name is what this installation calls itself. It is shown in the console, and it is the word an operator must type to unlock an action in Settings -\u003E Danger zone (reset configuration, delete all backups, wipe colony memory). The server checks the confirmation, not merely the page. Kept across a configuration reset.",
+  "colony_name": "anthill",
   "_comment_conversations": "v0.3.8.144: per-conversation ceilings, applied to every new conversation. conversation_max_missions is the one operators hit in practice -- it is how many missions ONE chat may start over its lifetime (the guard against a runaway escalate loop). Raise it if your workflow drives many missions from a single long-lived chat; the approval gate still decides each mission individually, so a bigger budget never means more autonomy, only more room.",
   "conversation_max_missions": 25,
   "conversation_max_turns": 96,

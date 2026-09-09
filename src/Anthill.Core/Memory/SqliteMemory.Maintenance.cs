@@ -139,6 +139,79 @@ public sealed partial class SqliteMemory
     }
 
     /// <summary>
+    /// v0.3.8.145 — WHAT A MEMORY WIPE TAKES BEYOND MISSION HISTORY. Named once, here, and quoted by
+    /// the console's Danger zone so the row says exactly what the endpoint does.
+    ///
+    /// `ClearMissionHistory` is "forget the work". A WIPE is "forget everything the colony
+    /// remembers": the work, the conversations that asked for it, the artifacts and evidence it
+    /// produced, and the pheromone trails it learned from all of that — the "learned signal" an
+    /// operator means when they ask for a clean colony. What it deliberately KEEPS is everything the
+    /// operator wrote down rather than the colony learned: projects and their grants, routes and
+    /// schedules, the objective backlog, users, provider credentials, skills, tool definitions,
+    /// the ants' own names and the readiness attestations an operator signed.
+    ///
+    /// Each name is guarded by `TableExists` for the same reason `MissionChildTables` is: a fresh
+    /// install has not created every lazy table, and a wipe of nothing must not be an error.
+    /// </summary>
+    public static readonly string[] MemoryWipeTables =
+    {
+        "conversations", "conversation_turns", "conversation_attachments", "escalation_decisions",
+        "mission_contracts", "mission_workspaces", "task_results", "evidence",
+        "artifacts", "artifact_consumptions", "shadow_outcomes", "shadow_recommendations",
+        "schedule_runs", "pheromone_trails",
+    };
+
+    /// <summary>
+    /// Wipe colony memory: mission history (everything <see cref="ClearMissionHistory"/> clears)
+    /// PLUS <see cref="MemoryWipeTables"/>. Returns bytes reclaimed and the mission count.
+    /// Destructive and unrecoverable; the API gates it on the colony name and on nothing running.
+    /// </summary>
+    public (long Freed, int MissionsDeleted) WipeColonyMemory()
+    {
+        var before = DatabaseFileBytes();
+        var missionsDeleted = 0;
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            using (var fk = conn.CreateCommand()) { fk.CommandText = "PRAGMA foreign_keys=OFF"; fk.ExecuteNonQuery(); }
+            using (var tx = conn.BeginTransaction())
+            {
+                foreach (var t in MissionChildTables.Concat(MemoryWipeTables))
+                    if (TableExists(conn, tx, t)) Exec(conn, tx, $"DELETE FROM {t}");
+                Exec(conn, tx, $"DELETE FROM events WHERE mission_id != '{AnthillRuntime.SystemApiMissionId}'");
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.Transaction = tx;
+                    cmd.CommandText = $"DELETE FROM missions WHERE id != '{AnthillRuntime.SystemApiMissionId}'";
+                    missionsDeleted = cmd.ExecuteNonQuery();
+                }
+                TryExec(conn, tx, "DELETE FROM missions_fts");
+                tx.Commit();
+            }
+            Vacuum(conn);
+        }
+        InvalidateCache();
+        return (Math.Max(0, before - DatabaseFileBytes()), missionsDeleted);
+    }
+
+    /// <summary>
+    /// v0.3.8.145 — how many missions the DATABASE says are running, whoever started them.
+    ///
+    /// `ApiJobRegistry.ActiveJobIds()` knows only the API job queue; a mission started from a chat
+    /// goes through `ConversationRunner` and is invisible to it. A destructive maintenance action
+    /// that checked only the queue would delete the record of a conversation's mission from under
+    /// the worker still writing it — the exact hazard the `.38` guard on clear-missions exists to
+    /// prevent, with a hole in it. The mission row is the one place both paths agree.
+    /// </summary>
+    public int CountRunningMissions()
+    {
+        using var conn = Connect();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"SELECT COUNT(*) FROM missions WHERE status='running' AND id != '{AnthillRuntime.SystemApiMissionId}'";
+        return Convert.ToInt32(cmd.ExecuteScalar() ?? 0);
+    }
+
+    /// <summary>
     /// Dump directives: deletes the entire objective backlog and its autonomy-run audit trail,
     /// leaving missions, pheromones, users, providers, and config intact. VACUUMs afterward.
     /// </summary>

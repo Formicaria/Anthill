@@ -116,15 +116,16 @@ public class ConfigCatalogTests
     {
         var editable = ConfigCatalog.EditableKeys;
 
-        Assert.True(editable.Count == 104,
+        Assert.True(editable.Count == 105,
             $"the settings surface now exposes {editable.Count} writable keys; it exposed 98 when "
           + "the hand-kept set was replaced by a projection at v0.3.8.114, 99 since v0.3.8.124 "
           + "added `knowledge_enabled`, 100 since v0.3.8.130 added "
-          + "`autonomy_escalation_policy`, and 104 since v0.3.8.144 added the four "
+          + "`autonomy_escalation_policy`, 104 since v0.3.8.144 added the four "
           + "`conversation_*` budget ceilings — editable BECAUSE the ceilings exist to stop "
           + "runaway loops, not to ration an operator's own work, and hitting one mid-flow must "
-          + "not cost a restart. Widening what an operator can change live without a "
-          + "restart is a decision, not a side effect — say so here and in the "
+          + "not cost a restart — and 105 since v0.3.8.145 added `colony_name`, the word the "
+          + "Danger zone's server-side confirmation checks. Widening what an operator can change "
+          + "live without a restart is a decision, not a side effect — say so here and in the "
           + "changelog.\n  " + string.Join("\n  ", editable.OrderBy(k => k, StringComparer.Ordinal)));
 
         // And it agrees with the runtime's own answer, which is what ApplySettingsUpdate consults.
