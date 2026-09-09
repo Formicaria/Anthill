@@ -1,3 +1,68 @@
+## v0.3.8.152 - a colony that would not start, over a directory it only reads
+
+**FIELD FAILURE. An operator's desktop install stopped booting after an update, on a machine where
+nothing was wrong with the colony.** The database was 3.8 MB, healthy, and sitting exactly where it
+belongs under `%LOCALAPPDATA%`. Backups, logs and exports were all present and all writable. What
+killed the process was this, at the outermost frame, with a stack trace:
+
+    Access to the path 'C:\Program Files\Anthill\workspace' is denied.
+
+That directory is `agent_workspace_dir` — the scope the file and coder ants are allowed to READ
+from. Not storage. Not anything the colony writes its own history into. A setting that governs one
+capability took down the entire colony, and there was no way back in, because the console that
+edits the setting only exists inside the process that refused to start.
+
+---
+
+**THE REPOSITORY ALREADY DISAGREED WITH ITSELF ABOUT THIS, IN WRITING.** `RuntimeConfigValidator`
+raises `sandbox_without_workspace` as a WARNING when this same directory is missing, and says in the
+same sentence what happens instead: "every sandbox run will fall back". So one layer held that an
+unreachable reading scope is a degraded capability the operator should be told about, and another
+held that it is a reason to refuse to exist — and the one that ran first won. One fact, two editors,
+and the disagreement was invisible until a real path made them contradict each other out loud.
+
+`EnsureWorkspace` now separates the two classes it had been treating as one. The colony's own
+storage — `workspace_root`, `db_path`, `backup_dir`, `logs_dir`, `exports_dir` — still refuses the
+boot when it cannot be made, and should: a colony that cannot write its database has nowhere to put
+the truth, and starting anyway would quietly begin a second, empty history somewhere else. The
+reading scope is prepared, and when it cannot be, the reason is recorded and reported as an `error`
+finding beside every other configuration finding. Loud, not fatal. The console comes up, and the
+console is where the fault gets fixed.
+
+**A REFUSAL NOW NAMES THE SETTING, NOT ONLY THE PATH.** Six keys resolve to a directory during boot.
+The old message named the path that lost and left the operator to work backwards to the key that
+produced it — which, for a relative value joined onto a home that is itself derived, is not reliably
+possible. `ColonyStorageException` carries four facts in the order they are useful: the key, the
+value as written, where it resolved to, and the file to edit. The resolved path is printed only when
+it differs from what was typed. The OS's own explanation is kept as the inner exception, because why
+a write was refused is the OS's to explain and it explains it well.
+
+---
+
+**AND THE UPDATER WAS TELLING A MACHINE-WIDE INSTALL IT COULD REPLACE ITSELF.** The same host had
+two Anthills on it: the new per-user install under `%LOCALAPPDATA%\Programs`, and an older one under
+Program Files from before `.149`. A copy in Program Files cannot overwrite its own files without
+elevation, and `.149` knew that — in `UpdateService.IsMachineWide`, which was in the wrong layer
+twice over.
+
+It ran only on the tray path, the one that shows a menu. `ApplyStagedIfAny` — which runs before any
+window exists and is the code that actually launches setup — never consulted it, so a staged update
+would have been run silently against a directory Windows was always going to refuse. And it required
+the `WindowsInstalled` shape, which is decided by a marker file the `.149` installer drops. A
+machine-wide copy from BEFORE `.149` has no marker, read as `WindowsPortable`, and was therefore
+told it could replace its own program files. That is precisely the copy an operator upgrading from
+an older install is most likely to still be running.
+
+`InstallSite` answers it now, from the program directory alone, before the marker is consulted —
+because location outranks the marker: a machine-wide install that DOES carry one is still one this
+user cannot write. `CanSelfUpdate` is false, the explanation says why and offers the move to a
+per-user install, and `UpdateService` asks instead of repeating.
+
+**A smaller thing found on the way.** `sandbox_without_workspace` tested `Directory.Exists` against
+the AUTHORED value rather than the resolved one, so a relative workspace root reported as missing
+whenever the working directory differed from the colony's home — a warning about a directory that
+was there the whole time.
+
 ## v0.3.8.151 - a question about a person, answered as a refusal about ANTHILL
 
 **BOTH FINDINGS ARE `.150`'s AND `.149`'s OWN, AND BOTH SHIPPED INSIDE THE RELEASE THAT ANNOUNCED

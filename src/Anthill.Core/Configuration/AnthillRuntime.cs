@@ -15,7 +15,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "0.3.8.151";
+    public const string Version = "0.3.8.152";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -1035,17 +1035,89 @@ public static class AnthillRuntime
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
+    /// <summary>
+    /// THE COLONY'S OWN STORAGE IS NOT THE ANT'S READING SCOPE, AND ONLY ONE OF THEM IS FATAL.
+    /// v0.3.8.152.
+    ///
+    /// A field failure: a desktop install whose `agent_workspace_dir` had been set to an absolute
+    /// path under Program Files would not start AT ALL. The colony's database, backups, logs and
+    /// exports were all present, healthy and writable under %LOCALAPPDATA%; the directory that
+    /// killed the process was the one the file ant is merely allowed to READ from, created here as
+    /// the fifth element of a loop that treats it as though it were storage.
+    ///
+    /// The repository already knew better in a different file. <see cref="RuntimeConfigValidator"/>
+    /// raises `sandbox_without_workspace` as a WARNING when this same directory is missing, and
+    /// says in the same sentence what happens instead: "every sandbox run will fall back". So two
+    /// layers held opposite beliefs about one fact — one degraded loudly and carried on, the other
+    /// refused to boot — and the one that ran first won. That is the fact having two editors, and
+    /// the fix is for the boot path to hold the belief the validator already published.
+    ///
+    /// The four colony paths below keep their hard failure, and should: a colony that cannot write
+    /// its own database has nowhere to put the truth, and starting anyway would invent a second,
+    /// empty history. What changes is that a refusal now names the KEY, not just the path — six
+    /// settings can produce this error and the operator was left to work out which one did.
+    /// </summary>
     private static void EnsureWorkspace(AnthillConfig config)
     {
         WorkspaceRootPath = PathFromScript(config.WorkspaceRoot);
         DbPath = PathFromScript(config.DbPath);
         ConfigPath = ConfigFilePath();
-        Directory.CreateDirectory(WorkspaceRootPath);
-        Directory.CreateDirectory(Path.GetDirectoryName(DbPath)!);
-        foreach (var dir in new[] { config.BackupDir, config.LogsDir, config.ExportsDir, config.AgentWorkspaceDir })
-            Directory.CreateDirectory(PathFromScript(dir));
+
+        RequireColonyDirectory(WorkspaceRootPath, "workspace_root", config.WorkspaceRoot);
+        RequireColonyDirectory(Path.GetDirectoryName(DbPath)!, "db_path", config.DbPath);
+        RequireColonyDirectory(PathFromScript(config.BackupDir), "backup_dir", config.BackupDir);
+        RequireColonyDirectory(PathFromScript(config.LogsDir), "logs_dir", config.LogsDir);
+        RequireColonyDirectory(PathFromScript(config.ExportsDir), "exports_dir", config.ExportsDir);
+
+        // The ant's reading scope. Unreachable is a degraded capability, not a dead colony.
+        AgentWorkspaceProblem = TryPrepareReadScope(config.AgentWorkspaceDir);
+
         FileSecurity.HardenFilePermissions(DbPath);
     }
+
+    /// <summary>
+    /// Storage the colony cannot run without. A failure here refuses the boot, and says which
+    /// setting produced the path so the operator can act on the message rather than reverse it.
+    /// </summary>
+    private static void RequireColonyDirectory(string resolved, string key, string authored)
+    {
+        try
+        {
+            Directory.CreateDirectory(resolved);
+        }
+        catch (Exception error) when (error is UnauthorizedAccessException or IOException)
+        {
+            throw new ColonyStorageException(key, authored, resolved, ConfigPath, error);
+        }
+    }
+
+    /// <summary>
+    /// Prepares the ant's reading scope, and returns why it could not be prepared rather than
+    /// throwing. Empty means it is ready. The string is surfaced at startup beside the validator's
+    /// other findings, so "degraded" is still loud — just not fatal.
+    /// </summary>
+    private static string TryPrepareReadScope(string authored)
+    {
+        var resolved = PathFromScript(authored);
+        try
+        {
+            Directory.CreateDirectory(resolved);
+            return "";
+        }
+        catch (Exception error) when (error is UnauthorizedAccessException or IOException)
+        {
+            return $"agent_workspace_dir is set to '{authored}' (resolved to '{resolved}'), which this "
+                 + $"colony cannot create or write: {error.Message} The colony's own data is unaffected; "
+                 + "file and coder ants have no reading scope until this is changed in Settings -> "
+                 + "Workspace, or in " + (string.IsNullOrEmpty(ConfigPath) ? "config.json" : ConfigPath) + ".";
+        }
+    }
+
+    /// <summary>
+    /// Why the ant's reading scope is unusable, or empty when it is fine. Reported at startup and
+    /// exposed to the settings page; never a reason to refuse the boot.
+    /// </summary>
+    public static string AgentWorkspaceProblem { get; private set; } = "";
 
     private static void ProjectConfig(AnthillConfig config)
     {
@@ -1732,6 +1804,10 @@ public static class AnthillRuntime
         ["api_port"] = ApiPort,
         ["api_auth_enabled"] = EnableApiAuth,
         ["agent_workspace_dir"] = AllowedWorkspaceRoot,
+        // v0.3.8.152 — reported beside the value, because a settings page that renders a path and
+        // says nothing about it being unusable is the disabled button all over again: the operator
+        // reads a configured directory and has no way to learn the colony never got into it.
+        ["agent_workspace_problem"] = AgentWorkspaceProblem,
         ["editable_keys"] = ConfigCatalog.EditableKeys.ToList(),
     };
 }
