@@ -7,6 +7,19 @@ Type=simple
 User=__SERVICE_USER__
 WorkingDirectory=__INSTALL_DIR__
 Environment=ANTHILL_HOME=__INSTALL_DIR__
+# v0.3.8.146 — A STAGED UPDATE IS SWAPPED IN BEFORE THE SERVICE STARTS, NEVER WHILE IT RUNS.
+#
+# The colony downloads a release tarball and verifies its published SHA-256 while running, into
+# .anthill/updates — the one directory this unit lets it write. It cannot install it there and
+# then: replacing a binary that is currently executing is what ETXTBSY exists to refuse, which is
+# why setup.sh stops the service before publishing over it.
+#
+# So the swap happens HERE, in the moment between "not running" and "running", by a helper that
+# reads the staged manifest, re-checks the digest, and replaces only the files the archive
+# contains. No staged update means it exits 0 and the service starts exactly as before. `-` so a
+# failed swap can never make the colony unbootable: the old binaries are still in place and the
+# service comes up on the version it was already running.
+ExecStartPre=-__INSTALL_DIR__/bin/anthill --apply-staged-update
 ExecStart=__INSTALL_DIR__/bin/anthill --api
 Restart=on-failure
 RestartSec=5s
@@ -30,6 +43,20 @@ ProtectSystem=strict
 # as a git checkout here. If you relocate agent_workspace_dir OUTSIDE .anthill, add a matching
 # ReadWritePaths line for it too, or auto-apply will fail with a read-only filesystem error.
 ReadWritePaths=__INSTALL_DIR__/.anthill
+# v0.3.8.146 — and bin/, so the pre-start swap above can replace the binaries.
+#
+# THIS IS A DELIBERATE WIDENING AND IT IS WORTH BEING HONEST ABOUT. Before this line the service
+# could not overwrite its own program files at all, which is a genuine defence: a compromised
+# colony could not rewrite the code it runs as. It is granted now because the alternative ways to
+# deliver an unattended update are worse — a root-owned updater daemon, or a sudo rule wide enough
+# to install arbitrary files — and because the writes that reach here are constrained: the payload
+# must match a SHA-256 published by the release workflow, the swap replaces only paths the archive
+# itself contains, and anything reaching outside bin/ is refused whole.
+#
+# An operator who would rather keep bin/ read-only should delete this line and the ExecStartPre
+# above, and set auto_update to `notify`: the colony will then tell them a release exists and
+# leave the installing to them.
+ReadWritePaths=__INSTALL_DIR__/bin
 
 [Install]
 WantedBy=multi-user.target

@@ -226,6 +226,58 @@ public class SilentUpdateTests : IDisposable
         Assert.True(UpdateApplier.IsInside(site.StagingDirectory, site.DataDirectory));
     }
 
+    // ---- the staged manifest survives the gap between download and launch -----------------------
+
+    /// <summary>
+    /// The round trip the systemd pre-start hook and the desktop launch path both walk: record a
+    /// verified payload, come back in a different process, and get it — still verified.
+    ///
+    /// `Pending` re-checks the digest rather than trusting the manifest's word for it. Staging
+    /// verified the bytes at download time; between then and launch they sat on a disk, and the
+    /// whole point of this feature is that nobody is watching that disk.
+    /// </summary>
+    [Fact]
+    public void AStagedUpdate_ComesBackVerified_AndAnAlteredOneDoesNot()
+    {
+        var site = Site(Path.Combine(_dir, "bin"), Path.Combine(_dir, "data"), InstallShape.LinuxService);
+        Directory.CreateDirectory(site.StagingDirectory);
+        var payload = Path.Combine(site.StagingDirectory, "anthill-9.9.9.9-linux-x64.tar.gz");
+        File.WriteAllText(payload, "a verified release archive");
+        var digest = UpdateStaging.DigestOf(payload);
+
+        UpdateStaging.Record(site, new UpdateStaging.StagedUpdate(
+            "9.9.9.9", Path.GetFileName(payload), digest, payload, site.Shape, DateTime.UtcNow));
+
+        var pending = UpdateStaging.Pending(site);
+        Assert.NotNull(pending);
+        Assert.Equal("9.9.9.9", pending!.Version);
+
+        // Now somebody edits the payload after it was staged. The manifest still claims a digest;
+        // the bytes no longer match it, so there is no pending update and the file is gone.
+        File.WriteAllText(payload, "something else entirely");
+        Assert.Null(UpdateStaging.Pending(site));
+        Assert.False(File.Exists(payload));
+    }
+
+    /// <summary>
+    /// A staged update for a version already running is spent, not pending — otherwise a colony
+    /// that updated successfully would reinstall the same release on every start, forever.
+    /// </summary>
+    [Fact]
+    public void AStagedUpdateForTheRunningVersion_IsNotPending()
+    {
+        var site = Site(Path.Combine(_dir, "bin2"), Path.Combine(_dir, "data2"), InstallShape.LinuxService);
+        Directory.CreateDirectory(site.StagingDirectory);
+        var payload = Path.Combine(site.StagingDirectory, "already.tar.gz");
+        File.WriteAllText(payload, "the version we are already on");
+
+        UpdateStaging.Record(site, new UpdateStaging.StagedUpdate(
+            Anthill.Core.Configuration.AnthillRuntime.Version, "already.tar.gz",
+            UpdateStaging.DigestOf(payload), payload, site.Shape, DateTime.UtcNow));
+
+        Assert.Null(UpdateStaging.Pending(site));
+    }
+
     // ---- one version comparison -----------------------------------------------------------------
 
     /// <summary>
