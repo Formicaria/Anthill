@@ -29,34 +29,42 @@ public class ConsoleOneLevelTests
     // ---- Settings: one level -------------------------------------------------------------------
 
     /// <summary>
-    /// THE FOUR SETTINGS PANES ARE SECTIONS, and the strip that used to choose them is not shown.
+    /// EVERY SETTINGS DESTINATION IS A SECTION OF ONE PAGE, and the strip is GONE — not hidden.
     ///
-    /// The strip's markup deliberately SURVIVES: clicking a `.settings-tab` is still what switches a
-    /// pane, and `showPage` still drives it from the route, so removing it would mean writing a
-    /// second implementation of the switch. What must not survive is it being visible, which is what
-    /// made two rows out of one choice.
+    /// v0.3.8.127 hid the second tab strip and left its markup, because clicking a `.settings-tab`
+    /// was still what switched a pane. v0.3.8.145 replaced the page with the Settings rail: the
+    /// rail IS the row of choices, `settings.js` renders the pane the route's `stab` names, and the
+    /// header's domain sub-nav is suppressed for this domain so the two rails never compete. Nothing
+    /// of the strip survives — no markup to hide and no click to synthesise — and Security, Users,
+    /// Readiness and Terminal are panes of the same page rather than pages of their own.
     /// </summary>
     [Fact]
     public void TheSettingsPanes_AreSections_AndTheSecondRowIsGone()
     {
-        var app = Ui("app.js");
+        var app = Ui("app.js").Replace(" ", "");
+        var html = Ui("index.html");
 
-        foreach (var route in new[] { "/settings/connection", "/settings/colony", "/settings/models", "/settings/diagnostics" })
-            Assert.Contains($"route:'{route}'", app.Replace(" ", ""), StringComparison.Ordinal);
+        foreach (var stab in new[] { "account", "connection", "models", "colony", "automation", "security", "users", "diagnostics", "readiness", "terminal", "danger" })
+        {
+            Assert.Contains($"route:'/settings/{stab}',page:'settings',stab:'{stab}'", app, StringComparison.Ordinal);
+        }
 
         // The section that used to hold them is gone as a destination…
-        Assert.DoesNotContain("route:'/settings/general'", app.Replace(" ", ""), StringComparison.Ordinal);
-        // …but not as a promise: an old bookmark still lands somewhere real.
-        Assert.Contains("'/settings/general':'/settings/connection'", app.Replace(" ", ""), StringComparison.Ordinal);
+        Assert.DoesNotContain("route:'/settings/general'", app, StringComparison.Ordinal);
+        // …but not as a promise: an old bookmark still lands somewhere real — the rail's first item.
+        Assert.Contains("'/settings/general':'/settings/account'", app, StringComparison.Ordinal);
 
-        // Each section names the pane it opens, through the field that has carried that since v2.6.
-        foreach (var stab in new[] { "stab:'connection'", "stab:'colony'", "stab:'models'", "stab:'info'" })
-            Assert.Contains(stab, app.Replace(" ", ""), StringComparison.Ordinal);
+        // The strip is gone in BOTH places: no markup, no synthesised click, no separate pages.
+        Assert.DoesNotContain("settings-tabs", html, StringComparison.Ordinal);
+        Assert.DoesNotContain(".settings-tab[", app, StringComparison.Ordinal);
+        foreach (var gone in new[] { "id=\"page-security\"", "id=\"page-users\"", "id=\"page-readiness\"", "id=\"page-shell\"" })
+            Assert.DoesNotContain(gone, html, StringComparison.Ordinal);
 
-        // Hidden in BOTH places. Script alone leaves it painting once before the script runs, and
-        // CSS alone would leave a route able to show it again.
-        Assert.Contains(".settings-tabs{display:none !important;}", Ui("index.html"), StringComparison.Ordinal);
-        Assert.Contains("if(strip) strip.style.display='none';", app, StringComparison.Ordinal);
+        // The rail exists, the page hands its pane to settings.js, and the domain sub-nav stays out.
+        Assert.Contains("id=\"sr-rail\"", html, StringComparison.Ordinal);
+        Assert.Contains("settingsOpen(stab)", app, StringComparison.Ordinal);
+        Assert.Contains("dom.id!=='settings'", app, StringComparison.Ordinal);
+        Assert.Contains("function settingsOpen(", Ui("settings.js"), StringComparison.Ordinal);
     }
 
     /// <summary>

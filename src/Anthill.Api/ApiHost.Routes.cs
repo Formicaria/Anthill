@@ -105,6 +105,12 @@ public static partial class ApiHost
             ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
             return Results.Content(UiConsoleExtrasJs, "text/javascript; charset=utf-8");
         });
+        // v0.3.8.145: the Settings domain, split out of app.js under the size guard.
+        app.MapGet("/ui/settings.js", (HttpContext ctx) =>
+        {
+            ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
+            return Results.Content(UiSettingsJs, "text/javascript; charset=utf-8");
+        });
         // Colony Live (design doc §17, stage 3). Same-origin, same no-store policy — the CSP stays script-src
         // 'self'. Topology is the projection layer; live is the renderer; app.js only toggles them.
         app.MapGet("/ui/colony-topology.js", (HttpContext ctx) =>

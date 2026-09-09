@@ -40,7 +40,10 @@ public class StatusFieldConsumerTests
 
     private static string ConsoleSource() =>
         Read("src/Anthill.UI/app.js") + Read("src/Anthill.UI/index.html")
-        + Read("src/Anthill.UI/dashboard-grid.js") + Read("src/Anthill.UI/mission-thread.js");
+        + Read("src/Anthill.UI/dashboard-grid.js") + Read("src/Anthill.UI/mission-thread.js")
+        // v0.3.8.145: the Settings domain is its own asset now, and it is where an operator reads
+        // the posture fields — a guard that did not look here would call them unconsumed.
+        + Read("src/Anthill.UI/settings.js");
 
     /// <summary>
     /// WHOLE-WORD match. A substring test is wrong in both directions and this guard was written
