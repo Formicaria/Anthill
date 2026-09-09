@@ -321,19 +321,53 @@ logs" buttons use it. Nothing else is granted — no other units, no package or 
 upgrades still run `bash deploy/lxc/setup.sh` from a root shell. If polkit isn't installed the rule
 is skipped (the installer says so) and service control from the console won't be available.
 
-## 5. Windows Service (ready — refinements ongoing)
+## 5. Windows Service — NOT SHIPPED
 
-Windows deployment is ready to use today: `README.md` documents registering the published
-`anthill.exe` directly via `New-Service`/`sc.exe` (Deploy on Windows → Option C) — start, stop,
-and automatic startup all work. Like the other deployment paths, it's under continuous
-improvement. The current refinement target — graceful shutdown on service stop, correct
-integration with the Service Control Manager's startup/shutdown timeouts, Windows Event Log
-output instead of a console — is wiring up
-[`Microsoft.Extensions.Hosting.WindowsServices`](https://learn.microsoft.com/dotnet/core/extensions/windows-service)
-(`.UseWindowsService()` on the host builder in `src/Anthill.Api/ApiHost.cs`, plus a new
-`Microsoft.Extensions.Hosting.WindowsServices` package reference). That package restore needs to
-happen on a machine with real NuGet access; this doc will be updated with the install script once
-it's built and verified.
+**Corrected at v0.3.8.146.** This section previously said a Windows Service path was "ready to
+use today" and pointed at a `README.md` section — "Deploy on Windows → Option C" — that has never
+existed. Nothing in this repository registers a Windows service, and
+`ShellQuickActionTests` actively guards against one appearing by accident: the console's Windows
+quick actions target the `AnthillDesktop` process precisely because no service exists to target.
+
+That guard is not an oversight to be fixed later. A service running as LocalSystem is the standard
+way to give a program the right to update itself without prompting, and it is a permanent
+privileged attack surface. v0.3.8.146 reached the same goal from the other side — the desktop app
+installs **per-user**, owns its own directory, and therefore replaces its own files with no
+elevation and no service. See §7.
+
+The supported Windows shapes are the installer (per-user, self-updating) and the portable zip.
+
+## 5a. Updating (v0.3.8.146)
+
+**Every release publishes a `.sha256` beside each artifact**, generated in the same CI job from
+the bytes it archived. Anything that installs an update — the desktop app, the systemd pre-start
+hook, the background stager — verifies the download against it and **deletes a payload that does
+not match**. Verification is not a setting.
+
+A hash fetched over the same channel as the file is **not a signature**: anyone who can replace
+the asset can replace the sidecar. It defeats corruption, a bad mirror, a truncated download and a
+tampered CDN object; it does not defeat a compromised GitHub account. Authenticode signing of
+`anthill-setup-*.exe` is the control that would, and it needs a certificate this project does not
+yet have. Verify by hand with `sha256sum -c anthill-<version>-linux-x64.tar.gz.sha256`.
+
+`auto_update` (Settings → Colony) decides what happens when a newer release exists:
+
+| Value | Behaviour |
+|---|---|
+| `silent` (default) | Download, verify, install at the next start. No prompt, no elevation. |
+| `notify` | Check and report it. Install nothing. |
+| `off` | Do not check. |
+
+**Updates always apply at the next start**, never to a running process — a program cannot replace
+its own files while executing, and an update that interrupts a mission is worse than the prompt it
+replaced.
+
+| Shape | How an update lands |
+|---|---|
+| Windows installer | `anthill-setup-<v>.exe` runs `/VERYSILENT` at next launch. Per-user, so no UAC. |
+| Windows portable | Only the paths the new archive contains are replaced. `.anthill` beside the binary is never touched; an archive reaching into it is refused whole. |
+| LXC / systemd | Staged into `.anthill/updates`, swapped in by `ExecStartPre=anthill --apply-staged-update`. Needs the `ReadWritePaths=<install>/bin` line in the unit — delete it and the `ExecStartPre` line, and set `auto_update=notify`, to keep `bin/` read-only. |
+| Docker | Never self-updates. `docker compose pull && docker compose up -d`. |
 
 ## 6. Roadmap
 
@@ -343,7 +377,10 @@ it's built and verified.
 | **Docker** ✅ | **DONE.** `Dockerfile`, `docker-compose.yml`, `.dockerignore` at repo root. | see §2 above |
 | **LXC** ✅ | **DONE.** `deploy/lxc/setup.sh` + `anthill.service.template`. | see §3 above |
 | **Tagged releases** ✅ | **DONE.** Binaries + Docker image (GHCR) + published GitHub Release, all automatic on tag push. | `.github/workflows/release.yml`, see §4 above |
-| **Windows Service** ✅ | **READY** via `New-Service`/`sc.exe` registration (see §5). Refinement in progress: `UseWindowsService()` SCM integration + install script. | `Microsoft.Extensions.Hosting.WindowsServices` integration in `ApiHost.cs`, install script |
+| **Windows desktop app** ✅ | **DONE.** Per-user installer, self-updating (see §5a). | `deploy/windows/anthill-setup.iss`, `src/Anthill.Desktop/UpdateService.cs` |
+| **Silent updates, all shapes** ✅ | **DONE at v0.3.8.146.** SHA-256 verified, applied at next start. | `src/Anthill.Core/Updates/`, `src/Anthill.Api/UpdateStager.cs`, see §5a |
+| **Windows Service** ❌ | **NOT SHIPPED, and not planned.** This row said READY for 75 releases against a README section that never existed (corrected in §5). A LocalSystem service is the usual way to buy unprompted self-update; v0.3.8.146 bought it with a per-user install instead, which needs no privilege at all. `ShellQuickActionTests` guards against one appearing by accident. | `tests/Anthill.Tests/ShellQuickActionTests.cs` |
+| **Code signing (Authenticode)** ⬜ | **OPEN.** The checksums shipped at v0.3.8.146 defeat corruption and a tampered object; only a signature defeats a compromised release account, and it needs a purchased certificate. | `.github/workflows/release.yml` |
 
 Implementation order: container-style networking (done) → Docker (done) → LXC (done) → Windows
-Service (ready; SCM refinements ongoing), per the agreed build order.
+desktop app + silent updates (done). Code signing is the open item.
