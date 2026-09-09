@@ -2,18 +2,38 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Windows.Forms;
 using Anthill.Core.Configuration;
+using Anthill.Core.Updates;
 
 namespace Anthill.Desktop;
 
 /// <summary>
-/// Field report (installer batch) — the desktop app was "not easily updateable": the old check
-/// only tucked a link into the tray menu. This asks GitHub once, and when a newer release exists
-/// it PROMPTS: update now, and the setup program is downloaded and run with the operator watching;
-/// or later, and the offer waits in the tray. Nothing ever downloads or installs without a yes.
+/// UPDATES THAT DO NOT ASK. v0.3.8.146, at the operator's instruction: "users HATE having to click
+/// through another installer. They shouldn't even need to give admin approval if anthill is
+/// already installed."
 ///
-/// The installer preserves the colony: data lives under %LOCALAPPDATA%\Anthill (Program.cs), which
-/// no install, update, or uninstall touches — so the prompt can honestly say "your colony's memory
-/// is kept."
+/// WHAT THE OLD PROMPT WAS DOING, because it was doing two things and only one deserved to stay.
+/// It asked for PERMISSION to install — which the operator granted once by installing Anthill, and
+/// re-asking every release is the ritual this release removes. And it put a human in front of a
+/// downloaded executable, which was the only thing standing between a compromised release channel
+/// and code running on their machine.
+///
+/// The first job moves to Settings: `auto_update` is a setting with three honest values, and
+/// changing it is the consent. The second job does NOT disappear — with nobody watching it matters
+/// more, not less — so it is now done by machine: `UpdateStaging` verifies the download against the
+/// SHA-256 the release workflow published beside it, and a payload that does not match is deleted
+/// unrun. Removing the click without that would have traded a real protection for convenience.
+///
+/// WHY NO UAC PROMPT. Because as of this release Anthill installs per-user, under
+/// %LOCALAPPDATA%\Programs\Anthill (see deploy/windows/anthill-setup.iss). A program that owns its
+/// own directory can replace its own files, so the update needs no permission it was not already
+/// given. An older machine-wide install in Program Files cannot be replaced without elevation by
+/// anyone, so it is offered the move ONCE, in words, and never nagged again.
+///
+/// WHY IT APPLIES AT NEXT LAUNCH. A running program cannot replace its own files on Windows, and
+/// an update that interrupts a mission to relaunch is a worse interruption than the prompt it
+/// replaced. So the download happens quietly while the colony works, and the installer runs at the
+/// next start, before the window opens — the operator's first sign of an update is being on the
+/// new version.
 ///
 /// Failure is quiet on the LAUNCH check (an offline machine must not see errors about a
 /// convenience) and spoken on the EXPLICIT check (an operator who asked deserves an answer).
@@ -23,13 +43,58 @@ internal static class UpdateService
     private const string Releases = "https://api.github.com/repos/Formicaria/Anthill/releases/latest";
     private static int _busy;   // one check/download at a time
 
+    /// <summary>
+    /// Applies a staged update, if one is waiting and verified. Called BEFORE the window exists —
+    /// the installer replaces this program's own files, so it must run while nothing is using them.
+    ///
+    /// Returns true when it handed over to the installer, in which case the caller must exit and
+    /// let setup relaunch the new version.
+    /// </summary>
+    public static bool ApplyStagedIfAny()
+    {
+        try
+        {
+            var site = InstallDetector.Detect();
+            if (site.Shape is not (InstallShape.WindowsInstalled or InstallShape.WindowsPortable)) return false;
+
+            var staged = UpdateStaging.Pending(site);
+            if (staged is null) return false;
+
+            if (site.Shape == InstallShape.WindowsPortable)
+            {
+                var applied = UpdateApplier.ApplyArchive(site, staged.PayloadPath);
+                DesktopLog.Write($"update-apply (portable): {applied.Message}");
+                UpdateStaging.Clear(site);
+                return false;   // files are already swapped; this process keeps starting, now on them
+            }
+
+            // The installed shape hands to setup, which owns shortcuts and uninstall registration.
+            // /VERYSILENT: no wizard. /SUPPRESSMSGBOXES: no dialog can block an unattended run.
+            // /NORESTART: the machine is not ours to reboot. /NOCANCEL: nothing half-applied.
+            DesktopLog.Write($"update-apply: running {staged.Asset} silently for v{staged.Version}.");
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(staged.PayloadPath)
+            {
+                Arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOCANCEL /RESTARTAPPLICATIONS",
+                UseShellExecute = true,
+            });
+            UpdateStaging.Clear(site);
+            return true;
+        }
+        catch (Exception error)
+        {
+            DesktopLog.Write("update-apply: " + error.Message);
+            return false;
+        }
+    }
+
     public static void CheckAndOffer(Form owner, NotifyIcon tray, bool announceUpToDate) =>
         new Thread(() =>
         {
             if (Interlocked.Exchange(ref _busy, 1) == 1) return;
             try
             {
-                var (latest, tag, assetUrl, assetName) = QueryLatest();
+                var site = InstallDetector.Detect();
+                var (latest, tag, asset) = QueryLatest(site);
                 if (latest is null)
                 {
                     if (announceUpToDate) owner.BeginInvoke(() => MessageBox.Show(owner,
@@ -38,7 +103,7 @@ internal static class UpdateService
                     return;
                 }
 
-                if (!Version.TryParse(AnthillRuntime.Version, out var mine) || latest <= mine)
+                if (UpdateVersions.Compare(latest, AnthillRuntime.Version) <= 0)
                 {
                     if (announceUpToDate) owner.BeginInvoke(() => MessageBox.Show(owner,
                         $"You are on v{AnthillRuntime.Version} — the latest release.",
@@ -46,14 +111,141 @@ internal static class UpdateService
                     return;
                 }
 
-                owner.BeginInvoke(() => Offer(owner, tray, latest, tag!, assetUrl, assetName));
+                // A machine-wide install cannot be replaced without elevation by anybody, so it is
+                // told once, plainly, and left alone. This is the only prompt this class can raise
+                // on its own, and it exists because the alternative is silently doing nothing.
+                if (IsMachineWide(site))
+                {
+                    owner.BeginInvoke(() => OfferMigration(owner, tray, latest, tag!, asset));
+                    return;
+                }
+
+                if (asset is null)
+                {
+                    if (announceUpToDate) owner.BeginInvoke(() => System.Diagnostics.Process.Start(
+                        new System.Diagnostics.ProcessStartInfo(
+                            $"https://github.com/Formicaria/Anthill/releases/tag/{tag}") { UseShellExecute = true }));
+                    return;
+                }
+
+                var staged = StageQuietly(site, latest, asset.Value);
+                if (announceUpToDate) owner.BeginInvoke(() => MessageBox.Show(owner,
+                    staged.Staged
+                        ? $"Anthill v{latest} has been downloaded and checked. It installs the next time "
+                          + "you start Anthill — nothing to click, and your colony's memory is kept."
+                        : $"Anthill v{latest} is available, but it was not installed: {staged.Message}",
+                    staged.Staged ? "Update ready" : "Update not applied",
+                    MessageBoxButtons.OK, staged.Staged ? MessageBoxIcon.Information : MessageBoxIcon.Warning));
             }
             catch (Exception error) { DesktopLog.Write("update-check: " + error.Message); }
             finally { Interlocked.Exchange(ref _busy, 0); }
         })
         { IsBackground = true, Name = "anthill-update-check" }.Start();
 
-    private static (Version? Latest, string? Tag, string? AssetUrl, string? AssetName) QueryLatest()
+    /// <summary>
+    /// Downloads the asset and its published digest, verifies, and records it for next launch.
+    /// Nothing here can execute anything: staging writes files and a manifest, and the only code
+    /// that runs a payload is <see cref="ApplyStagedIfAny"/>, which re-verifies first.
+    /// </summary>
+    private static UpdateStaging.StagingResult StageQuietly(InstallSite site, string version, Asset asset)
+    {
+        try
+        {
+            if (!site.CanSelfUpdate) return UpdateStaging.StagingResult.No(site.Explanation);
+
+            Directory.CreateDirectory(site.StagingDirectory);
+            var payload = Path.Combine(site.StagingDirectory, Path.GetFileName(asset.Name));
+
+            using (var http = NewHttp(TimeSpan.FromMinutes(10)))
+            {
+                // The digest FIRST. A download with nothing to check it against is a download this
+                // updater will not keep, and finding that out before spending the bytes is cheaper.
+                var sidecar = TryGet(http, asset.Url + ".sha256") ?? TryGet(http, asset.DigestUrl);
+                var expected = UpdateStaging.ParseDigest(sidecar);
+                if (expected is null)
+                    return UpdateStaging.StagingResult.No(
+                        "this release publishes no SHA-256 checksum for its installer, so the download "
+                      + "could not be verified and was not run. Update from the release page instead.");
+
+                using (var download = http.GetStreamAsync(asset.Url).GetAwaiter().GetResult())
+                using (var file = File.Create(payload))
+                    download.CopyTo(file);
+
+                if (!UpdateStaging.VerifyOrDelete(payload, expected, out var verdict))
+                    return UpdateStaging.StagingResult.No(verdict);
+
+                UpdateStaging.Record(site, new UpdateStaging.StagedUpdate(
+                    version, asset.Name, expected, payload, site.Shape, DateTime.UtcNow));
+                DesktopLog.Write($"update-stage: v{version} verified ({verdict}); applies at next launch.");
+                return new UpdateStaging.StagingResult(true, $"v{version} is staged and applies at next launch.");
+            }
+        }
+        catch (Exception error)
+        {
+            DesktopLog.Write("update-stage: " + error);
+            return UpdateStaging.StagingResult.No($"the update could not be downloaded ({error.Message}).");
+        }
+    }
+
+    /// <summary>The one prompt left: a machine-wide install asking to become a per-user one.</summary>
+    private static void OfferMigration(Form owner, NotifyIcon tray, string latest, string tag, Asset? asset)
+    {
+        var choice = MessageBox.Show(owner,
+            $"Anthill v{latest} is available — you are on v{AnthillRuntime.Version}.\n\n"
+          + "This copy was installed for all users, under Program Files, which Windows will not let "
+          + "Anthill update on its own.\n\n"
+          + "Move Anthill to a per-user install? Windows will ask for administrator approval once, "
+          + "to remove the old copy. After that, updates install themselves silently and you will "
+          + "not see this again. Your colony's memory and settings are kept either way.",
+            "Update available",
+            MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+
+        if (choice != DialogResult.Yes)
+        {
+            var item = new ToolStripMenuItem($"Update to v{latest}…");
+            item.Click += (_, _) => OfferMigration(owner, tray, latest, tag, asset);
+            if (!tray.ContextMenuStrip!.Items.OfType<ToolStripMenuItem>().Any(i => i.Text == item.Text))
+                tray.ContextMenuStrip.Items.Insert(0, item);
+            return;
+        }
+
+        if (asset is null)
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                $"https://github.com/Formicaria/Anthill/releases/tag/{tag}") { UseShellExecute = true });
+            return;
+        }
+
+        // Elevation happens here, visibly, once — the setup package asks for it because removing
+        // the Program Files copy needs it. It is not requested silently and never will be.
+        var site = InstallDetector.Detect();
+        var staged = StageQuietly(site with { CanSelfUpdate = true }, latest, asset.Value);
+        if (!staged.Staged)
+        {
+            MessageBox.Show(owner, staged.Message, "Update not applied",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(staged.Update!.PayloadPath)
+        { UseShellExecute = true });
+        Application.Exit();
+    }
+
+    /// <summary>An install under Program Files: replaceable only with elevation, by anyone.</summary>
+    private static bool IsMachineWide(InstallSite site)
+    {
+        if (site.Shape != InstallShape.WindowsInstalled) return false;
+        foreach (var folder in new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86 })
+        {
+            var root = Environment.GetFolderPath(folder);
+            if (!string.IsNullOrEmpty(root) && UpdateApplier.IsInside(site.ProgramDirectory, root)) return true;
+        }
+        return false;
+    }
+
+    private readonly record struct Asset(string Name, string Url, string DigestUrl);
+
+    private static (string? Latest, string? Tag, Asset? Asset) QueryLatest(InstallSite site)
     {
         try
         {
@@ -61,94 +253,48 @@ internal static class UpdateService
             var json = http.GetStringAsync(Releases).GetAwaiter().GetResult();
             var root = JsonDocument.Parse(json).RootElement;
             var tag = root.GetProperty("tag_name").GetString() ?? "";
-            if (!Version.TryParse(tag.TrimStart('v'), out var latest)) return (null, null, null, null);
+            var latest = tag.TrimStart('v', 'V');
+            if (string.IsNullOrWhiteSpace(latest)) return (null, null, null);
 
-            // The installer asset, by shape. Falls back to null — the offer then opens the release
-            // page instead of pretending a download exists.
-            string? assetUrl = null, assetName = null;
-            if (root.TryGetProperty("assets", out var assets))
+            // The asset this SHAPE consumes, named exactly — an installed copy takes the installer,
+            // a portable copy takes the zip. Matching by the name the release workflow writes means
+            // a release that is missing our asset produces no update rather than the wrong one.
+            var wanted = site.AssetFor(latest);
+            Asset? found = null;
+            string? digestUrl = null;
+            if (wanted is not null && root.TryGetProperty("assets", out var assets))
+            {
+                string? url = null;
                 foreach (var asset in assets.EnumerateArray())
                 {
                     var name = asset.GetProperty("name").GetString() ?? "";
-                    if (name.StartsWith("anthill-setup-", StringComparison.OrdinalIgnoreCase)
-                        && name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-                    {
-                        assetUrl = asset.GetProperty("browser_download_url").GetString();
-                        assetName = name;
-                        break;
-                    }
+                    if (string.Equals(name, wanted, StringComparison.OrdinalIgnoreCase))
+                        url = asset.GetProperty("browser_download_url").GetString();
+                    else if (string.Equals(name, wanted + ".sha256", StringComparison.OrdinalIgnoreCase))
+                        digestUrl = asset.GetProperty("browser_download_url").GetString();
                 }
-            return (latest, tag, assetUrl, assetName);
+                if (url is not null) found = new Asset(wanted, url, digestUrl ?? url + ".sha256");
+            }
+            return (latest, tag, found);
         }
         catch (Exception error)
         {
             DesktopLog.Write("update-query: " + error.Message);
-            return (null, null, null, null);
+            return (null, null, null);
         }
     }
 
-    private static void Offer(Form owner, NotifyIcon tray, Version latest, string tag,
-        string? assetUrl, string? assetName)
+    private static string? TryGet(HttpClient http, string url)
     {
-        var choice = MessageBox.Show(owner,
-            $"Anthill v{latest} is available — you are on v{AnthillRuntime.Version}.\n\n"
-            + (assetUrl is not null
-                ? "Update now? The installer downloads and runs; your colony's memory and settings are kept."
-                : "Open the release page? (This release carries no installer asset, so the update is manual.)"),
-            "Update available",
-            MessageBoxButtons.YesNo, MessageBoxIcon.Information);
-
-        if (choice != DialogResult.Yes)
+        try
         {
-            // Later: the offer waits in the tray instead of nagging again this session.
-            var item = new ToolStripMenuItem($"Update to v{latest}…");
-            item.Click += (_, _) => Offer(owner, tray, latest, tag, assetUrl, assetName);
-            if (!tray.ContextMenuStrip!.Items.OfType<ToolStripMenuItem>().Any(i => i.Text == item.Text))
-                tray.ContextMenuStrip.Items.Insert(0, item);
-            return;
+            var response = http.GetAsync(url).GetAwaiter().GetResult();
+            return response.IsSuccessStatusCode
+                ? response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+                : null;
         }
-
-        if (assetUrl is null)
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
-                $"https://github.com/Formicaria/Anthill/releases/tag/{tag}") { UseShellExecute = true });
-            return;
-        }
-
-        DownloadAndRun(owner, assetUrl, assetName!);
+        catch { return null; }
     }
-
-    private static void DownloadAndRun(Form owner, string assetUrl, string assetName) =>
-        new Thread(() =>
-        {
-            try
-            {
-                var path = Path.Combine(Path.GetTempPath(), assetName);
-                using (var http = NewHttp(TimeSpan.FromMinutes(5)))
-                using (var download = http.GetStreamAsync(assetUrl).GetAwaiter().GetResult())
-                using (var file = File.Create(path))
-                    download.CopyTo(file);
-                DesktopLog.Write($"Update downloaded to {path}; handing over to the installer.");
-
-                owner.BeginInvoke(() =>
-                {
-                    // The installer replaces the app directory, so this instance steps aside. The
-                    // colony's data is elsewhere (%LOCALAPPDATA%\Anthill) and unaffected.
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path)
-                    { UseShellExecute = true });
-                    Application.Exit();
-                });
-            }
-            catch (Exception error)
-            {
-                DesktopLog.Write("update-download: " + error);
-                owner.BeginInvoke(() => MessageBox.Show(owner,
-                    "The update could not be downloaded: " + error.Message
-                    + "\n\nAnthill keeps running on the current version.",
-                    "Update failed", MessageBoxButtons.OK, MessageBoxIcon.Warning));
-            }
-        })
-        { IsBackground = true, Name = "anthill-update-download" }.Start();
 
     private static HttpClient NewHttp(TimeSpan? timeout = null)
     {

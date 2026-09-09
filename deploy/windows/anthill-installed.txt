@@ -1,0 +1,8 @@
+This file marks a managed Anthill installation.
+
+Its presence tells the running application that these program files were installed by the
+Anthill setup package, which owns this directory, rather than unzipped into a folder that may
+also hold the colony data. The updater reads it to decide what it is allowed to replace.
+
+Deleting it does not break anything: Anthill then treats this copy as portable and updates it
+the careful way, replacing only the files a release actually ships.
