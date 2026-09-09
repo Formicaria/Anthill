@@ -1950,10 +1950,23 @@ async function pollJobs(){
     const running=jobs.find(j=>j.status==='running');
     const queued =jobs.find(j=>j.status==='queued');
     const current=running||queued;
-    colonyRunning=!!current;
+    // v0.3.8.145 — a mission started from a CHAT never becomes a /jobs row: it goes straight through
+    // ConversationRunner, not the API job queue. So the header read "Idle — no active mission" while
+    // the colony was plainly working the conversation's mission. The task graph knows the truth for
+    // BOTH paths (its `mission` is the latest of either kind); consult it when the job queue is
+    // quiet. Only a RUNNING graph counts — the graph holds the last mission after it ends, and 9/9
+    // beside "idle" is the contradiction the progress bar already avoids.
+    let convGoal=null;
+    if(!current && lastGraphData && lastGraphData.mission){
+      const ms=(lastGraphData.mission.status||'').toString();
+      const sc=lastGraphData.status_counts||{};
+      if(ms==='running' || (sc.running||0)>0) convGoal=(lastGraphData.mission.goal||'').toString();
+    }
+    colonyRunning=!!current||!!convGoal;
     const dot=document.getElementById('mission-dot'),goalEl=document.getElementById('mission-goal');
     if(running){dot.className='dot running';goalEl.textContent=running.goal.substring(0,80)+(running.goal.length>80?'…':'');}
     else if(queued){dot.className='dot active';goalEl.textContent='Queued: '+queued.goal.substring(0,70);}
+    else if(convGoal){dot.className='dot running';goalEl.textContent=convGoal.substring(0,80)+(convGoal.length>80?'…':'');}
     else{dot.className='dot';goalEl.textContent='Idle — no active mission';}
     // Render to all job list containers
     renderJobList(jobs,'jobs-list','jobs-badge',8);
@@ -7736,6 +7749,14 @@ const AUTO_KEYS=[
   ['autonomy_priority_bias_max','Learning Bias Max'],['autonomy_retire_min_runs','Retire Min Runs'],
   ['autonomy_loop_window','Loop Window'],
 ];
+// v0.3.8.145 — per-conversation ceilings. Missions per conversation is the one operators actually
+// hit: it is how many missions ONE chat may start over its lifetime, and it was a compile-time 5
+// until this release. Raising it never widens authority — the approval gate still decides each
+// mission — it only buys room in a long-lived chat.
+const CONV_KEYS=[
+  ['conversation_max_missions','Missions per conversation'],['conversation_max_turns','Turns'],
+  ['conversation_max_tool_calls','Tool Calls'],['conversation_max_seconds','Seconds'],
+];
 let colonySettings={};
 
 async function loadColonyTab(){
@@ -7745,6 +7766,8 @@ async function loadColonyTab(){
   document.getElementById('set-toggles').innerHTML=TOGGLE_KEYS.map(([k,label])=>
     `<div class="toggle-row"><span>${label}</span><div class="toggle-sw${colonySettings[k]?' on':''}" data-key="${k}" data-onclick="this.classList.toggle('on')"></div></div>`).join('');
   document.getElementById('set-nums').innerHTML=NUM_KEYS.map(([k,label])=>
+    `<div class="num-row"><label>${label}</label><input type="number" data-key="${k}" value="${colonySettings[k]??0}"></div>`).join('');
+  document.getElementById('set-conversations').innerHTML=CONV_KEYS.map(([k,label])=>
     `<div class="num-row"><label>${label}</label><input type="number" data-key="${k}" value="${colonySettings[k]??0}"></div>`).join('');
   document.getElementById('set-autonomy').innerHTML=AUTO_KEYS.map(([k,label])=>
     `<div class="num-row"><label>${label}</label><input type="number" data-key="${k}" value="${colonySettings[k]??0}"></div>`).join('');
@@ -7757,7 +7780,7 @@ async function saveColonyTab(){
     ollama_model:document.getElementById('set-ollama-model').value.trim(),
   };
   document.querySelectorAll('#set-toggles .toggle-sw').forEach(sw=>{payload[sw.dataset.key]=sw.classList.contains('on');});
-  document.querySelectorAll('#set-nums input,#set-autonomy input').forEach(i=>{const v=parseInt(i.value,10);if(!isNaN(v))payload[i.dataset.key]=v;});
+  document.querySelectorAll('#set-nums input,#set-conversations input,#set-autonomy input').forEach(i=>{const v=parseInt(i.value,10);if(!isNaN(v))payload[i.dataset.key]=v;});
   try{
     const r=await api('/settings','POST',payload);
     if(r.success){msg.style.color='var(--green)';msg.textContent=r.message||'Saved';colonySettings=r.data.settings||colonySettings;pollModelInfo();}
