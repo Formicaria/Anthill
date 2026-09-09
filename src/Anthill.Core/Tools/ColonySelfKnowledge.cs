@@ -195,6 +195,27 @@ public static class ColonySelfKnowledge
     /// </summary>
     public static bool NamesSubjectOf(string? request) => Names(request).Count > 0;
 
+    /// <summary>
+    /// v0.3.8.151 — the ENTRIES a request names, name matches only.
+    ///
+    /// <see cref="Find"/> falls back to matching an entry's BODY, which is right for a lookup an
+    /// operator drives and wrong for anything assembled into a prompt: every entry's prose is
+    /// ordinary English, so a long request shares words with most of the corpus and the caller ends
+    /// up handing a model the whole thing. `.150` did exactly that and the operator paid for it —
+    /// see <c>BuilderAnt.SelfDescriptionBlock</c>.
+    /// </summary>
+    public static IReadOnlyList<Entry> EntriesNamedIn(string? request)
+    {
+        var names = Names(request);
+        if (names.Count == 0) return Array.Empty<Entry>();
+
+        return Entries
+            .Where(e => names.Any(n =>
+                string.Equals(n, e.Topic.Replace('_', ' ').Trim(), StringComparison.OrdinalIgnoreCase)
+             || string.Equals(n, e.Title.Replace('_', ' ').Trim(), StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+    }
+
     /// <summary>Every documented name this request mentions as a whole word, longest first so an
     /// adjacency test prefers "mission classes" over the "mission" inside it.</summary>
     private static List<string> Names(string? request)

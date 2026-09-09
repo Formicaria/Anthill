@@ -235,6 +235,33 @@ public class DesktopShellTests
         Assert.DoesNotContain("Verb = \"runas\"", updater);
         Assert.Contains("administrator approval once", updater);
 
+        // ── v0.3.8.151 — AND EVERY LAUNCH GOES THROUGH ONE METHOD ───────────────────────────────
+        //
+        // The three assertions above passed for the whole of `.149` and `.150` while the operator
+        // was still being shown a license page, because `/VERYSILENT` appeared SOMEWHERE in the
+        // file — in `ApplyStagedIfAny` — and the migration path called a bare
+        // `Process.Start(payload)` with no arguments at all. "The switch is in this file" was never
+        // the property worth checking; "no launch can omit it" is, and it cannot be expressed by
+        // looking for a string.
+        //
+        // So it is expressed structurally instead: the installer is started in exactly ONE place,
+        // and every other site names that method. A new call site that forgets the switches now has
+        // to add a second `Process.Start` of a payload, which this fails on.
+        Assert.Single(Regex.Matches(updater, @"ProcessStartInfo\(payloadPath"));
+
+        // AND NO PAYLOAD IS EVER LAUNCHED DIRECTLY. This is the exact line that shipped the wizard.
+        Assert.DoesNotContain("ProcessStartInfo(staged.Update!.PayloadPath)", updater);
+        Assert.DoesNotContain("ProcessStartInfo(staged.PayloadPath)", updater);
+
+        // `/RESTARTAPPLICATIONS` asked the package for something `anthill-setup.iss` turns off
+        // (`RestartApplications=no`). A switch addressed to a file that refuses it is not a
+        // behaviour, it is a disagreement.
+        Assert.DoesNotContain("/RESTARTAPPLICATIONS", updater);
+
+        // THE SETTING REACHES THE DESKTOP. `.149` added `auto_update` and only the headless stager
+        // read it, so on a desktop `off` still downloaded and installed.
+        Assert.Contains("AnthillRuntime.AutoUpdate", updater);
+
         // The asset is matched by the name the release workflow writes, per shape — never guessed.
         Assert.Contains("site.AssetFor(latest)", updater);
         // And one version comparison serves every shape (see UpdateVersions).
