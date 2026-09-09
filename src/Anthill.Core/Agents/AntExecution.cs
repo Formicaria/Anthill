@@ -330,7 +330,15 @@ public static class AntExecutionCatalog
             // knowledge_review is absent from every role. Proposing a change to canonical knowledge
             // is a mutation lane (Rule 8) and it is gated by the operator's approval pipeline, not
             // handed to a research role by default.
+            // v0.3.8.148: `colony_self_knowledge` joins, and it is DISPATCHED in the same release —
+            // the rule v3.8.30 stated when search was added, applied a fourth time. It goes to the
+            // same role that already holds `colony_state` because the two answer halves of one
+            // question: what the colony is right now, and what ANTHILL is at all. A researcher that
+            // can report which roles are executable but cannot say what a role IS answers "what is
+            // micromound" by searching mission history for the word — which is exactly what the
+            // colony did before this release, and it found tacos.
             AllowedTools: S("system_info", "list_directory", "search_workspace", "repository_index", "colony_state",
+                            Tools.ColonySelfKnowledgeTool.ToolName,
                             Tools.ReadArtifactTool.ToolName,
                             Anthill.SDK.Knowledge.KnowledgeToolNames.Search,
                             Anthill.SDK.Knowledge.KnowledgeToolNames.Retrieve,
