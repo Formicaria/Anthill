@@ -657,6 +657,37 @@ Required JSON:
         // inspection step rather than two spellings of one.
         tasks = EnsureGroundedInspection(tasks, goal, specification);
 
+        // v0.3.8.147 — AND SOMETHING HAS TO ANSWER. Class-independent, for the same reason the
+        // inspection above is: every mission owes the operator an answer, whatever its class.
+        //
+        // FROM THE OPERATOR'S COLONY: "do a self check of the anthill colony, what are the
+        // registered…" planned `researcher + verifier`. The researcher investigated and wrote a
+        // brief; nobody compiled an answer to the question; the verifier read what was there and
+        // returned, correctly, "Verification Failed: the builder did not provide the specific answer
+        // requested (a list of registered ant roles)". The verifier was right, and the END of a
+        // mission is the most expensive possible place to discover that nothing was going to answer.
+        //
+        // NOT IN `EnforceConstraints`, WHERE THE GUARANTEED VERIFIER LIVES, and the first cut of this
+        // put it there. That method returns at its first line unless `BlocksPatches` — its whole
+        // body is scoped to no-patch missions — so a guarantee placed beside the verifier's would
+        // have covered the one lane that already plans carefully and missed every ordinary mission.
+        // The suite caught it immediately, which is the argument for a fixture built from the plan
+        // that actually failed.
+        //
+        // THE BUILDER IS THE ROLE THAT ANSWERS. A researcher produces findings and a coder produces
+        // patches; neither is the operator-facing answer.
+        //
+        // FIRST, LIKE THE INSPECTION, so the class branches below see what it inserted: each of them
+        // adds its own compile step only when one is missing, and this way they find one and add
+        // nothing rather than producing two spellings of the same task.
+        if (!tasks.Any(t => string.Equals(t.AssignedAnt, "builder", StringComparison.OrdinalIgnoreCase)))
+            tasks.Add(new Task
+            {
+                Title = "Answer the request",
+                Description = $"Compile the mission's findings into the answer the operator asked for: {goal}",
+                AssignedAnt = "builder", AssignedWorker = "builder.response_builder", TaskType = "build_answer",
+            });
+
         // v0.3.8.102 — the system-action class's coverage: the operation step is ensured
         // deterministically, the standing doctrine. The medic pattern in reverse — nothing else
         // is inserted, because the operator ant carries the whole propose/approve/execute/record

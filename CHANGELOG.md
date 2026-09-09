@@ -1,3 +1,54 @@
+## v0.3.8.147 - the answer the operator reads, and the grade it gets
+
+**ALL THREE OF THESE CAME FROM ONE SESSION OF REAL CHAT TRAFFIC**, after `.146` stopped sending
+questions to the coder. The class worked: three chat questions, three `class_needs_no_plan` plans,
+two tasks each, no coder anywhere, and three good answers. What was left was everything AROUND the
+answer.
+
+**EVERY ONE OF THOSE GOOD ANSWERS GRADED `partial`, AND THAT WAS `.140`'s FAULT.** All three
+verifiers returned `Needs Improvement`, and `.140` counted that as a verdict of no — so closure was
+refused and a correct answer to "give me a summary on history of the 1980s" was reported as a partial
+mission.
+
+**`Needs Improvement` IS A CONSTANT, NOT A SIGNAL.** The verifier prompt offers three options —
+Verification Passed / Needs Improvement / Verification Failed — and a model asked to critique a short
+answer reaches for the middle one essentially always. Its verdict on the 1980s briefing read
+"provides a partial summary of the 1980s, covering key politi[cal]…", which is an editorial note on
+an answer it accepted. `Failed` means the verifier judged the work UNACCEPTABLE; `Needs Improvement`
+means it judged the work acceptable and improvable. Only the first refuses closure now.
+
+That is the over-reach `.122` was reverted for, re-committed by `.140` one enum value over — inside
+the very split that release drew to prevent it. Neither verdict is a PASS and that has not changed:
+a `Needs Improvement` mission is `inconclusive`, unverified and not accused of having failed.
+
+**`[d1]` WAS AN INTERNAL DELIVERABLE ID PRINTED ABOVE THE OPERATOR'S OWN QUESTION.** `Render` prefixed
+every section with `[{id}] {request}` — on an answer with exactly one part. Three facts, none of them
+needed: the operator asked the question a moment earlier, there is nothing for it to be distinguished
+from, and `d1` is a handle for the ledger. A single-section answer now renders as the answer.
+
+The heading survives where it does work: with two or more sections it says which part answers which
+question, and `AnswerCoverage` grades those requests separately. The REQUEST does that; the id never
+did, so the id is gone in both cases. A NOT-ANSWERED section still names its request whether single
+or not — there the request is the whole content of the finding.
+
+**AND A PLAN WITH NOTHING TO ANSWER WITH IS A MISSION BUILT TO FAIL.** "do a self check of the anthill
+colony, what are the registered…" planned `researcher + verifier`. The researcher investigated and
+wrote a brief; nobody compiled an answer; the verifier read what was there and returned, correctly,
+"Verification Failed: the builder did not provide the specific answer requested (a list of registered
+ant roles)".
+
+The colony has guaranteed the CHECK for as long as the check has existed and never guaranteed the
+ANSWER. It does now, in `EnsureClassCoverage` beside the grounded-inspection guarantee — class-
+independent, because every mission owes the operator an answer whatever its class — by the same rule
+as its siblings: only what is MISSING is added, so every class branch that already inserts its own
+compile step finds one present and inserts nothing. The builder is the role that answers; a
+researcher produces findings and a coder produces patches, and neither is what the operator asked for.
+
+The first cut put it beside the guaranteed verifier in `EnforceConstraints` and was WRONG: that
+method returns at its first line unless `BlocksPatches`, so the guarantee would have covered the one
+lane that already plans carefully and missed every ordinary mission. The suite caught it on the first
+run, which is the argument for building the fixture from the plan that actually failed.
+
 ## v0.3.8.146 - two planning paths left without asking the class what it needed
 
 **"explain to me what science is" ENDED `failed_permanent` IN 13.7 SECONDS**, with one pending task

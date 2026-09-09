@@ -229,11 +229,31 @@ public static class MissionVerification
     /// "no": none of them is a verdict. They are already refusals in their own right, and the
     /// structural status is not the layer that should restate them.
     /// </summary>
+    /// <summary>
+    /// v0.3.8.147 — AND `NeedsImprovement` IS NOT ONE. `.140` counted it as a verdict of no, and the
+    /// operator's own colony showed within one session what that costs: three chat answers, three
+    /// `Needs Improvement` verdicts, three missions demoted from complete to partial. Every one of
+    /// the answers was good.
+    ///
+    /// IT IS A CONSTANT, NOT A SIGNAL. The verifier prompt offers three options — Verification
+    /// Passed / Needs Improvement / Verification Failed — and a model asked to critique a short
+    /// answer will reach for the middle one essentially always. Read the verdict it gave the 1980s
+    /// briefing: "provides a partial summary of the 1980s, covering key politi[cal]…". That is an
+    /// editorial note on an answer it accepted, not a finding that the work is wrong.
+    ///
+    /// `Failed` means the verifier judged the work UNACCEPTABLE. `NeedsImprovement` means it judged
+    /// the work acceptable and improvable. Only the first is something saying no, and treating the
+    /// second as one is the exact over-reach `.122` was reverted for — re-committed by `.140` one
+    /// enum value over, where the split it had just drawn was supposed to prevent it.
+    ///
+    /// NEITHER IS A PASS, and that has not changed: `IsSatisfied` still requires an unambiguous
+    /// `Passed`, so a `NeedsImprovement` mission is `inconclusive` — unverified, and not accused of
+    /// having failed. What it no longer does is refuse the mission's closure.
+    /// </summary>
     public static bool SomethingSaidNo(IReadOnlyList<Task>? tasks) =>
         tasks is not null
-     && tasks.Where(IsVerdictBearing).Select(VerdictOf).Any(v =>
-            string.Equals(v, VerificationVerdict.Failed, StringComparison.Ordinal)
-         || string.Equals(v, VerificationVerdict.NeedsImprovement, StringComparison.Ordinal));
+     && tasks.Where(IsVerdictBearing).Select(VerdictOf)
+            .Any(v => string.Equals(v, VerificationVerdict.Failed, StringComparison.Ordinal));
 
     /// <summary>
     /// Row-based overload, for callers reading persisted task rows rather than a live
