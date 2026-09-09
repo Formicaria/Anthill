@@ -83,12 +83,23 @@ If PowerShell says `ollama` is not recognized, close PowerShell, open it again, 
 
 Download `anthill-setup-<version>.exe` from the
 [latest release](https://github.com/Formicaria/Anthill/releases/latest) and run it. It walks
-the normal Windows steps: license agreement, install location (Program Files by default), a
-desktop icon (on by default — untick it in the same screen if you don't want one), a Start
-Menu entry, and a standard uninstaller. When it finishes, hit the desktop icon.
+the normal Windows steps: license agreement, install location, a desktop icon (on by
+default — untick it in the same screen if you don't want one), a Start Menu entry, and a
+standard uninstaller. When it finishes, hit the desktop icon.
 
-Updates prompt inside the app and install the same way. Your colony's memory and settings
-live under `%LOCALAPPDATA%\Anthill` and survive every update, reinstall, and uninstall.
+Anthill installs **for you, not for the whole machine** — under
+`%LOCALAPPDATA%\Programs\Anthill` — so Windows never asks for administrator approval, to
+install or to update.
+
+**Updates install themselves.** A new release is downloaded in the background, checked against
+the SHA-256 published beside it, and applied the next time you start Anthill: no wizard, no
+prompt, no administrator approval. A download that does not match its published checksum is
+deleted and never run. Turn it off, or switch it to notify-only, with `auto_update` in
+Settings → Colony. Your colony's memory and settings live under `%LOCALAPPDATA%\Anthill` and
+survive every update, reinstall, and uninstall.
+
+If you have an older copy installed under `Program Files` (all users), Anthill offers to move
+it once — Windows asks for approval that one time, to remove the old copy, and never again.
 
 Prefer a portable copy instead? The
 [`anthill-<version>-win-x64.zip`](https://github.com/Formicaria/Anthill/releases/latest)
