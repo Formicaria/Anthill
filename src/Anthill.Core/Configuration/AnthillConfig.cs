@@ -48,6 +48,16 @@ public sealed class AnthillConfig
     [JsonPropertyName("api_token_env")] public string ApiTokenEnv { get; set; } = "ANTHILL_API_TOKEN";
     [JsonPropertyName("api_job_workers")] public int ApiJobWorkers { get; set; } = 1;
 
+    // ---- Identity (v0.3.8.145) ----------------------------------------------------------------
+    // What this installation calls itself. It is the word the Danger zone asks an operator to type
+    // before a reset, a backup purge or a memory wipe — and the SERVER checks it, so the unlock is
+    // a real gate rather than a disabled button. Preserved across a config reset for that reason:
+    // a reset that renamed the colony would change the password to its own confirmation.
+    [ConfigKey(Exposure = ConfigExposure.Editable,
+        Section = "identity", SectionNote = """v0.3.8.145: colony_name is what this installation calls itself. It is shown in the console, and it is the word an operator must type to unlock an action in Settings -> Danger zone (reset configuration, delete all backups, wipe colony memory). The server checks the confirmation, not merely the page. Kept across a configuration reset.""",
+        ExampleJson = "\"anthill\"")]
+    [JsonPropertyName("colony_name")] public string ColonyName { get; set; } = "anthill";
+
     // ---- Conversation budgets (v0.3.8.144) --------------------------------------------------
     // The per-conversation ceilings used to be compile-time constants (24/60/900/5), which meant
     // the fifth mission a chat started hit "conversation budget exhausted" and the only remedy

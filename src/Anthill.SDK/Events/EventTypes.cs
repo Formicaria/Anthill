@@ -430,8 +430,12 @@ public static class EventTypes
     public const string DirectoryGateOpened = "directory_gate_opened";
     public const string JobsCancelAll = "jobs_cancel_all";
     public const string MaintenanceClearMissions = "maintenance_clear_missions";
+    // v0.3.8.145 — the Danger zone's two new irreversible actions. Both are gated on the colony's
+    // name at the endpoint, and both leave this record whether or not anyone was watching.
+    public const string MaintenanceDeleteBackups = "maintenance_delete_backups";
     public const string MaintenanceFlush = "maintenance_flush";
     public const string MaintenanceResetConfig = "maintenance_reset_config";
+    public const string MaintenanceWipeMemory = "maintenance_wipe_memory";
     public const string ObjectiveRetired = "objective_retired";
     public const string ObjectiveSuggestionApproved = "objective_suggestion_approved";
     public const string ObjectivesCleared = "objectives_cleared";

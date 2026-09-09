@@ -68,6 +68,11 @@ public static class AnthillRuntime
     public static int ApiPort = 8713;
     public static int ApiJobWorkers = 1;
 
+    // v0.3.8.145 — what this installation calls itself; the Danger zone's confirmation word,
+    // checked server-side (see AnthillConfig.ColonyName). Never empty: a blank name would make
+    // every destructive action unlock with an empty string.
+    public static string ColonyName { get; private set; } = "anthill";
+
     // v0.3.8.144 — conversation budget ceilings, operator-editable (see AnthillConfig). Read at
     // conversation creation via ConversationBudget.Default; a live conversation keeps its own.
     public static int ConversationMaxMissions = 25;
@@ -1081,6 +1086,7 @@ public static class AnthillRuntime
         // features, not by typing 0 into a ceiling.
         ConversationMaxMissions = Math.Max(1, config.ConversationMaxMissions);
         ConversationMaxTurns = Math.Max(1, config.ConversationMaxTurns);
+        ColonyName = string.IsNullOrWhiteSpace(config.ColonyName) ? "anthill" : config.ColonyName.Trim();
         ConversationMaxToolCalls = Math.Max(1, config.ConversationMaxToolCalls);
         ConversationMaxSeconds = Math.Max(30, config.ConversationMaxSeconds);
 
@@ -1530,6 +1536,9 @@ public static class AnthillRuntime
                 AgentWorkspaceDir = old.AgentWorkspaceDir,
                 ModelPriorityProvider = old.ModelPriorityProvider, ModelPriorityModel = old.ModelPriorityModel,
                 ModelPricing = old.ModelPricing, ModelPricingCurrency = old.ModelPricingCurrency,
+                // v0.3.8.145: the colony's name is the Danger zone's confirmation word. A reset that
+                // renamed the colony would change the password to its own confirmation.
+                ColonyName = old.ColonyName,
             };
             AnthillConfig.ApplySafetyProfile(fresh, fresh.SafetyProfile ?? "SAFE_LOCAL");
             Config = fresh;
@@ -1538,7 +1547,7 @@ public static class AnthillRuntime
             return new List<string> { "safety_profile", "use_ollama", "ollama_host", "ollama_model",
                 "model_routes", "api_host", "api_port", "agent_workspace_dir",
                 "model_priority_provider", "model_priority_model",
-                "model_pricing", "model_pricing_currency" };
+                "model_pricing", "model_pricing_currency", "colony_name" };
         }
     }
 
@@ -1671,6 +1680,8 @@ public static class AnthillRuntime
         ["max_section_tasks"] = MaxSectionTasks,
         ["max_db_backups"] = MaxDbBackups,
         ["event_retention_days"] = EventRetentionDays,
+        // v0.3.8.145 — the colony's name; the Danger zone's confirmation word.
+        ["colony_name"] = ColonyName,
         // v0.3.8.144 — conversation budget ceilings, editable (see AnthillConfig).
         ["conversation_max_missions"] = ConversationMaxMissions,
         ["conversation_max_turns"] = ConversationMaxTurns,

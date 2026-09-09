@@ -235,6 +235,8 @@ public class DurableMissionContractTests : IDisposable
         var body = dashboard[start..Math.Min(dashboard.Length, start + 1400)];
 
         Assert.Contains("ActiveJobIds()", body, StringComparison.Ordinal);
+        // v0.3.8.145: AND the mission table — a chat-started mission never enters the job queue.
+        Assert.Contains("CountRunningMissions()", body, StringComparison.Ordinal);
         Assert.Contains("conflict", body, StringComparison.Ordinal);
         // The refusal must come BEFORE the delete.
         Assert.True(body.IndexOf("ActiveJobIds()", StringComparison.Ordinal)
