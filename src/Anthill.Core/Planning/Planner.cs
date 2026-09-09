@@ -761,8 +761,50 @@ Required JSON:
         // for a change; the builder task below asks the operator's own question instead.
         if (specification?.MissionClass == Anthill.Core.Missions.MissionSpecification.SimpleAnswerClass)
         {
-            tasks.RemoveAll(t => Anthill.Core.Outcomes.AnswerIntegrity.ChangeTaskTypes.Contains(t.TaskType)
-                              || string.Equals(t.AssignedAnt, "coder", StringComparison.OrdinalIgnoreCase));
+            /* v0.3.8.145 — A TRIVIAL MESSAGE YIELDS A TRIVIAL PLAN, which v0.3.8.58 promised when it
+             * deleted the chat lane ("the planner decides the shape") and no release delivered.
+             *
+             * FOUND BY ASKING. Live, on a local model: "how do you make tacos?" classified
+             * `simple_answer` — correctly — and was then planned as SEVEN tasks, among them a
+             * `research` step and a workspace `file_inspection`. The research step hit its 240s task
+             * cap, the builder and verifier were skipped because their dependency could not
+             * complete, the medic diagnosed the failure, and the mission died on the 600s budget
+             * with `NOT ANSWERED`. A child asking the colony a question waited ten minutes for a
+             * failure; that is the first thing a new operator experiences.
+             *
+             * WHY DROPPING THE CHANGE STEPS WAS NOT ENOUGH. This branch already removed change steps
+             * (`.134`), because a patch card for a recipe question is a plan built to fail its own
+             * gate. Retrieval and inspection steps are the same defect wearing a safer coat: the
+             * class's own specification requires NO evidence at all — its comment in `MissionIntake`
+             * says the promise "is that the answer rests on nothing retrieved and nothing
+             * inspected" — so a plan that gathers is not serving this class, it is contradicting it.
+             * `SimpleAnswerCapabilities` names the whole of what the class needs, and it is two
+             * things: compile the result, and check it answered what was asked.
+             *
+             * SO THE PLAN IS REDUCED TO EXACTLY THAT. `ConsumesEvidence` already names the steps
+             * that WRITE an answer rather than gather one — the same rule
+             * `EnsureGroundedInspection` orders its inspections against — so the two readers of
+             * "which steps are the synthesis" stay one rule. Everything else is dropped, not
+             * rewritten: a `research` step retyped as `build_answer` would be this layer guessing
+             * what the model meant, and its description was written to go and look something up.
+             *
+             * The operator's own question is asked by the builder task below, which is added when
+             * the reduction leaves none — and after this, one does.
+             */
+            tasks.RemoveAll(t => !ConsumesEvidence(t));
+
+            // AND THE EDGES THAT POINTED AT WHAT WAS DROPPED GO WITH IT. Found in the same live
+            // mission and worth stating plainly: a surviving step that still depends on a removed
+            // one is not merely untidy, it is UNRUNNABLE — "skipped because dependencies cannot
+            // complete" is what the console showed for the builder and the verifier, which is the
+            // failure this branch exists to prevent, reproduced by the fix for it. The same applies
+            // to `ParentTaskIds`, which the handoff machinery reads as lineage.
+            var kept = tasks.Select(t => t.Id).ToHashSet(StringComparer.Ordinal);
+            foreach (var task in tasks)
+            {
+                task.DependsOn = task.DependsOn.Where(kept.Contains).ToList();
+                task.ParentTaskIds = task.ParentTaskIds.Where(kept.Contains).ToList();
+            }
 
             if (!tasks.Any(t => string.Equals(t.AssignedAnt, "builder", StringComparison.OrdinalIgnoreCase)))
                 tasks.Add(new Task
