@@ -162,16 +162,43 @@ public sealed class ResultAssembler : IResultAssembler
         if (mission.BestOutputTaskId is not null)
         {
             var best = mission.Tasks.FirstOrDefault(t => t.Id == mission.BestOutputTaskId && !string.IsNullOrEmpty(t.Result));
-            if (best is not null) return best.Result!;
+            if (best is not null) return Readable(best.Result!);
         }
         var fallbackId = SelectBestOutputTaskId(mission);
         if (fallbackId is not null)
         {
             var task = mission.Tasks.FirstOrDefault(t => t.Id == fallbackId && !string.IsNullOrEmpty(t.Result));
-            if (task is not null) return task.Result!;
+            if (task is not null) return Readable(task.Result!);
         }
         return "Mission produced no completed user-facing output.";
     }
+
+    /// <summary>
+    /// v0.3.8.150 — THE WIRE FORMAT IS NOT THE ANSWER.
+    ///
+    /// <c>CLAIM: … [SOURCE: …]</c> is a MODEL PROTOCOL. The builder's prompt asks for it so each
+    /// assertion can be split out and checked against what the mission actually retrieved;
+    /// <c>SourcedAnswer</c> parses it, and its <c>Render()</c> has existed since `.99` to turn the
+    /// parse back into something a person reads. Nothing on the <c>UserResult</c> path ever called
+    /// it — so an operator who asked a plain question was shown the protocol: five lines beginning
+    /// <c>CLAIM:</c>, one of them the literal <c>CLAIM: [UNSOURCED]</c> with no claim in it, which
+    /// the parser drops and the raw text did not.
+    ///
+    /// This is `.147`'s <c>[d1]</c> wearing a different handle — an internal token printed to the
+    /// one reader it means nothing to — and the rule that release wrote down applies unchanged:
+    /// what does work for the reader stays; what was a handle for the machinery goes.
+    ///
+    /// IT IS STILL NOT A REWRITE, which is the property the header of this file promises and which
+    /// no summariser could keep. Nothing is condensed, reordered, softened or dropped: every claim
+    /// survives with its own text, and an unattributed one is still marked — in words rather than in
+    /// brackets, and <c>Render()</c>'s "not attributed to anything the mission retrieved" is more
+    /// explicit than <c>[UNSOURCED]</c> ever was, not less. Text that does not parse as claims is
+    /// returned byte for byte, exactly as before.
+    /// </summary>
+    private static string Readable(string result) =>
+        Anthill.SDK.Artifacts.SourcedAnswer.TryParse(result)?.Render() is { Length: > 0 } rendered
+            ? rendered
+            : result;
 
     public static string ComposeDebugResult(Mission mission) => string.Join("\n", mission.Tasks.Select(t =>
         $"Task: {t.Title}\nTask ID: {t.Id}\nAnt: {t.AssignedAnt}\nTask Type: {t.TaskType}\nDepends On: [{string.Join(", ", t.DependsOn)}]\n" +
