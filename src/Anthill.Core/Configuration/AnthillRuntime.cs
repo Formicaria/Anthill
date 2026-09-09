@@ -15,7 +15,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "0.3.8.144";
+    public const string Version = "0.3.8.145";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -1248,10 +1248,32 @@ public static class AnthillRuntime
             Console.Error.WriteLine($"[config-migration] {migrated.Explanation}");
         // Named individually rather than counted: an operator reading this needs to know WHICH of
         // their settings moved, and a count tells them only that something did.
+        //
+        // v0.3.8.145 — AND THE REWRITE HAPPENS NOW, not "on the next settings save". The old message
+        // promised a rewrite that only a Save Settings click delivered, so an operator who never
+        // opened that page saw all forty rename lines re-announced on EVERY boot — the migration
+        // reported over and over as if it had never happened. `SaveConfig` serializes the already-
+        // migrated `Config` (the aliases were applied to `raw` before it was deserialized), so
+        // persisting here writes the file under the new names and the next boot is silent. Only when
+        // a file already exists (we are REWRITING an operator's file, never minting one for a
+        // defaults-only run) and only best-effort: a read-only or unwritable config must not stop the
+        // colony, it just keeps announcing until the file can be written.
+        var renamesPersisted = false;
+        if (LastConfigKeyRenames.Count > 0 && !string.IsNullOrEmpty(ConfigPath) && File.Exists(ConfigPath))
+        {
+            try { SaveConfig(); renamesPersisted = true; }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(
+                    $"[config-rename] could not rewrite {ConfigPath} under the new key names "
+                  + $"({error.Message}); the renames still applied this run and will be re-announced "
+                  + "next boot until the file is writable.");
+            }
+        }
         foreach (var rename in LastConfigKeyRenames)
             Console.Error.WriteLine(
                 $"[config-rename] '{rename.From}' is now '{rename.To}' — read under its old name this "
-              + "run; rewritten on the next settings save.");
+              + (renamesPersisted ? "run; rewritten under the new name." : "run; rewrite pending (config file not writable)."));
         Console.Error.WriteLine(
             $"[roster] profile '{RosterProfile}': "
             + string.Join(", ", EffectiveRoster().Select(r => $"{r.Key}={(r.Value ? "on" : "off")}"))
