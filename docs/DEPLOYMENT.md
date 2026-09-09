@@ -323,7 +323,7 @@ is skipped (the installer says so) and service control from the console won't be
 
 ## 5. Windows Service — NOT SHIPPED
 
-**Corrected at v0.3.8.146.** This section previously said a Windows Service path was "ready to
+**Corrected at v0.3.8.149.** This section previously said a Windows Service path was "ready to
 use today" and pointed at a `README.md` section — "Deploy on Windows → Option C" — that has never
 existed. Nothing in this repository registers a Windows service, and
 `ShellQuickActionTests` actively guards against one appearing by accident: the console's Windows
@@ -331,13 +331,13 @@ quick actions target the `AnthillDesktop` process precisely because no service e
 
 That guard is not an oversight to be fixed later. A service running as LocalSystem is the standard
 way to give a program the right to update itself without prompting, and it is a permanent
-privileged attack surface. v0.3.8.146 reached the same goal from the other side — the desktop app
+privileged attack surface. v0.3.8.149 reached the same goal from the other side — the desktop app
 installs **per-user**, owns its own directory, and therefore replaces its own files with no
 elevation and no service. See §7.
 
 The supported Windows shapes are the installer (per-user, self-updating) and the portable zip.
 
-## 5a. Updating (v0.3.8.146)
+## 5a. Updating (v0.3.8.149)
 
 **Every release publishes a `.sha256` beside each artifact**, generated in the same CI job from
 the bytes it archived. Anything that installs an update — the desktop app, the systemd pre-start
@@ -378,9 +378,9 @@ replaced.
 | **LXC** ✅ | **DONE.** `deploy/lxc/setup.sh` + `anthill.service.template`. | see §3 above |
 | **Tagged releases** ✅ | **DONE.** Binaries + Docker image (GHCR) + published GitHub Release, all automatic on tag push. | `.github/workflows/release.yml`, see §4 above |
 | **Windows desktop app** ✅ | **DONE.** Per-user installer, self-updating (see §5a). | `deploy/windows/anthill-setup.iss`, `src/Anthill.Desktop/UpdateService.cs` |
-| **Silent updates, all shapes** ✅ | **DONE at v0.3.8.146.** SHA-256 verified, applied at next start. | `src/Anthill.Core/Updates/`, `src/Anthill.Api/UpdateStager.cs`, see §5a |
-| **Windows Service** ❌ | **NOT SHIPPED, and not planned.** This row said READY for 75 releases against a README section that never existed (corrected in §5). A LocalSystem service is the usual way to buy unprompted self-update; v0.3.8.146 bought it with a per-user install instead, which needs no privilege at all. `ShellQuickActionTests` guards against one appearing by accident. | `tests/Anthill.Tests/ShellQuickActionTests.cs` |
-| **Code signing (Authenticode)** ⬜ | **OPEN.** The checksums shipped at v0.3.8.146 defeat corruption and a tampered object; only a signature defeats a compromised release account, and it needs a purchased certificate. | `.github/workflows/release.yml` |
+| **Silent updates, all shapes** ✅ | **DONE at v0.3.8.149.** SHA-256 verified, applied at next start. | `src/Anthill.Core/Updates/`, `src/Anthill.Api/UpdateStager.cs`, see §5a |
+| **Windows Service** ❌ | **NOT SHIPPED, and not planned.** This row said READY for 75 releases against a README section that never existed (corrected in §5). A LocalSystem service is the usual way to buy unprompted self-update; v0.3.8.149 bought it with a per-user install instead, which needs no privilege at all. `ShellQuickActionTests` guards against one appearing by accident. | `tests/Anthill.Tests/ShellQuickActionTests.cs` |
+| **Code signing (Authenticode)** ⬜ | **OPEN.** The checksums shipped at v0.3.8.149 defeat corruption and a tampered object; only a signature defeats a compromised release account, and it needs a purchased certificate. | `.github/workflows/release.yml` |
 
 Implementation order: container-style networking (done) → Docker (done) → LXC (done) → Windows
 desktop app + silent updates (done). Code signing is the open item.

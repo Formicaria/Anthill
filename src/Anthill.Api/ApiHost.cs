@@ -447,7 +447,7 @@ public static partial class ApiHost
         Queen.Scheduler.Start();
         Console.WriteLine("Project scheduler started (runs execute while this host is running).");
 
-        // v0.3.8.146 — updates arrive without being asked for, on the shapes that can install one.
+        // v0.3.8.149 — updates arrive without being asked for, on the shapes that can install one.
         //
         // This downloads and VERIFIES only; the swap happens at the next start, because a running
         // program cannot replace its own files. A colony whose auto_update is `notify` or `off`,

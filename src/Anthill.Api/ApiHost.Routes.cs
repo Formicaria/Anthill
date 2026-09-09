@@ -281,7 +281,7 @@ public static partial class ApiHost
 
         // Is a newer release published on the public GitHub repo? Cached; ?force=1 bypasses.
         //
-        // v0.3.8.146 — AND WHAT THIS INSTALL SHOULD DO ABOUT IT. The answer used to be one
+        // v0.3.8.149 — AND WHAT THIS INSTALL SHOULD DO ABOUT IT. The answer used to be one
         // hardcoded sentence in the console: "on the LXC, git pull and run setup.sh" — shown to
         // every operator, including the ones running the Windows app, an unzipped folder, or a
         // container, for whom it is simply false. What an install should do about an update is a

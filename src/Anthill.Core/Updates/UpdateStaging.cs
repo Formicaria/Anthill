@@ -5,7 +5,7 @@ using Anthill.Core.Configuration;
 namespace Anthill.Core.Updates;
 
 /// <summary>
-/// THE VERIFICATION THAT REPLACES THE CLICK. v0.3.8.146.
+/// THE VERIFICATION THAT REPLACES THE CLICK. v0.3.8.149.
 ///
 /// Until this release the Windows updater asked "install v0.3.8.145?" and an operator pressed Yes.
 /// That prompt was doing two different jobs and only one of them was worth keeping. It asked for
@@ -168,7 +168,7 @@ public static class UpdateStaging
 }
 
 /// <summary>
-/// Version comparison, in ONE place. v0.3.8.146 — it used to be in two: `UpdateChecker.Compare`
+/// Version comparison, in ONE place. v0.3.8.149 — it used to be in two: `UpdateChecker.Compare`
 /// (dotted, tolerant of a leading `v`, missing parts zero) and the desktop updater's
 /// `System.Version.TryParse`, which fails outright on a one-part or five-part version and whose
 /// failure fell toward "no update available". Two answers to "is this newer" is how a colony comes

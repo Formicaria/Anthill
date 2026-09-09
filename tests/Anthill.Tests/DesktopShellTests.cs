@@ -175,7 +175,7 @@ public class DesktopShellTests
     }
 
     /// <summary>
-    /// THE CONSENT MOVED; THE PROTECTION DID NOT. v0.3.8.146, and this test is rewritten
+    /// THE CONSENT MOVED; THE PROTECTION DID NOT. v0.3.8.149, and this test is rewritten
     /// deliberately rather than relaxed — the version it replaces existed to make exactly this
     /// change impossible by accident, and it worked.
     ///

@@ -5,7 +5,7 @@ using Xunit;
 namespace Anthill.Tests;
 
 /// <summary>
-/// WHAT MAKES AN UNATTENDED UPDATE SAFE TO SHIP. v0.3.8.146.
+/// WHAT MAKES AN UNATTENDED UPDATE SAFE TO SHIP. v0.3.8.149.
 ///
 /// The operator's ask was blunt and correct: users hate clicking through an installer, and an
 /// application that already has permission to be installed should not beg for it again every
@@ -281,16 +281,16 @@ public class SilentUpdateTests : IDisposable
     // ---- one version comparison -----------------------------------------------------------------
 
     /// <summary>
-    /// v0.3.8.146 — there were two. `UpdateChecker.Compare` handled four-part versions; the desktop
+    /// v0.3.8.149 — there were two. `UpdateChecker.Compare` handled four-part versions; the desktop
     /// updater used `System.Version.TryParse`, which FAILS on a five-part or one-part string and
     /// fell toward "no update available" when it did. Two answers to "is this newer" is how a
     /// colony comes to believe it is current while an update sits on the shelf.
     /// </summary>
     [Theory]
-    [InlineData("0.3.8.145", "0.3.8.146", -1)]
-    [InlineData("0.3.8.146", "0.3.8.145", 1)]
-    [InlineData("0.3.8.146", "0.3.8.146", 0)]
-    [InlineData("v0.3.8.146", "0.3.8.146", 0)]      // a tag and a version are the same thing
+    [InlineData("0.3.8.145", "0.3.8.149", -1)]
+    [InlineData("0.3.8.149", "0.3.8.145", 1)]
+    [InlineData("0.3.8.149", "0.3.8.149", 0)]
+    [InlineData("v0.3.8.149", "0.3.8.149", 0)]      // a tag and a version are the same thing
     [InlineData("1.8.14", "1.8.14.0", 0)]           // a missing part is zero
     [InlineData("1.9", "1.8.99.99", 1)]             // minor beats patch
     [InlineData("0.3.8.9", "0.3.8.10", -1)]         // numeric, not lexical

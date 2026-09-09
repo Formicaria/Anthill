@@ -124,7 +124,7 @@ public class ConfigCatalogTests
           + "`conversation_*` budget ceilings — editable BECAUSE the ceilings exist to stop "
           + "runaway loops, not to ration an operator's own work, and hitting one mid-flow must "
           + "not cost a restart — 105 since v0.3.8.145 added `colony_name`, the word the "
-          + "Danger zone's server-side confirmation checks — and 106 since v0.3.8.146 added "
+          + "Danger zone's server-side confirmation checks — and 106 since v0.3.8.149 added "
           + "`auto_update`, which is WHERE THE PER-RELEASE CONSENT WENT when the installer "
           + "stopped asking: permission to install is given once here instead of once per "
           + "release, and the SHA-256 verification that replaced the human in front of the "

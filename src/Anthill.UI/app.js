@@ -2446,7 +2446,7 @@ function renderUpdateBanner(){
     banner.style.background='rgba(var(--queen-rgb),.08)';
     banner.style.border='1px solid var(--queen)';
     banner.style.color='var(--queen)';
-    // v0.3.8.146 — WHAT TO DO ABOUT IT COMES FROM THE SERVER, because it depends on how this
+    // v0.3.8.149 — WHAT TO DO ABOUT IT COMES FROM THE SERVER, because it depends on how this
     // colony was installed and the browser cannot know that. The old text told EVERY operator to
     // run the LXC upgrade command — false for the Windows app, an unzipped folder and a container
     // alike, which is three quarters of the ways to install this.

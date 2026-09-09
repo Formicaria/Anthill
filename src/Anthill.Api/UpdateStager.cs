@@ -5,7 +5,7 @@ using Anthill.Core.Updates;
 namespace Anthill.Api;
 
 /// <summary>
-/// THE HALF OF A SILENT UPDATE THAT HAPPENS WHILE THE COLONY WORKS. v0.3.8.146.
+/// THE HALF OF A SILENT UPDATE THAT HAPPENS WHILE THE COLONY WORKS. v0.3.8.149.
 ///
 /// The desktop shell stages its own updates because it owns a window and a tray; a headless
 /// colony — the LXC service, a portable copy run from a terminal — has neither, and it is exactly
