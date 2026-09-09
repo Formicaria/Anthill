@@ -212,6 +212,13 @@ public static class SafetyPolicy
                 // and this one gates what later work may be built on. The SDK cannot name Core, so
                 // the literal is spelled here and `ToolInventoryTests` holds the two together.
                 "read_artifact",
+                // v0.3.8.148 — the colony's shipped self-description. Mirrored for the same reason
+                // as every name above, and with a sharper edge than most: this is the tool a fresh
+                // colony reaches for when asked what ANTHILL, MICROMOUND or FORAGER are, so a
+                // definition able to take its name could answer that question with anything it
+                // liked. The SDK cannot name Core, so the literal is spelled here and the
+                // inventory tests hold the two spellings together.
+                "colony_self_knowledge",
                 // v0.3.8.103 — the send lane, mirrored for the same reason: an operator-defined
                 // tool taking these names in a core-less process would be impersonating the thing
                 // that reaches other people.

@@ -56,6 +56,10 @@ public class FullRosterQualificationTests
             // `colony_state`. Same reason it is here: the contract declares it, so a fixture that
             // omitted it would fail qualification for a tool the colony genuinely registers.
             Anthill.Core.Tools.ReadArtifactTool.ToolName,
+            // v0.3.8.148 — the researcher's self-description lane, registered in the CORE
+            // unconditionally. It answers "what is ANTHILL / MICROMOUND / FORAGER" from shipped text,
+            // so it is present in every build regardless of config, and the researcher declares it.
+            Anthill.Core.Tools.ColonySelfKnowledgeTool.ToolName,
             // v0.3.8.121 — the knowledge lane. Registered unconditionally by
             // Anthill.Modules.Knowledge (they refuse at call time when FORAGER is not configured),
             // so a fully-equipped colony has all six and the researcher's contract can declare five

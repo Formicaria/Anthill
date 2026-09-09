@@ -76,6 +76,14 @@ public static class ToolInventory
         // verified records has no way for work to build on work. Gated on the producing mission's
         // persisted grade, so it can register unconditionally and refuse honestly.
         ReadArtifactTool.ToolName,
+        // v0.3.8.148: the colony's description of ITSELF — what a mission is, what the ant roles do,
+        // what MICROMOUND and FORAGER are, what the evidence lanes and approval gates mean. Distinct
+        // from `colony_state`, which reports what THIS run is configured to do; this answers what the
+        // product IS, and it is the same text for every install. Registered in the Core beside
+        // `colony_state` and unconditionally, because a fresh colony with no memory and no knowledge
+        // base is exactly the one that most needs to be able to answer "what is ANTHILL?" — before
+        // this, the researcher searched an empty memory and improvised.
+        ColonySelfKnowledgeTool.ToolName,
         // v0.3.8.121: organizational knowledge, from FORAGER. Registered by
         // Anthill.Modules.Knowledge and ONLY when knowledge_enabled is set — unlike most module
         // tools, these are not registered-and-refusing when the feature is off. A colony with no

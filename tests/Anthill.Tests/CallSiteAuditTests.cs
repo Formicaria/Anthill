@@ -243,6 +243,8 @@ public class CallSiteAuditTests
             ["execute_external_action"] = "ExecuteSendTool",
             // v0.3.8.106 — cross-mission continuity, registered by the Queen like `colony_state`.
             ["read_artifact"] = "ReadArtifactTool",
+            // v0.3.8.148 — the shipped self-description, registered by the Queen like `colony_state`.
+            ["colony_self_knowledge"] = "ColonySelfKnowledgeTool",
         };
 
         // A new tool must be added HERE as well as to the inventory. That is deliberate friction:
