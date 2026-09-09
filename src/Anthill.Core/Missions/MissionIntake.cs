@@ -136,6 +136,28 @@ public static class MissionIntake
       + @"do|does|did|is|are|was|were|am|explain|describe|define|tell me|teach me)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    /// <summary>
+    /// v0.3.8.145 — IS THE OPERATOR SAYING HELLO? The `simple_answer` class's fourth condition,
+    /// found by driving the console as a first-time user: "hello" was not question-shaped, resolved
+    /// `general`, and stopped the colony to ask permission to start a mission — which is the wall a
+    /// new user hits before anything else. A greeting or an acknowledgement is answered from what is
+    /// already known and changes nothing, which is exactly this class's promise.
+    ///
+    /// THE WHOLE MESSAGE MUST BE THE GREETING, anchored at both ends. `QuestionShape` may match a
+    /// question mark anywhere because a question mark is a strong signal; a salutation is a weak
+    /// one, and "hello, document the deployment procedure in a runbook" opens with it. Admitting that
+    /// on the strength of its first word would put a creation request into a class whose ceiling
+    /// forbids writing the runbook — the `.134` regression in a new coat. So a greeting followed by
+    /// anything but a few closing words and punctuation is not a greeting here, and resolves
+    /// `general` as it did before, which is the cost this file prefers over a confident misread.
+    /// </summary>
+    private static readonly Regex GreetingShape = new(
+        @"^\s*(?:hi|hello|hey|yo|howdy|greetings|hiya|good\s+(?:morning|afternoon|evening|day)|"
+      + @"thanks|thank\s+you|thx|ok(?:ay)?|cheers|ping|test(?:ing)?)"
+      + @"(?:[\s,!.]+(?:there|all|everyone|team|again|back|a\s+lot|very\s+much|so\s+much))?"
+      + @"[\s!.,]*$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     private static readonly Regex CurrentFreshness = new(
         @"\b(now|current(?:ly)?|today|at the moment|right now|present(?:ly)?)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -493,9 +515,11 @@ public static class MissionIntake
         // anything, and were graded against a promise neither of them made. The suite caught it,
         // which is the argument for classifying against real fixtures rather than against the two
         // sentences the class was designed around.
+        // v0.3.8.145 — or a whole-message greeting/acknowledgement (`GreetingShape`), which is
+        // answered from what is already known just as a question is, and changes nothing.
         if (intent == MissionIntent.Explain
             && targets == MissionTargets.None
-            && QuestionShape.IsMatch(request))
+            && (QuestionShape.IsMatch(request) || GreetingShape.IsMatch(request)))
             return new MissionSpecification
             {
                 OriginalRequest = request,

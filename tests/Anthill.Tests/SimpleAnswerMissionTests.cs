@@ -144,6 +144,39 @@ public class SimpleAnswerMissionTests
             MissionIntake.Resolve(request).MissionClass);
 
     /// <summary>
+    /// v0.3.8.145 — A GREETING REACHES IT TOO. Found by driving the console as a first-time user:
+    /// "hello" is not question-shaped, resolved `general`, and stopped the colony to ask permission
+    /// to start a mission. A salutation or an acknowledgement is answered from what is already
+    /// known and changes nothing — this class's exact promise.
+    /// </summary>
+    [Theory]
+    [InlineData("hello")]
+    [InlineData("Hi there!")]
+    [InlineData("hey")]
+    [InlineData("Good morning")]
+    [InlineData("thanks!")]
+    [InlineData("Thank you very much.")]
+    [InlineData("ok")]
+    public void AGreeting_ReachesTheClass(string request) =>
+        Assert.Equal(MissionSpecification.SimpleAnswerClass,
+            MissionIntake.Resolve(request).MissionClass);
+
+    /// <summary>
+    /// AND ONLY A WHOLE-MESSAGE GREETING. A salutation is a weak signal, so a message that merely
+    /// OPENS with one is not admitted on its strength — "hello, document the deployment procedure in
+    /// a runbook" is a creation request wearing a greeting, and admitting it would put it in a class
+    /// whose ceiling forbids writing the runbook: the `.134` regression in a new coat.
+    /// </summary>
+    [Theory]
+    [InlineData("hello, document the deployment procedure in a runbook")]
+    [InlineData("hi — draft a note for the team")]
+    [InlineData("thanks, now exercise the coder and stop it while it works")]
+    [InlineData("ok go")]
+    public void AGreetingThatCarriesWork_IsNotASimpleAnswer(string request) =>
+        Assert.NotEqual(MissionSpecification.SimpleAnswerClass,
+            MissionIntake.Resolve(request).MissionClass);
+
+    /// <summary>
     /// AND EVERY OTHER CLASS IS UNTOUCHED. The branch sits last, below every class that claims a
     /// request by something the colony can do about it, so it can only take what nothing else
     /// wanted. Asserted rather than argued from the source order, because an ordering that happens

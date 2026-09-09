@@ -228,6 +228,7 @@ public class ConversationRunnerTests : IDisposable
     [Theory]
     [InlineData("how do you make tacos?", true)]              // simple_answer, Observe, recognized
     [InlineData("what is the capital of France?", true)]       // simple_answer (no target word)
+    [InlineData("hello", true)]                                // simple_answer — a greeting (.145)
     [InlineData("delete the logging module", false)]           // general (coding) — unrecognized
     [InlineData("add a retry to the uploader", false)]         // general (coding)
     [InlineData("", false)]                                    // nothing to classify — fail closed

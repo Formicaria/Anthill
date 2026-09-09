@@ -118,7 +118,11 @@ function stopEventStream(){ if(_evtCtl){ const c=_evtCtl; _evtCtl=null; c.abort(
  * trailing refresh per burst is what the panel actually needs.
  */
 function liveRefresh(fn, opts){
-  const idleMs = opts.idleMs;
+  let idleMs = opts.idleMs;
+  // v0.3.8.145: Settings → Connection → "Fallback poll interval" (saved per device) overrides every
+  // panel's idle timer. Read once here, at registration, so it applies after a reload — which is
+  // what the row says.
+  try{ const sec=Number(localStorage.getItem('anthill-poll-idle-s')||0); if(sec>=5) idleMs=sec*1000; }catch{}
   const match = opts.on;                       // (eventType) => boolean; omitted means every event
   const coalesceMs = opts.coalesceMs || 250;
   let pending = null;
@@ -602,28 +606,26 @@ const IA = [
     { label:'Knowledge', route:'/tools/knowledge', page:'knowledge', vis:'all' },
   ]},
   { type:'domain', id:'settings', label:'Settings', vis:'admin', sections:[
-    /* v0.3.8.127 — ONE ROW OF TABS, NOT TWO.
-       `General` was a section that opened a page carrying its own second tab strip: Connection,
-       Colony, Models, System Info. An operator navigating to a setting had to learn which of two
-       rows it lived in, and the two rows meant different things — the outer one changes PAGE, the
-       inner one changes PANE — while looking identical.
-       The four panes are sections now. The machinery already existed: `stab` has been a field on
-       the route table since v2.6, carrying which settings pane a route opens, and `showPage` has
-       always clicked the matching tab. Only the declarations changed; the strip itself is hidden.
-       `System Info` is `Diagnostics` here, because the outer row already had a `System` section
-       pointing at a different page and two near-identical names in one row is the confusion this
-       change exists to remove. */
+    /* v0.3.8.145 — THE SETTINGS RAIL. One page (`settings`) with its own left rail; every section
+       here is a destination on that rail, and `stab` names the pane settings.js renders. The
+       v0.3.8.127 rule holds — one row of choices, not two — the rail IS the row now, and the
+       header's domain sub-nav is suppressed for this domain (updateChrome) so the two never
+       compete. Security, Users, Readiness and Terminal stopped being separate pages: they are
+       panes of the same page, restyled as setting rows, and their old page ids redirect
+       (showPage). `System` (the event log) keeps its route for Ctrl+L and old bookmarks but is
+       hidden from the rail (`rail:false`) — it is a log, not a setting. */
+    { label:'Account', route:'/settings/account', page:'settings', stab:'account', vis:'all' },
     { label:'Connection', route:'/settings/connection', page:'settings', stab:'connection', vis:'admin' },
-    { label:'Colony', route:'/settings/colony', page:'settings', stab:'colony', vis:'admin' },
     { label:'Models', route:'/settings/models', page:'settings', stab:'models', vis:'admin' },
-    { label:'Diagnostics', route:'/settings/diagnostics', page:'settings', stab:'info', vis:'admin' },
-    // Security owns the capability/approval gates (§13) — one authoritative gate system. The gate
-    // DEFINITION lives here; the approval INTERACTION happens in Chat.
-    { label:'Security & Gates', route:'/settings/security', page:'security', vis:'admin' },
-    { label:'Users', route:'/settings/users', page:'users', vis:'admin' },
-    { label:'System', route:'/settings/system', page:'events', vis:'admin' },
-    { label:'Readiness', route:'/settings/readiness', page:'readiness', vis:'admin' },
-    { label:'Terminal', route:'/settings/terminal', page:'shell', vis:'admin' },
+    { label:'Colony', route:'/settings/colony', page:'settings', stab:'colony', vis:'admin' },
+    { label:'Automation', route:'/settings/automation', page:'settings', stab:'automation', vis:'admin' },
+    { label:'Security & Gates', route:'/settings/security', page:'settings', stab:'security', vis:'admin' },
+    { label:'Users', route:'/settings/users', page:'settings', stab:'users', vis:'admin' },
+    { label:'Diagnostics', route:'/settings/diagnostics', page:'settings', stab:'diagnostics', vis:'admin' },
+    { label:'Readiness', route:'/settings/readiness', page:'settings', stab:'readiness', vis:'admin' },
+    { label:'Terminal', route:'/settings/terminal', page:'settings', stab:'terminal', vis:'admin' },
+    { label:'Danger zone', route:'/settings/danger', page:'settings', stab:'danger', vis:'admin' },
+    { label:'System', route:'/settings/system', page:'events', vis:'admin', rail:false },
   ]},
 ];
 
@@ -680,7 +682,7 @@ Object.assign(PAGE_HOME,{
   // reached from the mound registry, INFRASTRUCTURE being a mound.
   infrastructure:'/tools/infrastructure',
   autonomy:'/projects', security:'/settings/security',
-  shell:'/settings/terminal', settings:'/settings/connection', users:'/settings/users',
+  shell:'/settings/terminal', settings:'/settings/account', users:'/settings/users',
   integrations:'/tools/integrations', projectview:'/projects', readiness:'/settings/readiness',
   knowledge:'/tools/knowledge'
 });
@@ -701,7 +703,7 @@ const LEGACY_REDIRECT={
   pheromones:'/tools/memory', infrastructure:'/tools/infrastructure',
   antconfig:'/projects', antobs:'/projects',
   autonomy:'/projects', security:'/settings/security',
-  shell:'/settings/terminal', settings:'/settings/connection', users:'/settings/users'
+  shell:'/settings/terminal', settings:'/settings/account', users:'/settings/users'
 };
 // v0.3.8.42 (§7): routes that MOVED when the Monitoring domain dissolved. Bookmarks and deep
 // links keep working; the router resolves these before the table lookup.
@@ -715,7 +717,7 @@ const ROUTE_ALIAS={
   '/tools-view':'/tools',
   /* v0.3.8.127 — the settings row lost its second level, so the route that named the first level
      resolves to the pane it used to open by default. A bookmark is a promise. */
-  '/settings/general':'/settings/connection',
+  '/settings/general':'/settings/account',   // v0.3.8.145: Account is the first rail item
   '/settings/info':'/settings/diagnostics',
   /* v0.3.8.124 — SEVEN BOOKMARKS THAT USED TO LAND ON THE ANT INSPECTOR NOW LAND ON PROJECTS.
      Every one of them is a "where do I configure the colony's models" link, and the answer moved:
@@ -734,7 +736,7 @@ const ROUTE_ALIAS={
   '/colony/agents/coding':'/tools/integrations',
   '/colony/signals':'/tools/memory',
   '/administration/users':'/settings/users',
-  '/administration/settings':'/settings/connection',
+  '/administration/settings':'/settings/account',
   '/administration/terminal':'/settings/terminal',
   '/administration/readiness':'/settings/readiness',
   '/security/posture':'/settings/security',
@@ -875,6 +877,15 @@ function showPage(id,o){
     id='projects';
     o=Object.assign({},o,{route:'/projects'});
   }
+  // v0.3.8.145: Security, Users, Readiness and Terminal are panes of the Settings rail now. An old
+  // caller naming the page id lands on the pane rather than on an element that no longer exists.
+  if(id==='security'||id==='users'||id==='readiness'||id==='shell'){
+    const stab=id==='shell'?'terminal':id;
+    o=Object.assign({},o,{route:'/settings/'+stab, stab});
+    id='settings';
+  }
+  // Leaving Settings restores the primary nav to what it was before Settings auto-collapsed it.
+  if(id!=='settings' && document.getElementById('page-settings')?.classList.contains('active') && typeof settingsLeave==='function') settingsLeave();
   try{ localStorage.setItem('last-page',id); }catch{} // reopen where you left off
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const pg=document.getElementById('page-'+id);
@@ -905,36 +916,12 @@ function showPage(id,o){
   // entering /projects/automation does not flash the project list first.
   if(id==='projects') projectsTab=(o.ptab==='automation'?'automation':'projects');
   if(typeof PAGE_ENTER[id]==='function') PAGE_ENTER[id]();
-  // v2.6 Phase 3: Colony → Model Routing opens the Settings page pre-switched to its Models/Providers
-  // tab (route-driven, reuses the existing settings tab machinery). Administration → Settings with no
-  // stab resets to the Connection tab so each route lands deterministically.
+  // v0.3.8.145 — the Settings rail. The route's `stab` names the pane; settings.js renders it. A
+  // Colony → Model Routing link still lands on Models; a route with no stab lands on Account.
   if(id==='settings'){
-    const isMR=(o.route||'').indexOf('/colony/model-routing')===0; // Colony → Model Routing view
-    // v0.3.8.55 (field report): Providers moved to Tools → Providers. Its strip tab is GONE, so
-    // the pane switches directly here — the tab-click machinery only works for tabs that exist.
-    const isProv=(o.route||'').indexOf('/tools/providers')===0;
-    const stab=o.stab||'connection';
-    const tabEl=document.querySelector('.settings-tab[data-tab="'+stab+'"]');
-    if(tabEl) tabEl.click();
-    else if(stab==='providers'){
-      document.querySelectorAll('.settings-tab').forEach(x=>x.classList.remove('active'));
-      document.querySelectorAll('.settings-pane').forEach(x=>x.classList.remove('active'));
-      document.getElementById('tab-providers')?.classList.add('active');
-      if(typeof loadProvidersTab==='function') loadProvidersTab();
-    }
-    // v0.3.8.127: the strip is never shown. It is still in the markup and still clicked above —
-    // that click is what switches the pane, and reimplementing the switch here would be a second
-    // implementation of it — but the DOMAIN row is the tab bar the operator reads now, so a second
-    // identical-looking row underneath is the nesting this change removed.
-    const strip=document.getElementById('settings-tabs');
-    if(strip) strip.style.display='none';
-    const st=document.getElementById('set-title'), ss=document.getElementById('set-sub');
-    if(st) st.textContent=isMR?'Model Routing':isProv?'Providers':'Settings';
-    if(ss) ss.textContent=isMR
-      ? 'Provider connections and per-role model routes for the colony.'
-      : isProv
-      ? 'External model providers — keys, connections, and their curated model catalogs.'
-      : 'Colony configuration, model routes, and system diagnostics';
+    const isMR=(o.route||'').indexOf('/colony/model-routing')===0;
+    const stab=isMR?'models':(o.stab||'account');
+    if(typeof settingsOpen==='function') settingsOpen(stab);
   }
   if(id==='colony') setTimeout(()=>{ buildNodes(); renderColonyRegistryState(); pollColonyPheromones(); },50);
 }
@@ -973,7 +960,9 @@ function updateChrome(route,id){
   const sn=document.getElementById('domain-subnav');
   if(sn){
     const dom=(r&&r.domain)?IA.find(x=>x.type==='domain'&&x.id===r.domain):null;
-    const sections=dom?(dom.sections||[]).filter(s=>canSee(s.vis||dom.vis)):[];
+    // v0.3.8.145: the Settings domain has its own rail, which IS its row of sections — a second
+    // row of the same names above it is the two-rows defect v0.3.8.127 removed.
+    const sections=(dom&&dom.id!=='settings')?(dom.sections||[]).filter(s=>canSee(s.vis||dom.vis)&&s.rail!==false):[];
     if(sections.length>1){
       const activeSection=(r&&r.section)||route;
       const html=sections.map(s=>'<button class="subnav-tab'+(s.route===activeSection?' active':'')+'" data-onclick="go(\''+s.route+'\')">'+escapeHtml(s.label)+'</button>').join('');
@@ -1004,7 +993,11 @@ window.addEventListener('popstate',()=>router());
 // Nav collapse toggle
 document.getElementById('nav-collapse-btn').addEventListener('click',()=>{
   document.body.classList.toggle('nav-collapsed');
-  localStorage.setItem('nav-collapsed', document.body.classList.contains('nav-collapsed')?'1':'0');
+  const collapsed=document.body.classList.contains('nav-collapsed');
+  // v0.3.8.145: while Settings is open the rail auto-collapses; an explicit toggle THERE is a
+  // Settings-specific choice, remembered per device, and must not overwrite the global preference.
+  if(document.getElementById('page-settings')?.classList.contains('active') && typeof settingsNavToggled==='function'){ settingsNavToggled(collapsed); return; }
+  localStorage.setItem('nav-collapsed', collapsed?'1':'0');
 });
 
 // v0.3.8.42 (§3): the mission composers are gone — Chat is the one mission entry, and the three
@@ -1015,31 +1008,8 @@ document.getElementById('nav-collapse-btn').addEventListener('click',()=>{
 // -- Settings overlay (now a page) --------------------------------------------
 let settingsModelInfo = null;
 
-function openSettings(){
-  document.getElementById('si-username').textContent = USERNAME||'—';
-  document.getElementById('si-role').textContent = ROLE==='admin'?'Administrator':(ROLE||'—');
-  document.getElementById('settings-apibase').value = API_BASE;
-  showPage('settings');
-  loadSettingsInfo();
-}
-
-document.getElementById('settings-save').addEventListener('click', saveSettings);
-async function saveSettings(){
-  const base=document.getElementById('settings-apibase').value.trim();
-  setApiBase(base);
-  try{
-    const r=await api('/status');
-    if(r.success) setConnected(true);
-  }catch{ setConnected(false); }
-}
-
-PAGE_ENTER['settings']=()=>{
-  document.getElementById('si-username').textContent=USERNAME||'—';
-  document.getElementById('si-role').textContent=ROLE==='admin'?'Administrator':(ROLE||'—');
-  document.getElementById('settings-apibase').value=API_BASE;
-  loadSettingsInfo();
-};
-
+// v0.3.8.145: the Settings page is settings.js (settingsOpen); the account/API-base pane it
+// replaced lived here.
 
 const ROLE_COLORS={
   queen:'#fbbf24',director:'#f59e0b',planner:'#a78bfa',constraint:'#f43f5e',
@@ -1960,7 +1930,10 @@ async function pollJobs(){
     if(!current && lastGraphData && lastGraphData.mission){
       const ms=(lastGraphData.mission.status||'').toString();
       const sc=lastGraphData.status_counts||{};
-      if(ms==='running' || (sc.running||0)>0) convGoal=(lastGraphData.mission.goal||'').toString();
+      // The operator's own words only: a conversation's goal carries the project context and the
+      // recent transcript beneath a "--- project" separator (ComposeMissionGoal), which is not
+      // a headline. Seen live at .145 — the bar showed the raw separator and its line breaks.
+      if(ms==='running' || (sc.running||0)>0) convGoal=(lastGraphData.mission.goal||'').toString().split(/\r?\n/)[0].trim();
     }
     colonyRunning=!!current||!!convGoal;
     const dot=document.getElementById('mission-dot'),goalEl=document.getElementById('mission-goal');
@@ -2510,6 +2483,20 @@ document.getElementById('status-chip').addEventListener('click',e=>{
 document.addEventListener('click',e=>{
   const pop=document.getElementById('status-pop');
   if(pop.classList.contains('show') && !pop.contains(e.target) && !document.getElementById('status-chip').contains(e.target)) pop.classList.remove('show');
+  // v0.3.8.145: the help popover closes the same way.
+  const hp=document.getElementById('help-pop'), hb=document.getElementById('hdr-help');
+  if(hp && hp.classList.contains('show') && !hp.contains(e.target) && !(hb && hb.contains(e.target))){ hp.classList.remove('show'); if(hb) hb.setAttribute('aria-expanded','false'); }
+});
+// v0.3.8.145: "Report an issue" left Settings for a `?` header button. The composer keeps its ids;
+// console-extras.js still owns the mailto.
+document.getElementById('hdr-help')?.addEventListener('click',e=>{
+  e.stopPropagation();
+  const hp=document.getElementById('help-pop'); if(!hp) return;
+  const show=!hp.classList.contains('show');
+  document.getElementById('status-pop')?.classList.remove('show');
+  hp.classList.toggle('show',show);
+  e.currentTarget.setAttribute('aria-expanded',show?'true':'false');
+  if(show) document.getElementById('report-desc')?.focus();
 });
 document.getElementById('sp-recheck').addEventListener('click',e=>{ e.stopPropagation(); setEl('sp-update-banner','Checking…'); document.getElementById('sp-update-banner').style.display='block'; checkForUpdate(true); });
 
@@ -6049,8 +6036,11 @@ document.addEventListener('keydown',e=>{
   }
   if((e.ctrlKey||e.metaKey)&&e.key==='k'){ e.preventDefault(); togglePalette(); return; }
   if((e.ctrlKey||e.metaKey)&&e.key==='l'){ e.preventDefault(); showPage('events'); reloadLogModal(); return; }
+  if(e.key==='Escape'){ const hp=document.getElementById('help-pop'); if(hp) hp.classList.remove('show'); }
   if(typingInField()||e.ctrlKey||e.metaKey||e.altKey) return;
   if(e.key==='?'){ e.preventDefault(); openShortcuts(); return; }
+  // v0.3.8.145: `/` focuses the Settings search while that page is open.
+  if(e.key==='/' && document.getElementById('page-settings')?.classList.contains('active') && typeof settingsFocusSearch==='function'){ if(settingsFocusSearch()) e.preventDefault(); return; }
   const now=Date.now();
   if(e.key==='g'){ gSeqAt=now; return; }
   if(gSeqAt && now-gSeqAt<900){
@@ -6409,52 +6399,8 @@ function expandCard(id){
 }
 initCollapse();
 
-// -- Settings tabs --------------------------------------------------------------
-document.querySelectorAll('.settings-tab').forEach(tab=>{
-  tab.addEventListener('click',()=>{
-    document.querySelectorAll('.settings-tab').forEach(t=>t.classList.remove('active'));
-    document.querySelectorAll('.settings-pane').forEach(p=>p.classList.remove('active'));
-    tab.classList.add('active');
-    document.getElementById('tab-'+tab.dataset.tab)?.classList.add('active');
-    if(tab.dataset.tab==='models') loadModelsTab();
-    if(tab.dataset.tab==='info') loadInfoTab();
-    if(tab.dataset.tab==='colony') loadColonyTab();
-    if(tab.dataset.tab==='connection') loadSettingsInfo();
-    if(tab.dataset.tab==='providers') loadProvidersTab();
-  });
-});
-
-document.getElementById('models-refresh').addEventListener('click',loadModelsTab);
-document.getElementById('diag-refresh').addEventListener('click',loadInfoTab);
-
-// -- Maintenance / data hygiene ------------------------------------------------
 function humanBytes(b){ if(b==null) return '—'; const u=['B','KB','MB','GB','TB']; let v=b,i=0; while(v>=1024&&i<u.length-1){v/=1024;i++;} return v.toFixed(v<10&&i>0?1:0)+' '+u[i]; }
 function maintMsg(el,t,ok){ const m=document.getElementById(el); if(!m)return; m.style.color=ok?'var(--green)':'var(--red)'; m.textContent=t; setTimeout(()=>{ if(m.textContent===t) m.textContent=''; },5000); }
-
-async function loadMaintStats(){
-  try{
-    const r=await api('/maintenance/stats'); if(!r.success) return; const d=r.data||{};
-    setEl('maint-keep', d.max_db_backups);
-    setEl('maint-disk', d.disk_total_bytes?`${humanBytes(d.disk_free_bytes)} free of ${humanBytes(d.disk_total_bytes)}`:'—');
-    setEl('maint-db', humanBytes(d.db_bytes));
-    setEl('maint-backups', `${d.backup_count||0} files · ${humanBytes(d.backup_bytes)}`);
-  }catch{}
-}
-document.getElementById('maint-refresh').addEventListener('click',loadMaintStats);
-document.getElementById('maint-flush').addEventListener('click',async()=>{
-  if(!await uiConfirm('Flush cache? Prunes old DB backups (keeps the newest N) and compacts the database.')) return;
-  maintMsg('maint-msg','Flushing…',true);
-  try{ const r=await api('/maintenance/flush','POST',{});
-    maintMsg('maint-msg', r.success?`Freed ${humanBytes(r.data?.bytes_freed)} (${r.data?.backups_deleted} backups).`:(r.message||'Failed'), r.success);
-    loadMaintStats();
-  }catch(e){ maintMsg('maint-msg','Failed: '+e.message,false); }
-});
-document.getElementById('maint-reset').addEventListener('click',async()=>{
-  if(!await uiConfirm('Reset all settings to safe defaults? Connection settings (Ollama host/model/routes, API bind) are preserved.')) return;
-  try{ const r=await api('/maintenance/reset-config','POST',{});
-    maintMsg('maint-msg', r.success?'Config reset (connection preserved).':(r.message||'Failed'), r.success);
-  }catch(e){ maintMsg('maint-msg','Failed: '+e.message,false); }
-});
 
 // Missions page: Cancel All + Clear Missions
 document.getElementById('ms-cancel-all').addEventListener('click',async()=>{
@@ -6481,51 +6427,8 @@ document.getElementById('auto-dump').addEventListener('click',async()=>{
   }catch(e){ autoMsg('Failed: '+e.message,false); }
 });
 
-// -- Settings info -------------------------------------------------------------
-async function loadSettingsInfo(){
-  try{
-    const text=await apiText('/models');
-    const ollamaHost=(text.match(/Ollama Host:\s*([^\n]+)/)||[])[1]?.trim()||'—';
-    const model=(text.match(/Active Route Targets:\s*([^\n]+)/)||[])[1]?.trim()||'—';
-    setEl('si-ollama-host',ollamaHost);
-    setEl('si-model',model);
-    try{
-      const mr=await fetch(url('/ollama/models'),{headers:{'Authorization':'Bearer '+TOKEN}});
-      const md=await mr.json();
-      const ok=Array.isArray(md.models);
-      document.getElementById('si-ollama-dot').className='ollama-dot '+(ok?'ok':'err');
-      setEl('si-ollama-status',ok?`${ollamaHost} (${md.models.length} models)`:'unreachable');
-    }catch{
-      document.getElementById('si-ollama-dot').className='ollama-dot err';
-      setEl('si-ollama-status','unreachable');
-    }
-  }catch{
-    document.getElementById('si-ollama-dot').className='ollama-dot err';
-    setEl('si-ollama-status','unreachable');
-  }
-}
-
 // -- Provider connections ------------------------------------------------------
-let providerCatalog=[];
-
 function providerKindLabel(kind){return kind==='free-local'?'Free · Local':'Paid API';}
-
-async function loadProvidersTab(){
-  const grid=document.getElementById('providers-grid');
-  grid.innerHTML='<div style="font-size:10px;color:var(--dim);text-align:center;padding:20px;grid-column:1/-1;">Loading...</div>';
-  try{
-    const [catRes,connRes]=await Promise.all([api('/providers/catalog'),api('/providers')]);
-    if(!catRes.success) throw new Error(catRes.message);
-    providerCatalog=(catRes.data||[]).filter(p=>p.requires_key);
-    const connections=connRes.success?(connRes.data||[]):[];
-    const byProvider={};
-    connections.forEach(c=>{byProvider[c.provider]=c;});
-    grid.innerHTML=providerCatalog.map(p=>renderProviderCard(p,byProvider[p.provider]||{})).join('')
-      ||'<div style="font-size:10px;color:var(--dim)">No providers available.</div>';
-  }catch(e){
-    grid.innerHTML=`<div style="font-size:10px;color:var(--red)">Error: ${escapeHtml(e.message)}</div>`;
-  }
-}
 
 function renderProviderCard(p,conn){
   const configured=!!conn.configured;
@@ -6559,15 +6462,14 @@ function renderProviderCard(p,conn){
   </div>`;
 }
 
-document.getElementById('providers-refresh')?.addEventListener('click',loadProvidersTab);
-
-// v0.3.8.50: ONE handler for provider-card actions, wherever the card renders — the Settings grid
-// or inline under an integration. Refresh follows the surface the card actually lives on.
+// v0.3.8.50: ONE handler for provider-card actions, wherever the card renders. v0.3.8.145: there
+// is one surface now — Tools → Integrations. The Settings providers grid is gone with the page
+// that held it (it had no tab to reach it since v0.3.8.55), so the card renders in `#int-body`
+// and refresh means reloading that.
 async function providerCardAction(e){
   const card=e.target.closest('.provider-card'); if(!card) return;
   const provider=card.dataset.provider;
-  const inIntegrations=!!e.target.closest('#int-body');
-  const refresh=()=>inIntegrations?loadIntegrations():loadProvidersTab();
+  const refresh=()=>loadIntegrations();
   const msg=card.querySelector('.pv-msg');
   const setMsg=(t,ok)=>{msg.style.color=ok?'var(--green)':'var(--red)';msg.textContent=t;setTimeout(()=>{if(msg.textContent===t)msg.textContent='';},4000);};
 
@@ -6599,115 +6501,7 @@ async function providerCardAction(e){
     }catch(err){setMsg('Failed: '+err.message,false);}
   }
 }
-document.getElementById('providers-grid')?.addEventListener('click',providerCardAction);
 document.getElementById('int-body')?.addEventListener('click',providerCardAction);
-
-// -- Model browser --------------------------------------------------------------
-let activeRouteModels=new Set();
-
-async function loadModelsTab(){
-  await loadRoutes();
-  await loadOllamaModels();
-}
-
-async function loadRoutes(){
-  // v0.3.8.48 (defect 16): structured data. The old parser looked for '?' or '->' in prose the
-  // endpoint stopped emitting, fell back to raw text, and left activeRouteModels empty.
-  const grid=document.getElementById('route-grid');
-  try{
-    const r=await api('/routes/json');
-    if(!(r&&r.success&&r.data)) throw new Error((r&&r.message)||'no data');
-    activeRouteModels=new Set((r.data.roles||[]).map(x=>x.model).filter(Boolean));
-    grid.innerHTML=(r.data.roles||[]).map(x=>
-      `<div class="route-row"><span class="route-role">${escapeHtml(x.role)}</span>`
-      +`<span class="route-model">${escapeHtml(x.model||'')}</span>`
-      +`<span class="route-provider">${escapeHtml(x.provider||'')}${x.available?'':' ⚠ unavailable'}</span></div>`).join('');
-  }catch(e){
-    grid.innerHTML=`<div style="font-size:10px;color:var(--red)">Could not load routes: ${escapeHtml(e.message)}</div>`;
-  }
-}
-
-/**
- * Make an installed model the colony's model. v3.8.33.
- *
- * Posts only `ollama_model`, deliberately — /settings is a partial update, and sending the whole
- * Colony tab from here would write back whatever happened to be in those inputs at the time,
- * including edits the operator had not saved. One field, one intent.
- */
-async function selectOllamaModel(name){
-  const grid=document.getElementById('model-grid');
-  try{
-    const r=await api('/settings','POST',{ollama_model:name});
-    if(r.success){
-      colonySettings=r.data?.settings||colonySettings;
-      const box=document.getElementById('set-ollama-model'); if(box) box.value=name;
-      await loadOllamaModels();
-      pollModelInfo();
-      if(grid) grid.insertAdjacentHTML('afterbegin',
-        `<div style="font-size:10px;color:var(--green)">Model set to ${name}</div>`);
-    } else if(grid){
-      grid.insertAdjacentHTML('afterbegin',
-        `<div style="font-size:10px;color:var(--red)">${r.message||'Could not set the model'}</div>`);
-    }
-  }catch(e){
-    if(grid) grid.insertAdjacentHTML('afterbegin',
-      `<div style="font-size:10px;color:var(--red)">Could not set the model: ${escapeHtml(e.message)}</div>`);
-  }
-}
-
-async function loadOllamaModels(){
-  const grid=document.getElementById('model-grid');
-  grid.innerHTML='<div style="font-size:10px;color:var(--dim)">Loading from Ollama...</div>';
-  try{
-    const r=await fetch(url('/ollama/models'),{headers:{'Authorization':'Bearer '+TOKEN}});
-    const data=await r.json();
-    if(!data.models?.length&&data.error){
-      grid.innerHTML=`<div style="font-size:10px;color:var(--red)">${data.message||'Ollama unreachable'}</div>`;
-      return;
-    }
-    const models=(data.models||[]).sort((a,b)=>b.size-a.size);
-    // v3.8.33 — clicking a model SELECTS it as the colony's model.
-    //
-    // It used to copy the name to the clipboard and leave you to paste it into Settings. With
-    // `llama3.1:8b` hardcoded as the default that was merely inconvenient; now that there is no
-    // built-in model, choosing one is the step that makes the colony work, and it should not require
-    // retyping a tag by hand.
-    grid.innerHTML=models.map(m=>{
-      const name=m.name||m.model||'unknown';
-      const sizeGb=m.size?(m.size/1e9).toFixed(1)+'GB':'?';
-      const isActive=activeRouteModels.has(name)||[...activeRouteModels].some(r=>name.startsWith(r.split(':')[0]));
-      return `<div class="model-item${isActive?' active-route':''}" title="Click to use this model"
-        data-onclick="selectOllamaModel('${name.replace(/'/g,"\\'")}')">
-        <span class="model-name">${name}</span>
-        <span class="model-size">${sizeGb}</span>
-        ${isActive?'<span class="model-badge-active">ACTIVE</span>':''}
-      </div>`;
-    }).join('');
-    if(!models.length) grid.innerHTML='<div style="font-size:10px;color:var(--dim)">No models found. Pull one with <code>ollama pull &lt;model&gt;</code> — any model Ollama can run will work.</div>';
-  }catch(e){
-    grid.innerHTML=`<div style="font-size:10px;color:var(--red)">Error: ${escapeHtml(e.message)}</div>`;
-  }
-}
-
-async function loadInfoTab(){
-  loadMaintStats();
-  try{
-    const [sr,cfgText,diagText]=await Promise.all([api('/status'),apiText('/config'),apiText('/diagnostics')]);
-    const d=sr.data||{};
-    setEl('si-version',d.version||'—');
-    setEl('si-kernel',d.native_kernel||'—');
-    setEl('si-safety',cfgText.match(/Safety Profile:\s*([^\n]+)/)?.[1]?.trim()||'—');
-    setEl('si-workers',cfgText.match(/Job Workers:\s*([^\n]+)/)?.[1]?.trim()||'—');
-    setEl('si-web',cfgText.match(/Web Search:\s*([^\n]+)/)?.[1]?.trim()||'—');
-    setEl('si-filewrite',cfgText.match(/File Writ\w+:\s*([^\n]+)/)?.[1]?.trim()||'—');
-    setEl('si-patch',cfgText.match(/Patch Appli\w+:\s*([^\n]+)/)?.[1]?.trim()||'—');
-    const diagEl=document.getElementById('si-diag');
-    if(diagEl) diagEl.textContent=diagText.substring(0,2000);
-  }catch(e){
-    const diagEl=document.getElementById('si-diag');
-    if(diagEl) diagEl.textContent='Error: '+e.message;
-  }
-}
 
 // -- Event log (full page) -----------------------------------------------------
 let allLogEvents=[];
@@ -7391,163 +7185,10 @@ async function loadSourceQuality(){
   catch(e){ el.textContent='Source-quality report unavailable: '+((e&&e.message)||e); }
 }
 
-/* v0.3.8.46 — the Readiness page: the qualification snapshot with attestation, the certification
- * download, the qualification-report action, and the colony's introspection. The one rule carried
- * over from the backend: unmeasured reads as NOT ready, and nothing here can be satisfied by
- * silence — the page renders failures first and never summarises them away. */
-async function loadReadiness(){
-  const stmt=document.getElementById('rd-statement'), checks=document.getElementById('rd-checks');
-  const intro=document.getElementById('rd-introspection');
-  if(!checks) return;
-  try{
-    const r=await api('/readiness/json');
-    if(!(r&&r.success&&r.data)){ checks.innerHTML='<div class="hud-state err">Readiness snapshot unavailable.</div>'; }
-    else{
-      const d=r.data;
-      if(stmt) stmt.textContent=(d.ready?'READY — ':'NOT READY — ')+(d.statement||'')+` (${d.satisfied}/${d.total})`;
-      const attestable=new Set(d.attestable_ids||[]);
-      const rows=[...(d.checks||[])].sort((a,b)=>(a.satisfied?1:0)-(b.satisfied?1:0));
-      checks.innerHTML=rows.map(c=>`<div class="rd-check${c.satisfied?'':' fail'}" data-check="${escapeHtml(c.id)}">`
-        + `<span class="rd-flag">${c.satisfied?'PASS':'FAIL'}</span> <b>${escapeHtml(c.title)}</b>`
-        + ` <span class="rd-kind">${escapeHtml(c.kind||'')}</span>`
-        + `<div class="rd-detail">${escapeHtml(c.detail||'')}</div>`
-        + (attestable.has(c.id)?`<div class="rd-attest">`
-            + `<input type="text" class="rd-note" placeholder="Attestation note (why you are satisfied it holds)">`
-            + `<button class="btn btn-ghost rd-attest-yes">Attest: holds</button>`
-            + `<button class="btn btn-ghost rd-attest-no">Attest: does not hold</button></div>`:'')
-        + `</div>`).join('') || '<div class="hud-state">No thresholds defined.</div>';
-      checks.querySelectorAll('.rd-check').forEach(card=>{
-        const send=async satisfied=>{
-          const note=card.querySelector('.rd-note')?.value.trim()||'';
-          const r2=await api('/readiness/attest','POST',{threshold_id:card.dataset.check, satisfied, note});
-          setEl('rd-msg', r2&&r2.success?'Attestation recorded.':(r2&&r2.message)||'Attestation failed.');
-          if(r2&&r2.success) loadReadiness();
-        };
-        card.querySelector('.rd-attest-yes')?.addEventListener('click',()=>send(true));
-        card.querySelector('.rd-attest-no')?.addEventListener('click',()=>send(false));
-      });
-    }
-  }catch(e){ checks.innerHTML=`<div class="hud-state err">${escapeHtml(String(e&&e.message||e))}</div>`; }
-  try{
-    const r=await api('/colony/introspection');
-    if(!(r&&r.success&&r.data)){ if(intro) intro.innerHTML='<div class="hud-state err">Introspection unavailable.</div>'; return; }
-    const d=r.data;
-    const chip=(label,val,tone)=>`<span class="rd-chip"><span>${escapeHtml(label)}</span> <b${tone?` style="color:${tone}"`:''}>${escapeHtml(String(val))}</b></span>`;
-    const on=v=>v?'on':'off';
-    const findings=(d.config_health||[]);
-    if(intro) intro.innerHTML =
-      `<div class="rd-chips">`
-      + chip('Version', d.version)
-      + chip('Activation tier', d.activation_tier)
-      + chip('Autonomy', on(d.autonomy_enabled))
-      + chip('Stop engaged', d.stop_engaged?'YES':'no', d.stop_engaged?'var(--red,#f87171)':'')
-      + chip('Director', d.director_running?'running':'idle')
-      + chip('File writing', on(d.can_write_files))
-      + chip('Patch application', on(d.can_apply_patches))
-      + chip('Auto-apply', on(d.auto_apply_enabled))
-      + chip('Running jobs', d.running_jobs)
-      + chip('V3 qualified', d.v3_qualified?'yes':'no', d.v3_qualified?'var(--green,#34d399)':'var(--dim)')
-      + `</div>`
-      + `<div class="rd-detail" style="margin-top:8px">Executable roles: ${escapeHtml((d.executable_roles||[]).join(', '))}</div>`
-      + (findings.length
-          ? findings.map(f=>`<div class="rd-check fail" style="margin-top:6px"><span class="rd-flag">${escapeHtml((f.severity||'').toUpperCase())}</span> `
-              + `<b>${escapeHtml(f.combination||'')}</b><div class="rd-detail">${escapeHtml(f.detail||'')}</div></div>`).join('')
-          : `<div class="rd-detail" style="margin-top:8px;color:var(--green,#34d399)">Configuration is healthy — no incompatible combinations.</div>`);
-  }catch(e){ if(intro) intro.innerHTML=`<div class="hud-state err">${escapeHtml(String(e&&e.message||e))}</div>`; }
-}
-PAGE_ENTER['readiness']=()=>{ if(ROLE==='admin') loadReadiness(); };
-document.getElementById('rd-reload')?.addEventListener('click', ()=>loadReadiness());
-document.getElementById('rd-report')?.addEventListener('click', async ()=>{
-  const r=await api('/readiness/qualification-report','POST',{});
-  setEl('rd-msg', r&&r.success?('Written: '+((r.data&&r.data.markdown_path)||'report')):(r&&r.message)||'Report failed.');
-});
-document.getElementById('rd-cert')?.addEventListener('click', async ()=>{
-  try{
-    const resp=await fetch(url('/readiness/certification'),{headers:{'Authorization':'Bearer '+TOKEN}});
-    if(!resp.ok){ setEl('rd-msg','Certification failed ('+resp.status+').'); return; }
-    const blob=await resp.blob();
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(blob); a.download='anthill-readiness-certification.txt';
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
-  }catch(e){ setEl('rd-msg','Certification failed: '+((e&&e.message)||e)); }
-});
-
-// -- Security page -------------------------------------------------------------
-const SEC_GATES=[
-  ['web_search_enabled','Web Search','Read-only external research (DuckDuckGo). No API key.'],
-  ['file_tools_enabled','File Read Tools','Let ants list dirs and read files inside the workspace.'],
-  ['file_writing_enabled','File Writing','Allow approved patches to write files (still needs approval).'],
-  ['patch_application_enabled','Patch Application','Allow /apply to write approved patches to disk.'],
-  ['shell_tool_enabled','AI Shell Tool','Allowlisted shell for the AI ants. High risk.'],
-];
-let secSettings={};
-
-PAGE_ENTER['security']=()=>{ if(ROLE==='admin') loadSecurity(); };
-document.getElementById('sec-refresh').addEventListener('click',loadSecurity);
-document.getElementById('sec-save').addEventListener('click',saveSecurity);
-
-async function loadSecurity(){
-  try{ const r=await api('/settings'); if(!r.success) return; secSettings=r.data; }catch{ return; }
-  const bind=secSettings.api_host==='0.0.0.0'?'All interfaces':secSettings.api_host;
-  setEl('sec-auth', secSettings.api_auth_enabled===false?'DISABLED':'Password login');
-  setEl('sec-profile', secSettings.safety_profile||'—');
-  setEl('sec-bind', bind);
-  setEl('sec-enc','AES-256-GCM');
-  document.getElementById('sec-auth').style.color = secSettings.api_auth_enabled===false?'var(--red)':'var(--green)';
-  document.getElementById('sec-bind').style.color = secSettings.api_host==='0.0.0.0'?'var(--queen)':'var(--green)';
-  const tog=(k,label,desc)=>`<div class="toggle-row" style="align-items:flex-start"><div><div>${label}</div><div style="font-size:10px;color:var(--dim)">${desc}</div></div><div class="toggle-sw${secSettings[k]?' on':''}" data-key="${k}" data-onclick="this.classList.toggle('on')"></div></div>`;
-  document.getElementById('sec-toggles').innerHTML=SEC_GATES.map(g=>tog(...g)).join('');
-  document.getElementById('sec-shell-toggle').innerHTML=tog('operator_shell_enabled','Operator Shell (host terminal)','Admin-only interactive shell into this host. Remote code execution.');
-  document.getElementById('sec-autoapply-toggle').innerHTML=tog('autonomy_autoapply_enabled','Enable auto-apply','Director applies allowlisted patches that verify green, without review.');
-  (function(){var sw=document.querySelector('#sec-autoapply-toggle .toggle-sw');if(sw)sw.addEventListener('click',function(){var pa=document.getElementById('sec-autoapply-paths');if(sw.classList.contains('on')&&pa&&!pa.value.trim())pa.value='docs/**\nsrc/**';});})();
-  document.getElementById('sec-autoapply-git').innerHTML=tog('autonomy_autoapply_git_commit','Git-commit verified changes','After a green verify, commit the change on the standalone branch (never main).');
-  document.getElementById('sec-autoapply-git-push').innerHTML=tog('autonomy_autoapply_git_push','Push branch to origin','After commit, push the standalone branch via the SSH deploy key. Never pushes or merges main.');
-  document.getElementById('sec-autoapply-git-user').value=secSettings.autonomy_autoapply_git_username||'';
-  document.getElementById('sec-autoapply-git-remote').value=secSettings.autonomy_autoapply_git_remote||'origin';
-  document.getElementById('sec-autoapply-git-key').value=secSettings.autonomy_autoapply_git_ssh_key_path||'';
-  secSyncGitBranch();
-  document.getElementById('sec-workspace').value=secSettings.agent_workspace_dir||'';
-  document.getElementById('sec-shell-dir').value=secSettings.operator_shell_dir||'';
-  document.getElementById('sec-autoapply-paths').value=(secSettings.autonomy_autoapply_paths||[]).join('\n');
-  document.getElementById('sec-autoapply-maxlines').value=secSettings.autonomy_autoapply_max_lines??40;
-  document.getElementById('sec-autoapply-timeout').value=secSettings.autonomy_autoapply_verify_timeout??900;
-  document.getElementById('sec-autoapply-verify').value=secSettings.autonomy_autoapply_verify_cmd||'';
-}
-
-function secSyncGitBranch(){
-  const u=(document.getElementById('sec-autoapply-git-user').value||'').trim();
-  const el=document.getElementById('sec-autoapply-git-branch');
-  if(el) el.value=u?`${u}-anthill`:'';
-}
-async function saveSecurity(){
-  const payload={};
-  // Include the Autonomous Auto-Apply toggles — they live in their own containers, so they were
-  // previously never collected here and toggling "Enable auto-apply" / "Git-commit verified changes"
-  // had no effect on save.
-  document.querySelectorAll('#sec-toggles .toggle-sw,#sec-shell-toggle .toggle-sw,#sec-autoapply-toggle .toggle-sw,#sec-autoapply-git .toggle-sw,#sec-autoapply-git-push .toggle-sw').forEach(sw=>{ payload[sw.dataset.key]=sw.classList.contains('on'); });
-  const ws=document.getElementById('sec-workspace').value.trim(); if(ws) payload.agent_workspace_dir=ws;
-  payload.operator_shell_dir=document.getElementById('sec-shell-dir').value.trim();
-  payload.autonomy_autoapply_paths=document.getElementById('sec-autoapply-paths').value.split('\n').map(s=>s.trim()).filter(Boolean);
-  payload.autonomy_autoapply_max_lines=parseInt(document.getElementById('sec-autoapply-maxlines').value,10)||40;
-  payload.autonomy_autoapply_verify_timeout=parseInt(document.getElementById('sec-autoapply-timeout').value,10)||900;
-  payload.autonomy_autoapply_verify_cmd=document.getElementById('sec-autoapply-verify').value.trim();
-  payload.autonomy_autoapply_git_username=document.getElementById('sec-autoapply-git-user').value.trim();
-  payload.autonomy_autoapply_git_remote=document.getElementById('sec-autoapply-git-remote').value.trim()||'origin';
-  payload.autonomy_autoapply_git_ssh_key_path=document.getElementById('sec-autoapply-git-key').value.trim();
-  const msg=document.getElementById('sec-msg');
-  try{
-    const r=await api('/settings','POST',payload);
-    msg.style.color=r.success?'var(--green)':'var(--red)'; msg.textContent=r.success?'Saved.':(r.message||'Failed');
-    if(r.success) await loadSecurity();
-  }catch(e){ msg.style.color='var(--red)'; msg.textContent='Failed: '+e.message; }
-  setTimeout(()=>{ msg.textContent=''; },3500);
-}
-
 // -- Shell page (admin-only host terminal) -------------------------------------
 let shHistory=[], shHistIdx=-1, shBusy=false;
 
-PAGE_ENTER['shell']=()=>{ if(ROLE==='admin') initShell(); };
+// v0.3.8.145: the Terminal is a pane of the Settings rail; settings.js calls initShell() on open.
 document.getElementById('sh-clear').addEventListener('click',()=>{ const o=document.getElementById('sh-output'); o.innerHTML=''; delete o.dataset.banner; showShellBanner(); });
 document.getElementById('sh-run').addEventListener('click',runShell);
 
@@ -7729,141 +7370,8 @@ document.getElementById('phero-prune').addEventListener('click',async()=>{
   setTimeout(()=>msg.textContent='',3000);
 });
 
-// -- Colony settings tab -------------------------------------------------------
-const TOGGLE_KEYS=[
-  ['web_search_enabled','Web Search'],['file_tools_enabled','File Tools'],
-  ['file_writing_enabled','File Writing'],['patch_application_enabled','Patch Apply'],
-  ['shell_tool_enabled','Shell Tool'],['parallel_execution_enabled','Parallel Exec'],
-  ['spec_ingestion_enabled','Spec Ingestion'],['autonomy_enabled','Autonomy'],
-  ['autonomy_learning_enabled','Autonomy Learning'],
-];
-const NUM_KEYS=[
-  ['max_parallel_workers','Parallel Workers'],['max_web_searches_per_mission','Web Searches/Mission'],
-  ['max_sources_per_mission','Sources/Mission'],['max_context_packet_chars','Context Chars'],
-  ['long_input_threshold','Long-Input Threshold'],['max_section_chars','Section Chars'],
-];
-const AUTO_KEYS=[
-  ['autonomy_poll_seconds','Poll Seconds'],['autonomy_max_missions_per_hour','Missions/Hour'],
-  ['autonomy_max_missions_per_day','Missions/Day'],['autonomy_max_consecutive_failures','Max Fails'],
-  ['autonomy_concurrency','Concurrency'],['autonomy_aging_minutes','Aging Minutes'],
-  ['autonomy_priority_bias_max','Learning Bias Max'],['autonomy_retire_min_runs','Retire Min Runs'],
-  ['autonomy_loop_window','Loop Window'],
-];
-// v0.3.8.145 — per-conversation ceilings. Missions per conversation is the one operators actually
-// hit: it is how many missions ONE chat may start over its lifetime, and it was a compile-time 5
-// until this release. Raising it never widens authority — the approval gate still decides each
-// mission — it only buys room in a long-lived chat.
-const CONV_KEYS=[
-  ['conversation_max_missions','Missions per conversation'],['conversation_max_turns','Turns'],
-  ['conversation_max_tool_calls','Tool Calls'],['conversation_max_seconds','Seconds'],
-];
-let colonySettings={};
-
-async function loadColonyTab(){
-  try{const r=await api('/settings');if(!r.success)return;colonySettings=r.data;}catch{return;}
-  document.getElementById('set-ollama-host').value=colonySettings.ollama_host||'';
-  document.getElementById('set-ollama-model').value=colonySettings.ollama_model||'';
-  document.getElementById('set-toggles').innerHTML=TOGGLE_KEYS.map(([k,label])=>
-    `<div class="toggle-row"><span>${label}</span><div class="toggle-sw${colonySettings[k]?' on':''}" data-key="${k}" data-onclick="this.classList.toggle('on')"></div></div>`).join('');
-  document.getElementById('set-nums').innerHTML=NUM_KEYS.map(([k,label])=>
-    `<div class="num-row"><label>${label}</label><input type="number" data-key="${k}" value="${colonySettings[k]??0}"></div>`).join('');
-  document.getElementById('set-conversations').innerHTML=CONV_KEYS.map(([k,label])=>
-    `<div class="num-row"><label>${label}</label><input type="number" data-key="${k}" value="${colonySettings[k]??0}"></div>`).join('');
-  document.getElementById('set-autonomy').innerHTML=AUTO_KEYS.map(([k,label])=>
-    `<div class="num-row"><label>${label}</label><input type="number" data-key="${k}" value="${colonySettings[k]??0}"></div>`).join('');
-}
-
-async function saveColonyTab(){
-  const msg=document.getElementById('colony-save-msg'); msg.textContent='';
-  const payload={
-    ollama_host:document.getElementById('set-ollama-host').value.trim(),
-    ollama_model:document.getElementById('set-ollama-model').value.trim(),
-  };
-  document.querySelectorAll('#set-toggles .toggle-sw').forEach(sw=>{payload[sw.dataset.key]=sw.classList.contains('on');});
-  document.querySelectorAll('#set-nums input,#set-conversations input,#set-autonomy input').forEach(i=>{const v=parseInt(i.value,10);if(!isNaN(v))payload[i.dataset.key]=v;});
-  try{
-    const r=await api('/settings','POST',payload);
-    if(r.success){msg.style.color='var(--green)';msg.textContent=r.message||'Saved';colonySettings=r.data.settings||colonySettings;pollModelInfo();}
-    else{msg.style.color='var(--red)';msg.textContent=r.message||'Failed';}
-  }catch(e){msg.style.color='var(--red)';msg.textContent='Failed: '+e.message;}
-  setTimeout(()=>msg.textContent='',3000);
-}
-
-document.getElementById('colony-save').addEventListener('click',saveColonyTab);
-document.getElementById('colony-reload').addEventListener('click',loadColonyTab);
-
-// -- User management -----------------------------------------------------------
-async function openUsers(){
-  if(ROLE!=='admin') return;
-  showPage('users');
-  await reloadUsers();
-}
-
-PAGE_ENTER['users']=()=>{ if(ROLE==='admin') reloadUsers(); };
-
-async function reloadUsers(){
-  const tb=document.getElementById('users-tbody');
-  try{
-    const r=await api('/users');if(!r.success) throw new Error(r.message);
-    const users=r.data||[];
-    setEl('users-count',`${users.length} account${users.length===1?'':'s'}`);
-    tb.innerHTML=users.map(u=>{
-      const isAdmin=(u.role||'coordinator')==='admin';
-      const status=u.active?'<span style="color:var(--green)">active</span>':'<span style="color:var(--red)">disabled</span>';
-      const last=u.last_login_at?fmtTime(u.last_login_at):'never';
-      const self=u.username===USERNAME;
-      return `<tr>
-        <td style="font-family:var(--mono);color:var(--text)">${escapeHtml(u.username)}${self?' <span style="color:var(--dim)">(you)</span>':''}</td>
-        <td><span style="color:${isAdmin?'var(--queen)':'var(--blue)'}">${isAdmin?'Administrator':'Coordinator'}</span></td>
-        <td>${status}</td>
-        <td>${last}</td>
-        <td style="white-space:nowrap">
-          <button class="job-btn view" data-onclick="userResetPw('${jsArg(u.username)}')">Reset PW</button>
-          <button class="job-btn view" data-onclick="userToggleRole('${jsArg(u.username)}','${isAdmin?'coordinator':'admin'}')">${isAdmin?'→ Coord':'→ Admin'}</button>
-          <button class="job-btn ${u.active?'cancel':'view'}" data-onclick="userToggleActive('${jsArg(u.username)}',${u.active?'false':'true'})">${u.active?'Disable':'Enable'}</button>
-          ${self?'':`<button class="job-btn cancel" data-onclick="userDelete('${jsArg(u.username)}')">Delete</button>`}
-        </td></tr>`;
-    }).join('')||'<tr><td colspan="5" style="color:var(--dim)">No accounts.</td></tr>';
-  }catch(e){tb.innerHTML=`<tr><td colspan="5" style="color:var(--red)">Error: ${escapeHtml(e.message)}</td></tr>`;}
-}
-
-function usersMsg(t,ok){
-  const m=document.getElementById('nu-msg');
-  m.style.color=ok?'var(--green)':'var(--red)';
-  m.textContent=t;
-  setTimeout(()=>{if(m.textContent===t)m.textContent='';},3500);
-}
-
-document.getElementById('nu-add').addEventListener('click',async()=>{
-  const u=document.getElementById('nu-user').value.trim();
-  const p=document.getElementById('nu-pass').value;
-  const role=document.getElementById('nu-role').value;
-  if(!u||!p){usersMsg('Username and password are required.',false);return;}
-  try{
-    const r=await api('/users','POST',{username:u,password:p,role});
-    if(r.success){usersMsg('Created '+u,true);document.getElementById('nu-user').value='';document.getElementById('nu-pass').value='';reloadUsers();}
-    else usersMsg(r.message||'Failed',false);
-  }catch(e){usersMsg('Failed: '+e.message,false);}
-});
-
-document.getElementById('users-reload').addEventListener('click',reloadUsers);
-
-async function userPatch(username,body,okMsg){
-  try{
-    const r=await api('/users/'+encodeURIComponent(username),'PATCH',body);
-    if(r.success){usersMsg(okMsg,true);reloadUsers();}else usersMsg(r.message||'Failed',false);
-  }catch(e){usersMsg('Failed: '+e.message,false);}
-}
-async function userResetPw(u){const p=await uiPrompt(`New password for ${u} (min 8 characters):`,{password:true,title:'Reset password'});if(p)userPatch(u,{password:p},'Password reset for '+u);}
-async function userToggleRole(u,role){if(await uiConfirm(`Change role of ${u} to ${role}?`))userPatch(u,{role},'Role changed for '+u);}
-function userToggleActive(u,active){userPatch(u,{active:active},active?'Enabled '+u:'Disabled '+u);}
-async function userDelete(u){
-  if(!await uiConfirm(`Delete account ${u}? This cannot be undone.`)) return;
-  try{
-    const r=await api('/users/'+encodeURIComponent(u),'DELETE');
-    if(r.success){usersMsg('Deleted '+u,true);reloadUsers();}else usersMsg(r.message||'Failed',false);
-  }catch(e){usersMsg('Failed: '+e.message,false);}
-}
+// -- Colony settings, users, security, readiness, diagnostics: moved to settings.js in v0.3.8.145 (the
+//    Settings rail). It loads AFTER this file and binds nothing at parse time.
 
 // -- Infrastructure: moved to infrastructure.js in v0.3.8.52 (the app.js split). It loads AFTER this file,
 //    because its PAGE_ENTER['infrastructure'] registration needs PAGE_ENTER to already exist.
