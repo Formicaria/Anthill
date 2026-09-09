@@ -1,3 +1,93 @@
+## v0.3.8.153 - the refusal gets a control, and the route gets a caller
+
+**"No knowledge base is mapped for this project. Map it in `knowledge_project_map`, or set
+`knowledge_default_project`."** Every Knowledge panel in the operator's build read that: a refusal
+naming two config keys, shown by a page with no way to set either. Correct, and unactionable without
+a text editor and a restart.
+
+`.148` built `POST /knowledge/project-map` and recorded the missing panel in the console-route ledger
+as a UI GAP, so the deferral was CHECKED on every run rather than remembered. This is the panel, and
+the ledger entry leaves with it after exactly five releases.
+
+**KNOWLEDGE BASES** renders every binding, binds, rebinds and unbinds, and shows the default beside
+them. Unbinding is a real operation and not an error: an operator who mapped the wrong project must
+be able to say so, and the honest end state is a project that refuses — never a quiet fallback to
+whatever was there before. The panel says that in the place where it would matter.
+
+**THE KNOWLEDGE BASE IS TYPED, NOT PICKED, AND THE PANEL SAYS WHY.** Every FORAGER path is
+project-ROOTED and the integration has never specified a way to ask which project ids exist. That is
+**P11**, producer-side, not yet served. A picker with nothing to pick from would have to invent
+`GET /api/projects` — the second implementation §1 forbids, arriving as a 404 in the field. A free
+text field that explains itself is worse to use and true.
+
+---
+
+**AND `POST /knowledge/jobs` HAD NO CALLER ANYWHERE IN THE CONSOLE.** The Processing card could list
+ingestion jobs, cancel them and retry them, and could not start one; every ingestion had to be sent
+by hand against the API. The route has existed since `.121` with the workspace fence in front of it.
+What was missing was a text box. Start, cancel and retry are now pinned together by one guard so the
+trio cannot drift back apart.
+
+---
+
+**TWO CORRECTIONS TO CLAIMS THAT HAD BECOME FALSE**, both in the same file, both kept as the record
+rather than quietly rewritten.
+
+`TheEndpointTokenScopeAndRemotePermission_StayInTheFile` said the project map "stays a file edit" and
+is a decision "a compromised console must not be able to make". `.148` gave it a Manage-gated route
+one release before this test was corrected. The assertion was still true — these keys are not
+writable through the general settings surface — and the SENTENCE was not, so the map moved to its own
+theory that says what is actually guarded: `ApplySettingsUpdate` skips a non-editable key silently
+and still answers success, so a key reaching `/settings` would be a control that appears to work,
+while the dedicated route refuses or persists and says which. A narrower door with its own permission
+is not the wide one. Freezing the old sentence would have been immutability, not integrity.
+
+`EveryKnowledgeKeyTheConsoleWrites_IsOneTheSettingsSurfaceAccepts` scanned every `knowledge_*:` in
+the console while its own assertion described keys posted TO `/settings`. Nothing else had ever
+posted such a key, so the two sets were identical by accident. This release added a request body
+carrying `knowledge_base`, and the unscoped reader would have demanded that a wire field be a
+configuration key — satisfiable only by renaming the contract to dodge a regex or by adding a fake
+catalog entry. The reader is now scoped to `/settings` posts, and the vacuity floor does the work
+that narrowing a guard always owes: the scan must still find the gate key, or it fails.
+
+---
+
+**AND THE CHAT ANSWERED A QUESTION ABOUT AN ANT BY DESCRIBING THE SOLAR SYSTEM.**
+
+Asked "what is something the coder ant can do", the colony replied with eight planets, Pluto's
+reclassification and the IAU — every line attributed to a prior mission id. The question was not
+answered at all. A later turn cited `https://anthill.docs/mission`, a url that does not exist.
+
+`.150` filtered the builder's citation offer to citations the gate can actually resolve. That was
+right and not enough: a chat question still recalls prior missions, so a `recall_set` still existed,
+so `retrieved.Count` was still non-zero, so the CLAIM directive still fired — handing the model one
+citable url (a mission about planets) and telling it to cite only from that list. It obeyed. The
+invented url a turn later is the same pressure with nothing left to obey: the directive had put a
+model in a position where it had to cite something and had nothing real to cite.
+
+THE RULE, STATED ONCE: the claim format exists so an answer built FROM THE WORLD can be checked
+against what the mission retrieved from the world. A mission that retrieved nothing has nothing to
+check and nothing to attribute; its answer is prose. ANTHILL's own prior missions are HISTORY, not
+sources — the same judgement `CitationIntegrity.TracesToRetrieval` already makes when it refuses a
+recall resting on nothing, applied one step earlier so a model is never asked for it. A recalled
+mission stays citable ALONGSIDE real retrieval, which is `.109`'s property and is untouched; what
+changed is that a recall cannot be the only thing on the list.
+
+**AND THE OPERATOR STOPPED READING `[UNSOURCED]`.** `.151` rendered the claim format instead of
+showing the wire protocol and stopped one step short: what they read was still a stack of separate
+assertions, each followed by "[UNSOURCED — this claim is not attributed to anything the mission
+retrieved]", for a question that never had a source to attribute anything to. Their words: "i dont
+wanna see the unsourced claims, and have it broken into a bunch of different responses, just a
+single condensed response is good enough."
+
+The marker was doing real work in the wrong place. `[UNSOURCED]` is how a claim tells the GATE it is
+unattributed, and the gate reads the ARTIFACT — untouched, still carrying every claim with its
+attribution or its absence. Repeating it to a person who asked what an ant does says "this mission
+had no sources" four times, in brackets, instead of once by not citing anything. An answer with no
+real sources is now one condensed response; an answer WITH them keeps its per-claim provenance,
+because there the attribution is the content. The split is on whether the mission has anything to
+show, never on who is reading.
+
 ## v0.3.8.151 - a question about a person, answered as a refusal about ANTHILL
 
 **BOTH FINDINGS ARE `.150`'s AND `.149`'s OWN, AND BOTH SHIPPED INSIDE THE RELEASE THAT ANNOUNCED

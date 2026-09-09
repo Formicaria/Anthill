@@ -185,6 +185,21 @@ public static partial class ApiHost
                 ["compatible"] = availability.Compatible,
                 ["projects"] = AnthillRuntime.Knowledge.ProjectMap.Keys.ToList(),
 
+                // ---- WHAT IS BOUND TO WHAT. v0.3.8.153 --------------------------------------
+                //
+                // `projects` above is the map's KEYS, which is all the scope selector ever needed:
+                // pick a project, read its knowledge. It is not enough to ADMINISTER the map, and
+                // that is why `.148` shipped `POST /knowledge/project-map` with no console control —
+                // a panel cannot offer to rebind or unbind a binding it cannot display.
+                //
+                // The VALUES are FORAGER project refs, and they are the operator's own configuration
+                // rather than anything FORAGER told us. This payload is already `read_knowledge`
+                // gated (admin-only in the shipped role set) and already carries the endpoint, so it
+                // reveals nothing the reader could not read from the config file beside it.
+                ["project_map"] = AnthillRuntime.Knowledge.ProjectMap
+                    .ToDictionary(kv => kv.Key, kv => (object?)kv.Value, StringComparer.Ordinal),
+                ["default_project"] = AnthillRuntime.Knowledge.DefaultProject,
+
                 // ---- What the console's on/off toggle needs to tell the truth. v0.3.8.124 -------
                 //
                 // `endpoint` above is the endpoint that was PROBED, and a disabled provider probes
@@ -453,8 +468,6 @@ public static partial class ApiHost
             return ApiJson.Ok(KnowledgeJobPayload(result.Value));
         });
 
-        // Start ingestion. Returns as soon as FORAGER has QUEUED the work — this request never waits
-        // for a document to be parsed, however large the archive.
         // v0.3.8.148 — BIND AN ANTHILL PROJECT TO A FORAGER ONE, WITHOUT EDITING A FILE.
         //
         // The operator's colony showed the gap as a dead end: every Knowledge panel read
@@ -527,6 +540,8 @@ public static partial class ApiHost
                     : $"Project '{project}' is no longer mapped to a knowledge base."));
         });
 
+        // Start ingestion. Returns as soon as FORAGER has QUEUED the work — this request never waits
+        // for a document to be parsed, however large the archive.
         app.MapPost("/knowledge/jobs", async (HttpContext ctx) =>
         {
             var auth = RequireAuth(ctx, KnowledgePermissions.Manage); if (auth is not null) return auth;
@@ -641,8 +656,16 @@ public static partial class ApiHost
     /// </summary>
     private static IResult KnowledgeScopeRefusal() =>
         ApiJson.Error(
-            "No knowledge base is mapped for this project. Map it in knowledge_project_map, or set "
-          + "knowledge_default_project, before knowledge can be retrieved.", "not_found");
+            // v0.3.8.153 — IT NAMES THE PLACE, NOT ONLY THE KEY.
+            //
+            // This sentence was correct and unactionable for five releases: it named two config
+            // keys to an operator looking at a browser, and the panel showing it had no control to
+            // set either. `.148` built the route; this release built the control, so the refusal
+            // finally points somewhere a reader can go. The keys stay named — a scripted caller
+            // reading this over HTTP has no Knowledge tab — but they are no longer the only answer.
+            "No knowledge base is mapped for this project. Map it on the Knowledge page, under "
+          + "\"Knowledge bases\" — or set knowledge_project_map / knowledge_default_project in the "
+          + "config file. Knowledge cannot be retrieved until it is bound.", "not_found");
 
     /// <summary>
     /// A provider failure as an HTTP answer. The status codes matter to the console: unavailable and

@@ -108,31 +108,57 @@ public class KnowledgeGateTests : IDisposable
     // ---- What did NOT cross ---------------------------------------------------------------------
 
     /// <summary>
-    /// THE ENDPOINT, THE TOKEN, THE REMOTE PERMISSION AND THE SCOPE MAP STAY A FILE EDIT.
+    /// THE ENDPOINT, THE TOKEN AND THE REMOTE PERMISSION STAY A FILE EDIT.
     ///
     /// These are the keys the section was made FileOnly for. `knowledge_forager_endpoint` decides
-    /// which service the colony trusts as the source of organizational fact; `knowledge_project_map`
-    /// decides which knowledge a mission may read; `knowledge_forager_allow_remote` permits sending
-    /// the colony's queries to a service that has no authentication of its own, across a network.
-    /// Each is a security decision that a compromised console must not be able to make, and none of
-    /// them is made easier to reach by the switch above being writable.
+    /// which service the colony trusts as the source of organizational fact;
+    /// `knowledge_forager_allow_remote` permits sending the colony's queries to a service that has
+    /// no authentication of its own, across a network. Each is a security decision that a
+    /// compromised console must not be able to make, and none of them is made easier to reach by the
+    /// switch above being writable.
     /// </summary>
     [Theory]
     [InlineData("knowledge_forager_endpoint")]
     [InlineData("knowledge_forager_token")]
     [InlineData("knowledge_forager_allow_remote")]
-    [InlineData("knowledge_project_map")]
-    [InlineData("knowledge_default_project")]
-    public void TheEndpointTokenScopeAndRemotePermission_StayInTheFile(string key)
+    public void TheEndpointTokenAndRemotePermission_StayInTheFile(string key)
     {
         Assert.NotNull(ConfigCatalog.Find(key));
         Assert.False(ConfigCatalog.IsEditable(key),
             $"{key} became live-writable from the console. v0.3.8.124 moved exactly one knowledge "
           + "key across that line — the on/off switch, because it only starts using what the file "
-          + "already says. This key decides who the colony trusts or what a mission may read, which "
-          + "is a different decision: if it is genuinely meant to move, say why on the property and "
-          + "update TheEditableSurface_IsExactlyWhatItWasBeforeItBecameAProjection in the same "
-          + "commit.");
+          + "already says. This key decides who the colony trusts, which is a different decision: "
+          + "if it is genuinely meant to move, say why on the property and update "
+          + "TheEditableSurface_IsExactlyWhatItWasBeforeItBecameAProjection in the same commit.");
+    }
+
+    /// <summary>
+    /// THE PROJECT MAP IS NOT A SETTING, AND SINCE `.148` IT IS NOT A FILE EDIT EITHER.
+    ///
+    /// This claim used to sit in the theory above, and it stopped being true one release before
+    /// this test was corrected. `.148` shipped `POST /knowledge/project-map` — Manage-gated, and
+    /// required by `FORAGER_SHARED_CONTRACT.md` §3, which calls project mapping "an authorized
+    /// server operation". `.153` gave it a console control. Freezing the old sentence would have
+    /// been immutability rather than integrity, which this suite has always distinguished.
+    ///
+    /// WHAT IS STILL TRUE, AND IT IS THE PART WORTH GUARDING: these keys are not writable through
+    /// the GENERAL settings surface. `ApplySettingsUpdate` skips a non-editable key silently and
+    /// still answers success, so a key that reached `/settings` would be a control that appears to
+    /// work; the dedicated route refuses or persists and says which. A narrower door with its own
+    /// permission is not the same thing as the wide one.
+    /// </summary>
+    [Theory]
+    [InlineData("knowledge_project_map")]
+    [InlineData("knowledge_default_project")]
+    public void TheProjectMap_IsWrittenByItsOwnRoute_NeverByTheSettingsSurface(string key)
+    {
+        Assert.NotNull(ConfigCatalog.Find(key));
+        Assert.False(ConfigCatalog.IsEditable(key),
+            $"{key} became writable through /settings. It has its own Manage-gated route "
+          + "(POST /knowledge/project-map) precisely so that scope is set by an operation that "
+          + "reports what it did, rather than by a surface that silently skips what it will not "
+          + "write. If it is genuinely meant to move, say why on the property and update "
+          + "TheEditableSurface_IsExactlyWhatItWasBeforeItBecameAProjection in the same commit.");
     }
 
     // ---- The console and the catalog, held to the same key --------------------------------------
@@ -156,7 +182,28 @@ public class KnowledgeGateTests : IDisposable
         // Keys as they appear in a posted object literal: `knowledge_enabled: !!on`. Deliberately
         // not every mention of the string — the page NAMES several file-only keys in its prose to
         // tell the operator where to go, and naming one is the opposite of writing it.
-        var posted = Regex.Matches(console, @"\b(knowledge_[a-z0-9_]+)\s*:")
+        //
+        // v0.3.8.153 — AND SCOPED TO `/settings`, WHICH IS WHAT THIS GUARD HAS ALWAYS BEEN ABOUT.
+        //
+        // The reader was every `knowledge_*:` in the file and the RULE is the sentence in the
+        // assertion below: a key posted TO THE SETTINGS SURFACE must be one that surface will write,
+        // because `ApplySettingsUpdate` skips a non-editable key silently and still answers success.
+        // Nothing else in the console had ever posted a `knowledge_*` key, so the two were the same
+        // set by accident and the gap did not show.
+        //
+        // `.153` added `POST /knowledge/project-map`, whose body carries `knowledge_base` — a field
+        // name on a purpose-built, Manage-gated route, not a settings key, and `ConfigCatalog` has
+        // nothing to say about it. Left unscoped, this guard would have demanded that a request
+        // field be a configuration key, and the only ways to satisfy it are to rename the wire
+        // contract to dodge a regex or to add a fake catalog entry. Both are worse than reading the
+        // rule the assertion states.
+        //
+        // Narrowing a guard is the dangerous direction, so the floor below does the work: the scan
+        // must still find the gate key inside a `/settings` post, and a `/settings` call that stops
+        // matching fails here rather than quietly measuring nothing.
+        var posted = Regex.Matches(console,
+                @"api\(\s*'/settings'\s*,\s*'POST'\s*,\s*\{(?<body>[^}]*)\}", RegexOptions.Singleline)
+            .SelectMany(m => Regex.Matches(m.Groups["body"].Value, @"\b(knowledge_[a-z0-9_]+)\s*:"))
             .Select(m => m.Groups[1].Value)
             .ToHashSet(StringComparer.Ordinal);
 
@@ -211,5 +258,82 @@ public class KnowledgeGateTests : IDisposable
         var runtime = SourceText.CodeOnly(File.ReadAllText(Path.Combine(
             SourceText.RepoRoot(), "src", "Anthill.Core", "Configuration", "AnthillRuntime.cs")));
         Assert.Contains($"Env(\"{ApiHost.KnowledgeGateEnvVar}\")", runtime, StringComparison.Ordinal);
+    }
+
+    // ---- v0.3.8.153: the panel that answers the refusal ------------------------------------------
+
+    /// <summary>
+    /// THE REFUSAL BECAME ACTIONABLE, AND THIS IS WHAT MAKES THAT TRUE.
+    ///
+    /// For five releases every unmapped project showed "Map it in `knowledge_project_map`" — a
+    /// refusal naming a config key, rendered by a page with no control to set it. `.148` built the
+    /// route and recorded the missing panel as a UI GAP; this asserts the panel exists, because a
+    /// route with no caller is the same defect the ledger entry was standing in for.
+    /// </summary>
+    [Fact]
+    public void TheConsole_BindsAProjectToAKnowledgeBase()
+    {
+        var console = File.ReadAllText(Path.Combine(SourceText.RepoRoot(), "src", "Anthill.UI", "knowledge.js"));
+
+        Assert.Contains("'/knowledge/project-map'", console, StringComparison.Ordinal);
+        Assert.Contains("knBindingsCard", console, StringComparison.Ordinal);
+
+        // BINDING AND UNBINDING BOTH. An empty knowledge base is how the route unbinds, and a panel
+        // that could only bind would leave a wrong mapping unfixable from the place that made it.
+        Assert.Contains("knUnbind", console, StringComparison.Ordinal);
+        Assert.Contains("knowledge_base: ''", console, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// AND IT STARTS INGESTION. `POST /knowledge/jobs` had existed since `.121` with NO caller
+    /// anywhere in the console: the Processing card could list, cancel and retry jobs, and could not
+    /// start one. Cancel and retry are pinned beside it so the trio cannot drift back apart.
+    /// </summary>
+    [Fact]
+    public void TheConsole_StartsIngestion_AsWellAsCancellingAndRetryingIt()
+    {
+        var console = File.ReadAllText(Path.Combine(SourceText.RepoRoot(), "src", "Anthill.UI", "knowledge.js"));
+
+        Assert.Contains("knStartIngest", console, StringComparison.Ordinal);
+        Assert.Contains("'/knowledge/jobs'", console, StringComparison.Ordinal);
+        Assert.Contains("knCancel", console, StringComparison.Ordinal);
+        Assert.Contains("knRetry", console, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// THE PANEL NO LONGER SENDS ANYONE TO A TEXT EDITOR for the one key it can now write.
+    ///
+    /// The old copy read "map this colony's projects with `knowledge_project_map`", which was true
+    /// when written and is now an instruction to do by hand what the page does. The endpoint and the
+    /// token stay named — those genuinely are file decisions — so this asserts the difference rather
+    /// than banning the word `knowledge_`.
+    /// </summary>
+    [Fact]
+    public void TheConsole_NoLongerTellsTheOperatorToEditTheProjectMapByHand()
+    {
+        var console = File.ReadAllText(Path.Combine(SourceText.RepoRoot(), "src", "Anthill.UI", "knowledge.js"));
+
+        Assert.DoesNotContain("map this colony", console, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("knowledge_forager_endpoint", console, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// AND THE STATUS PAYLOAD CARRIES WHAT THE PANEL RENDERS. `projects` is the map's KEYS, which is
+    /// all a scope selector needs and not enough to administer the map: a panel cannot offer to
+    /// rebind a binding it cannot display. This is the "declared and reaching nobody" check pointed
+    /// at a field instead of a tool.
+    /// </summary>
+    [Fact]
+    public void TheStatusPayload_CarriesTheBindingsThePanelDraws()
+    {
+        var api = File.ReadAllText(Path.Combine(
+            SourceText.RepoRoot(), "src", "Anthill.Api", "Knowledge", "ApiHost.Knowledge.cs"));
+        var console = File.ReadAllText(Path.Combine(SourceText.RepoRoot(), "src", "Anthill.UI", "knowledge.js"));
+
+        Assert.Contains("[\"project_map\"]", api, StringComparison.Ordinal);
+        Assert.Contains("[\"default_project\"]", api, StringComparison.Ordinal);
+
+        Assert.Contains("project_map", console, StringComparison.Ordinal);
+        Assert.Contains("default_project", console, StringComparison.Ordinal);
     }
 }

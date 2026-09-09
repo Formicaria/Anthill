@@ -202,11 +202,13 @@ function knRenderShell(host) {
       + 'FORAGER, a separate local application that turns documents into evidence-backed, traceable '
       + 'statements.</p>'
       + `<p class="kn-sub">Endpoint: <code>${escapeHtml(ep || 'not set')}</code></p>`
-      + '<p class="kn-lede">Switching it on here sets <code>knowledge_enabled</code>. The endpoint, '
-      + 'the access token and the project map stay in the config file — they decide which service '
-      + 'the colony trusts and which knowledge a mission may read, so they are not editable from a '
-      + 'browser. Set <code>knowledge_forager_endpoint</code> and map this colony\'s projects with '
-      + '<code>knowledge_project_map</code>; see <code>docs/FORAGER_INTEGRATION.md</code>.</p>'
+      + '<p class="kn-lede">Switching it on here sets <code>knowledge_enabled</code>. The endpoint '
+      + 'and the access token stay in the config file — they decide which service the colony '
+      + 'trusts, which is a decision to make in the file. Set '
+      + '<code>knowledge_forager_endpoint</code>; see <code>docs/FORAGER_INTEGRATION.md</code>.</p>'
+      + '<p class="kn-sub">Binding a project to a knowledge base is done here, once knowledge is on '
+      + '— under <b>Knowledge bases</b>. It used to be a config key too, and a refusal naming a key '
+      + 'to someone looking at a browser is not an answer.</p>'
       + '<p class="kn-lede">Missions run normally without it.</p>'
       + action
       + '<div class="kn-say" id="kn-say"></div></div>';
@@ -262,6 +264,7 @@ function knRenderShell(host) {
     + '<div id="kn-results" class="kn-results"><div class="kn-empty">Search the knowledge base, or open the conflicts below to see where its sources disagree.</div></div>'
     + '<div id="kn-detail" class="kn-detail"><div class="kn-empty">Select a statement to see its evidence.</div></div>'
     + '</div>'
+    + knBindingsCard(s)
     + '<div class="kn-card"><h3>Conflicts</h3>'
     + '<p class="kn-lede">Where two sources say different things. ANTHILL never picks a side on your behalf.</p>'
     + '<div id="kn-conflicts"><div class="hud-state">Loading…</div></div></div>'
@@ -270,6 +273,7 @@ function knRenderShell(host) {
     + '<div id="kn-sources"><div class="hud-state">Loading…</div></div></div>'
     + '<div class="kn-card"><h3>Processing</h3>'
     + '<p class="kn-lede">Ingestion runs in FORAGER. Progress below is its persisted stage state, not an estimate.</p>'
+    + knIngestForm()
     + '<div id="kn-jobs"><div class="hud-state">Loading…</div></div></div>';
 
   const box = document.getElementById('kn-q');
@@ -610,5 +614,181 @@ async function knJobAction(id, action, describe) {
 
 function knCancel(id) { knJobAction(id, 'cancel', 'Cancellation'); }
 function knRetry(id) { knJobAction(id, 'retry', 'Retry'); }
+
+/* ── knowledge bases: what is bound to what ───────────────────────────────────
+   v0.3.8.153 — THE CONTROL THAT ANSWERS THE REFUSAL.
+
+   Every Knowledge panel in the operator's build read "No knowledge base is
+   mapped for this project. Map it in knowledge_project_map, or set
+   knowledge_default_project" — a refusal naming two config keys, shown by a UI
+   with no way to set either. Correct, and unactionable without a text editor and
+   a restart. `.148` shipped `POST /knowledge/project-map` and recorded the
+   missing panel as a UI GAP so the deferral could be CHECKED rather than only
+   asserted; this is the panel.
+
+   THE KNOWLEDGE BASE IS TYPED, NOT PICKED, and that is the honest shape rather
+   than a shortcut. Every FORAGER path is project-ROOTED — `projects/{id}/…` —
+   and the integration has never specified a way to ask which ids exist. That is
+   P11 in the shared contract, producer-side and not yet served. A picker with
+   nothing to pick from would have to invent `GET /api/projects`, which is the
+   second implementation §1 forbids, arriving as a 404 in the field. So the field
+   is free text, and the panel says plainly why.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/** True when this operator may write the map. Mirrors the route's Manage gate. */
+function knMayManage() {
+  return ROLE === 'admin';
+}
+
+function knBindingsCard(s) {
+  const map = (s && s.project_map) || {};
+  const fallback = (s && s.default_project) || '';
+  const rows = Object.keys(map).sort();
+
+  const body = rows.length
+    ? '<table class="kn-table"><thead><tr><th>ANTHILL project</th><th>FORAGER knowledge base</th>'
+      + (knMayManage() ? '<th></th>' : '') + '</tr></thead><tbody>'
+      + rows.map(p =>
+          '<tr><td><code>' + escapeHtml(p) + '</code></td>'
+        + '<td><code>' + escapeHtml(map[p]) + '</code></td>'
+        + (knMayManage()
+            ? '<td><button class="kn-btn kn-sm" data-onclick="knUnbind(\'' + jsArg(p) + '\')">Unbind</button></td>'
+            : '')
+        + '</tr>').join('')
+      + '</tbody></table>'
+    : '<div class="kn-empty">No project is bound to a knowledge base yet. A mission in an unbound '
+      + 'project retrieves nothing and says so — it never falls back to someone else’s knowledge.</div>';
+
+  const fallbackRow =
+    '<p class="kn-sub">Default knowledge base: '
+    + (fallback ? '<code>' + escapeHtml(fallback) + '</code>' : '<i>none</i>')
+    + ' — used by the console when no project is selected. A MISSION never falls back to it: a '
+    + 'mission reading a knowledge base that is not its own is the failure the mapping exists to '
+    + 'prevent.</p>';
+
+  if (!knMayManage()) {
+    return '<div class="kn-card"><h3>Knowledge bases</h3>' + body + fallbackRow
+         + '<p class="kn-sub">Changing a binding needs <code>manage_knowledge</code>.</p></div>';
+  }
+
+  return '<div class="kn-card"><h3>Knowledge bases</h3>'
+    + '<p class="kn-lede">Which FORAGER knowledge base each ANTHILL project reads. A project with no '
+    + 'binding refuses rather than guessing.</p>'
+    + body
+    + fallbackRow
+    + '<div class="kn-bindrow">'
+    + '<input id="kn-bind-project" class="kn-input" type="text" placeholder="ANTHILL project id (blank = the default)" aria-label="ANTHILL project id">'
+    + '<input id="kn-bind-base" class="kn-input" type="text" placeholder="FORAGER project ref" aria-label="FORAGER knowledge base">'
+    + '<button class="kn-btn kn-primary" data-onclick="knBind()">Bind</button>'
+    + '</div>'
+    + '<p class="kn-sub">The knowledge base is typed rather than chosen from a list because FORAGER '
+    + 'publishes no way to enumerate its projects yet — that is P11 in '
+    + '<code>docs/FORAGER_SHARED_CONTRACT.md</code>, and inventing an endpoint for it here would be '
+    + 'a second implementation of the same rule. Use the project ref FORAGER shows for the '
+    + 'knowledge base.</p>'
+    + '<div class="kn-say" id="kn-say-bind"></div></div>';
+}
+
+function knSayBind(msg, ok) {
+  const el = document.getElementById('kn-say-bind');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.className = 'kn-say' + (msg ? (ok ? ' kn-ok' : ' kn-bad') : '');
+}
+
+/**
+ * Bind, rebind or set the default.
+ *
+ * An empty project sets the DEFAULT rather than erroring, which is the route's own rule and is
+ * stated in the placeholder — the two must agree or the field lies about what it does.
+ */
+async function knBind() {
+  const project = (document.getElementById('kn-bind-project')?.value || '').trim();
+  const base = (document.getElementById('kn-bind-base')?.value || '').trim();
+
+  if (!base) { knSayBind('Enter the FORAGER project ref to bind to. To remove a binding, use Unbind.', false); return; }
+
+  knSayBind('Binding…', true);
+  try {
+    const r = await api('/knowledge/project-map', 'POST', { project: project, knowledge_base: base });
+    if (!r || !r.success) { knSayBind((r && (r.error || r.message)) || 'The binding could not be written.', false); return; }
+    await loadKnowledge();
+    knSayBind(r.message || 'Bound.', true);
+  } catch (e) {
+    knSayBind((e && e.message) || 'The binding could not be written.', false);
+  }
+}
+
+/** Remove one binding. The project then refuses rather than falling back — that is the point. */
+async function knUnbind(project) {
+  knSayBind('Unbinding…', true);
+  try {
+    const r = await api('/knowledge/project-map', 'POST', { project: project, knowledge_base: '' });
+    if (!r || !r.success) { knSayBind((r && (r.error || r.message)) || 'The binding could not be removed.', false); return; }
+    await loadKnowledge();
+    knSayBind(r.message || 'Unbound.', true);
+  } catch (e) {
+    knSayBind((e && e.message) || 'The binding could not be removed.', false);
+  }
+}
+
+/* ── starting ingestion ───────────────────────────────────────────────────────
+   v0.3.8.153 — `POST /knowledge/jobs` HAD NO CALLER ANYWHERE IN THE CONSOLE.
+
+   The Processing card could list jobs, cancel them and retry them, and could not
+   start one. Every ingestion had to be started by hand against the API. The
+   route has existed since `.121` with a workspace fence in front of it; what was
+   missing was a text box.
+
+   PATHS ARE THE OPERATOR'S OWN, and the fence is the server's. `POST
+   /knowledge/jobs` resolves every path through `WorkspacePathGuard` BEFORE
+   anything is sent, and refuses an escape by throwing; FORAGER has its own
+   allowed-roots fence on the far side. Neither is trusted to be the only one,
+   and this field is trusted by neither.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+function knIngestForm() {
+  if (!knMayManage()) {
+    return '<p class="kn-sub">Starting ingestion needs <code>manage_knowledge</code>.</p>';
+  }
+  return '<div class="kn-ingest">'
+    + '<textarea id="kn-ingest-paths" class="kn-input" rows="3" '
+    + 'placeholder="Folders or files to ingest, one per line — inside the colony workspace" '
+    + 'aria-label="Paths to ingest"></textarea>'
+    + '<div class="kn-bindrow">'
+    + '<label class="kn-lbl"><input type="checkbox" id="kn-ingest-force"> Re-read unchanged sources</label>'
+    + '<button class="kn-btn kn-primary" data-onclick="knStartIngest()">Start ingestion</button>'
+    + '</div>'
+    + '<p class="kn-sub">Paths are resolved against the colony workspace and refused if they leave '
+    + 'it. FORAGER parses the documents; ANTHILL never reads them.</p>'
+    + '<div class="kn-say" id="kn-say-ingest"></div></div>';
+}
+
+function knSayIngest(msg, ok) {
+  const el = document.getElementById('kn-say-ingest');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.className = 'kn-say' + (msg ? (ok ? ' kn-ok' : ' kn-bad') : '');
+}
+
+async function knStartIngest() {
+  const raw = (document.getElementById('kn-ingest-paths')?.value || '');
+  const paths = raw.split('\n').map(p => p.trim()).filter(p => p.length > 0);
+  if (!paths.length) { knSayIngest('Enter at least one folder or file to ingest.', false); return; }
+
+  knSayIngest('Queueing…', true);
+  try {
+    const r = await api('/knowledge/jobs', 'POST', {
+      project: knProject,
+      paths: paths,
+      force: !!document.getElementById('kn-ingest-force')?.checked,
+    });
+    if (!r || !r.success) { knSayIngest((r && (r.error || r.message)) || 'Ingestion was not started.', false); return; }
+    knSayIngest(r.message || 'Ingestion queued.', true);
+    knLoadJobs();
+  } catch (e) {
+    knSayIngest((e && e.message) || 'Ingestion was not started.', false);
+  }
+}
 
 PAGE_ENTER['knowledge'] = () => loadKnowledge();

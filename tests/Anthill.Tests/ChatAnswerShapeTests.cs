@@ -359,4 +359,56 @@ public class ChatAnswerShapeTests
 
         Assert.Contains("CitationIntegrity.Resolvable", body, StringComparison.Ordinal);
     }
+
+    // ---- 5. a chat answer is prose ---------------------------------------------------------------
+
+    /// <summary>
+    /// THE OPERATOR'S OWN WORDS, AND THE FIXTURE IS THE ANSWER THEY WERE SHOWN. v0.3.8.153.
+    ///
+    /// "i dont wanna see the unsourced claims, and have it broken into a bunch of different
+    /// responses, just a single condensed response is good enough."
+    ///
+    /// `[UNSOURCED]` is how a claim tells the GATE it is unattributed, and the gate reads the
+    /// ARTIFACT — which still carries every claim and its attribution. Repeating it to a person who
+    /// asked what an ant does says "this mission had no sources" four times, in brackets, instead of
+    /// once by not citing anything.
+    /// </summary>
+    [Fact]
+    public void AnAnswerWithNothingToCite_ReadsAsOneCondensedResponse()
+    {
+        var raw =
+            "CLAIM: The coder ant proposes patches as structured data. [UNSOURCED]\n"
+          + "CLAIM: It never writes files directly. [UNSOURCED]\n"
+          + "CLAIM: Applying a patch is a recorded human approval. [UNSOURCED]";
+
+        var shown = ResultAssembler.ComposeUserResult(WithBuilderResult(raw));
+
+        Assert.DoesNotContain("UNSOURCED", shown, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("not attributed", shown, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("source:", shown, StringComparison.OrdinalIgnoreCase);
+
+        // ONE response, not three. Every claim survives — condensing is not dropping.
+        Assert.Single(shown.Split("\n\n", StringSplitOptions.RemoveEmptyEntries));
+        Assert.Contains("proposes patches", shown, StringComparison.Ordinal);
+        Assert.Contains("never writes files", shown, StringComparison.Ordinal);
+        Assert.Contains("recorded human approval", shown, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// AND A REAL CITATION STILL SHOWS. The split is on whether the mission has anything to show,
+    /// never on who is reading — a research answer's whole promise is that it can say where it came
+    /// from, and stripping that would be the opposite defect.
+    /// </summary>
+    [Fact]
+    public void AnAnswerWithRealSources_KeepsItsProvenance()
+    {
+        var raw =
+            "CLAIM: The IAU reclassified Pluto in 2006. [SOURCE: https://www.iau.org/pluto]\n"
+          + "CLAIM: Eight planets remain. [UNSOURCED]";
+
+        var shown = ResultAssembler.ComposeUserResult(WithBuilderResult(raw));
+
+        Assert.Contains("https://www.iau.org/pluto", shown, StringComparison.Ordinal);
+        Assert.Contains("Eight planets remain", shown, StringComparison.Ordinal);
+    }
 }

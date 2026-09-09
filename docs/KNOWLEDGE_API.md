@@ -48,6 +48,34 @@ Every route accepts `?project=<anthill-project-id>`, translated to a FORAGER pro
 a knowledge base the operator has not deliberately mapped. Omitting it uses
 `knowledge_default_project`; an unmapped project is `not_found`, never a silent fallback.
 
+### `POST /knowledge/project-map` — `manage_knowledge`
+
+Binds an ANTHILL project to a FORAGER one. Added at **v0.3.8.153** to the documentation and at
+**v0.3.8.148** to the API — the gap between those two numbers is the point of this section existing.
+
+```json
+{ "project": "colony-docs", "knowledge_base": "proj_7f2a" }
+```
+
+| Body | Meaning |
+|---|---|
+| `project` set, `knowledge_base` set | bind or rebind that project |
+| `project` empty, `knowledge_base` set | set `knowledge_default_project` |
+| `project` set, `knowledge_base` empty | **unbind** — the project then refuses, it does not fall back |
+
+Persists immediately: `KnowledgeOptions` re-reads the runtime per call, so the next retrieval sees
+it without a restart. The response echoes the whole `project_map` and `default_project`.
+
+**Deliberately not a tool.** `FORAGER_SHARED_CONTRACT.md` §3 calls project mapping "an authorized
+server operation", and §1 insists an agent may never choose scope — no role's `AllowedTools` names
+this and none should. It widens nothing on its own: every read still goes through
+`ResolveKnowledgeScope` and the provider's `RequireScope`.
+
+The console renders it on the Knowledge page under **Knowledge bases**. The knowledge base is typed
+rather than picked from a list because FORAGER publishes no project listing yet — that is **P11** in
+the shared contract, producer-side, and inventing an endpoint for it consumer-side would be the
+second implementation §1 forbids.
+
 ---
 
 ## Routes
