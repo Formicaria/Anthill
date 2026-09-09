@@ -43,6 +43,25 @@ put a creation request into a class whose ceiling forbids writing the runbook �
 regression in a new coat). The header also stopped showing a conversation mission's composed goal
 verbatim: it is the operator's own first line now, not the project block beneath it.
 
+**AND A TRIVIAL MESSAGE FINALLY YIELDS A TRIVIAL PLAN.** The sharpest finding of the sweep, because
+it is what a first-time operator meets: with the gate fixed, "how do you make tacos?" reached the
+colony, classified `simple_answer` correctly — and was then planned as SEVEN tasks, among them a
+`research` step and a workspace `file_inspection`. The research step hit its 240-second cap, the
+builder and the verifier were skipped because their dependency could not complete, the medic
+diagnosed the failure, and the mission died on the 600-second budget with `NOT ANSWERED`. Ten
+minutes, for a recipe question, ending in nothing. v0.3.8.58 promised exactly this when it deleted
+the chat lane — "the planner decides the shape; a trivial message yields a trivial plan" — and no
+release delivered it. v0.3.8.134 dropped the CHANGE steps from this class, which was half the
+answer: retrieval and inspection are the same defect in a safer coat, because the class's
+specification requires NO evidence at all — its promise is that the answer rests on nothing
+retrieved and nothing inspected, so a plan that gathers is not serving the class, it is
+contradicting it. The plan is now reduced to what `SimpleAnswerCapabilities` names — compile the
+answer, check it answered the ask — using `ConsumesEvidence`, the rule that already decides which
+steps write an answer rather than gather one, so the two readers of that question stay one rule.
+Steps are dropped, never rewritten. And the edges that pointed at dropped steps go with them: a
+survivor still depending on a removed task is unrunnable, which is the exact "skipped because
+dependencies cannot complete" this reduction exists to prevent.
+
 **THE SETTINGS RAIL.** The console's Settings domain is one page with its own left rail, built to
 the operator's design handoff. Eleven destinations in four groups (Console: Account, Connection ·
 Colony: Models, Colony, Automation · Access: Security & Gates, Users · System: Diagnostics,
