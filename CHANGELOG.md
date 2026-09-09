@@ -1,3 +1,106 @@
+## v0.3.8.150 - the question the colony could not hear, and the plumbing it printed instead
+
+**EVERY FINDING IN THIS RELEASE CAME FROM SIX CONSECUTIVE CHAT MESSAGES IN THE OPERATOR'S OWN COLONY,
+SENT MINUTES AFTER `.148` SHIPPED.** `.148` was itself written from the database, passed its own
+suite, and did not answer the question it was built for. That is the release in one sentence.
+
+---
+
+**A DEFINITION IS NOT AN INSPECTION, AND ASKING ABOUT ANTHILL WAS BEING READ AS AN INSTRUCTION TO GO
+AND LOOK AT ANTHILL.** The six messages sort themselves:
+
+    "what is micromound?"                                        simple_answer
+    "what is the anthill colony?"                                general
+    "what is forager? and how does it integrate into the ..."    general
+    "what is micromound? and why does it integrate into Anthill" TROUBLESHOOTING
+
+The one that worked is the one that named nothing. Naming the colony gave the question a TARGET, a
+target disqualifies `simple_answer` — which sits LAST, after every branch that claims a request by
+something the colony can DO — and "why does it integrate" read as a symptom. The mission planned a
+TESTER task titled "Reproduce the reported symptom" for a question about a product feature, and
+`DiagnosisIntegrity` then refused it for having no `command_check` receipt. Correctly, against a
+promise nobody made.
+
+When someone asks what a thing IS and this build ships a written description of that thing, the
+answer is a RECORD — the same on every install, readable with no checkout, no history and no
+knowledge base. Nothing to inspect, nothing to reproduce, nothing to retrieve, which is exactly
+`simple_answer`'s promise. So that branch now runs FIRST: by the time a target has been read, the
+question has already been turned into a job.
+
+The test is ADJACENCY, not presence, and the whole of it lives beside the corpus it reads: the opener
+must be definitional AND a documented name must follow it, allowing only an article between. "what is
+implemented in the anthill repo" opens definitionally and names the colony, and it is an AUDIT —
+after its opener comes "implemented", not a name, so it stays where it was.
+
+---
+
+**`.148` SHIPPED A SELF-DESCRIPTION THE ANSWERING ROLE COULD NOT REACH.** It granted
+`colony_self_knowledge` to the RESEARCHER and every test it shipped exercised that path. A plain
+question plans `builder -> verifier`. There is no researcher in that plan.
+
+So "what is micromound?" came back "micromound remains unaddressed in the available records" — the
+exact sentence `.148` existed to make impossible — and "what is the anthill colony?" was answered
+with invented builders, scouts and workers, and graded `completed_verified`. Registered, granted,
+dispatched, and reaching nobody who writes an answer: the defect class this repository names most
+often, one level above where it was checked.
+
+The builder holds no tool registry and declares `AllowsSideEffects: false` with an empty
+`AllowedTools`, so this is CONTEXT rather than a tool: a lookup against a static array, adding no
+capability, no call path and no failure mode. One corpus, one matcher, two consumers — the
+researcher's tool for a mission that plans one, and this block for the role that writes the answer.
+
+---
+
+**THE OPERATOR WAS BEING SHOWN THE WIRE FORMAT.** Two of the six answers rendered as `CLAIM: ...
+[UNSOURCED]` lines, one of them the literal `CLAIM: [UNSOURCED]` with no claim in it.
+
+`CLAIM: ... [SOURCE: ...]` is a MODEL PROTOCOL — the builder is asked for it so each assertion can be
+split out and checked. `SourcedAnswer.Render()` has existed since `.99` to turn the parse back into
+prose, and nothing on the `UserResult` path ever called it. This is `.147`'s `[d1]` wearing a
+different handle, and that release's rule applies unchanged: what does work for the reader stays,
+what was a handle for the machinery goes. It is not a rewrite — every claim survives with its own
+text, an unattributed one is marked in words rather than brackets, and text that is not claims is
+returned byte for byte.
+
+---
+
+**AND THE BUILDER WAS BEING OFFERED CITATIONS THE GATE IS BUILT TO REFUSE.** A chat question with no
+web ant and no retrieval still had a `recall_set`, because the researcher had recalled prior
+missions. So `retrieved.Count` was non-zero, the claims directive fired, and the model was handed a
+list of `mission:<guid>` urls and told to cite them. Every one landed in `Result.Unresolved`; the
+mission graded `partial`.
+
+Nothing was broken in the ordinary sense. The prompt said cite what you were shown; the gate said a
+recalled mission that traces to no retrieval is not a source; BOTH WERE RIGHT. They were two
+implementations of one rule and they disagreed — in the one place where the disagreement is paid for
+by the operator rather than by a test. The offer now runs the gate's own walk, same recursion, same
+depth, same cycle guard, and offers only what survives it. When nothing survives, the builder writes
+prose, which is the correct shape for a question the colony answered from what it knows.
+
+---
+
+**AND A CORRECTION TO `.148`'s OWN ENTRY, RECORDED HERE RATHER THAN BY EDITING A TAGGED ONE.** The
+two paragraphs below were written for `.148` and did not make its tag: the release block pulled
+`main` before tagging, so the tag was cut from a changelog that did not contain them, while the
+working tree kept them. `ShippedChangelogTests` caught it on this release's first run — which is the
+guard doing exactly its job, and the third time this repository has had new text written into an
+entry while a release was in flight. A tagged entry records what a release said; the text moves
+here.
+
+**A NEW TOOL NAME COST FIVE ADMISSIONS, AND EVERY ONE OF THEM IS THE POINT.** Registering
+`colony_self_knowledge` and granting it to the researcher failed eight guards on the first run:
+`ToolInventory.Implemented`, the SDK's core-less mirror in `SafetyPolicy`, the call-site audit's
+type map, and the fully-equipped roster fixture each demanded the name in writing. That is the
+friction those tables were built to charge — a tool declared by a contract and reaching nobody is
+the defect this repository names most often — and it is paid deliberately rather than derived,
+because the pairing is the thing being checked and cannot be read off either side alone. The SDK
+mirror matters most: it is what answers in a process that never loaded the core, and a definition
+able to take this tool's name could answer "what is ANTHILL?" with anything it liked.
+
+The route ledger records one UI GAP rather than closing it. `/knowledge/project-map` has no console
+control, because a picker needs something to pick from and the listing is P11 — producer-side, and
+not yet served. Recorded, so the deferral is checked on every run instead of remembered.
+
 ## v0.3.8.149 - updates that install themselves, and the checksum that makes that safe
 
 **"USERS HATE HAVING TO CLICK THROUGH ANOTHER INSTALLER."** The operator's instruction, and it is
@@ -70,6 +173,7 @@ guards. And `UpdateVersions` collapses two version comparisons into one: the des
 `System.Version.TryParse`, which fails on a five-part version and fell toward "no update
 available" when it did, which is how a colony comes to believe it is current while an update sits
 on the shelf.
+
 
 ## v0.3.8.148 - a colony that cannot say what it is
 

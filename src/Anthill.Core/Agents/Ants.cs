@@ -1392,7 +1392,7 @@ Assigned task:
 {task.Description}
 
 {AnthillRuntime.UntrustedBlock("prior task output", previousContext)}
-
+{SelfDescriptionBlock(mission.Goal)}
 Create a practical final response.
 {sourcedDirective}{creationDirective}";
         var call = _router.GenerateTyped("builder", prompt, mission.Id, task.Id, Name,
@@ -1488,9 +1488,37 @@ Create a practical final response.
             // BOTH kinds: what the world said (`source_set`) and what the colony already knew
             // (`recall_set`). A model may only cite what it was shown, and it is shown both — so
             // both must be listed, and the gate resolves both from the same records.
-            return _artifacts.ForMission(missionId)
+            //
+            // v0.3.8.150 — AND ONLY THE ONES THAT CAN RESOLVE. THIS ANT WAS OFFERING CITATIONS THE
+            // GATE IS BUILT TO REFUSE.
+            //
+            // Found in the operator's colony. "what is forager? and how does it integrate into the
+            // anthill colony?" is a chat question: no web ant, no retrieval, nothing to cite. But
+            // the researcher had recalled prior missions, so a `recall_set` existed, so
+            // `retrieved.Count` was non-zero, so the builder was handed the CLAIM directive and a
+            // list of `mission:<guid>` urls — and it wrote exactly what it was asked for. Every one
+            // of those citations then landed in `Result.Unresolved`, the mission graded `partial`,
+            // and the operator read `CLAIM: … [UNSOURCED]` as their answer to a plain question.
+            //
+            // Nothing was broken in the sense of a bug: the prompt said cite what you were shown,
+            // the gate said a recalled mission that traces to no retrieval is not a source, and BOTH
+            // WERE RIGHT. They were two implementations of one rule and they disagreed — the defect
+            // class this repository names most often, in the one place where the disagreement is
+            // paid for by the operator rather than by a test.
+            //
+            // So the offer now runs the gate's OWN walk (`CitationIntegrity.Resolvable`, the same
+            // `TracesToRetrieval` recursion, same depth, same cycle guard) and offers only what
+            // survives it. A recalled mission that really does rest on a retrieval is still citable
+            // — that is the whole point of the walk. One that rests on nothing is simply not shown,
+            // and when nothing survives, `retrieved.Count == 0` and the builder writes prose,
+            // which is the correct shape for a question the colony answered from what it knows.
+            var mine = _artifacts.ForMission(missionId);
+            var resolvable = Outcomes.CitationIntegrity.Resolvable(mine, id => _artifacts.ForMission(id));
+
+            return mine
                 .Where(a => Anthill.SDK.Artifacts.ArtifactSchemas.CitableRecords.Contains(a.Schema))
                 .SelectMany(a => Anthill.SDK.Artifacts.SourceSetPayload.Read(a.Payload))
+                .Where(s => resolvable.Contains(s.Url))
                 .DistinctBy(s => s.Url, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
@@ -1499,6 +1527,51 @@ Create a practical final response.
             Console.Error.WriteLine($"[builder] could not read retrieved sources for {missionId}: {error.Message}");
             return Array.Empty<Anthill.SDK.Artifacts.RetrievedSource>();
         }
+    }
+
+    /// <summary>
+    /// v0.3.8.150 — WHAT ANTHILL SAYS ABOUT ITSELF, WHERE THE ANSWER IS ACTUALLY WRITTEN.
+    ///
+    /// `.148` shipped `ColonySelfKnowledge` and reached it through a tool the RESEARCHER may
+    /// dispatch. The operator's next chat session showed the flaw immediately, and it is the defect
+    /// class this repository names most often, one level up from where it was checked: a plain
+    /// question plans `builder -> verifier`. THERE IS NO RESEARCHER IN THAT PLAN. So "what is
+    /// micromound?" was answered "micromound remains unaddressed in the available records" — the
+    /// exact sentence `.148` was written to make impossible — and "what is the anthill colony?" was
+    /// answered with invented builders, scouts and workers, and graded `completed_verified`.
+    /// Registered, granted, dispatched, and reaching nobody who writes an answer.
+    ///
+    /// SO IT IS CONTEXT HERE, NOT A TOOL. The builder holds no tool registry, declares
+    /// `AllowsSideEffects: false` and `AllowedTools: S()`, and giving the answering role a dispatch
+    /// lane to fix a lookup would be a large change to a deliberately small contract. This costs a
+    /// dictionary lookup against a static array and adds no capability, no call path and no failure
+    /// mode — the entry either exists in the binary or it does not.
+    ///
+    /// IT IS NOT A SECOND COPY OF ANYTHING. One corpus, one matcher (`NamesSubjectOf`), two
+    /// consumers: the researcher's tool for a mission that plans one, and this block for the role
+    /// that writes the operator's answer. The failure the tables in `ToolInventory` exist to catch
+    /// is two SPELLINGS of one rule; this is one rule read from one place by two callers.
+    ///
+    /// AND IT SAYS WHERE IT CAME FROM. The block names itself as shipped documentation and tells the
+    /// model to prefer it over recollection and to say plainly when the term is not documented —
+    /// because the whole reason this is data rather than a system prompt is that the answer can then
+    /// be traced to a versioned record instead of to a model's weights.
+    /// </summary>
+    private static string SelfDescriptionBlock(string? goal)
+    {
+        if (!Tools.ColonySelfKnowledge.NamesSubjectOf(goal)) return "";
+
+        var entries = Tools.ColonySelfKnowledge.Find(goal);
+        if (entries.Count == 0) return "";
+
+        return $@"
+ANTHILL's own shipped description of itself (documentation compiled into this build — not a
+recollection, not something this mission retrieved). Where it and your own knowledge disagree, THIS
+is correct: it describes the software you are running inside. If the operator asks about something
+ANTHILL does not document here, say so plainly rather than supplying a definition of your own.
+
+{string.Join("\n\n", entries.Select(e => $"    {e.Title} ({e.Topic}): {e.Body}"))}
+";
     }
 
     /// <summary>

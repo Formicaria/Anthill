@@ -175,4 +175,100 @@ public static class ColonySelfKnowledge
 
         return byName.Concat(byBody).ToList();
     }
+
+    /// <summary>
+    /// v0.3.8.150 — DOES THIS BUILD SHIP A DESCRIPTION OF WHAT THIS REQUEST IS ASKING ABOUT?
+    /// The subject half of `MissionIntake`'s self-description branch, and of the block
+    /// `BuilderAnt` puts in front of a model.
+    ///
+    /// NAME MATCHES ONLY, and that is the whole difference from <see cref="Find"/>. `Find` falls
+    /// back to the body so an operator who knows no topic id still gets something; a CLASSIFIER
+    /// must not, because every entry's prose contains ordinary English and a body match would let
+    /// any sentence at all claim to be a question about ANTHILL. A topic or a title, present in the
+    /// request as a whole word — nothing else.
+    ///
+    /// WHOLE WORD, not substring, and it is the second thing this method does differently. `Find`'s
+    /// containment test is right for a lookup and wrong here: "ants" sits inside "wants",
+    /// "constants" and "merchants", so a substring test would file "what is a constant?" as a
+    /// question about the colony's roster. A word boundary costs one regex and removes the entire
+    /// class.
+    /// </summary>
+    public static bool NamesSubjectOf(string? request) => Names(request).Count > 0;
+
+    /// <summary>Every documented name this request mentions as a whole word, longest first so an
+    /// adjacency test prefers "mission classes" over the "mission" inside it.</summary>
+    private static List<string> Names(string? request)
+    {
+        var found = new List<string>();
+        if (string.IsNullOrWhiteSpace(request)) return found;
+
+        foreach (var entry in Entries)
+        foreach (var name in new[] { entry.Topic, entry.Title })
+        {
+            // Topic ids are snake_case (`mission_classes`, `knowledge_scope`); an operator writes
+            // them with a space. Both spellings are the same name and both are accepted.
+            var spelled = name.Replace('_', ' ').Trim();
+
+            // Short names are dropped rather than matched loosely. Nothing under four characters
+            // identifies anything on its own, and admitting one would make an article or a stray
+            // acronym look like a subject.
+            if (spelled.Length < 4 || found.Contains(spelled, StringComparer.OrdinalIgnoreCase)) continue;
+
+            if (System.Text.RegularExpressions.Regex.IsMatch(
+                    request,
+                    @"\b" + System.Text.RegularExpressions.Regex.Escape(spelled) + @"\b",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                found.Add(spelled);
+        }
+
+        return found.OrderByDescending(n => n.Length).ToList();
+    }
+
+    /// <summary>
+    /// v0.3.8.150 — IS THIS REQUEST ASKING WHAT ONE OF THESE NAMES MEANS? The whole test
+    /// `MissionIntake`'s self-description branch runs, kept in ONE method beside the corpus it reads
+    /// rather than split into an opener regex there and a subject test here.
+    ///
+    /// TWO CONDITIONS, AND THE SECOND IS ADJACENCY, NOT PRESENCE. The opener must be definitional —
+    /// "what is/are", "what's", "who is", "define", "tell me about" — AND a documented name must
+    /// come straight after it, allowing only an article between. That is stricter than "the request
+    /// mentions ANTHILL somewhere", and the difference is a real regression this rule was tightened
+    /// to avoid: "what is implemented in the anthill repo" opens definitionally and names the
+    /// colony, and it is an AUDIT — the answer is read off the operator's tree, not off a paragraph
+    /// that ships with every copy. After its opener comes "implemented", not a name, so it stays
+    /// where it was.
+    ///
+    /// A BARE "explain" IS DELIBERATELY ABSENT from the opener list. "explain the mission that
+    /// failed yesterday" is a question about this colony's STATE, and `colony_state` reads that
+    /// live; documentation cannot answer it and should not claim it.
+    ///
+    /// LONGEST NAME FIRST, because "mission classes" contains "mission": testing the short name
+    /// first would match "what are the mission classes" against the `mission` entry's position and
+    /// then fail the adjacency check on the word "classes".
+    ///
+    /// WHAT IT STILL COSTS WHEN IT MISREADS: "what is the mission that failed" satisfies both
+    /// conditions and would be answered from the `mission` entry rather than from the record of that
+    /// mission. That is a worse answer and not a dangerous one — the class it lands in carries
+    /// `Observe`, so nothing can be written, and requires no evidence, so nothing is graded against
+    /// a promise it did not make. The failure it replaces was a question planned as a symptom
+    /// reproduction with a tester assigned to it.
+    /// </summary>
+    public static bool AsksForADefinition(string? request)
+    {
+        if (string.IsNullOrWhiteSpace(request)) return false;
+
+        foreach (var name in Names(request))
+        {
+            if (System.Text.RegularExpressions.Regex.IsMatch(
+                    request,
+                    @"^\s*(?:what(?:'|’)?s|what\s+(?:is|are)|who(?:'|’)?s|who\s+is|"
+                  + @"define|tell\s+me\s+(?:what|about))\s+"
+                  + @"(?:the\s+|a\s+|an\s+)?"
+                  + System.Text.RegularExpressions.Regex.Escape(name) + @"\b",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
 }

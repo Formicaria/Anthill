@@ -360,6 +360,77 @@ public static class MissionIntake
         var targets = ResolveTargets(request);
         var freshness = CurrentFreshness.IsMatch(request) ? MissionFreshness.Current : MissionFreshness.Historical;
 
+        // ── v0.3.8.150 — "WHAT IS X" ABOUT THE COLONY ITSELF, AND WHY IT IS THE FIRST BRANCH ──────
+        //
+        // From the operator's colony, six consecutive chat messages, and the pattern is exact:
+        //
+        //     "what is micromound?"                                        → simple_answer
+        //     "what is the anthill colony?"                                → general
+        //     "what is forager? and how does it integrate into the …"      → general
+        //     "what is micromound? and why does it integrate into Anthill" → TROUBLESHOOTING
+        //
+        // The one that worked is the one that named nothing. ASKING ABOUT ANTHILL GAVE THE QUESTION
+        // A TARGET, and a target disqualifies `simple_answer` — which sits LAST, after every branch
+        // that claims a request by something the colony can DO about it. So a question about the
+        // colony was read as an instruction to go and look at the colony; "why does it integrate"
+        // read as a symptom, and the mission planned a TESTER task titled "Reproduce the reported
+        // symptom" for a question about a product feature. `DiagnosisIntegrity` then refused it for
+        // having no `command_check` receipt — correctly, against a promise nobody had made.
+        //
+        // A DEFINITION IS NOT AN INSPECTION. When someone asks what a thing IS and this build ships
+        // a written description of that thing, the answer is a RECORD: the same on every install,
+        // readable with no checkout, no history and no knowledge base. There is nothing to inspect,
+        // nothing to reproduce and nothing to retrieve, which is exactly `simple_answer`'s promise.
+        // So this runs BEFORE the branches that would claim the request for a target — by the time a
+        // target has been read, the question has already been turned into a job.
+        //
+        // THE WHOLE TEST LIVES BESIDE THE CORPUS IT READS (`ColonySelfKnowledge.AsksForADefinition`)
+        // rather than as an opener regex here and a subject lookup there. Splitting it would be two
+        // halves of one rule in two files, which is the drift this repository names most often — and
+        // the adjacency requirement, which is the part that keeps "what is implemented in the
+        // anthill repo" an AUDIT, only makes sense with both halves in view.
+        // AND THREE THINGS TAKE IT STRAIGHT BACK OUT, every one of them found by the suite on this
+        // release's first run — the fixture being "What is the Anthill colony capable of now? What
+        // is good and bad about its workflow? Does it hit the proper ants it needs to?", which opens
+        // definitionally, names the colony, and is an AUDIT in every other respect.
+        //
+        // The rule they express is one rule: DOCUMENTATION ANSWERS WHAT A THING IS, PERMANENTLY.
+        // It cannot answer what this colony can do, how well it does it, or what is true of it right
+        // now — those are read live, off the operator's own runtime and tree, and a paragraph that
+        // ships with every copy would answer them identically on a colony where they are false.
+        //
+        //   CapabilityQuestions  "capable", "strengths", "weaknesses", "limitations", "good and bad"
+        //                        — an assessment OF this colony, which is `system_audit`'s subject.
+        //   AssessVerbs          "audit", "evaluate", "review", "analyse" — the request says outright
+        //                        that it wants something examined.
+        //   Freshness == Current "now", "currently", "right now", "today" — the class's own branch
+        //                        below already records why a shipped answer may not claim freshness
+        //                        it has no retrieval to back. Asking about NOW is asking about state.
+        if (Tools.ColonySelfKnowledge.AsksForADefinition(request)
+            && !CapabilityQuestions.IsMatch(request)
+            && !AssessVerbs.IsMatch(request)
+            && freshness != MissionFreshness.Current)
+            return new MissionSpecification
+            {
+                OriginalRequest = request,
+                MissionClass = MissionSpecification.SimpleAnswerClass,
+                Intent = MissionIntent.Explain,
+                // NONE, and it is FORCED rather than resolved — that is the entire content of this
+                // branch. `ResolveTargets` read a target and was right to: the request does name
+                // ANTHILL. What it cannot see is that the request asks what that name MEANS rather
+                // than asking the colony to go and look at the thing, and a target is the colony's
+                // word for somewhere to go and look.
+                Targets = MissionTargets.None,
+                Freshness = freshness,
+                // OBSERVE, for the same reason the class's own branch below gives: not because the
+                // answer inspects anything, but because it changes nothing — and the gate reads this
+                // ceiling at dispatch, so a plan assembled any other way still cannot write.
+                Authority = MissionAuthority.Observe,
+                Deliverables = ResolveDeliverables(request),
+                RequiredCapabilities = SimpleAnswerCapabilities,
+                RequiredEvidence = Array.Empty<string>(),
+            };
+
         // THE CLASS IS DERIVED, and only when the dimensions agree on something this release can
         // actually serve. Assessment of the repository and/or the runtime is a system audit;
         // diagnosis of a symptom about a nameable target is troubleshooting (v0.3.8.101); a CHANGE

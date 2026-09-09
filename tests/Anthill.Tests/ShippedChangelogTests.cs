@@ -106,15 +106,46 @@ public class ShippedChangelogTests
     };
 
     /// <summary>
+    /// MOJIBAKE REPAIRS, v0.3.8.150 — the UTF-8 bytes of a punctuation character, as they look when
+    /// something along the way read them as CP437.
+    ///
+    /// `v0.3.8.148`'s entry was TAGGED CORRUPT: every em dash in it is `ΓÇö` (the bytes E2 80 94
+    /// read one byte at a time), every section sign `┬º`, every ellipsis `ΓÇª`. The working tree
+    /// carries the repaired text, so this guard reported the entry as edited after shipping — which
+    /// is true of the bytes and false of the words, and the words are what it exists to protect.
+    ///
+    /// NORMALISED, NOT ALLOW-LISTED, which is the choice this file already made for archive-link
+    /// maintenance and for the same stated reason: it is not a content change. An allow-list entry
+    /// would have excused the `.148` entry from the guard entirely and let a real edit through with
+    /// it. A repair table cannot: it maps a mojibake sequence to exactly the character it stands
+    /// for, applied to both sides, so two entries compare equal only when they say the same words.
+    ///
+    /// `.118` paid for the other half of this lesson — it swept the changelog for `â€` , found
+    /// none, and declared it clean while 2,144 instances of `ΓÇö` sat in every tagged entry. The
+    /// corruption has a spelling; guessing at it is how it survives.
+    /// </summary>
+    private static readonly (string Mojibake, string Repaired)[] EncodingRepairs =
+    {
+        ("ΓÇö", "—"), ("ΓÇô", "–"), ("ΓÇª", "…"), ("ΓÇÖ", "’"), ("ΓÇÿ", "‘"),
+        ("ΓÇ£", "“"), ("ΓÇØ", "”"), ("ΓÇ¢", "•"), ("┬º", "§"), ("┬´", "¯"), ("┬á", " "),
+    };
+
+    /// <summary>
     /// Compare CONTENT, not formatting.
     ///
     /// Archive moves rewrite `docs/X.md` to `docs/archive/v3/X.md` across every entry that mentions
     /// the document — link maintenance forced by another guard, not a change to what the release did.
-    /// Re-wrapping a paragraph is likewise not a content change. Both are normalised so this guard
-    /// fires only on words.
+    /// Re-wrapping a paragraph is likewise not a content change. Nor is repairing the encoding of a
+    /// character (see <see cref="EncodingRepairs"/>). All three are normalised so this guard fires
+    /// only on words.
     /// </summary>
-    private static string Content(string entry) =>
-        Regex.Replace(Regex.Replace(entry, @"docs/archive/v\d+/", "docs/"), @"\s+", " ").Trim();
+    private static string Content(string entry)
+    {
+        foreach (var (mojibake, repaired) in EncodingRepairs)
+            entry = entry.Replace(mojibake, repaired, StringComparison.Ordinal);
+
+        return Regex.Replace(Regex.Replace(entry, @"docs/archive/v\d+/", "docs/"), @"\s+", " ").Trim();
+    }
 
     /// <summary>The `## vX` entries in a changelog, keyed by version, text and all.</summary>
     private static Dictionary<string, string> Entries(string changelog)
