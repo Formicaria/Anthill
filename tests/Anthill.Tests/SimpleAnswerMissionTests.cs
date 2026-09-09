@@ -240,6 +240,69 @@ public class SimpleAnswerMissionTests
         Assert.Contains(tasks, t => string.Equals(t.AssignedAnt, "verifier", StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// AND IT DROPS THE GATHERING LANE TOO. v0.3.8.145, found live on a local model: this exact
+    /// question was classified `simple_answer` — correctly — and then planned as seven tasks,
+    /// including a `research` step and a workspace `file_inspection`. The research step hit its
+    /// 240-second cap, the builder and verifier were skipped because their dependency could not
+    /// complete, and the mission died on the 600-second budget with NOT ANSWERED. Ten minutes, for
+    /// a recipe question, ending in a failure.
+    ///
+    /// Dropping only the CHANGE steps was never enough: this class's specification requires no
+    /// evidence at all, because its promise is that the answer rests on nothing retrieved and
+    /// nothing inspected. A plan that gathers is not serving the class, it is contradicting it —
+    /// so the plan is reduced to what `SimpleAnswerCapabilities` actually names: compile the
+    /// answer, and check it answered what was asked.
+    /// </summary>
+    [Fact]
+    public void TheCoveragePass_DropsTheGatheringLane_AndLeavesAnAnswerThatCanRun()
+    {
+        var specification = MissionIntake.Resolve(Request);
+        var research = new Task { Id = "t_research", Title = "Research taco recipes", AssignedAnt = "researcher", TaskType = "research" };
+        var inspect = new Task { Id = "t_inspect", Title = "Inspect the workspace", AssignedAnt = "file", TaskType = "file_inspection" };
+        var answer = new Task
+        {
+            Id = "t_answer", Title = "Write the answer", AssignedAnt = "builder", TaskType = "build_answer",
+            // The edges the live plan had: the answer waited on the step that timed out.
+            DependsOn = new List<string> { "t_research", "t_inspect" },
+            ParentTaskIds = new List<string> { "t_research" },
+        };
+
+        var tasks = Planner.EnsureClassCoverage(new List<Task> { research, inspect, answer }, Request, specification);
+
+        Assert.DoesNotContain(tasks, t => string.Equals(t.TaskType, "research", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(tasks, t => string.Equals(t.TaskType, "file_inspection", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(tasks, t => string.Equals(t.AssignedAnt, "builder", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(tasks, t => string.Equals(t.AssignedAnt, "verifier", StringComparison.OrdinalIgnoreCase));
+
+        // AND EVERY SURVIVOR CAN ACTUALLY RUN. A kept step still pointing at a dropped one is
+        // "skipped because dependencies cannot complete" — the very failure this reduction exists
+        // to prevent, reproduced by the fix for it.
+        var ids = tasks.Select(t => t.Id).ToHashSet(StringComparer.Ordinal);
+        foreach (var task in tasks)
+        {
+            Assert.All(task.DependsOn, d => Assert.Contains(d, ids));
+            Assert.All(task.ParentTaskIds, p => Assert.Contains(p, ids));
+        }
+    }
+
+    /// <summary>
+    /// A plan that was ALREADY only an answer is left alone — the reduction removes what does not
+    /// belong, it does not rebuild what does.
+    /// </summary>
+    [Fact]
+    public void AnAnswerOnlyPlan_SurvivesTheReductionUnchanged()
+    {
+        var specification = MissionIntake.Resolve(Request);
+        var answer = new Task { Id = "t_a", Title = "Answer", AssignedAnt = "builder", TaskType = "build_answer" };
+        var verify = new Task { Id = "t_v", Title = "Verify", AssignedAnt = "verifier", TaskType = "verification", DependsOn = new List<string> { "t_a" } };
+
+        var tasks = Planner.EnsureClassCoverage(new List<Task> { answer, verify }, Request, specification);
+
+        Assert.Equal(2, tasks.Count);
+        Assert.Equal(new[] { "t_a" }, tasks.Single(t => t.Id == "t_v").DependsOn);
+    }
+
     // ---- the gate ------------------------------------------------------------------------------
 
     /// <summary>An answered question that changed nothing is what the class promises. It passes.</summary>
