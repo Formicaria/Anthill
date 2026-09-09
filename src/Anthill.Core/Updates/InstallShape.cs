@@ -4,7 +4,7 @@ namespace Anthill.Core.Updates;
 
 /// <summary>
 /// HOW THIS COPY OF ANTHILL WAS INSTALLED, because every safety rule about updating it follows
-/// from that and from nothing else. v0.3.8.146.
+/// from that and from nothing else. v0.3.8.149.
 ///
 /// The update feature exists because operators hate clicking through an installer, and the honest
 /// way to serve that is to know exactly what is being replaced. The four shapes do not merely

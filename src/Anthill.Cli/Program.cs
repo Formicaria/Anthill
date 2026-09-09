@@ -113,7 +113,7 @@ switch (command)
 
     case "--apply-staged-update":
     {
-        // v0.3.8.146 — the systemd unit's ExecStartPre. Runs in the one moment a service CAN
+        // v0.3.8.149 — the systemd unit's ExecStartPre. Runs in the one moment a service CAN
         // replace its own binaries: after the old process has stopped and before the new one
         // starts. Re-verifies the staged payload's SHA-256 first — staging checked it at download
         // time, and the disk between then and now is not a trusted place.

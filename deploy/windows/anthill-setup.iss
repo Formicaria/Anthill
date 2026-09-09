@@ -4,7 +4,7 @@
 ; by default (untickable in the same screen), a Start Menu entry, launch-after-install, and a
 ; normal Add/Remove Programs uninstaller.
 ;
-; v0.3.8.146 — INSTALLED FOR ONE USER, AND THAT IS WHAT MAKES UPDATES SILENT.
+; v0.3.8.149 — INSTALLED FOR ONE USER, AND THAT IS WHAT MAKES UPDATES SILENT.
 ;
 ; The operator's ask was that an already-installed Anthill update itself without a wizard and
 ; without an administrator prompt. The wizard part is a flag (`/VERYSILENT`). The prompt is not:
@@ -89,7 +89,7 @@ Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 ; shortcuts below NAME it, because a shortcut that merely points at the exe inherits whatever
 ; Explorer's icon cache last believed about that path; an explicit IconFilename cannot be stale.
 Source: "{#SourcePath}\..\..\src\Anthill.Desktop\anthill.ico"; DestDir: "{app}"
-; v0.3.8.146 — the marker that tells the running app it was INSTALLED rather than unzipped.
+; v0.3.8.149 — the marker that tells the running app it was INSTALLED rather than unzipped.
 ;
 ; The updater has to know which shape it is before it may replace anything: an install owns its
 ; directory, an unzipped folder has the colony's database sitting beside the binary. Guessing from

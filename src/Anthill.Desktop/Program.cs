@@ -36,7 +36,7 @@ internal static class Program
         {
             DesktopLog.Attach();   // Console.Out/Error → %LOCALAPPDATA%\Anthill\desktop.log
 
-            // v0.3.8.146 — A STAGED UPDATE IS APPLIED BEFORE ANYTHING OPENS.
+            // v0.3.8.149 — A STAGED UPDATE IS APPLIED BEFORE ANYTHING OPENS.
             //
             // Here, and not later, for a mechanical reason: the installer replaces THIS program's
             // own files, and Windows will not let it while they are in use. Before the window, the

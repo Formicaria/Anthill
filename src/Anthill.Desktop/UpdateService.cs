@@ -7,7 +7,7 @@ using Anthill.Core.Updates;
 namespace Anthill.Desktop;
 
 /// <summary>
-/// UPDATES THAT DO NOT ASK. v0.3.8.146, at the operator's instruction: "users HATE having to click
+/// UPDATES THAT DO NOT ASK. v0.3.8.149, at the operator's instruction: "users HATE having to click
 /// through another installer. They shouldn't even need to give admin approval if anthill is
 /// already installed."
 ///

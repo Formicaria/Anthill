@@ -3,7 +3,7 @@ using System.IO.Compression;
 namespace Anthill.Core.Updates;
 
 /// <summary>
-/// APPLYING A STAGED UPDATE, AND THE ONE RULE THAT OUTRANKS SHIPPING IT. v0.3.8.146.
+/// APPLYING A STAGED UPDATE, AND THE ONE RULE THAT OUTRANKS SHIPPING IT. v0.3.8.149.
 ///
 /// The rule: <b>never remove a path this release does not itself replace.</b> Not "try not to",
 /// not "unless it looks like a leftover" — never. It is written as a filter over the archive's own

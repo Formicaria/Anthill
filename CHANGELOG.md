@@ -1,3 +1,76 @@
+## v0.3.8.149 - updates that install themselves, and the checksum that makes that safe
+
+**"USERS HATE HAVING TO CLICK THROUGH ANOTHER INSTALLER."** The operator's instruction, and it is
+right: an application already granted permission to be installed should not beg for it again every
+release, and it should not ask for administrator approval to replace files it owns. What made this
+more than a flag is that the prompt being removed was doing TWO jobs, and only one of them was a
+ritual.
+
+The ritual was CONSENT — granted once by installing Anthill, then re-requested every release. It
+moves to a setting, `auto_update` (`silent` | `notify` | `off`), given once.
+
+The other job was that a human stood between a downloaded executable and the machine it ran on.
+Nothing about disliking prompts makes that less necessary; with nobody watching it is more so. So
+the release workflow now publishes a **`.sha256` sidecar beside every artifact**, generated in the
+same job from the bytes it archived, and nothing is executed, extracted or moved into place until
+the file on disk hashes to it. A mismatch DELETES the download and refuses — a file that fails its
+hash is corrupt or hostile and there is no third possibility worth keeping on disk. Verification is
+deliberately not a setting. Said plainly in the code and worth repeating here: a hash fetched over
+the same channel as the file is **not a signature**. It defeats corruption, a bad mirror, a
+truncated download and a tampered CDN object; it does not defeat a compromised account.
+Authenticode is the control that does, and it needs a certificate this project does not yet have.
+
+**NO UAC PROMPT, BECAUSE THE APP OWNS ITS OWN DIRECTORY.** Anthill now installs per-user, under
+`%LOCALAPPDATA%\Programs\Anthill` — what Chrome, VS Code and Slack do, for exactly this reason. A
+program in `Program Files` cannot replace its own files without elevation no matter how quiet the
+installer is; the alternatives were an always-elevated updater service (a permanent privileged
+attack surface, and something this repository already has a test forbidding) or installing where
+the user can write. An existing machine-wide install cannot be removed without elevation by
+anybody, so it is offered the move ONCE, in words that say what it costs, and never nagged again.
+Elevation is never requested silently.
+
+**UPDATES APPLY AT THE NEXT START**, on every shape, for one mechanical reason: a running program
+cannot replace its own files. Downloading and verifying happens while the colony works; the swap
+happens in the gap. It also means an update never interrupts a mission — the colony finishes what
+it is doing, and the new version is what starts next time.
+
+**FOUR SHAPES, FOUR HONEST ANSWERS.** `InstallShape` detects how this copy was installed, because
+every safety rule follows from that and detection failing to a guess is how a colony gets deleted:
+
+- **Windows installed** — the installer runs `/VERYSILENT`, data under `%LOCALAPPDATA%` is
+  untouched by contract.
+- **Windows portable** — the dangerous one: the database sits BESIDE the binary. The updater
+  replaces only paths the new archive actually contains, never the folder, and refuses an archive
+  **whole** if any entry would land inside the data directory. A partially applied update is a
+  version that never shipped.
+- **LXC / systemd** — could not update itself at all: `ProtectSystem=strict` makes `bin/`
+  read-only to its own service. The colony now stages into `.anthill/updates` (which it can write)
+  and a new `anthill --apply-staged-update` swaps it in from `ExecStartPre`, the one moment a
+  program can replace its own binaries. The hook is prefixed `-` and the verb exits 0 on every
+  ordinary outcome including a failed checksum: **a failed update must cost an update, never an
+  outage.** `ReadWritePaths` gains `bin/`, and that widening is written down in the unit rather
+  than slipped in, with the two lines to delete for an operator who would rather keep it read-only.
+- **Docker** — a container is replaced, not updated, so it never self-updates and says so.
+
+**AND THE CONSOLE STOPS TELLING EVERYONE TO RUN AN LXC COMMAND.** The update banner hardcoded
+`cd /opt/anthill/src && git pull && bash deploy/lxc/setup.sh` as the remedy for EVERY install —
+false for the Windows app, an unzipped folder and a container alike, which is three of the four
+ways to install this. What to do about an update is a fact about how you installed it, so
+`/update/check` answers it, where that is known. A staged, verified update now reports itself as
+*ready* rather than *available*: there is nothing left to click, only a restart. (The stray `?`
+that opened that banner was a flattened glyph — the same defect the v0.3.8.144 sweep chased out of
+the rest of the console. It is words now.)
+
+**THE TEST THAT EXISTED TO STOP THIS WAS REWRITTEN, NOT RELAXED.**
+`DesktopShellTests.TheTray_IsPolite_AndTheUpdaterNeedsAYes` pinned the literal sentence "Nothing
+ever downloads or installs without a yes". It was written to make exactly this change impossible by
+accident, and it worked. It now pins the replacement — a published digest verified before anything
+runs, no execution of an unverified payload, no silent elevation — under a name that says what it
+guards. And `UpdateVersions` collapses two version comparisons into one: the desktop updater used
+`System.Version.TryParse`, which fails on a five-part version and fell toward "no update
+available" when it did, which is how a colony comes to believe it is current while an update sits
+on the shelf.
+
 ## v0.3.8.148 - a colony that cannot say what it is
 
 **ASKED "what is micromound? and how does it benefit the colony", A REAL COLONY SEARCHED ITS MISSION

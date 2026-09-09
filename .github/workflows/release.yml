@@ -115,7 +115,7 @@ jobs:
             tar -czf "anthill-${VERSION}-${{ matrix.rid }}.tar.gz" -C ./publish/${{ matrix.rid }} .
           fi
 
-      # v0.3.8.146 — THE HASH IS PUBLISHED BECAUSE THE UPDATE IS SILENT.
+      # v0.3.8.149 — THE HASH IS PUBLISHED BECAUSE THE UPDATE IS SILENT.
       #
       # An unattended updater downloads and runs this file with nobody watching, so "it came over
       # TLS from a URL GitHub gave us" is the only thing standing between a compromised release

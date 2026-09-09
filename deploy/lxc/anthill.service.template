@@ -7,7 +7,7 @@ Type=simple
 User=__SERVICE_USER__
 WorkingDirectory=__INSTALL_DIR__
 Environment=ANTHILL_HOME=__INSTALL_DIR__
-# v0.3.8.146 — A STAGED UPDATE IS SWAPPED IN BEFORE THE SERVICE STARTS, NEVER WHILE IT RUNS.
+# v0.3.8.149 — A STAGED UPDATE IS SWAPPED IN BEFORE THE SERVICE STARTS, NEVER WHILE IT RUNS.
 #
 # The colony downloads a release tarball and verifies its published SHA-256 while running, into
 # .anthill/updates — the one directory this unit lets it write. It cannot install it there and
@@ -43,7 +43,7 @@ ProtectSystem=strict
 # as a git checkout here. If you relocate agent_workspace_dir OUTSIDE .anthill, add a matching
 # ReadWritePaths line for it too, or auto-apply will fail with a read-only filesystem error.
 ReadWritePaths=__INSTALL_DIR__/.anthill
-# v0.3.8.146 — and bin/, so the pre-start swap above can replace the binaries.
+# v0.3.8.149 — and bin/, so the pre-start swap above can replace the binaries.
 #
 # THIS IS A DELIBERATE WIDENING AND IT IS WORTH BEING HONEST ABOUT. Before this line the service
 # could not overwrite its own program files at all, which is a genuine defence: a compromised
