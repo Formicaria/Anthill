@@ -62,6 +62,19 @@ Steps are dropped, never rewritten. And the edges that pointed at dropped steps 
 survivor still depending on a removed task is unrunnable, which is the exact "skipped because
 dependencies cannot complete" this reduction exists to prevent.
 
+**AND A QUESTION IS NOT PLANNED AT ALL.** Measured while verifying the reduction on the operator's
+own colony: the same question then sat for two and a half minutes with an EMPTY graph, because a
+local 35B was still composing a plan whose every step the reduction was about to drop. The planner
+model cannot contribute to this class by construction — anything beyond the answer and its check is
+removed a few lines later — so the call is not made. Same judgement the long-input and no-router
+branches already make (plan without the model when the model's answer cannot matter), and recorded
+the same way, as a new `class_needs_no_plan` substitution: a plan nobody proposed is exactly what
+that vocabulary exists to explain. It sits ABOVE the no-router branch, because for this class the
+router's presence never mattered and naming it as the cause would name something that decided
+nothing; the long-input gate still runs first, since chunking is a mechanical bound on context
+rather than a judgement about the request. `EnsureClassCoverage` still builds the plan, from an
+empty list, so the shape keeps one author.
+
 **THE SETTINGS RAIL.** The console's Settings domain is one page with its own left rail, built to
 the operator's design handoff. Eleven destinations in four groups (Console: Account, Connection ·
 Colony: Models, Colony, Automation · Access: Security & Gates, Users · System: Diagnostics,
