@@ -34,6 +34,7 @@
 
 let knStatus = null;      // last /knowledge/status payload
 let knProject = '';       // ANTHILL project id scoping the view ('' = configured default)
+let knBases = [];         // knowledge bases FORAGER reports (GET /knowledge/projects)
 let knLastQuery = '';
 
 /* Support levels, in the words the operator should read. The key is what the
@@ -82,6 +83,20 @@ async function loadKnowledge() {
       return;
     }
     knStatus = r.data || {};
+
+    /* v0.3.8.158 — AND WHAT FORAGER ACTUALLY HOLDS. Fetched here rather than inside the renderer so
+       the page draws once with everything it needs: a picker that appears a beat after the card it
+       lives in is a picker an operator has already scrolled past. Only asked when the credential
+       works — an unauthenticated call would 401 and the answer would be an empty list, which reads
+       as "FORAGER has no projects" and is a different and much worse sentence. */
+    knBases = [];
+    if (knStatus.enabled && knStatus.reachable && knStatus.authenticated !== false && knMayManage()) {
+      try {
+        const p = await api('/knowledge/projects');
+        if (p && p.success && p.data && Array.isArray(p.data.projects)) knBases = p.data.projects;
+      } catch (_) { /* the page works without the picker; the bind row says so */ }
+    }
+
     knRenderShell(host);
   } catch (e) {
     host.innerHTML = `<div class="hud-state err">${escapeHtml(e.message || 'Knowledge status is unreadable.')}</div>`;
@@ -91,14 +106,14 @@ async function loadKnowledge() {
 /* ── the gate ─────────────────────────────────────────────────────────────────
    ONE KEY, AND THE OTHERS ARE NAMED RATHER THAN OFFERED. v0.3.8.124.
 
-   `knowledge_enabled` is the only knowledge setting the settings surface will
-   write, and that is the whole design rather than a first instalment. It starts
-   or stops using what the config file already says; the endpoint, the token,
-   the remote permission and the project map decide WHO the colony trusts and
-   WHAT a mission may read, so those stay a file edit. Where one of them is what
-   is actually standing in the operator's way, this page says which key and
-   where — a toggle that silently could not help is worse than a sentence that
-   explains.
+   v0.3.8.157/.158 — this used to say `knowledge_enabled` was the ONLY knowledge
+   setting the settings surface would write. Four are now writable: the switch,
+   the study schedule, the endpoint (loopback addresses only — the server refuses
+   the rest), and the credential (written, never read back). What stays a file
+   edit is `knowledge_forager_allow_remote`, the one that widens WHO the colony
+   may talk to. Where a file-only key is what stands in the operator's way, this
+   page names it — a toggle that silently could not help is worse than a sentence
+   that explains.
    ───────────────────────────────────────────────────────────────────────────── */
 
 /** True when this operator may write settings at all. Mirrors `/settings` POST,
@@ -221,58 +236,23 @@ function knRenderShell(host) {
     return;
   }
 
-  const projects = Array.isArray(s.projects) ? s.projects : [];
+  const bases = knBases;            // what FORAGER says it holds (GET /knowledge/projects)
   const map = s.project_map || {};
   const bound = knProject ? map[knProject] : (s.default_project || '');
-  const backendNote = s.search_backend === 'sqlite-fts5' ? 'ranked search' : 'substring fallback';
+  const signedOut = s.authenticated === false;
 
-  /* v0.3.8.157 — ONE CARD YOU ACT ON, AND EVERYTHING ELSE FOLDED AWAY.
-     The page had eight expanded cards and roughly nine hundred words of prose before an operator
-     reached a control, and the three things anyone actually comes here to do — connect, choose a
-     knowledge base, put documents in it — were spread across three of them, two screens apart. The
-     reasoning that prose carried is not deleted; it moved to docs/KNOWLEDGE_ARCHITECTURE.md and to
-     the code comments, which is where an argument belongs. A console says what is true now and
-     offers the next action. */
+  /* v0.3.8.158 — THE PAGE IS A STATE, NOT A PILE OF CARDS.
+     A knowledge integration is either not connected, connected but not signed in, signed in but not
+     bound, or working — and exactly one of those is true at a time. The previous page drew all four
+     at once and let the operator work out which they were in, which is why "connected" sat above a
+     field asking them to type a project ref they had no way to know. */
   host.innerHTML =
-    '<div class="kn-card">'
-    + '<div class="kn-searchrow">'
-    + `<span class="kn-pill kn-ok">connected</span> <code>${escapeHtml(s.endpoint || s.configured_endpoint || '')}</code>`
-    + `<span class="kn-sub">${escapeHtml(s.search_backend || '')} · ${escapeHtml(backendNote)}</span>`
-    + knGateBar(s, false)
-    + '</div>'
-    + knBaseRow(s, bound)
-    + knScheduleRow(s)
-    + knEndpointRow(s)
-    + '<div class="kn-say" id="kn-say-bind"></div>'
-    + '</div>'
-
-    + '<div class="kn-card">'
-    + '<div class="kn-searchrow">'
-    + '<input id="kn-q" class="kn-input" type="search" placeholder="Ask what the organization knows…" '
-    + 'autocomplete="off" aria-label="Search organizational knowledge">'
-    + '<button class="kn-btn kn-primary" data-onclick="knSearch()">Search</button>'
-    + '<button class="kn-btn" data-onclick="knRetrieve()" title="Assemble evidence-backed context, the way an agent receives it">Context</button>'
-    + '<button class="kn-btn" data-onclick="knEntity()" title="Look the query up as a person, project, customer or product">Entity</button>'
-    + '</div>'
-    + '<div class="kn-controls">'
-    + (projects.length
-        ? '<label class="kn-lbl">Project <select id="kn-project" class="kn-select" data-onchange="knSetProject()">'
-          + '<option value="">(default)</option>'
-          + projects.map(p => `<option value="${escapeHtml(p)}"${p === knProject ? ' selected' : ''}>${escapeHtml(p)}</option>`).join('')
-          + '</select></label>'
-        : '')
-    + '<label class="kn-lbl"><input type="checkbox" id="kn-hist"> Include superseded</label>'
-    + '</div>'
-    + '<div class="kn-say" id="kn-say"></div>'
-    + '</div>'
-
+    knStatusCard(s, bound, signedOut)
+    + (signedOut ? '' : knWorkCard(s, bound, bases))
     + '<div class="kn-cols">'
     + '<div id="kn-results" class="kn-results"><div class="kn-empty">Search the knowledge base.</div></div>'
     + '<div id="kn-detail" class="kn-detail"><div class="kn-empty">Select a statement to see its evidence.</div></div>'
     + '</div>'
-
-    // FOLDED, NOT REMOVED. Each of these answers a question an operator has occasionally and
-    // nobody has on arrival, and `<details>` needs no state of its own to get that right.
     + '<details class="kn-card" id="kn-import"><summary>Import documents</summary>'
     + knIngestForm()
     + '<div id="kn-jobs"><div class="hud-state">Loading…</div></div></details>'
@@ -297,73 +277,146 @@ function knRenderShell(host) {
 }
 
 /**
- * WHICH KNOWLEDGE BASE THIS PROJECT READS, AND THE THREE THINGS YOU DO WITH IT. v0.3.8.157.
+ * ONE LINE THAT SAYS WHERE YOU STAND, AND THE ONE THING TO DO NEXT.
  *
- * The whole of the common case in one row: bound or not, and Import / Study / Change beside it. The
- * previous page put binding in a table three cards below the search box and ingestion in a fourth,
- * so the ordinary path — connect, choose, import — crossed the entire page in the wrong order.
- *
- * TYPED RATHER THAN CHOSEN, still, and the note is now one line instead of a paragraph: FORAGER
- * publishes no way to list its projects (P11), and inventing an endpoint here would be a second
- * implementation of the same rule. The moment P11 lands this becomes a select and nothing else here
- * changes.
+ * THREE STATES, DRAWN AS THREE. `/ready` is public on FORAGER and everything carrying knowledge is
+ * not, so "it answered" and "it will answer us" are different facts and the console used to show
+ * only the first — CONNECTED above a page whose every call was refused 401.
  */
-function knBaseRow(s, bound) {
-  const who = knProject ? `project <code>${escapeHtml(knProject)}</code>` : 'the default';
+function knStatusCard(s, bound, signedOut) {
+  const endpoint = escapeHtml(s.configured_endpoint || s.endpoint || '');
+  const dot = signedOut ? 'kn-bad' : 'kn-ok';
+  const word = signedOut ? 'signed out' : 'connected';
 
-  if (!knMayManage()) {
-    return bound
-      ? `<p class="kn-lede">${who} reads <code>${escapeHtml(bound)}</code>.</p>`
-      : `<p class="kn-lede">${who} has no knowledge base bound. Binding one needs <code>manage_knowledge</code>.</p>`;
+  let body = '';
+  if (signedOut) {
+    body = '<p class="kn-lede">FORAGER answered, and refused this colony\'s credential. Knowledge '
+      + 'retrieval will return nothing until it has one.</p>'
+      + '<ol class="kn-steps">'
+      + '<li>In FORAGER, open <b>Settings → API tokens</b> and create one. Scopes: <code>read</code> '
+      + 'and <code>ingest</code>' + '&nbsp;(add <code>review</code> if you want the colony to raise '
+      + 'review proposals).</li>'
+      + '<li>Copy the token — it starts <code>fgr_</code> and FORAGER shows it once.</li>'
+      + '<li>Paste it here.</li>'
+      + '</ol>'
+      + (knMayToggle()
+          ? '<div class="kn-bindrow">'
+            + '<input id="kn-token" class="kn-input" type="password" autocomplete="off" '
+            + 'placeholder="fgr_…" aria-label="FORAGER integration token">'
+            + '<button class="kn-btn kn-primary" data-onclick="knSetToken()">Save token</button>'
+            + '</div>'
+            + '<p class="kn-sub">Stored in this colony\'s config and never shown again — not here, '
+            + 'not in the settings response, not in the example file.</p>'
+          : '<p class="kn-sub">Setting the credential needs <code>manage_settings</code>.</p>');
   }
 
-  if (bound) {
-    return `<p class="kn-lede">${who} reads <code>${escapeHtml(bound)}</code>.</p>`
-      + '<div class="kn-bindrow">'
-      + '<button class="kn-btn kn-primary" data-onclick="knImport()">Import documents</button>'
-      + `<button class="kn-btn" data-onclick="knSeed('${jsArg(knProject)}')" title="Run the colony over every document it has not studied yet, up to 25">Study</button>`
-      + `<button class="kn-btn" data-onclick="knUnbind('${jsArg(knProject)}')">Unbind</button>`
-      + '</div>';
-  }
-
-  return `<p class="kn-lede">${who} has no knowledge base bound, so missions in it retrieve nothing `
-    + 'and say so — never someone else\'s knowledge.</p>'
-    + '<div class="kn-bindrow">'
-    + '<input id="kn-bind-base" class="kn-input" type="text" placeholder="FORAGER project ref" aria-label="FORAGER knowledge base">'
-    + '<button class="kn-btn kn-primary" data-onclick="knBind()">Bind</button>'
+  return '<div class="kn-card kn-status">'
+    + '<div class="kn-statusline">'
+    + `<span class="kn-dot ${dot}"></span><b>${word}</b>`
+    + `<code class="kn-ep">${endpoint}</code>`
+    + (s.version ? `<span class="kn-sub">FORAGER ${escapeHtml(s.version)}</span>` : '')
+    + (signedOut ? '' : `<span class="kn-sub">${escapeHtml(s.search_backend || '')}</span>`)
+    + '<span class="kn-gate-sp"></span>'
+    + knGateBar(s, false)
     + '</div>'
-    + '<p class="kn-sub">Use the project ref FORAGER shows for the knowledge base — it publishes no '
-    + 'way to list them yet (P11).</p>';
+    + body
+    + (s.token_set && !signedOut && knMayToggle()
+        ? '<details class="kn-sub"><summary>Replace the credential</summary>'
+          + '<div class="kn-bindrow">'
+          + '<input id="kn-token" class="kn-input" type="password" autocomplete="off" '
+          + 'placeholder="fgr_…" aria-label="FORAGER integration token">'
+          + '<button class="kn-btn" data-onclick="knSetToken()">Save token</button>'
+          + '</div></details>'
+        : '')
+    + knEndpointRow(s)
+    + '<div class="kn-say" id="kn-say-conn"></div>'
+    + '</div>';
+}
+
+/** The card you work in once the colony can actually talk to FORAGER. */
+function knWorkCard(s, bound, bases) {
+  return '<div class="kn-card">'
+    + knBaseRow(s, bound, bases)
+    + '<div class="kn-say" id="kn-say-bind"></div>'
+    + '</div>'
+    + '<div class="kn-card">'
+    + '<div class="kn-searchrow">'
+    + '<input id="kn-q" class="kn-input" type="search" placeholder="Ask what the organization knows…" '
+    + 'autocomplete="off" aria-label="Search organizational knowledge">'
+    + '<button class="kn-btn kn-primary" data-onclick="knSearch()">Search</button>'
+    + '<button class="kn-btn" data-onclick="knRetrieve()" title="Assemble evidence-backed context, the way an agent receives it">Context</button>'
+    + '<button class="kn-btn" data-onclick="knEntity()" title="Look the query up as a person, project, customer or product">Entity</button>'
+    + '</div>'
+    + '<label class="kn-lbl"><input type="checkbox" id="kn-hist"> Include superseded</label>'
+    + '<div class="kn-say" id="kn-say"></div>'
+    + '</div>';
 }
 
 /**
- * THE STUDY SCHEDULE, AS A SWITCH. v0.3.8.157.
+ * WHICH KNOWLEDGE BASE THIS PROJECT READS — A LIST, NOT A SPELLING TEST. v0.3.8.158.
  *
- * `.156` shipped `knowledge_auto_study` as a config key on the argument that a schedule for
- * unattended work is a file decision. What that argument guards against is an automation nobody
- * chose; a labelled switch is the opposite of that. It is off by default and it stays off until
- * someone flips it here or writes the file.
- *
- * PINNED BY THE ENVIRONMENT IS A DIFFERENT STATE FROM OFF, and it is drawn as one: a write would
- * persist to config.json, lose to the variable on the next projection, and leave the switch looking
- * exactly as it did — the button that appears to do nothing. The gate above has said so since
- * `.124` and this follows the same rule.
+ * The field used to be free text with a paragraph explaining that FORAGER published no way to
+ * enumerate its projects. It publishes one: `GET /api/projects`, read from the running service's own
+ * routes rather than assumed from a contract note written against 0.1.4. So the operator picks from
+ * what is actually there, with the document and statement counts beside each name, and P11 in the
+ * shared contract is closed by the producer having done it.
+ */
+function knBaseRow(s, bound, bases) {
+  const who = knProject ? `Project <code>${escapeHtml(knProject)}</code>` : 'This colony';
+
+  if (bound) {
+    const base = bases.find(b => b.project_ref === bound);
+    return `<p class="kn-lede">${who} reads <b>${escapeHtml(base ? base.name : bound)}</b>`
+      + (base ? ` <span class="kn-sub">${base.source_count} document(s), ${base.knowledge_count} statement(s)</span>` : '')
+      + '</p>'
+      + (knMayManage()
+          ? '<div class="kn-bindrow">'
+            + '<button class="kn-btn kn-primary" data-onclick="knImport()">Import documents</button>'
+            + `<button class="kn-btn" data-onclick="knSeed('${jsArg(knProject)}')" title="Run the colony over every document it has not studied yet, up to 25">Study</button>`
+            + `<button class="kn-btn" data-onclick="knUnbind('${jsArg(knProject)}')">Unbind</button>`
+            + '</div>'
+            + knScheduleRow(s)
+          : '');
+  }
+
+  if (!knMayManage()) {
+    return `<p class="kn-lede">${who} has no knowledge base bound. Binding one needs <code>manage_knowledge</code>.</p>`;
+  }
+
+  if (!bases.length) {
+    return `<p class="kn-lede">${who} has no knowledge base bound, and FORAGER is holding none yet.</p>`
+      + '<p class="kn-sub">Create a project in FORAGER, put some documents in it, then reload this page.</p>'
+      + '<button class="kn-btn" data-onclick="loadKnowledge()">Reload</button>';
+  }
+
+  return `<p class="kn-lede">${who} has no knowledge base bound, so its missions retrieve nothing `
+    + 'and say so — never someone else\'s knowledge. Pick one:</p>'
+    + '<div class="kn-bindrow">'
+    + '<select id="kn-bind-base" class="kn-select" aria-label="FORAGER knowledge base">'
+    + bases.map(b => `<option value="${escapeHtml(b.project_ref)}">${escapeHtml(b.name)}`
+        + ` — ${b.source_count} document(s), ${b.knowledge_count} statement(s)</option>`).join('')
+    + '</select>'
+    + '<button class="kn-btn kn-primary" data-onclick="knBind()">Bind</button>'
+    + '</div>';
+}
+
+/**
+ * THE STUDY SCHEDULE, AS A SWITCH. v0.3.8.157 — shown only where it means something, which is under
+ * a bound knowledge base: a schedule with nothing to study is a control that cannot do anything.
  */
 function knScheduleRow(s) {
   const on = (s && s.auto_study) === 'on';
   const state = on
-    ? 'Studying every bound knowledge base every 6 hours, 25 documents a pass.'
-    : 'The colony studies a knowledge base only when you press Study.';
+    ? 'Studying new documents every 6 hours, 25 a pass.'
+    : 'The colony studies this base only when you press Study.';
 
   if (!knMayToggle()) {
     return `<p class="kn-sub">Automatic study: <b>${on ? 'on' : 'off'}</b>. ${escapeHtml(state)}</p>`;
   }
 
-  return '<div class="kn-bindrow">'
-    + '<label class="kn-lbl"><input type="checkbox" id="kn-autostudy"' + (on ? ' checked' : '')
+  return '<label class="kn-lbl"><input type="checkbox" id="kn-autostudy"' + (on ? ' checked' : '')
     + ' data-onchange="knSetAutoStudy()"> Study new documents automatically</label>'
-    + `<span class="kn-sub">${escapeHtml(state)}</span>`
-    + '</div>';
+    + `<span class="kn-sub"> ${escapeHtml(state)}</span>`;
 }
 
 async function knSetAutoStudy() {
@@ -373,26 +426,52 @@ async function knSetAutoStudy() {
     const r = await api('/settings', 'POST', { knowledge_auto_study: on ? 'on' : 'off' });
     if (!r || !r.success) { knSayBind((r && r.message) || 'The setting could not be written.', false); return; }
     await loadKnowledge();
-    knSayBind(on
-      ? 'Automatic study is on. The first pass runs within six hours; Study runs one now.'
-      : 'Automatic study is off. Study still works on demand.', true);
+    knSayBind(on ? 'Automatic study is on.' : 'Automatic study is off. Study still works on demand.', true);
   } catch (e) {
     knSayBind((e && e.message) || 'The setting could not be written.', false);
   }
 }
 
 /**
- * WHERE FORAGER IS, AND THE ONE VALUE THIS FIELD CANNOT SET. v0.3.8.157.
- *
- * Writable because moving FORAGER to another port on this machine is an ordinary thing to do and
- * should not require editing JSON. LOOPBACK ONLY, because pointing the colony's source of
- * organizational fact at a host across the network is the decision the file exists for — the server
- * refuses a non-loopback write unless `knowledge_forager_allow_remote` is already true in the file,
- * and this field says so rather than letting the refusal arrive as a mystery.
+ * THE CREDENTIAL. Written, never read back — the whole basis on which a `Secret` was allowed onto
+ * the settings surface at all. The field is cleared on success rather than left holding the value.
+ */
+async function knSetToken() {
+  const el = document.getElementById('kn-token');
+  const value = (el?.value || '').trim();
+  if (!value) { knSayConn('Paste the token FORAGER showed you when you created it.', false); return; }
+
+  knSayConn('Saving…', true);
+  try {
+    const r = await api('/settings', 'POST', { knowledge_forager_token: value });
+    if (el) el.value = '';
+    if (!r || !r.success) { knSayConn((r && r.message) || 'The token could not be written.', false); return; }
+    await loadKnowledge();
+    // THE EFFECT, NOT THE MESSAGE: the probe re-runs on reload and answers the only question that
+    // matters — does FORAGER accept it.
+    knSayConn(knStatus && knStatus.authenticated === false
+      ? 'FORAGER refused that token. Check it was copied whole and has not been revoked.'
+      : 'Token saved — FORAGER accepted it.', knStatus ? knStatus.authenticated !== false : true);
+  } catch (e) {
+    knSayConn((e && e.message) || 'The token could not be written.', false);
+  }
+}
+
+function knSayConn(msg, ok) {
+  const el = document.getElementById('kn-say-conn');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.className = 'kn-say' + (msg ? (ok ? ' kn-ok' : ' kn-bad') : '');
+}
+
+/**
+ * WHERE FORAGER IS. Writable because moving it to another port is ordinary; LOOPBACK ONLY, because
+ * pointing the colony's source of organizational fact at another host is the decision the config
+ * file exists for. The server refuses the write; this says so before it happens.
  */
 function knEndpointRow(s) {
-  const ep = (s && (s.configured_endpoint || s.endpoint)) || '';
   if (!knMayToggle()) return '';
+  const ep = (s && (s.configured_endpoint || s.endpoint)) || '';
 
   return '<details class="kn-sub"><summary>Change where FORAGER is</summary>'
     + '<div class="kn-bindrow">'
@@ -401,32 +480,29 @@ function knEndpointRow(s) {
     + '<button class="kn-btn" data-onclick="knSetEndpoint()">Save</button>'
     + '</div>'
     + '<p class="kn-sub">This machine only. A FORAGER on another host needs '
-    + '<code>knowledge_forager_allow_remote</code> in the config file first — it has no '
-    + 'authentication of its own, so reaching one across a network is a decision to make there.</p>'
+    + '<code>knowledge_forager_allow_remote</code> in the config file first.</p>'
     + '</details>';
 }
 
 async function knSetEndpoint() {
   const value = (document.getElementById('kn-endpoint')?.value || '').trim();
-  knSayBind('Saving…', true);
+  knSayConn('Saving…', true);
   try {
     const r = await api('/settings', 'POST', { knowledge_forager_endpoint: value });
-    if (!r || !r.success) { knSayBind((r && r.message) || 'The endpoint could not be written.', false); return; }
+    if (!r || !r.success) { knSayConn((r && r.message) || 'The endpoint could not be written.', false); return; }
 
     // THE EFFECT, NOT THE MESSAGE. `ApplySettingsUpdate` refuses a non-loopback endpoint by NOT
-    // APPLYING it, and still answers success for the request as a whole — so reading the reply
-    // would report a refusal as a save. Re-read what the colony is actually configured with and
-    // say which of the two happened. A claim is not a result.
+    // APPLYING it, and still answers success for the request as a whole.
     await loadKnowledge();
     const now = (knStatus && (knStatus.configured_endpoint || knStatus.endpoint)) || '';
     if (value && now !== value) {
-      knSayBind('Refused: that endpoint is not on this machine, and '
-        + 'knowledge_forager_allow_remote is off in the config file. Still using ' + now + '.', false);
+      knSayConn('Refused: that endpoint is not on this machine, and knowledge_forager_allow_remote '
+        + 'is off in the config file. Still using ' + now + '.', false);
       return;
     }
-    knSayBind('Endpoint saved. Live on the next request — no restart needed.', true);
+    knSayConn('Endpoint saved. Live on the next request — no restart needed.', true);
   } catch (e) {
-    knSayBind((e && e.message) || 'The endpoint could not be written.', false);
+    knSayConn((e && e.message) || 'The endpoint could not be written.', false);
   }
 }
 

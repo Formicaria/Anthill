@@ -2980,8 +2980,23 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           #page-knowledge details.kn-card>summary:hover{color:var(--muted)}
           #page-knowledge details.kn-card[open]>summary{margin-bottom:8px}
           #page-knowledge h3{font-size:12px;margin:0 0 4px}
-          #page-knowledge .kn-lede{font-size:10px;color:var(--dim);margin:0 0 8px;line-height:1.5}
-          #page-knowledge .kn-sub{font-size:8px;color:var(--dim);font-family:var(--mono)}
+          /* v0.3.8.158 — READABLE. These were 10px and 8px MONOSPACE, which is the size a caption
+             gets when nobody ever read it at 100% zoom: every explanatory line on the page rendered
+             as a grey smear under the control it was explaining. Body text is body text. */
+          #page-knowledge .kn-lede{font-size:12px;color:var(--fg);margin:0 0 10px;line-height:1.6;max-width:78ch}
+          #page-knowledge .kn-sub{font-size:11px;color:var(--dim);line-height:1.5}
+          #page-knowledge .kn-sub code,#page-knowledge .kn-lede code{font-family:var(--mono);font-size:10.5px}
+
+          /* The status line: a dot, a word, the endpoint, and the switch pushed to the right. */
+          #page-knowledge .kn-statusline{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px}
+          #page-knowledge .kn-statusline .kn-gate{border:0;background:none;padding:0;margin:0}
+          #page-knowledge .kn-dot{width:8px;height:8px;border-radius:50%;background:currentColor;flex:0 0 auto}
+          #page-knowledge .kn-ep{font-family:var(--mono);font-size:11px;color:var(--muted)}
+          #page-knowledge .kn-status{padding-bottom:10px}
+          #page-knowledge .kn-steps{margin:8px 0 12px;padding-left:20px;font-size:12px;line-height:1.7;color:var(--fg);max-width:78ch}
+          #page-knowledge .kn-steps li{margin-bottom:4px}
+          #page-knowledge .kn-status details>summary{cursor:pointer;margin-top:8px;font-size:11px;color:var(--dim)}
+          #page-knowledge .kn-status details[open]>summary{margin-bottom:6px}
           #page-knowledge .kn-searchrow{display:flex;gap:6px;flex-wrap:wrap}
           #page-knowledge .kn-input{flex:1 1 260px;background:var(--inner);border:1px solid var(--border);border-radius:var(--r);color:var(--text);padding:6px 8px;font-size:11px;font-family:var(--font)}
           #page-knowledge .kn-input:focus-visible{outline:2px solid var(--blue);outline-offset:1px}

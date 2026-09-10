@@ -120,6 +120,22 @@ internal sealed class ForagerPage<T>
     [JsonPropertyName("total")] public int Total { get; set; }
 }
 
+/// <summary>
+/// `GET /api/projects` — one knowledge base, as FORAGER 0.6 describes it. v0.3.8.158. Only the
+/// fields a consumer picker needs are read; the response carries more and the additive rule says an
+/// unread field is not an error.
+/// </summary>
+internal sealed class ForagerProject
+{
+    [JsonPropertyName("id")] public string? Id { get; set; }
+    [JsonPropertyName("name")] public string? Name { get; set; }
+    [JsonPropertyName("source_count")] public int? SourceCount { get; set; }
+    [JsonPropertyName("knowledge_count")] public int? KnowledgeCount { get; set; }
+    [JsonPropertyName("open_conflict_count")] public int? OpenConflictCount { get; set; }
+    [JsonPropertyName("processing_state")] public string? ProcessingState { get; set; }
+    [JsonPropertyName("archived_at")] public string? ArchivedAt { get; set; }
+}
+
 internal sealed class ForagerKnowledgeItem
 {
     [JsonPropertyName("id")] public string? Id { get; set; }

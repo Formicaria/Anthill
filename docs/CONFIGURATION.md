@@ -141,7 +141,7 @@ directory. `anthill --config` prints the active path.
 | `mission_replay_learning_enabled` | bool | `false` | no | `ANTHILL_MISSION_REPLAY_LEARNING_ENABLED` | **changes what the colony may do** |
 | `knowledge_enabled` | bool | `false` | yes | `ANTHILL_KNOWLEDGE_ENABLED` | **changes what the colony may do** |
 | `knowledge_forager_endpoint` | string | `"http://127.0.0.1:8790"` | yes | `ANTHILL_KNOWLEDGE_FORAGER_ENDPOINT` |  |
-| `knowledge_forager_token` | string | _(secret)_ | no | `ANTHILL_KNOWLEDGE_FORAGER_TOKEN` |  |
+| `knowledge_forager_token` | string | _(secret)_ | yes | `ANTHILL_KNOWLEDGE_FORAGER_TOKEN` |  |
 | `knowledge_forager_allow_remote` | bool | `false` | no | `ANTHILL_KNOWLEDGE_ALLOW_REMOTE` | **changes what the colony may do** |
 | `knowledge_auto_study` | string | `"off"` | yes | `ANTHILL_KNOWLEDGE_AUTO_STUDY` | **changes what the colony may do** |
 | `knowledge_probe_timeout_ms` | int | `2000` | no | `ANTHILL_KNOWLEDGE_PROBE_TIMEOUT_MS` | range 250–60000 |

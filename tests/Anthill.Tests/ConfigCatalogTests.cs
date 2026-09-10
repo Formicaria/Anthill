@@ -116,7 +116,7 @@ public class ConfigCatalogTests
     {
         var editable = ConfigCatalog.EditableKeys;
 
-        Assert.True(editable.Count == 108,
+        Assert.True(editable.Count == 109,
             $"the settings surface now exposes {editable.Count} writable keys; it exposed 98 when "
           + "the hand-kept set was replaced by a projection at v0.3.8.114, 99 since v0.3.8.124 "
           + "added `knowledge_enabled`, 100 since v0.3.8.130 added "
@@ -133,7 +133,11 @@ public class ConfigCatalogTests
           + "under a VALUE guard rather than plainly: `AnthillRuntime.RefusedSettingWrite` accepts "
           + "only a loopback endpoint from the console unless the file already permits a remote "
           + "one, so what crossed is 'move FORAGER to another port here' and not 'redirect what "
-          + "this colony believes'. Widening what an operator can change "
+          + "this colony believes'. 109 since v0.3.8.158 added `knowledge_forager_token`: FORAGER "
+          + "0.6 authenticates every route that carries knowledge, so a colony with no token is "
+          + "refused by everything it asks for — the credential has to be settable somewhere an "
+          + "operator will actually go. It stays `Secret`, so it is written and never rendered "
+          + "back. Widening what an operator can change "
           + "live without a restart is a decision, not a side effect — say so here and in the "
           + "changelog.\n  " + string.Join("\n  ", editable.OrderBy(k => k, StringComparer.Ordinal)));
 

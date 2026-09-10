@@ -728,8 +728,8 @@ public sealed class AnthillConfig
     // what it cannot do is send the colony's questions to a host across the network, which is the
     // case the rule exists for.
     //
-    // WHAT STAYS IN THE FILE, and why. knowledge_forager_endpoint decides which service the colony
-    // trusts as the source of organizational fact. knowledge_forager_token is the credential for it.
+    // WHAT STAYS IN THE FILE, and why. knowledge_forager_allow_remote permits reaching a knowledge
+    // service across a network.
     // knowledge_forager_allow_remote permits reaching one across a network, and FORAGER has no
     // authentication of its own. knowledge_project_map decides which knowledge a mission may read.
     // Each of those either REDIRECTS what the colony believes or WIDENS who may read what, so making
@@ -766,10 +766,24 @@ public sealed class AnthillConfig
     [JsonPropertyName("knowledge_forager_endpoint")] public string KnowledgeForagerEndpoint { get; set; } = "http://127.0.0.1:8790";
 
     /// <summary>
-    /// Bearer token for a FORAGER behind an authenticating proxy. FORAGER has no authentication of
-    /// its own — empty is the normal case for a loopback install and is not a misconfiguration.
+    /// The credential this colony presents to FORAGER: `Authorization: Bearer &lt;token&gt;`.
+    ///
+    /// v0.3.8.158 — THE PREMISE UNDER THIS KEY WAS FALSE AND THE COMMENT SAID IT OUT LOUD: "FORAGER
+    /// has no authentication of its own — empty is the normal case for a loopback install". That
+    /// was true of the version the A0 audit was written against. It is not true of FORAGER 0.6:
+    /// every route carrying knowledge requires a bearer credential, loopback included, and only
+    /// `/health`, `/ready`, `/openapi.json` and the session routes are public. So an empty token is
+    /// not the normal case — it is a colony that will be refused by everything it asks for, while
+    /// its probe (which reads a PUBLIC route) reports a healthy connection.
+    ///
+    /// EDITABLE, AND THAT IS A DELIBERATE WIDENING OF A SECRET. An operator makes an integration
+    /// token on FORAGER's Settings page and has to put it somewhere; the alternative is that the
+    /// entire feature requires hand-editing JSON, which for most colonies means the feature is
+    /// never used. It stays `Secret`, so nothing ever renders its value back — not the settings
+    /// response, not the example file, not the docs. The console can set it and cannot read it.
     /// </summary>
-    [ConfigKey(Security = ConfigSecurity.Secret, EnvOverride = "ANTHILL_KNOWLEDGE_FORAGER_TOKEN")]
+    [ConfigKey(Exposure = ConfigExposure.Editable,
+        Security = ConfigSecurity.Secret, EnvOverride = "ANTHILL_KNOWLEDGE_FORAGER_TOKEN")]
     [JsonPropertyName("knowledge_forager_token")] public string KnowledgeForagerToken { get; set; } = "";
 
     /// <summary>

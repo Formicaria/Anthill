@@ -259,6 +259,14 @@ public static partial class ApiHost
                 // unrecognised is `off`, so the page cannot show a schedule that is not running.
                 ["auto_study"] = AnthillRuntime.KnowledgeAutoStudy,
 
+                // v0.3.8.158 — WHETHER THE CREDENTIAL WORKS, and whether one is even set. The
+                // producer's `/ready` is public and everything carrying knowledge is not, so a
+                // colony with no token probed healthy and had every retrieval refused. The console
+                // draws three states from these two facts — connected, signed out, no token — and
+                // the value itself never leaves the process.
+                ["authenticated"] = availability.Authenticated,
+                ["token_set"] = !string.IsNullOrWhiteSpace(AnthillRuntime.Knowledge.Token),
+
                 // AND WHETHER THE SWITCH IS PINNED BY THE ENVIRONMENT.
                 //
                 // `AnthillRuntime` projects `Enabled` as env-over-file, so on a colony that exports
@@ -444,6 +452,43 @@ public static partial class ApiHost
             return ApiJson.Ok(new Dictionary<string, object?>
             {
                 ["conflicts"] = result.Value.Select(KnowledgeConflictPayload).ToList(),
+            });
+        });
+
+        /* v0.3.8.158 — THE KNOWLEDGE BASES THE PRODUCER WILL SHOW US, so binding is a choice
+           rather than a spelling test.
+
+           WHY IT IS `Manage` AND NOT `Read`. Every other read here is answered inside a resolved
+           scope — one project's knowledge, for a caller entitled to that project. This one is asked
+           BEFORE a scope exists, by an operator deciding what to bind, and its answer names every
+           knowledge base the colony's credential can see. That is an administrative question about
+           the integration, not knowledge, and `manage_knowledge` is the permission that already
+           gates the map it feeds.
+
+           NO SCOPE REFUSAL, for the same reason: there is nothing yet to be in scope OF. The
+           containment is the producer's — a project-limited token is answered with its own projects
+           and the rest are not named. */
+        app.MapGet("/knowledge/projects", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, KnowledgePermissions.Manage); if (auth is not null) return auth;
+
+            var provider = KnowledgeHost.Provider;
+            if (provider is null) return KnowledgeFailureResult(KnowledgeFailure.Disabled, "knowledge is not configured");
+
+            var result = await provider.ListProjectsAsync(ctx.RequestAborted).ConfigureAwait(false);
+            if (!result.Ok || result.Value is null) return KnowledgeFailureResult(result.Failure, result.Reason);
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["projects"] = result.Value.Select(p => new Dictionary<string, object?>
+                {
+                    ["project_ref"] = p.ProjectRef,
+                    ["name"] = p.Name,
+                    ["source_count"] = p.SourceCount,
+                    ["knowledge_count"] = p.KnowledgeCount,
+                    ["open_conflict_count"] = p.OpenConflictCount,
+                    ["state"] = p.State,
+                }).ToList(),
             });
         });
 

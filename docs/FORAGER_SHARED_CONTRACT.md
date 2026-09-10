@@ -317,6 +317,23 @@ handshake tomorrow; the response-side project checks stay regardless, as the con
    and refuse on mismatch rather than proceeding against an unknown instance (§2's "familiar port
    is not sufficient proof").
 
+> **v0.3.8.158 — THE AUTHENTICATION PREMISE IN THIS DOCUMENT WAS FALSE, AND IT WAS LOAD-BEARING.**
+> A0 was audited against FORAGER 0.1.4 and this file has since said, in several places, that FORAGER
+> "has no authentication of its own" — the sentence ANTHILL's own `knowledge_forager_allow_remote`
+> reasoning is built on. FORAGER 0.6.2 authenticates EVERY route that carries knowledge:
+> `Authorization: Bearer <secret>`, either the operator key or an integration token (`fgr_…`) minted
+> at `POST /api/settings/tokens` with scopes drawn from `read | ingest | review | export | projects`.
+> Only `/api/health`, `/api/ready`, `/api/openapi.json` and the session routes are public, and
+> **loopback is not exempt**. Read from the producer's `access-middleware.ts`, not from its docs.
+>
+> The consumer consequence was a silent one: ANTHILL's probe reads `/ready`, which is public, so a
+> colony with no token reported a healthy connection and had every retrieval refused 401. `.158`
+> probes an authenticated route as well and reports "signed out" as its own state.
+>
+> `knowledge_forager_allow_remote` KEEPS its file-only classification. The argument changes — the far
+> end can now prove who it is — but a console that could redirect the colony's source of
+> organizational fact across a network is still the thing that switch exists to prevent.
+
 ## Producer-side requirements — the authoritative list (handoff to FORAGER)
 
 | # | Requirement | Contract § | Until it lands |
@@ -331,8 +348,8 @@ handshake tomorrow; the response-side project checks stay regardless, as the con
 | P8 | Immutable revision identity, deterministic logical content hash, and an atomic publication ledger (a completed job is not a publication) — agreed shape: `knowledge_revisions` in one transaction, counter-based `rev_…` ids, explicit `completeness: complete\|partial` | §4 | Consumer-side interim identities: package-manifest hash / job-id watermark, labeled as synthesized |
 | P9 | Canonical package IMPORT adapter (accept an `anthill`-format package into an engine, duplicate-safe, review-preserving, instance-namespaced) | §6 | Live-service delivery only; no package consumption path exists and none is faked |
 | P10 | Machine-readable contract fixtures (request/response/event/package, including invalid and cross-project cases), versioned `contract-1` | §9 | A6 builds ANTHILL's own fixture harness against the live API |
-| P11 | **Project discovery.** `GET /api/projects` — the set of projects this engine holds, as `{items:[{project_id, name, created_at, item_count, last_published_at}], next_cursor}`. Advertised as `capabilities.project_discovery: true` so a consumer can tell "not offered" from "too old to say", and refused with the same scoping rules as everything else once pairing lands (a token scoped to one project sees one project). NOT in the contract before v0.3.8.148 — the entire integration is project-ROOTED and assumes the consumer already knows the id, so there has never been a specified way to find out what ids exist. | §3 (optional operations) | **Nothing. The operator hand-writes `knowledge_project_map`.** ANTHILL will not guess an endpoint: `.148` shipped the binding half (`POST /knowledge/project-map`, contract-mandated as "an authorized server operation") and deliberately did not invent the listing half. A consumer that fabricated `/api/projects` before the producer agreed to it would be the second implementation §1 forbids, arriving as a 404 in the field |
-| P12 | **Publication-count or revision watermark per project in that listing**, so a consumer can show "this base has knowledge" without a per-project probe. Falls out of P8's publication ledger; listed separately because P11 is useful without it | §4/§5 | Consumer shows the base as mapped and says nothing about its contents until something is retrieved |
+| P11 | **Project discovery.** `GET /api/projects`. | §3 (optional operations) | **DELIVERED by the producer, verified at v0.3.8.158 against FORAGER 0.6.2's own routes** (`src/server/api/routes/projects.ts`), not against a claim: `{items: ProjectSummary[]}`, each carrying `id`, `name`, `source_count`, `knowledge_count`, `open_conflict_count`, `processing_state`; archived projects excluded; a token limited by `project_ids` is answered with only its own, so the scoping rule this row asked for is enforced upstream. ANTHILL consumes it through `IKnowledgeProvider.ListProjectsAsync` and the console's bind control is a LIST rather than a text field. The response shape differs from the one this row speculated (`project_id`/`item_count`/`next_cursor`); the producer's shape is the contract, and the row is corrected rather than the client bent to fit the guess |
+| P12 | **Counts per project in that listing.** | §4/§5 | **DELIVERED.** `source_count`, `knowledge_count` and `open_conflict_count` ride in P11's response, so the console shows what is in a base before anything is retrieved from it |
 | P13 | **Applying a review decision.** An authorized operation that carries an operator-approved review of a knowledge item — `mark_reviewed`, `reject`, `restore`, `archive` — to the engine that owns the classification. `knowledge_review` has existed consumer-side since v0.3.8.121 and raises a proposal; v0.3.8.155 gave it a role that can raise one and an operator surface that can answer one. There is nowhere for an accepted review to GO: the producer publishes no mutation for it, and §1 gives FORAGER the classification, so ANTHILL will not invent one. | §1/§8 | **An accepted review is recorded as agreement and says so.** The console states plainly that accepting does not change the knowledge base, and the review status stops at `accepted` — there is deliberately no `applied`, because a status this build can never reach would be a promise in an enum |
 
 ## What the contract confirms about work already shipped

@@ -139,9 +139,16 @@ The reasoning the page used to carry in prose lives here instead:
 - **Import paths are fenced twice.** `POST /knowledge/jobs` resolves every path through the colony's
   workspace guard before anything is sent, and FORAGER has its own allowed-roots fence on the far
   side. Neither is trusted to be the only one.
+- **The credential lives here.** FORAGER 0.6 authenticates every route that carries knowledge, so
+  the colony needs an integration token (`fgr_…`, made on FORAGER's Settings page with scopes
+  `read` and `ingest`, plus `review` if the colony should raise review proposals). The Knowledge page
+  writes it and can never read it back. A colony with no token reports **signed out** rather than
+  connected — v0.3.8.158, after a probe that read only the producer's PUBLIC `/ready` route reported
+  a healthy connection to a colony whose every retrieval was refused.
 - **The remote permission is not togglable from the console.** `knowledge_forager_allow_remote` is a
-  file decision: FORAGER has no authentication of its own, so reaching one across a network is not a
-  click.
+  file decision. The far end can prove who it is now, so the old argument for that has gone; the
+  remaining one has not — a console that could send the colony's questions to another host is the
+  thing this switch exists to prevent.
 
 ## 4. Configuration
 
