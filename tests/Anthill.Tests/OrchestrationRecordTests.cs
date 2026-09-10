@@ -126,7 +126,7 @@ public class OrchestrationRecordTests
     [Fact]
     public void TheSubstitutionVocabulary_IsCompleteAndDistinct()
     {
-        Assert.Equal(6, PlanSubstitutions.All.Count);
+        Assert.Equal(7, PlanSubstitutions.All.Count);
         Assert.Equal(PlanSubstitutions.All.Count, PlanSubstitutions.All.Distinct(StringComparer.Ordinal).Count());
         Assert.All(PlanSubstitutions.All, code => Assert.False(string.IsNullOrWhiteSpace(code)));
         Assert.Contains(PlanSubstitutions.NoModelRouter, PlanSubstitutions.All);
@@ -134,5 +134,8 @@ public class OrchestrationRecordTests
         // v0.3.8.123's sixth. Reachable, and reached by `EvidenceGroundedPlanningTests` — a code in
         // this list that nothing emits is the declaration-reaching-nobody defect in vocabulary form.
         Assert.Contains(PlanSubstitutions.GroundedInspectionRequired, PlanSubstitutions.All);
+        // v0.3.8.156's seventh, and reached by `KnowledgePlanningTests` for the same reason: a code
+        // declared here that no path emits is this repository's oldest defect in vocabulary form.
+        Assert.Contains(PlanSubstitutions.KnowledgeBaseBound, PlanSubstitutions.All);
     }
 }

@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.155**. Everything below the rule is a record, not a state.
+Shipping release: **v0.3.8.156**. Everything below the rule is a record, not a state.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -493,6 +493,16 @@ that retrieves nothing. Verified against a running FORAGER: `GET /api/knowledge/
 project-scoped upstream and returns another project's row with HTTP 200, so the provider checks
 `project_id` on the RESPONSE and answers `NotFound` — not a denial, because confirming an id exists
 in a project the caller cannot see is itself a disclosure.
+
+**And a bound knowledge base is now READ by a step.** v0.3.8.156. `.136` entered the scope so that
+a knowledge tool an ant dispatched would resolve; nothing ever planned a step that dispatched one, so
+a project mapped to a FORAGER project still planned `builder -> verifier` and answered from the
+model's weights. `Planner.EnsureKnowledgeConsultation` guarantees a researcher step that calls
+`knowledge_retrieve` ahead of every synthesis whenever the mission's ambient scope is queryable —
+class-independent, reported through `PlanSubstitutions.KnowledgeBaseBound`, and excluded for
+`simple_answer` alone, whose promise is that the answer rests on nothing retrieved. The condition is
+read from the scope the Queen entered, never from the project map a second time: two readers of
+"which knowledge may this mission read" is the one failure the scope model exists to prevent.
 
 **Off by default, and it adds no tables.** `knowledge_enabled` ships false; an existing config loads
 unchanged and the database is untouched in both directions, so enabling and disabling are equally

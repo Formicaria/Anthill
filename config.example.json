@@ -188,6 +188,7 @@
   "knowledge_forager_endpoint": "http://127.0.0.1:8790",
   "knowledge_forager_token": "",
   "knowledge_forager_allow_remote": false,
+  "knowledge_auto_study": "off",
   "knowledge_probe_timeout_ms": 2000,
   "knowledge_retrieval_timeout_ms": 5000,
   "knowledge_ingestion_timeout_ms": 10000,

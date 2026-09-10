@@ -779,6 +779,17 @@ public static partial class ApiHost
     /// context to speak of, while a mission that fell back to a default would be reading a knowledge
     /// base that is not its own.
     /// </summary>
+    /// <summary>
+    /// v0.3.8.156 — the same scope resolution, for the background study pass.
+    ///
+    /// A WRAPPER RATHER THAN A SECOND RESOLVER, and rather than widening the real one to public. The
+    /// timer must resolve a project exactly as a request does — the map is the containment, and a
+    /// scheduled path that resolved scope its own way would be the second implementation this file
+    /// spends most of its comments refusing.
+    /// </summary>
+    internal static KnowledgeScope ResolveScopeForStudy(string? anthillProjectId) =>
+        ResolveKnowledgeScope(anthillProjectId);
+
     private static KnowledgeScope ResolveKnowledgeScope(string? anthillProjectId)
     {
         var settings = AnthillRuntime.Knowledge;

@@ -761,6 +761,29 @@ public sealed class AnthillConfig
     [ConfigKey(Security = ConfigSecurity.Safety, EnvOverride = "ANTHILL_KNOWLEDGE_ALLOW_REMOTE")]
     [JsonPropertyName("knowledge_forager_allow_remote")] public bool KnowledgeForagerAllowRemote { get; set; } = false;
 
+    /// <summary>
+    /// v0.3.8.156 — STUDY BOUND KNOWLEDGE BASES ON A TIMER, or only when asked. `off` | `on`.
+    ///
+    /// OFF BY DEFAULT, AND THAT IS THE DESIGN RATHER THAN CAUTION. `.154` shipped the Study button
+    /// and said in its own comment why it was a button: "a button that silently enrolled a knowledge
+    /// base into continuous work would be an automation decision made by a click that did not look
+    /// like one." Turning that into a schedule is exactly such a decision, so it is made in the file,
+    /// once, deliberately — the same argument `knowledge_forager_allow_remote` above makes about
+    /// reaching an unauthenticated service.
+    ///
+    /// WHAT IT COSTS WHEN ON: one pass every six hours over each bound project, queueing at most
+    /// twenty-five missions per project per pass, skipping every document already studied at its
+    /// current version. A colony with nothing new to study queues nothing and spends one listing
+    /// call. The bound is the same one the button uses, because they are the same method.
+    ///
+    /// It does NOT edit knowledge, propose anything, or reach outside the colony. It queues ordinary
+    /// missions whose class carries an `Observe` ceiling, which is the property that makes an
+    /// unattended lane safe enough to offer at all.
+    /// </summary>
+    [ConfigKey(Security = ConfigSecurity.Safety, EnvOverride = "ANTHILL_KNOWLEDGE_AUTO_STUDY",
+        ExampleJson = "\"off\"")]
+    [JsonPropertyName("knowledge_auto_study")] public string KnowledgeAutoStudy { get; set; } = "off";
+
     [ConfigKey(Min = 250, Max = 60000, EnvOverride = "ANTHILL_KNOWLEDGE_PROBE_TIMEOUT_MS")]
     [JsonPropertyName("knowledge_probe_timeout_ms")] public int KnowledgeProbeTimeoutMs { get; set; } = 2000;
 
