@@ -115,6 +115,17 @@ public sealed record KnowledgeAvailability
     public string? Reason { get; init; }
 
     /// <summary>
+    /// WHETHER THE CREDENTIAL WORKS, as distinct from whether the service answered. v0.3.8.158.
+    ///
+    /// `/ready` is PUBLIC on the producer and every route that carries knowledge is not. A probe
+    /// that read only readiness therefore reported a perfectly healthy connection to a colony whose
+    /// every retrieval would come back 401 — the console said CONNECTED and the missions got
+    /// nothing, which is the most expensive shape of wrong this integration can produce. Null means
+    /// the question was not asked (the probe could not reach far enough to find out).
+    /// </summary>
+    public bool? Authenticated { get; init; }
+
+    /// <summary>
     /// v0.3.8.143 (A1) — the producer's declared protocol version, from `GET /api/capabilities`.
     /// Null when the engine predates the capability response; that absence is tolerated (the
     /// contract's additive rule), while a PRESENT version outside the supported window makes the
@@ -270,6 +281,29 @@ public sealed record KnowledgeReviewProposal
 /// colony with no FORAGER configured keeps working, and it returns typed <c>Disabled</c> outcomes
 /// so the difference between "nothing known" and "not asked" survives to the model.
 /// </summary>
+/// <summary>
+/// ONE KNOWLEDGE BASE THE PRODUCER HOLDS, as a consumer needs to name it. v0.3.8.158.
+///
+/// The counts are here because a person choosing between two knowledge bases chooses by what is in
+/// them, and a picker that lists ids alone is a picker that makes them guess.
+/// </summary>
+public sealed record KnowledgeProjectSummary
+{
+    /// <summary>The producer's id — what a project map binds to.</summary>
+    public required string ProjectRef { get; init; }
+
+    /// <summary>What the operator called it.</summary>
+    public required string Name { get; init; }
+
+    public int SourceCount { get; init; }
+    public int KnowledgeCount { get; init; }
+    public int OpenConflictCount { get; init; }
+
+    /// <summary>The producer's own word for what this base is doing — idle, running, needs
+    /// processing. Reported rather than interpreted: it is the producer's lifecycle, not ours.</summary>
+    public string? State { get; init; }
+}
+
 public interface IKnowledgeProvider
 {
     /// <summary>Stable identifier for logs and the console: <c>forager-http</c>, <c>forager-package</c>, <c>none</c>.</summary>
@@ -309,6 +343,24 @@ public interface IKnowledgeProvider
         string name, KnowledgeScope scope, CancellationToken cancellationToken);
 
     /// <summary>Open conflicts in scope, whether or not a query surfaced them.</summary>
+    /// <summary>
+    /// EVERY KNOWLEDGE BASE THIS PRODUCER WILL SHOW US. v0.3.8.158.
+    ///
+    /// NOT SCOPED, and it is the one call here that is not — deliberately, and it is not a hole. A
+    /// scope names a knowledge base; this is the question asked BEFORE one has been chosen, by an
+    /// operator deciding what to bind. The producer answers it against the credential's own reach:
+    /// a project-limited token sees only its projects and the rest are not even named, so the
+    /// tenant boundary is enforced where the tenancy actually lives rather than by a scope this
+    /// call could not have.
+    ///
+    /// The consumer contract listed this as P11 — "producer publishes no way to enumerate its
+    /// projects" — recorded against FORAGER 0.1.4. It has published one since; `GET /api/projects`
+    /// is read from the running service's own routes rather than assumed, and the free-text field
+    /// an operator had to type a project ref into is retired by it.
+    /// </summary>
+    Task<KnowledgeOutcome<IReadOnlyList<KnowledgeProjectSummary>>> ListProjectsAsync(
+        CancellationToken cancellationToken);
+
     Task<KnowledgeOutcome<IReadOnlyList<KnowledgeConflict>>> GetConflictsAsync(
         KnowledgeScope scope, CancellationToken cancellationToken);
 }

@@ -87,6 +87,23 @@ internal sealed class ForagerKnowledgeProvider : IKnowledgeProvider, IKnowledgeI
             .ConfigureAwait(false);
         var declared = caps.Ok ? caps.Value : null;
 
+        /* v0.3.8.158 — AND WHETHER THE CREDENTIAL WORKS, which readiness cannot answer.
+         *
+         * THE DEFECT THIS CLOSES. `/ready` is PUBLIC on the producer; every route that carries
+         * knowledge requires `Authorization: Bearer`. A colony with no token therefore probed
+         * perfectly, reported CONNECTED in the console, and had every retrieval refused 401 —
+         * the operator was told the integration worked and the missions silently got nothing.
+         * "It answered" and "it will answer US" are different claims and this makes the second.
+         *
+         * `projects` is the cheapest authenticated route the producer has and it is the one the
+         * console needs a moment later anyway. A failure here does NOT unseat reachability: the
+         * service is up either way, and the honest report is up-but-refusing rather than down. */
+        var authProbe = await _client.GetAsync<ForagerPage<ForagerProject>>(
+            "projects?page_size=1", options.ProbeTimeoutMs, cancellationToken).ConfigureAwait(false);
+        bool? authenticated = authProbe.Ok ? true
+            : authProbe.Failure == KnowledgeFailure.Unauthorized ? false
+            : null;
+
         // The version window — checked ONLY against declarations. A declared version outside the
         // window is an incompatibility stated to the operator in both numbers, never a silent
         // downgrade to "we'll just use the old routes".
@@ -115,7 +132,12 @@ internal sealed class ForagerKnowledgeProvider : IKnowledgeProvider, IKnowledgeI
             InstanceGeneration = declared?.Instance?.Generation,
             InstanceMode = declared?.Instance?.Mode,
             Compatible = incompatible is null,
+            Authenticated = authenticated,
             Reason = incompatible
+                ?? (authenticated == false
+                        ? "the knowledge service refused this colony's credential — set "
+                          + "knowledge_forager_token to an integration token from FORAGER's Settings page"
+                        : null)
                 ?? (reachable ? null : $"the knowledge service reported status '{health.Status}'"),
         };
     }
@@ -458,6 +480,45 @@ internal sealed class ForagerKnowledgeProvider : IKnowledgeProvider, IKnowledgeI
 
         return KnowledgeOutcome<IReadOnlyList<KnowledgeEntity>>.Success(
             (result.Value.Items ?? new List<ForagerEntity>()).Select(ForagerMapping.ToEntity).ToList());
+    }
+
+    /// <summary>
+    /// EVERY KNOWLEDGE BASE THIS CREDENTIAL CAN SEE. v0.3.8.158 — `GET /api/projects`, read from
+    /// the running producer's own routes.
+    ///
+    /// NO SCOPE, and no `RequireScope` guard, which is the one deviation from every other method
+    /// here. A scope names a knowledge base and this is the question asked BEFORE one is chosen.
+    /// The containment is the producer's: a project-limited token is answered with its own projects
+    /// and the others are not named, so what an operator can bind to is exactly what the credential
+    /// they were given can reach.
+    ///
+    /// ARCHIVED PROJECTS ARE ALREADY EXCLUDED upstream; nothing here filters again, because a
+    /// second filter over the same rule is a second answer waiting to disagree.
+    /// </summary>
+    public async Task<KnowledgeOutcome<IReadOnlyList<KnowledgeProjectSummary>>> ListProjectsAsync(
+        CancellationToken cancellationToken)
+    {
+        var result = await _client.GetAsync<ForagerPage<ForagerProject>>(
+            "projects", _options().RetrievalTimeoutMs, cancellationToken).ConfigureAwait(false);
+        if (!result.Ok || result.Value is null)
+            return Propagate<ForagerPage<ForagerProject>, IReadOnlyList<KnowledgeProjectSummary>>(result);
+
+        var projects = (result.Value.Items ?? new List<ForagerProject>())
+            .Where(p => !string.IsNullOrWhiteSpace(p.Id))
+            .Select(p => new KnowledgeProjectSummary
+            {
+                ProjectRef = p.Id!,
+                // The id is the fallback NAME rather than a blank: a row an operator cannot read is
+                // a row they cannot choose, and the id is at least the thing they would type.
+                Name = string.IsNullOrWhiteSpace(p.Name) ? p.Id! : p.Name!,
+                SourceCount = p.SourceCount ?? 0,
+                KnowledgeCount = p.KnowledgeCount ?? 0,
+                OpenConflictCount = p.OpenConflictCount ?? 0,
+                State = p.ProcessingState,
+            })
+            .ToList();
+
+        return KnowledgeOutcome<IReadOnlyList<KnowledgeProjectSummary>>.Success(projects);
     }
 
     public async Task<KnowledgeOutcome<IReadOnlyList<KnowledgeConflict>>> GetConflictsAsync(

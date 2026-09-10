@@ -54,6 +54,9 @@ internal sealed class NullKnowledgeProvider : IKnowledgeProvider
         string name, KnowledgeScope scope, CancellationToken cancellationToken)
         => Off<IReadOnlyList<KnowledgeEntity>>();
 
+    public Task<KnowledgeOutcome<IReadOnlyList<KnowledgeProjectSummary>>> ListProjectsAsync(
+        CancellationToken cancellationToken) => Off<IReadOnlyList<KnowledgeProjectSummary>>();
+
     public Task<KnowledgeOutcome<IReadOnlyList<KnowledgeConflict>>> GetConflictsAsync(
         KnowledgeScope scope, CancellationToken cancellationToken) => Off<IReadOnlyList<KnowledgeConflict>>();
 

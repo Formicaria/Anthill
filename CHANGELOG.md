@@ -1,3 +1,52 @@
+## v0.3.8.158 - the page told you it was connected to something that was refusing it
+
+**READ FROM THE RUNNING FORAGER, NOT FROM OUR NOTES ABOUT IT.** The operator said the Knowledge page
+made no sense and looked bad. Both were true, and the reason underneath them was that this repository
+had been reasoning about FORAGER 0.1.4 for months while the machine was running 0.6.2. Opening it
+answered three questions the contract had guessed at.
+
+**IT HAS AUTHENTICATION, AND WE SAID IT DID NOT.** `docs/KNOWLEDGE_API.md` said FORAGER "has no
+authentication of its own"; `knowledge_forager_allow_remote`'s entire argument was built on that
+sentence. FORAGER 0.6 authenticates EVERY route that carries knowledge -- `Authorization: Bearer`,
+either the operator key or an `fgr_...` integration token, loopback included -- and only `/health`,
+`/ready`, `/openapi.json` and the session routes are public.
+
+The consumer consequence was the expensive kind of silent. ANTHILL's probe reads `/ready`, which is
+PUBLIC. A colony with no token probed perfectly, the console printed CONNECTED, and every retrieval
+that followed was refused 401. The operator was told the integration worked and the missions got
+nothing. The probe now asks an authenticated route too, and **signed out** is drawn as its own state
+with the three steps that fix it: make a token in FORAGER's Settings, copy it, paste it here.
+
+**THE CREDENTIAL IS NOW SETTABLE FROM THE CONSOLE**, which widens a `Secret` onto the settings
+surface deliberately. The alternative is that a required credential can only be installed by
+hand-editing JSON, which for most colonies means the feature is never switched on. It stays `Secret`:
+written, and never rendered back -- not by the settings response, not by the example file, not by the
+docs. The field clears itself and the page reports whether FORAGER ACCEPTED it, which is the only
+question that matters and not the one the save reply answers.
+
+**IT CAN LIST ITS PROJECTS.** `GET /api/projects`, with `source_count`, `knowledge_count` and
+`open_conflict_count` per base. P11 and P12 in the shared contract -- "the producer publishes no way
+to enumerate its projects", the note that made the console's bind control a free-text field with a
+paragraph of apology under it -- are closed by the producer having done it. The contract row is
+CORRECTED rather than the client bent to fit our old guess: the real response shape is not the one
+that row speculated, and the producer's shape is the contract.
+
+So binding is a list you choose from, with the document and statement counts beside each name.
+
+**AND THE PAGE.** Three states drawn as three -- not connected, signed out, working -- because
+exactly one of them is true at a time and the old page drew all of them at once. `.kn-lede` was 10px
+and `.kn-sub` was 8px MONOSPACE, which is how every explanatory line on the page came to render as a
+grey smear under the control it was explaining; body text is now body text. The study schedule is
+shown under a bound knowledge base rather than floating above one, because a schedule with nothing to
+study is a control that cannot do anything.
+
+**WHAT DID NOT CHANGE.** `knowledge_forager_allow_remote` stays a file edit. The old argument for it
+is gone -- the far end can prove who it is now -- and the remaining one has not moved: a console that
+could redirect this colony's source of organizational fact to another host is precisely what that
+switch exists to prevent.
+
+The editable surface goes 108 -> 109.
+
 ## v0.3.8.157 - the knowledge lane finally runs end to end
 
 Three releases built a lane and nothing walked down it. `.121` built the knowledge tools and granted

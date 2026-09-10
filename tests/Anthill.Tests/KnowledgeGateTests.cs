@@ -108,11 +108,16 @@ public class KnowledgeGateTests : IDisposable
     // ---- What did NOT cross ---------------------------------------------------------------------
 
     /// <summary>
-    /// THE TOKEN AND THE REMOTE PERMISSION STAY A FILE EDIT.
+    /// THE REMOTE PERMISSION STAYS A FILE EDIT.
     ///
-    /// `knowledge_forager_token` is the credential; `knowledge_forager_allow_remote` permits sending
-    /// the colony's queries to a service that has no authentication of its own, ACROSS A NETWORK.
-    /// Each is a security decision a compromised console must not be able to make.
+    /// It permits sending the colony's questions to a knowledge service ACROSS A NETWORK, which is
+    /// the one decision here a compromised console must not be able to make.
+    ///
+    /// v0.3.8.158 — the TOKEN left this list, and the reason is that the premise under it was
+    /// false: FORAGER 0.6 authenticates every route that carries knowledge, so a colony with no
+    /// credential is refused by everything it asks for. A credential that can only be installed by
+    /// hand-editing JSON is a feature most colonies never switch on. It stays `Secret`, so the
+    /// console writes it and can never read it back.
     ///
     /// v0.3.8.157 — the ENDPOINT left this list and did not become unguarded. It is writable from
     /// the console only as a LOOPBACK address; anything else is refused unless the file already
@@ -120,9 +125,8 @@ public class KnowledgeGateTests : IDisposable
     /// cannot redirect the colony's source of fact off it. The test below holds that.
     /// </summary>
     [Theory]
-    [InlineData("knowledge_forager_token")]
     [InlineData("knowledge_forager_allow_remote")]
-    public void TheTokenAndRemotePermission_StayInTheFile(string key)
+    public void TheRemotePermission_StaysInTheFile(string key)
     {
         Assert.NotNull(ConfigCatalog.Find(key));
         Assert.False(ConfigCatalog.IsEditable(key),
@@ -131,6 +135,27 @@ public class KnowledgeGateTests : IDisposable
           + "already says. This key decides who the colony trusts, which is a different decision: "
           + "if it is genuinely meant to move, say why on the property and update "
           + "TheEditableSurface_IsExactlyWhatItWasBeforeItBecameAProjection in the same commit.");
+    }
+
+    /// <summary>
+    /// THE CREDENTIAL IS WRITABLE AND NEVER READABLE. v0.3.8.158.
+    ///
+    /// The whole safety of moving a `Secret` onto the settings surface is that the write works and
+    /// the read does not. `ConfigDeclaration.RenderedJson` blanks a secret unconditionally — it
+    /// refuses even a declared illustration, because "unless someone declared one" is exactly the
+    /// exception an absent-minded afternoon needs — and this holds that the classification did not
+    /// quietly change along with the exposure.
+    /// </summary>
+    [Fact]
+    public void TheCredential_IsWritableAndNeverRenderedBack()
+    {
+        var token = ConfigCatalog.Find("knowledge_forager_token");
+        Assert.NotNull(token);
+        Assert.True(token!.IsEditable);
+        Assert.Equal(ConfigSecurity.Secret, token.Security);
+
+        // The rendered example file is the surface a value would leak into.
+        Assert.DoesNotContain("fgr_", ConfigCatalog.RenderExampleJson(), StringComparison.Ordinal);
     }
 
     /// <summary>
