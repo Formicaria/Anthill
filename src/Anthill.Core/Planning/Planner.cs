@@ -78,11 +78,28 @@ public static class PlanSubstitutions
     /// </summary>
     public const string GroundedInspectionRequired = "grounded_inspection_required";
 
+    /// <summary>
+    /// v0.3.8.156 — this mission's project has a knowledge base bound to it, so the plan is
+    /// guaranteed a step that READS it ahead of every step that writes the answer.
+    ///
+    /// The same shape as <see cref="GroundedInspectionRequired"/> and recorded for the same reason:
+    /// nothing is abandoned, the model's plan still runs, and a step nobody proposed is a step an
+    /// operator must be able to see the reason for.
+    ///
+    /// WHAT IT CLOSES is the other half of the defect `.136` found. That release entered the
+    /// knowledge scope so that a knowledge tool an ant dispatched would resolve instead of refusing;
+    /// it did not make anything dispatch one. A colony with a bound knowledge base still planned
+    /// `builder -> verifier`, the builder answered from the model's weights, and the knowledge
+    /// base — ingested, mapped, scoped, reachable and by then studied on a schedule — was read by
+    /// nobody. Reach without a step that uses it is "declared and reaching nobody" one layer up.
+    /// </summary>
+    public const string KnowledgeBaseBound = "knowledge_base_bound";
+
     /// <summary>Every code, for guards and for any consumer that wants to enumerate them.</summary>
     public static readonly IReadOnlyList<string> All =
     [
         LongInputSpecIngestion, NoModelRouter, ModelCallFailed, PlanRejected, PlanParseFailed,
-        GroundedInspectionRequired
+        GroundedInspectionRequired, KnowledgeBaseBound
     ];
 }
 
@@ -348,6 +365,18 @@ public sealed class Planner
               + string.Join(", ", demandedInspection)
               + "); the plan is guaranteed a read-only inspection step ahead of every synthesis "
               + "rather than being answered from the request's own prose");
+
+        // v0.3.8.156 - REPORTED HERE, INSERTED IN `EnsureClassCoverage`, for the reason the block
+        // above gives: the guarantee belongs on the one path every return funnels through, and only
+        // this scope holds the reporting callback. The condition is the mission's own knowledge
+        // scope, which `Queen.RunMission` entered before planning was called - the planner reads it
+        // and holds nothing, which is what keeps this class free of a provider.
+        if (KnowledgeConsultationApplies(specification))
+            Substituted(PlanSubstitutions.KnowledgeBaseBound,
+                "this mission's project has a knowledge base bound to it ("
+              + Anthill.SDK.Knowledge.KnowledgeScopeContext.Current.ProjectRef
+              + "); the plan is guaranteed a step that reads it ahead of every synthesis rather "
+              + "than the answer being composed from the model's own weights");
 
         // Long specification / architecture / framework documents are never sent into a single
         // "Analyze Mission Goal" task — they are chunked into bounded, parallel section reviews
@@ -656,6 +685,11 @@ Required JSON:
         // "is this step already present" guards see what it inserted, so an audit gets one
         // inspection step rather than two spellings of one.
         tasks = EnsureGroundedInspection(tasks, goal, specification);
+
+        // v0.3.8.156 - AND WHAT THIS PROJECT ALREADY KNOWS IS READ BEFORE THE ANSWER IS WRITTEN.
+        // Class-independent for the inspection's reason above, and excluded for `simple_answer` for
+        // the reason `EnsureKnowledgeConsultation` gives.
+        tasks = EnsureKnowledgeConsultation(tasks, goal, specification);
 
         // v0.3.8.147 — AND SOMETHING HAS TO ANSWER. Class-independent, for the same reason the
         // inspection above is: every mission owes the operator an answer, whatever its class.
@@ -1093,6 +1127,118 @@ Required JSON:
     /// spec-ingestion plan — the one this exists for — declares its edges explicitly and is skipped
     /// by auto-wiring entirely, which is precisely the case this branch serves.
     /// </summary>
+    /// <summary>
+    /// THE TITLE THE GUARANTEED STEP CARRIES, spelled once. It is also how a second pass recognises
+    /// its own work - `EnsureClassCoverage` runs over plans that have already been through it - and
+    /// two spellings of one step is the shape this file keeps warning about.
+    /// </summary>
+    internal const string KnowledgeConsultationTitle = "Read what this project already knows";
+
+    /// <summary>
+    /// DOES THIS MISSION HAVE A KNOWLEDGE BASE TO READ? v0.3.8.156.
+    ///
+    /// READ FROM THE AMBIENT SCOPE, NOT FROM CONFIGURATION, and the distinction is the tenant
+    /// boundary rather than a convenience. <c>Queen.ResolveKnowledgeScope</c> is the ONE function
+    /// that decides which knowledge a mission may read - disabled colony, projectless mission,
+    /// unmapped project, each a refusal - and `RunMission` enters its answer around everything that
+    /// follows, planning included. A second reader that went back to `AnthillRuntime.Knowledge` and
+    /// asked the project map again would be a second answer to "which knowledge may this mission
+    /// read", which is the single failure the scope model exists to prevent. The planner stays pure
+    /// in the sense that matters: it holds no provider, no store and no configuration - it reads a
+    /// scope its caller entered, exactly as every knowledge tool does.
+    ///
+    /// NOT FOR `simple_answer`, the one class excluded rather than served. That class is admitted on
+    /// the promise - `MissionIntake`'s own words - that "the answer rests on nothing retrieved and
+    /// nothing inspected", and v0.3.8.145 reduces its plan to two steps for that reason. A question
+    /// that needs the organization's documents is not that class; if intake sends one there the
+    /// defect is intake's, and adding a retrieval step here would answer it by contradicting the
+    /// class rather than by fixing the classification.
+    /// </summary>
+    internal static bool KnowledgeConsultationApplies(
+        Anthill.Core.Missions.MissionSpecification? specification) =>
+        Anthill.SDK.Knowledge.KnowledgeScopeContext.HasScope
+     && !string.Equals(specification?.MissionClass,
+            Anthill.Core.Missions.MissionSpecification.SimpleAnswerClass,
+            StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// A BOUND KNOWLEDGE BASE IS READ BY A STEP, OR IT IS NOT READ AT ALL. v0.3.8.156.
+    ///
+    /// THE DEFECT, precisely. v0.3.8.121 built the knowledge tools and granted them to the
+    /// researcher; v0.3.8.136 entered the scope so that a dispatched knowledge call would resolve
+    /// rather than refuse. Neither made a PLAN that dispatches one. On a colony whose project is
+    /// mapped to a FORAGER project, an ordinary question planned `builder -> verifier`: the builder
+    /// answers, the verifier checks that it answered, and no step in the graph was ever going to
+    /// open the knowledge base. Every layer behaved correctly and the organization's own documents
+    /// were not consulted - which from the operator's side is indistinguishable from a knowledge
+    /// base that does not work. Reach with nothing that uses it is "declared and reaching nobody"
+    /// one layer up from where this repository usually finds it.
+    ///
+    /// THE ROLE, NOT A WORKER, AND NO NEW CAPABILITY. The researcher is the only role whose contract
+    /// holds the knowledge tools (`AntExecutionCatalog`), and tools are granted at the ROLE, so
+    /// whichever researcher worker resolution picks can dispatch them. No worker is named, for
+    /// v0.3.8.98's reason; no capability is invented, for the reason this repository keeps
+    /// re-learning - a capability no worker declares resolves to nobody.
+    ///
+    /// `research`, RECONCILED. v0.3.8.135 paid for the alternative: the research class's own
+    /// inserted step was typed "research" while the web ant's contract declared "external_research",
+    /// so the step that DEFINED the class was refused at dispatch every time it fired. The type this
+    /// step carries is whatever the researcher's contract actually names.
+    ///
+    /// ONLY WHAT IS MISSING, and ORDER RATHER THAN MERELY PRESENCE - both
+    /// <see cref="EnsureGroundedInspection"/>'s rules, applied to a binding rather than to a demand.
+    /// A knowledge step that runs after the synthesis is evidence nothing consumed.
+    /// </summary>
+    internal static List<Task> EnsureKnowledgeConsultation(List<Task> tasks, string goal,
+        Anthill.Core.Missions.MissionSpecification? specification)
+    {
+        if (!KnowledgeConsultationApplies(specification)) return tasks;
+
+        // A plan that already reads the knowledge base reads it for the same reason, whoever put the
+        // step there - the standing rule for every guarantee in this file.
+        if (tasks.Any(t => string.Equals(t.Title, KnowledgeConsultationTitle, StringComparison.OrdinalIgnoreCase)
+                        || (t.Description ?? "").Contains(Anthill.SDK.Knowledge.KnowledgeToolNames.Retrieve,
+                               StringComparison.OrdinalIgnoreCase)
+                        || (t.Description ?? "").Contains(Anthill.SDK.Knowledge.KnowledgeToolNames.Search,
+                               StringComparison.OrdinalIgnoreCase)))
+            return tasks;
+
+        var step = new Task
+        {
+            Title = KnowledgeConsultationTitle,
+            // THE TOOLS ARE NAMED IN THE DESCRIPTION, and that is not prompt decoration. The
+            // researcher runs through `ToolCallingLoop`, which projects every allowed tool's schema
+            // to the model; a step that says "consult what we know" without naming the call is a
+            // step a model satisfies by recalling. The same string is what the presence check above
+            // reads, so the instruction and its detection stay one rule rather than two.
+            Description = $"Query this project's knowledge base for what it already holds about: {goal}. "
+                        + $"Use {Anthill.SDK.Knowledge.KnowledgeToolNames.Retrieve} for evidence-backed "
+                        + $"context and {Anthill.SDK.Knowledge.KnowledgeToolNames.Search} for candidates. "
+                        + "Record what was retrieved and the evidence behind it, and say plainly if the "
+                        + "knowledge base holds nothing on this - an empty result is a finding, not a "
+                        + "licence to answer from memory. Read only; change nothing.",
+            AssignedAnt = "researcher",
+            TaskType = Anthill.Core.Planning.TaskTypeVocabulary.Reconcile("researcher", "research"),
+            // NOT CRITICAL. A knowledge base that is unreachable, empty or slow must not fail a
+            // mission the colony can still answer. The same demotion v0.3.8.101 makes for the
+            // troubleshooting check task, for the opposite reason: there the step is EXPECTED to
+            // fail, here it is merely permitted to.
+            Critical = false,
+        };
+
+        tasks.Insert(0, step);
+
+        // The edges, and the one deliberate omission `EnsureGroundedInspection` documents at length:
+        // a task that declares no dependencies is left to `AutoWireDependencies`, which already puts
+        // every researcher step ahead of the builder. Writing our id into an empty list would opt
+        // that task out of auto-wiring and replace a full ordering with a narrower one.
+        foreach (var downstream in tasks.Where(t => ConsumesEvidence(t) && t.DependsOn.Count > 0))
+            downstream.DependsOn = downstream.DependsOn.Concat(new[] { step.Id })
+                .Distinct(StringComparer.Ordinal).ToList();
+
+        return tasks;
+    }
+
     internal static List<Task> EnsureGroundedInspection(List<Task> tasks, string goal,
         Anthill.Core.Missions.MissionSpecification? specification)
     {

@@ -454,6 +454,12 @@ public static partial class ApiHost
         // or whose shape cannot safely replace itself (a container, an unidentified install),
         // downloads nothing — the stager asks both questions before it reaches the network.
         UpdateStager.Start();
+
+        // v0.3.8.156 — and the knowledge study pass, which asks `knowledge_auto_study` before it
+        // does anything. Started unconditionally and gated INSIDE its one-pass method, the same
+        // shape as the stager above: that is what lets the operator's Study button, a test and this
+        // timer all drive one implementation instead of three.
+        Knowledge.KnowledgeStudyStager.Start();
         Console.WriteLine(AnthillRuntime.AutoUpdate switch
         {
             "silent" => "Automatic updates: on. New releases download, are checksum-verified, and install at the next start.",

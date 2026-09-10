@@ -1,3 +1,70 @@
+## v0.3.8.156 - the study pass gets a schedule, and what the colony studied finally reaches the plan
+
+**`.154` SHIPPED STUDY AS A BUTTON AND ARGUED FOR WHY**, in the button's own comment: "a button that
+silently enrolled a knowledge base into continuous work would be an automation decision made by a
+click that did not look like one." That argument has not changed. What changed is that the decision
+can now be made where a decision belongs — in the config file, once — instead of being unavailable.
+
+`knowledge_auto_study: on` studies every bound knowledge base every six hours: at most twenty-five
+missions per project per pass, skipping every document already studied at its current version, using
+the receipts `.154` built. A colony with nothing new queues nothing and spends one listing call.
+
+**OFF BY DEFAULT, AND A TYPO IS OFF TOO** — which is the OPPOSITE fallback to `auto_update`, twenty
+lines away in the same method. A typo in `auto_update` must not stop a colony checking for its own
+security fixes, so it falls to `notify`. A typo here must not enrol a colony into unattended work it
+never asked for, so it falls to `off`. Both settings answer "which way is the mistake cheaper", and
+they answer differently because the mistakes are not the same mistake.
+
+**TWO GATES, BOTH ASKED.** `knowledge_auto_study: on` in a colony whose `knowledge_enabled` is false
+has said yes to a schedule for a feature it never switched on; reaching the network on the strength
+of the narrower flag would be the outer gate reaching nobody.
+
+**ONE PASS, THREE CALLERS.** The timer, the operator's button and the suite all run
+`KnowledgeSeeder.SeedOnce` — which is why `.154` wrote it to return a typed result rather than log
+and return void, and why the disabled check lives inside the one-pass method rather than in the loop.
+A scheduled path that drifts from the manual one is two implementations of one rule, and this
+repository has paid for that shape often enough to build against it by default. The pass resolves
+scope through the same resolver a request uses, for the same reason: the project map IS the
+containment, and a second resolver would be a second answer to "which knowledge may this project
+read".
+
+The thread is `UpdateStager`'s shape in every detail — named, background, a startup grace delay so a
+colony's first minutes belong to the operator, sleeping through the cancellation handle so a stop is
+prompt, and a double catch, because `ColonyDirector` learned expensively that an exception escaping a
+bare background thread takes the colony with it.
+
+**AND THE KNOWLEDGE NOBODY READ.** `.121` built the knowledge tools and granted them to the
+researcher. `.136` found that no scope was ever entered, so every knowledge call an ant dispatched
+refused, and fixed it. `.154` gave the colony a way to fill the knowledge base; this release gave it
+a schedule. On the operator's own colony, with a project mapped, ingested, scoped and studied, an
+ordinary question still planned `builder -> verifier`: the builder answered from the model's weights,
+the verifier checked that it had answered, and NO STEP IN THE GRAPH WAS EVER GOING TO OPEN THE
+KNOWLEDGE BASE. Every layer was correct and the organization's own documents were not consulted --
+which from the operator's side is indistinguishable from a knowledge base that does not work. Reach
+with nothing that uses it is "declared and reaching nobody", one layer up from where this repository
+usually finds it.
+
+`EnsureKnowledgeConsultation` guarantees a researcher step that calls `knowledge_retrieve` ahead of
+every synthesis, on the one path all five planning returns funnel through -- a guarantee written on
+one path is a guarantee the other four do not have. It reads the AMBIENT SCOPE the Queen entered
+before planning, never the project map again: `ResolveKnowledgeScope` is the one function that
+decides which knowledge a mission may read, and a second reader would be a second answer to that
+question. The planner still holds no provider, no store and no configuration.
+
+**NO NEW CAPABILITY AND NO NAMED WORKER.** The researcher is the only role whose contract holds the
+knowledge tools and tools are granted at the ROLE, so whichever worker resolution picks can dispatch
+them. A capability no worker declares resolves to nobody -- the defect this release is about, wearing
+a different coat. The step's type is reconciled against the researcher's own contract for `.135`'s
+reason: the research class's defining step was typed `research` against a contract declaring
+`external_research`, and was refused at dispatch every time it fired.
+
+**EXCLUDED FOR `simple_answer` ALONE**, and that is the one class excluded rather than served. It is
+admitted on the promise that the answer rests on nothing retrieved and nothing inspected, and `.145`
+reduces its plan to exactly that. A question that needs the organization's documents is not that
+class; if intake sends one there, the defect is intake's, and answering it here would fix a
+classification by contradicting a promise.
+
+
 ## v0.3.8.155 - the tool that was registered, described, argued for, and reachable by nobody
 
 **`knowledge_review` SHIPPED AT `.121` AND NO ROLE HAS EVER BEEN ABLE TO CALL IT.**
