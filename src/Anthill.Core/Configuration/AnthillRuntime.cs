@@ -15,7 +15,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "0.3.8.154";
+    public const string Version = "0.3.8.155";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -25,7 +25,7 @@ public static class AnthillRuntime
     // `EnsureColumns`. Bumped because an existing database MUST run that migration: the columns
     // carry the facts every closure gate after this release reads, and a build that left the number
     // at 23 would tell an upgraded colony it was already current and then read nulls forever.
-    public const int SchemaVersion = 25;   // v0.3.8.154: knowledge_seed_receipts, the seeding watermark
+    public const int SchemaVersion = 26;   // v0.3.8.155: knowledge_reviews, proposals an operator can answer
 
     /// <summary>
     /// v2.22.0: the environment a skill is proven against. Coverage is a safety boundary — a

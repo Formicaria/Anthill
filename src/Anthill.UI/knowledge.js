@@ -265,6 +265,11 @@ function knRenderShell(host) {
     + '<div id="kn-detail" class="kn-detail"><div class="kn-empty">Select a statement to see its evidence.</div></div>'
     + '</div>'
     + knBindingsCard(s)
+    + '<div class="kn-card"><h3>Review proposals</h3>'
+    + '<p class="kn-lede">Where the colony read the evidence and disagreed with a stored statement. '
+    + 'Accepting records that you agreed — it does not change the knowledge base, because FORAGER '
+    + 'publishes no way to apply a review yet.</p>'
+    + '<div id="kn-reviews"><div class="hud-state">Loading…</div></div></div>'
     + '<div class="kn-card"><h3>Conflicts</h3>'
     + '<p class="kn-lede">Where two sources say different things. ANTHILL never picks a side on your behalf.</p>'
     + '<div id="kn-conflicts"><div class="hud-state">Loading…</div></div></div>'
@@ -282,6 +287,7 @@ function knRenderShell(host) {
   knLoadConflicts();
   knLoadSources();
   knLoadJobs();
+  knLoadReviews();
 }
 
 function knSetProject() {
@@ -816,6 +822,68 @@ async function knStartIngest() {
     knLoadJobs();
   } catch (e) {
     knSayIngest((e && e.message) || 'Ingestion was not started.', false);
+  }
+}
+
+/* ── review proposals ─────────────────────────────────────────────────────────
+   v0.3.8.155 — THE OTHER END OF A TOOL THAT HAD NEITHER END.
+
+   `knowledge_review` shipped at `.121`: described, argued for, and named by no
+   role's contract, raising a proposal that reached the event log and stopped.
+   The researcher can now raise one and this is where it is answered.
+
+   ACCEPTING IS NOT APPLYING, and the card says so where the button is rather
+   than in a doc. §1 gives FORAGER the classification and the ranking, and there
+   is no producer endpoint for applying a review — that is P13 in the contract.
+   A button labelled "Accept" beside a claim that the knowledge base changed
+   would be the most expensive kind of lie this console could tell.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+async function knLoadReviews() {
+  const host = document.getElementById('kn-reviews');
+  if (!host) return;
+  try {
+    const r = await api('/knowledge/reviews');
+    if (!r || !r.success) {
+      host.innerHTML = `<div class="kn-empty">${escapeHtml((r && r.message) || 'Proposals are not readable.')}</div>`;
+      return;
+    }
+    const reviews = (r.data && r.data.reviews) || [];
+    if (!reviews.length) {
+      host.innerHTML = '<div class="kn-empty">No review proposals. The colony has not disagreed with anything it read.</div>';
+      return;
+    }
+
+    host.innerHTML = reviews.map(v => {
+      const pending = v.status === 'pending';
+      return '<div class="kn-review">'
+        + `<div class="kn-jobhead"><span class="kn-pill kn-st-${escapeHtml(v.status || '')}">${escapeHtml(v.status || '')}</span> `
+        + `<b>${escapeHtml(v.action || '')}</b> <code>${escapeHtml(v.knowledge_id || '')}</code></div>`
+        + `<p class="kn-lede">${escapeHtml(v.rationale || '')}</p>`
+        + (v.mission_id ? `<p class="kn-sub">Raised by ${escapeHtml(v.proposed_by || 'a worker')} in mission <code>${escapeHtml(v.mission_id)}</code></p>` : '')
+        + (v.decided_by ? `<p class="kn-sub">Decided by ${escapeHtml(v.decided_by)}${v.decision_note ? ': ' + escapeHtml(v.decision_note) : ''}</p>` : '')
+        + (pending && knMayManage()
+            ? `<button class="kn-btn kn-sm kn-primary" data-onclick="knDecideReview('${jsArg(v.id)}', true)">Accept</button>`
+              + `<button class="kn-btn kn-sm" data-onclick="knDecideReview('${jsArg(v.id)}', false)">Decline</button>`
+            : '')
+        + '</div>';
+    }).join('') + '<div class="kn-say" id="kn-say-review"></div>';
+  } catch (e) {
+    host.innerHTML = '<div class="kn-empty">Proposals are not readable.</div>';
+  }
+}
+
+async function knDecideReview(id, accept) {
+  const say = document.getElementById('kn-say-review');
+  const tell = (msg, ok) => { if (say) { say.textContent = msg; say.className = 'kn-say' + (ok ? ' kn-ok' : ' kn-bad'); } };
+  tell('Recording…', true);
+  try {
+    const r = await api('/knowledge/reviews/' + encodeURIComponent(id) + '/decide', 'POST', { accept: !!accept });
+    if (!r || !r.success) { tell((r && (r.error || r.message)) || 'The decision was not recorded.', false); return; }
+    await knLoadReviews();
+    tell(r.message || 'Recorded.', true);
+  } catch (e) {
+    tell((e && e.message) || 'The decision was not recorded.', false);
   }
 }
 

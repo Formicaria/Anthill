@@ -833,6 +833,7 @@ public sealed partial class SqliteMemory : IDisposable
             (19, "durable_attempts", "Workers and task attempts persisted with leases — a claim is atomic, a retry is a distinct attempt, and expired work is reclaimable."),
             (20, "artifact_evidence_store", "ADR-004 artifact and evidence stores (artifacts, evidence) — typed, hashed, append-only work products with provenance. Additive: nothing produces them yet."),
             (21, "knowledge_seed_receipts", "v0.3.8.154 — the durable watermark for seeding missions from a bound FORAGER knowledge base. Column names are the shared contract's §5 change-feed envelope, adopted consumer-side now so producer events land in an already-shaped table when P2/P8 arrive; interim rows carry origin_kind 'synthesized:polling'. Created lazily on first use, like mission_jobs — recorded here so the ledger names every table the build can make."),
+            (22, "knowledge_reviews", "v0.3.8.155 — knowledge review proposals as a decidable record rather than an event. `.122` recorded the proposal in the event log and said a typed proposal kind deserved its own release; this is it. Accepting records that an operator agreed, and deliberately cannot mean applied: no producer surface exists for that (P13)."),
         };
         foreach (var (id, name, description) in migrations)
         {
