@@ -162,8 +162,8 @@ public class DocumentationConsistencyTests
     public void TheUniversalWorkflowProgram_IsExactlyTheRangeItDeclares()
     {
         var heading = Regex.Match(Plan(),
-            @"^##\s*2b\..*?v\d+\.\d+\.\d+\.(?<from>\d+)\s*(?:→|->)\s*v\d+\.\d+\.\d+\.(?<to>\d+)"
-          + @"(?<closed>\s*·\s*✅\s*CLOSED at v\d+\.\d+\.\d+\.(?<at>\d+))?\s*$",
+            @"^##\s*2b\..*?v(?<fromv>\d+\.\d+\.\d+\.(?<from>\d+))\s*(?:→|->)\s*v(?<tov>\d+\.\d+\.\d+\.(?<to>\d+))"
+          + @"(?<closed>\s*·\s*✅\s*CLOSED at v(?<atv>\d+\.\d+\.\d+\.(?<at>\d+)))?\s*$",
             RegexOptions.Multiline);
 
         Assert.True(heading.Success,
@@ -173,7 +173,15 @@ public class DocumentationConsistencyTests
 
         var from = int.Parse(heading.Groups["from"].Value);
         var to = int.Parse(heading.Groups["to"].Value);
-        var shipped = int.Parse(AnthillRuntime.Version.Split('.').Last());
+        /* v0.3.9 — COMPARED AS VERSIONS, NOT AS LAST SEGMENTS.
+           This read the final dotted component of both sides and compared the integers, which is
+           the same number only while every version has the same prefix. The 3.8 line closed and
+           this colony now ships `0.3.9`: `.113` (of 0.3.8) was suddenly "not shipped" because 113
+           is greater than 9, and a program that closed eleven releases ago failed a guard about the
+           future. The declared range is a full version and so is the build's; comparing the whole
+           thing is what the check meant all along. */
+        var shipped = Version.Parse(AnthillRuntime.Version);
+        Version Declared(string group) => Version.Parse(heading.Groups[group].Value);
 
         var ids = Regex.Matches(Plan(), @"^\|\s*\*\*\.(?<n>\d{2,3})\*\*\s*\|", RegexOptions.Multiline)
             .Select(m => int.Parse(m.Groups["n"].Value))
@@ -199,9 +207,10 @@ public class DocumentationConsistencyTests
                 $"§2b says it closed at .{closedAt} and declares its range ending at .{to}. A "
               + "program closes at its last release or the heading is describing two programs.");
 
-            Assert.True(to <= shipped,
-                $"§2b claims to have CLOSED at .{to}, which has not shipped (.{shipped} is "
-              + "current). A program cannot be finished by a release that has not happened.");
+            Assert.True(Declared("tov") <= shipped,
+                $"§2b claims to have CLOSED at v{heading.Groups["tov"].Value}, which has not "
+              + $"shipped (v{shipped} is current). A program cannot be finished by a release that "
+              + "has not happened.");
 
             Assert.True(ids.Count == 0,
                 $"§2b declares itself CLOSED and still lists {ids.Count} release row(s). A closed "
@@ -213,10 +222,10 @@ public class DocumentationConsistencyTests
         // It begins at the release being built: a program whose first entry has already shipped is
         // a plan describing the past, and a shipped row that lingers is one whose unmet items can
         // be dropped without anyone noticing they were unmet.
-        Assert.True(from == shipped,
-            $"§2b declares the program as beginning at .{from} while the shipping release is "
-          + $".{shipped}. When a release ships, its row leaves the table and anything it did not "
-          + "finish is carried into §2c — the row is not deleted on its own.");
+        Assert.True(Declared("fromv") == shipped,
+            $"§2b declares the program as beginning at v{heading.Groups["fromv"].Value} while the "
+          + $"shipping release is v{shipped}. When a release ships, its row leaves the table and "
+          + "anything it did not finish is carried into §2c — the row is not deleted on its own.");
 
         // v0.3.8.113 — A PROGRAM MAY END, and this is the terminal case the check never reached.
         //

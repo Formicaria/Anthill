@@ -73,6 +73,10 @@
     <!-- v0.3.8.121: the Knowledge area. Its own file rather than app.js, which
          ConsoleAssetSplitTests caps at 10,000 lines and which is already at 9,955. -->
     <EmbeddedResource Include="..\Anthill.UI\knowledge.js" LogicalName="Anthill.Api.Ui.knowledge.js" Condition="'$(AnthillNoUi)' != 'true'" />
+    <!-- v0.3.9: the memory vault sidebar. Pinned here for the reason `ConsoleAssetSplitTests`
+         exists: a console script that is served from a route and not embedded works perfectly from
+         a source checkout and 404s from the single-file binary. -->
+    <EmbeddedResource Include="..\Anthill.UI\memory-vault.js" LogicalName="Anthill.Api.Ui.memory-vault.js" Condition="'$(AnthillNoUi)' != 'true'" />
   </ItemGroup>
 
   <!--

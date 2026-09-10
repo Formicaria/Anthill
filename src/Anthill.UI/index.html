@@ -1761,6 +1761,64 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
     .clb-needs:hover{background:rgba(255,215,106,.16);}
     .clb-needs-dot{width:6px;height:6px;border-radius:50%;background:#ffd76a;box-shadow:var(--glow-gold);}
     .clb-views{display:flex;align-items:center;gap:2px;padding:2px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(255,255,255,.02);}
+
+    /* ── v0.3.9 the memory vault ─────────────────────────────────────────────
+       A right rail over the live view, and a card that floats where the camera
+       flew. Sized in rem-free px to match the console's existing scale, and
+       readable: the knowledge page taught this repo what 8px monospace does to
+       explanatory text. */
+    .mv-panel{position:absolute;top:0;right:0;bottom:0;width:340px;z-index:6;display:flex;flex-direction:column;
+      background:var(--card);border-left:1px solid var(--border);box-shadow:-8px 0 24px rgba(0,0,0,.28)}
+    .mv-panel[hidden]{display:none}
+    .mv-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px}
+    .mv-gap{flex:1}
+    .mv-sub{font-size:11px;color:var(--dim)}
+    .mv-x{background:none;border:0;color:var(--dim);cursor:pointer;font-size:13px;padding:2px 4px}
+    .mv-x:hover{color:var(--fg)}
+    .mv-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid var(--border)}
+    .mv-input{flex:1 1 100%;min-width:0;padding:6px 8px;font:inherit;font-size:12px;border-radius:6px;
+      border:1px solid var(--border);background:var(--inner);color:var(--fg)}
+    .mv-lbl{font-size:11px;color:var(--dim);display:flex;align-items:center;gap:4px}
+    .mv-select{font:inherit;font-size:11px;padding:3px 6px;border-radius:5px;border:1px solid var(--border);
+      background:var(--inner);color:var(--fg)}
+    .mv-btn{font:inherit;font-size:11px;padding:4px 8px;border-radius:5px;border:1px solid var(--border);
+      background:var(--inner);color:var(--fg);cursor:pointer}
+    .mv-groups{display:flex;flex-wrap:wrap;gap:4px;padding:8px 12px;max-height:96px;overflow-y:auto}
+    .mv-groups:empty{display:none}
+    .mv-chip{font:inherit;font-size:11px;padding:3px 7px;border-radius:999px;border:1px solid var(--border);
+      background:var(--inner);color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+    .mv-chip.on{border-color:var(--accent,#e0567f);color:var(--fg)}
+    /* A DERIVED edge is dashed. The four relations the colony recorded are facts; "same subject" is
+       inferred, and a line an operator reads as provenance when it is a shared noun is the kind of
+       wrong that teaches them to distrust the true ones. */
+    .mv-chip.derived{border-style:dashed}
+    .mv-tree{flex:1;overflow-y:auto;padding:4px 0 12px}
+    .mv-folder,.mv-leaf{display:flex;align-items:center;gap:7px;padding:4px 12px;cursor:pointer;font-size:12px}
+    .mv-folder{font-weight:600}
+    .mv-folder:hover,.mv-leaf:hover{background:var(--inner)}
+    .mv-leaf.on{background:var(--inner);box-shadow:inset 2px 0 0 var(--accent,#e0567f)}
+    .mv-caret{width:10px;color:var(--dim);font-size:10px}
+    .mv-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+    .mv-dot.sm{width:6px;height:6px}
+    .mv-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .mv-count{font-size:10px;color:var(--dim)}
+    .mv-when{font-size:10px;color:var(--dim)}
+    .mv-empty,.mv-more{padding:6px 12px;font-size:11px;color:var(--dim)}
+    .mv-more{cursor:pointer;text-decoration:underline}
+    .mv-card{position:absolute;right:356px;top:64px;width:360px;max-height:60%;overflow-y:auto;z-index:7;
+      background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;
+      box-shadow:0 12px 32px rgba(0,0,0,.4)}
+    .mv-card[hidden]{display:none}
+    .mv-card-head{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--dim);margin-bottom:6px}
+    .mv-card-title{font-size:13px;line-height:1.45;margin-bottom:4px;color:var(--fg)}
+    .mv-meta{display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:var(--dim);margin:8px 0}
+    .mv-links{display:flex;flex-direction:column;gap:4px;margin-top:8px}
+    .mv-links .mv-chip{justify-content:flex-start;text-align:left;border-radius:6px}
+    .mv-open{margin-top:10px;font-size:12px}
+    @media (max-width:900px){
+      .mv-panel{width:100%}
+      .mv-card{right:12px;left:12px;width:auto}
+    }
     .clb-btn{height:24px;padding:0 9px;border-radius:6px;border:1px solid transparent;background:transparent;color:var(--muted);font:inherit;font-size:10.5px;cursor:pointer;}
     .clb-btn:hover{color:var(--text);background:rgba(255,255,255,.05);}
     .clb-btn:disabled{opacity:.35;cursor:default;background:transparent;color:var(--muted);}
@@ -2336,6 +2394,35 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
            PAGE: COLONY  (canvas visualization)
       --------------------------------------------------------------------- -->
       <div class="page" id="page-colony">
+        <!-- v0.3.9 — THE MEMORY VAULT. Opens with the Memory view and closes with Survey or Esc;
+             `hidden` rather than removed, so the tree it has already read survives a trip to
+             Survey and back. The card is a sibling rather than a child of the tree: it floats over
+             the 3D view, where the camera has just flown. -->
+        <aside class="mv-panel" id="mv-panel" hidden aria-label="Colony memory">
+          <div class="mv-head">
+            <b>Memory</b>
+            <span class="mv-sub" id="mv-total"></span>
+            <span class="mv-gap"></span>
+            <button class="mv-x" id="mv-close" aria-label="Close memory">✕</button>
+          </div>
+          <div class="mv-controls">
+            <input id="mv-q" class="mv-input" type="search" placeholder="Search everything the colony remembers…"
+                   autocomplete="off" aria-label="Search memory">
+            <label class="mv-lbl">Group
+              <select id="mv-group" class="mv-select" aria-label="Second level">
+                <option value="facet">by outcome</option>
+                <option value="topic">by topic</option>
+                <option value="project">by project</option>
+                <option value="chamber">by chamber</option>
+              </select>
+            </label>
+            <button class="mv-btn" id="mv-clear">Clear</button>
+          </div>
+          <div class="mv-groups" id="mv-groups"></div>
+          <div class="mv-tree" id="mv-tree"></div>
+        </aside>
+        <div class="mv-card" id="mv-card" hidden role="dialog" aria-label="Memory record"></div>
+
         <!-- V2.2 Pass A: shared top telemetry bar -->
         <div id="tb-colony"></div>
 
@@ -4342,6 +4429,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 <script src="/ui/colony-live.js" defer></script>
 <script src="/ui/colony-host.js" defer></script>
 <script src="/ui/colony-home.js" defer></script>
+<!-- v0.3.9: the memory vault. After colony-home so `liveApi()` and `go()` exist by the time a
+     record is clicked; it reaches both lazily anyway. -->
+<script src="/ui/memory-vault.js" defer></script>
 <!-- v0.3.8.52: the infrastructure domain, split out of app.js. AFTER app.js on purpose — its
      PAGE_ENTER['infrastructure'] registration runs at load and needs PAGE_ENTER to exist. `defer`
      guarantees the order (deferred scripts execute in document order), and
