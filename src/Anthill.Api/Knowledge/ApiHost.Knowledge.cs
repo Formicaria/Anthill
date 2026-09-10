@@ -78,6 +78,11 @@ public static partial class ApiHost
     /// the default binding, exactly as every other knowledge route reads it.</param>
     private sealed record KnowledgeSeedRequest(string? Project);
 
+    /// <param name="Accept">True records agreement with the proposal; false records refusal.</param>
+    /// <param name="Note">Optional, and worth writing: the next reader of this row is somebody
+    /// deciding whether the colony's objections are usually right.</param>
+    private sealed record KnowledgeReviewDecision(bool? Accept, string? Note);
+
     /// <summary>
     /// Build the module. Called from <c>Run()</c> before <c>builder.Build()</c>, and the result is
     /// passed to <c>Modules.LoadAll</c> — constructing it here rather than inline there is what lets
@@ -134,6 +139,26 @@ public static partial class ApiHost
             {
                 var queen = Queen ?? throw new InvalidOperationException(
                     "No colony is composed, so a knowledge review proposal has nowhere durable to go.");
+
+                // v0.3.8.155 — AND IT IS RECORDED AS A PROPOSAL, not only as an event.
+                //
+                // An event is a thing that HAPPENED; a proposal is a thing that is WAITING. `.122`
+                // put this in the event log and said so in as many words — "this is not the approval
+                // pipeline… a typed proposal KIND is a core surface and deserves its own release" —
+                // and until that release nothing could list what was outstanding or answer it. The
+                // event stays: it is what the live stream shows and what makes the moment auditable.
+                // The row is what an operator decides.
+                queen.Memory.SaveKnowledgeReview(new Anthill.Core.Memory.SqliteMemory.KnowledgeReview
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    KnowledgeId = proposal.KnowledgeId,
+                    ProjectRef = proposal.Scope.ProjectRef ?? "",
+                    AnthillProjectId = proposal.Scope.AnthillProjectId,
+                    Action = proposal.Action,
+                    Rationale = proposal.Rationale,
+                    MissionId = proposal.MissionId,
+                });
+
                 queen.Memory.LogEvent(
                     string.IsNullOrWhiteSpace(proposal.MissionId)
                         ? AnthillRuntime.SystemApiMissionId
@@ -552,6 +577,75 @@ public static partial class ApiHost
                 : (project.Length == 0
                     ? "Default knowledge base cleared."
                     : $"Project '{project}' is no longer mapped to a knowledge base."));
+        });
+
+        // v0.3.8.155 — THE PROPOSALS AN OPERATOR HAS TO ANSWER.
+        //
+        // `knowledge_review` has existed since `.121`, been described, argued for, and reachable by
+        // nobody: no role's contract named it, and the proposal it raises reached the event log and
+        // stopped. These two routes and the researcher's grant are the missing first and last layers.
+        app.MapGet("/knowledge/reviews", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, KnowledgePermissions.Read); if (auth is not null) return auth;
+
+            var status = ctx.Request.Query["status"].ToString();
+            var reviews = Queen.Memory.KnowledgeReviews(
+                string.IsNullOrWhiteSpace(status) ? null : status, 100);
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["reviews"] = reviews.Select(r => new Dictionary<string, object?>
+                {
+                    ["id"] = r.Id,
+                    ["knowledge_id"] = r.KnowledgeId,
+                    ["project_ref"] = r.ProjectRef,
+                    ["action"] = r.Action,
+                    ["rationale"] = r.Rationale,
+                    ["mission_id"] = r.MissionId,
+                    ["proposed_by"] = r.ProposedBy,
+                    ["status"] = r.Status,
+                    ["decided_by"] = r.DecidedBy,
+                    ["decision_note"] = r.DecisionNote,
+                    ["proposed_at"] = r.ProposedAt,
+                    ["decided_at"] = r.DecidedAt,
+                }).ToList(),
+                ["pending"] = reviews.Count(r => r.Status == "pending"),
+            });
+        });
+
+        // ACCEPTING RECORDS AGREEMENT; IT DOES NOT CHANGE A KNOWLEDGE BASE, and the response says so
+        // rather than letting the word "accepted" imply an edit. §1 gives FORAGER the classification
+        // and the ranking, and there is no producer surface for applying a review — that is P13.
+        // A status this build could never reach would be a promise in an enum.
+        app.MapPost("/knowledge/reviews/{id}/decide", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, KnowledgePermissions.Manage); if (auth is not null) return auth;
+
+            KnowledgeReviewDecision? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<KnowledgeReviewDecision>().ConfigureAwait(false); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+
+            var accept = body?.Accept ?? false;
+            // `CurrentUsername` is nullable — an authenticated caller without a resolvable name is
+            // possible, and "who decided" must still say something rather than nothing. The fallback
+            // is a WORD, not an empty string: a blank decider reads as a record nobody made.
+            var decided = Queen.Memory.DecideKnowledgeReview(
+                id, accept, CurrentUsername(ctx) ?? "operator", body?.Note);
+            if (decided is null)
+                return ApiJson.Error(
+                    "That proposal is unknown, or it has already been decided. A second decision on "
+                  + "one proposal is not an update — the record already says what happened.", "not_found");
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["id"] = decided.Id,
+                ["status"] = decided.Status,
+                ["decided_by"] = decided.DecidedBy,
+            }, accept
+                ? "Recorded as accepted. This does not change the knowledge base — FORAGER publishes "
+                + "no surface for applying a review yet (P13); the record is ANTHILL's, and says an "
+                + "operator agreed with the objection."
+                : "Recorded as declined. The knowledge item is unchanged.");
         });
 
         // v0.3.8.154 — RUN THE COLONY OVER A KNOWLEDGE BASE.

@@ -1,3 +1,48 @@
+## v0.3.8.155 - the tool that was registered, described, argued for, and reachable by nobody
+
+**`knowledge_review` SHIPPED AT `.121` AND NO ROLE HAS EVER BEEN ABLE TO CALL IT.**
+
+It is a good tool. It proposes that a stored statement is wrong, outdated or contradicted; it refuses
+without a rationale of at least a dozen characters, because "an unexplained proposal cannot be
+reviewed"; it changes nothing, which is what §1 requires of a consumer that does not own the
+classification. It was registered by the module, listed in the inventory, mirrored in the SDK's
+core-less table, and named by NOT ONE role's `AllowedTools` for thirty-four releases.
+
+And the proposal it raises reached the event log and stopped. `.122` said so in as many words —
+"this is not the approval pipeline; a typed proposal KIND is a core surface and deserves its own
+release" — and then no release took it. An event is a thing that HAPPENED. A proposal is a thing that
+is WAITING. Nothing could list what was outstanding and nothing could answer it.
+
+Three layers of a feature with no first layer and no last one, which is this repository's
+most-named defect wearing its largest coat.
+
+**THE RESEARCHER MAY NOW OBJECT**, and it is the right role because it is the one that reads the
+evidence — an objection is worth having only from something that has just looked and found the
+stored statement contradicted. `builder`, `coder` and `verifier` cannot, and a guard says so: a role
+with no knowledge tools proposing a knowledge correction would be an opinion with no basis, which is
+exactly what the required rationale exists to prevent.
+
+**AND AN OPERATOR CAN ANSWER ONE.** Proposals are a typed record with a status, a decider and a note;
+`GET /knowledge/reviews` lists them and `POST /knowledge/reviews/{id}/decide` answers one. A second
+decision on one proposal is refused rather than applied — it is not an update, and letting it through
+would mean the last person to click decides what the first one did.
+
+---
+
+**ACCEPTING IS AGREEMENT, NOT APPLICATION, AND THE ABSENCE OF `applied` IS THE LOAD-BEARING PART.**
+
+Accepting records that an OPERATOR agreed with an agent's objection. It does not change a knowledge
+base, and this build cannot: §1 gives FORAGER the classification and the ranking, and the producer
+publishes no mutation that carries a review decision. So the status stops at `accepted`. A status
+this build could never reach would be a promise living in an enum — the shape of claim this
+repository refuses everywhere else — and the console says the same sentence beside the button rather
+than burying it in a doc, because a button labelled "Accept" next to an implied edit is the most
+expensive lie this console could tell.
+
+The missing producer surface is now **P13** in the shared contract, named the way P11 named the
+project listing: a gap recorded as a numbered provision rather than left for someone to rediscover
+by watching an accepted review do nothing.
+
 ## v0.3.8.154 - click a knowledge base, and the colony goes and studies it
 
 **THE OPERATOR ASKED FOR THIS IN ONE SENTENCE, THREE RELEASES AGO:** "I should be able to click on

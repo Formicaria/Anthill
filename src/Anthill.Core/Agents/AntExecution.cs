@@ -344,7 +344,21 @@ public static class AntExecutionCatalog
                             Anthill.SDK.Knowledge.KnowledgeToolNames.Retrieve,
                             Anthill.SDK.Knowledge.KnowledgeToolNames.Get,
                             Anthill.SDK.Knowledge.KnowledgeToolNames.Evidence,
-                            Anthill.SDK.Knowledge.KnowledgeToolNames.Entity),
+                            Anthill.SDK.Knowledge.KnowledgeToolNames.Entity,
+                            // v0.3.8.155 — AND IT MAY OBJECT. `knowledge_review` shipped at `.121`,
+                            // was described, argued for, and named by NO role's contract for
+                            // thirty-four releases: registered, granted to nobody, reachable by
+                            // nothing. The researcher is the role that gets it because it is the one
+                            // that reads knowledge — an objection is worth having only from
+                            // something that has just looked at the evidence and found it contradicts
+                            // the stored statement.
+                            //
+                            // It PROPOSES and changes nothing, which is what makes granting it safe
+                            // under §1: FORAGER classifies, ranks and resolves; ANTHILL records that
+                            // an agent objected and an operator agreed. The tool refuses without a
+                            // rationale, so no proposal can arrive that an operator has no basis to
+                            // decide.
+                            Anthill.SDK.Knowledge.KnowledgeToolNames.Review),
             ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
             ProducedArtifactTypes: S("text"),
             AllowedHandoffRoles: S("web", "file", "ui_cartographer", "coder", "builder"),
