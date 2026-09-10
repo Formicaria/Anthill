@@ -110,10 +110,21 @@ public class ExecutionDocsConsistencyTests
         Assert.Equal(AntRuntimeKind.DeterministicService, AntExecutionCatalog.KindOf("quartermaster"));
     }
 
+    /// <summary>
+    /// The framework's own release entry still exists and still names its document.
+    ///
+    /// v0.3.9.3 — READ ACROSS BOTH FILES, because the entry moved and the invariant did not. The
+    /// framework shipped in `v2.9.1`, and v0.3.9.3 moved every pre-renumbering entry out of
+    /// `CHANGELOG.md` into `docs/archive/CHANGELOG-pre-v0.3.md` unedited. Reading only the active
+    /// file after that would have turned this guard green-by-absence — the exact failure mode this
+    /// suite keeps finding in checks that were scoped narrowly and then outlived their scope. The
+    /// changelog is now TWO files and one record, so the guard reads it as one record.
+    /// </summary>
     [Fact]
     public void Changelog_RecordsTheFramework_WithoutPrematureVersionClaim()
     {
-        var log = Doc("CHANGELOG.md");
+        var log = Doc("CHANGELOG.md")
+               + Doc(Path.Combine("docs", "archive", "CHANGELOG-pre-v0.3.md"));
         Assert.Contains("Ant Execution Framework", log);
         Assert.Contains("docs/ANT_EXECUTION.md", log);
     }

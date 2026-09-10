@@ -278,7 +278,8 @@ public sealed partial class SqliteMemory
     /// this folder full of".
     ///
     /// THE FACET IS THE COLONY'S OWN and cannot be wrong — it is a value the colony recorded. The
-    /// TOPIC is derived from words and can be, which is why the two are never mixed in one list.
+    /// first-word grouping is derived and can be, which is why the two are never mixed in one list,
+    /// and why v0.3.9.3 renamed its label from "by topic" to what it actually cuts on.
     /// </summary>
     private IReadOnlyList<VaultGroupCount> VaultGroups(string grouping, string filter,
         List<(string, object?)> args)
@@ -299,9 +300,14 @@ public sealed partial class SqliteMemory
         {
             "project" => "CASE WHEN COALESCE(project_id,'') = '' THEN '(no project)' ELSE project_id END",
             "chamber" => "chamber",
-            // The first word of the title. A crude topic and honestly a crude one — it is the
-            // grouping the operator can SEE is derived, sitting beside two that are the colony's own
-            // facts, and it costs no index and no extraction pass to offer.
+            /* THE FIRST WORD OF THE TITLE, and since v0.3.9.3 the console calls it that.
+               It was labelled "by topic", which claimed an extraction pass that does not exist and
+               is not planned: a record titled "Fix the WireGuard handshake" groups under `fix`, and
+               an operator told they are looking at topics reads that as the colony's judgement about
+               subject matter rather than as a substring. The grouping is useful and cheap — it needs
+               no index and no pass — and it stays; the label now says what it does. The KEY is
+               unchanged (`topic`), because renaming a query parameter to fix a word on a page would
+               break every link and bookmark carrying it. */
             "topic" => "LOWER(TRIM(SUBSTR(title, 1, INSTR(title || ' ', ' ') - 1)))",
             _ => "CASE WHEN COALESCE(outcome,'') = '' THEN '(no verdict)' ELSE outcome END",
         };
@@ -576,7 +582,14 @@ public sealed partial class SqliteMemory
                     Outcome = null,
                     ProjectId = null,
                     MissionId = mission,
-                    Href = null,
+                    // v0.3.9.3 — THE KNOWLEDGE PAGE, AND NOT THE STATEMENT ON IT. `.9.2` shipped
+                    // these records with no link at all, so a knowledge dot was the one kind the
+                    // operator could open and then have nowhere to go. The console router takes
+                    // DECLARED routes only — `go()` has one parameterised route and it is a project
+                    // — so there is no honest way to deep-link one statement today, and inventing a
+                    // fragment the router ignores would be a link that looks like it works. The page
+                    // it lands on carries the search box the id is findable in.
+                    Href = "/knowledge",
                 };
                 if (seen.Count >= limit) return seen.Values.ToList();
             }

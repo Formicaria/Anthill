@@ -78,6 +78,9 @@ public static partial class ApiHost
     /// the default binding, exactly as every other knowledge route reads it.</param>
     private sealed record KnowledgeSeedRequest(string? Project);
 
+    /// <summary>v0.3.9.3 (A4). <paramref name="Note"/> is why the operator is not acting on it.</summary>
+    private sealed record KnowledgeChangeDecision(string? Note);
+
     /// <param name="Accept">True records agreement with the proposal; false records refusal.</param>
     /// <param name="Note">Optional, and worth writing: the next reader of this row is somebody
     /// deciding whether the colony's objections are usually right.</param>
@@ -258,6 +261,11 @@ public static partial class ApiHost
                 // the colony is actually in. Projected the same way the runtime reads it: anything
                 // unrecognised is `off`, so the page cannot show a schedule that is not running.
                 ["auto_study"] = AnthillRuntime.KnowledgeAutoStudy,
+
+                // v0.3.9.3 (A4) — how many findings are waiting on the operator. On the STATUS
+                // response because the badge belongs on the tab, not on a section the operator has
+                // to open before they learn there is something in it.
+                ["open_changes"] = Queen.Memory.KnowledgeChanges("open", 500).Count,
 
                 // v0.3.8.158 — WHETHER THE CREDENTIAL WORKS, and whether one is even set. The
                 // producer's `/ready` is public and everything carrying knowledge is not, so a
@@ -788,7 +796,125 @@ public static partial class ApiHost
                 ["already_seeded"] = result.AlreadySeeded,
                 ["available"] = result.Available,
                 ["job_ids"] = result.JobIds,
+                // v0.3.9.3 (A4) — what this pass NOTICED, which is not the same number as what it
+                // queued: a document already seeded at its current version is neither.
+                ["changes"] = result.Changes,
             }, result.Message);
+        });
+
+        /* v0.3.9.3 (A4) — WHAT CHANGED SINCE THE COLONY LAST READ THIS KNOWLEDGE BASE.
+           `.154` has written a content hash onto every seed receipt since it shipped. Nothing ever
+           read one back, so the colony held the answer to "what changed" and was never asked. These
+           four routes are that question and the two things an operator can do with the answer.
+
+           A FINDING IS NOT A MISSION, and keeping them separate is the point of the whole lane. A
+           finding says the colony noticed; queueing says the operator decided. `off` records
+           neither, `suggest` records findings only, `on` records both — one pass, three outcomes. */
+        app.MapGet("/knowledge/changes", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, KnowledgePermissions.Read); if (auth is not null) return auth;
+
+            var status = ctx.Request.Query["status"].ToString();
+            var changes = Queen.Memory.KnowledgeChanges(
+                string.IsNullOrWhiteSpace(status) ? "open" : status == "all" ? null : status);
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["changes"] = changes.Select(c => new Dictionary<string, object?>
+                {
+                    ["id"] = c.Id,
+                    ["project_ref"] = c.ProjectRef,
+                    ["anthill_project_id"] = c.AnthillProjectId,
+                    ["source_id"] = c.SourceId,
+                    ["source_name"] = c.SourceName,
+                    ["kind"] = c.Kind,
+                    ["previous_hash"] = c.PreviousHash,
+                    ["current_hash"] = c.CurrentHash,
+                    ["status"] = c.Status,
+                    ["mission_id"] = c.MissionId,
+                    ["note"] = c.Note,
+                    ["detected_at"] = c.DetectedAt,
+                    ["decided_at"] = c.DecidedAt,
+                }).ToList(),
+                ["open"] = changes.Count(c => c.Status == "open"),
+                // The mode, so the console can say WHY the list is empty rather than only that it is.
+                ["auto_study"] = AnthillRuntime.KnowledgeAutoStudy,
+            });
+        });
+
+        // LOOK NOW, QUEUE NOTHING. The same pass the timer runs, with `queue: false` — which is why
+        // an operator can ask "what changed?" without that question being an instruction to act.
+        app.MapPost("/knowledge/changes/scan", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, KnowledgePermissions.Read); if (auth is not null) return auth;
+
+            KnowledgeSeedRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<KnowledgeSeedRequest>().ConfigureAwait(false); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+
+            var project = (body?.Project ?? "").Trim();
+            var scope = ResolveKnowledgeScope(project);
+            if (!scope.IsQueryable) return KnowledgeScopeRefusal();
+
+            var result = await Anthill.Api.Knowledge.KnowledgeSeeder.SeedOnce(
+                Queen.Memory, Jobs, scope, project.Length == 0 ? null : project,
+                ctx.RequestAborted, queue: false).ConfigureAwait(false);
+
+            if (!result.Ok) return ApiJson.Error(result.Message, "bad_request");
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["changes"] = result.Changes,
+                ["available"] = result.Available,
+            }, result.Message);
+        });
+
+        // MANAGE, not Read — this spends model calls, exactly as `/knowledge/seed` does, and for the
+        // same reason it carries the same permission.
+        app.MapPost("/knowledge/changes/{id}/queue", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, KnowledgePermissions.Manage); if (auth is not null) return auth;
+
+            var change = Queen.Memory.KnowledgeChangeById(id);
+            if (change is null) return ApiJson.Error("No such finding.", "not_found");
+            if (!string.Equals(change.Status, "open", StringComparison.Ordinal))
+                return ApiJson.Error(
+                    $"That finding is '{change.Status}'. It has already been decided.", "conflict");
+
+            var result = await Anthill.Api.Knowledge.KnowledgeSeeder
+                .QueueChange(Queen.Memory, Jobs, change, ctx.RequestAborted).ConfigureAwait(false);
+
+            if (!result.Ok) return ApiJson.Error(result.Message, "bad_request");
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["id"] = id,
+                ["status"] = "queued",
+                ["job_ids"] = result.JobIds,
+            }, result.Message);
+        });
+
+        // DISMISSING IS A DECISION AND IS KEPT AS ONE. The row is not deleted: a finding the operator
+        // looked at and declined is the record of a judgement, and the next pass must not re-raise it
+        // as though nobody had ever seen it.
+        app.MapPost("/knowledge/changes/{id}/dismiss", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, KnowledgePermissions.Manage); if (auth is not null) return auth;
+
+            KnowledgeChangeDecision? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<KnowledgeChangeDecision>().ConfigureAwait(false); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+
+            var dismissed = Queen.Memory.DismissKnowledgeChange(id, body?.Note);
+            if (dismissed is null)
+                return ApiJson.Error(
+                    "That finding is unknown, or it has already been decided.", "not_found");
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["id"] = dismissed.Id,
+                ["status"] = dismissed.Status,
+            }, "Dismissed. The colony will not raise this document again at this version.");
         });
 
         // Start ingestion. Returns as soon as FORAGER has QUEUED the work — this request never waits

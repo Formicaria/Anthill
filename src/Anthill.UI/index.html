@@ -2413,7 +2413,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <label class="mv-lbl">Group
               <select id="mv-group" class="mv-select" aria-label="Second level">
                 <option value="facet">by outcome</option>
-                <option value="topic">by topic</option>
+                <option value="topic">by first word</option>
                 <option value="project">by project</option>
                 <option value="chamber">by chamber</option>
               </select>
@@ -3110,6 +3110,12 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           #page-knowledge .kn-lbl{font-size:9px;color:var(--muted);display:flex;gap:4px;align-items:center}
           #page-knowledge .kn-select{background:var(--inner);border:1px solid var(--border);color:var(--text);border-radius:var(--r);font-size:10px;padding:3px 6px}
           #page-knowledge .kn-say{font-size:10px;margin:8px 0 0;min-height:14px}
+          /* v0.3.9.3 (A4). `kn-bindrow` had been a bare div since `.154` — buttons in it collapsed
+             against each other at narrow widths. It is styled here rather than at each call site. */
+          #page-knowledge .kn-bindrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px}
+          #page-knowledge .kn-schedrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+          #page-knowledge .kn-badge{display:inline-block;min-width:15px;text-align:center;font-size:9px;
+            padding:1px 5px;border-radius:9px;background:var(--amber);color:#1a1408;font-weight:600;margin-left:4px}
           /* The on/off row. Sits above the search box on the working page and under the diagnosis
              on the unreachable one, so the control is in the same place in both. */
           #page-knowledge .kn-gate{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:11px;padding:7px 10px;margin-bottom:10px;border:1px solid var(--border);border-radius:6px;background:var(--inner)}

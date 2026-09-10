@@ -115,7 +115,7 @@ becomes `Unknown` and renders as `UNKNOWN SUPPORT`, not as a fact.
 
 ---
 
-## 3b. The console (v0.3.8.157)
+## 3b. The console (v0.3.9.3)
 
 One card carries the whole ordinary path: the FORAGER connection with its on/off switch, then a row
 saying which knowledge base the selected project reads, with **Import**, **Study** and **Unbind**
@@ -127,13 +127,25 @@ The reasoning the page used to carry in prose lives here instead:
 - **A project with no binding refuses rather than guessing.** A mission never falls back to the
   default knowledge base; the default exists for a console operator with no project selected. A
   mission reading a knowledge base that is not its own is the single failure the mapping prevents.
-- **The knowledge base is typed, not chosen from a list.** FORAGER publishes no way to enumerate its
-  projects — P11 in `docs/FORAGER_SHARED_CONTRACT.md` — and inventing an endpoint here would be a
-  second implementation of the same rule. When P11 lands the field becomes a select.
+- **The knowledge base is CHOSEN FROM A LIST** (v0.3.8.158). This bullet used to say the opposite,
+  and say it on the strength of a contract note written against FORAGER 0.1.4: no way to enumerate
+  projects, P11 pending, type the id. FORAGER publishes `GET /api/projects` and has since 0.6 — found
+  by reading the running service's own routes rather than the note about it. The picker shows each
+  base with its document and statement counts. P11 in `docs/FORAGER_SHARED_CONTRACT.md` is closed by
+  the producer having done it, not by a consumer-side invention.
 - **Study is one pass, not a subscription.** It runs the colony over documents that base has not
-  studied at their current version, up to 25 per click. A schedule is `knowledge_auto_study`, off by
-  default, in the config file — an automation decision belongs where a decision is made, not behind a
-  click that does not look like one.
+  studied at their current version, up to 25 per click.
+- **The schedule has three settings, and the middle one is the point** (v0.3.9.3). `off` does nothing
+  on a timer; `suggest` runs the pass every six hours and **files what changed without queueing
+  anything**; `on` runs the same pass and queues. `off` and `on` were a choice between knowing
+  nothing and acting unattended, and the thing most operators want — *tell me, I'll decide* — had no
+  setting. `on` is strictly `suggest` plus queueing rather than a parallel lane, because one pass
+  takes a `queue` argument instead of two lanes each asking the config for themselves.
+- **A finding is not a mission.** *What changed* lists documents the colony has never studied or has
+  studied at an older hash, each with **Study this** and **Not now**. Findings are recorded once per
+  `(document, content hash)`, so a six-hourly pass over an untouched base files nothing rather than a
+  row a day; a dismissed finding is kept, because it is the record that somebody looked, and deleting
+  it would have the next pass ask the same question until it got a different answer.
 - **Accepting a review and applying it are two acts.** Accepting records that the operator agreed;
   **Apply** sends it to FORAGER (`POST /api/knowledge/:id/review`, delivered in 0.6 and consumed
   since v0.3.9.2). The producer is called FIRST and the local `applied` status is recorded only if
@@ -165,9 +177,10 @@ The reasoning the page used to carry in prose lives here instead:
 Three keys are console-writable — the on/off switch, the study schedule, and the endpoint **as a loopback address only**. Everything else is `FileOnly`. `knowledge_forager_token` is a credential and
 `knowledge_forager_allow_remote` widens who the colony may talk to; neither is reachable from a
 compromised console. `knowledge_enabled` only
-decides whether the colony uses what the file already configured. `knowledge_auto_study` decides whether
-this colony studies knowledge it has already been given, at an Observe ceiling — a labelled switch is the
-deliberate choice its file-only argument was protecting. The endpoint is guarded by VALUE rather than by
+decides whether the colony uses what the file already configured. `knowledge_auto_study` (`off` | `suggest` | `on` since v0.3.9.3) decides
+whether this colony studies knowledge it has already been given, at an Observe ceiling — a labelled
+control is the deliberate choice its file-only argument was protecting, and a value that is none of
+the three reads as `off` in the file and the environment alike. The endpoint is guarded by VALUE rather than by
 exposure: `AnthillRuntime.RefusedSettingWrite` accepts only a loopback address from the console, so moving
 FORAGER to another port here is a click and pointing the colony at a host across the network is still a file
 edit.
@@ -193,14 +206,28 @@ takes effect on the next request rather than the next restart.
 
 ## 5. Database
 
-**ANTHILL's schema is unchanged.** No tables, no columns, no migration ledger entry.
+**FORAGER owns the knowledge database and ANTHILL never opens it** — not read-only, not for the
+console. The only access path is the HTTP API. That is the invariant, and it has not moved.
 
-FORAGER owns the knowledge database and ANTHILL never opens it — not read-only, not for the console.
-The only access path is the HTTP API. Retrieved knowledge that needs to persist on the ANTHILL side
-uses the existing artifact and evidence stores.
+What HAS moved is this section's older claim that ANTHILL's schema is unchanged. It was true when
+knowledge was retrieval-only and it stopped being true at v0.3.8.154; it went on being printed here
+for two more releases, which is the ordinary way a document becomes false — by being correct once
+and never re-read. ANTHILL now keeps **three tables about knowledge, and no knowledge in them**:
 
-The consequence worth stating: enabling this feature and disabling it are both safe, and an existing
-database stays compatible in both directions.
+| Table | Since | What it holds |
+| --- | --- | --- |
+| `knowledge_seed_receipts` | v0.3.8.154 | Which document, at which content hash, this colony has already studied — keyed on the contract §7 action key, so a restart mid-pass cannot double-queue |
+| `knowledge_reviews` | v0.3.8.155 | Proposals a role raised against a stored statement, and what the operator decided; `applied` since v0.3.9.2 |
+| `knowledge_changes` | v0.3.9.3 | Findings: documents new or moved since the colony last studied them, and whether they became a mission |
+
+Every row is about **what this colony did**, not about what the organization knows. A statement, its
+evidence and its support level live in FORAGER and are never copied here — which is why disabling
+knowledge remains safe in both directions and an existing database stays compatible: these tables
+simply stop gaining rows.
+
+The watermark A4 rests on is DERIVED from `knowledge_changes` (`MAX(detected_at)` per base) rather
+than stored as a cursor column. A stored cursor is a second fact about the same thing, and the day a
+pass writes one and not the other it is the cursor that gets believed.
 
 ---
 

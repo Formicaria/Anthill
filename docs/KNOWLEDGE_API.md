@@ -97,6 +97,8 @@ configured*, *unreachable* and *working*, and a 404 collapses all three into a b
   "projects": ["falcon"],
   "configured_endpoint": "http://127.0.0.1:8790",
   "allow_remote": false,
+  "auto_study": "suggest",
+  "open_changes": 3,
   "gate_env_var": "ANTHILL_KNOWLEDGE_ENABLED",
   "gate_env_pinned": false }
 ```
@@ -113,6 +115,11 @@ when `gate_env_var` is set in the process environment: the runtime projects that
 env-over-file, so a settings write would persist and then lose to the variable. The console
 withholds the control in that case and names the variable instead of shipping a button that appears
 to do nothing.
+
+`auto_study` is `off` | `suggest` | `on` (v0.3.9.3) and `open_changes` is how many findings are
+waiting on the operator. Both are on **status** rather than behind the section that shows them,
+because a badge belongs on the tab: a count an operator has to open a panel to discover is a count
+that tells them nothing.
 
 ### `GET /knowledge/search?q=&limit=&include_historical=`
 
@@ -214,6 +221,41 @@ timer advances it. The eleven stages are `source_registration`, `parsing_extract
 
 `status` is one of `queued`, `running`, `completed`, `failed`, `cancelled`. Cancellation stops at the
 next stage boundary and keeps completed work.
+
+---
+
+## Knowledge changes (v0.3.9.3, A4)
+
+What has changed in a bound knowledge base since the colony last studied it, and the two things an
+operator can do about it.
+
+```
+GET  /knowledge/changes?status=open   -> findings (read_knowledge). status=all for every status
+POST /knowledge/changes/scan          -> run the analysis NOW and queue nothing (read_knowledge)
+POST /knowledge/changes/{id}/queue    -> turn one finding into a mission (manage_knowledge)
+POST /knowledge/changes/{id}/dismiss  -> record that it needs none (manage_knowledge)
+```
+
+```json
+{ "id": "b2c1…", "project_ref": "falcon", "source_id": "src_91",
+  "source_name": "onboarding.md", "kind": "changed",
+  "previous_hash": "ab12…", "current_hash": "cd34…",
+  "status": "open", "mission_id": null, "detected_at": "2026-09-10T14:02:11Z" }
+```
+
+**A finding is not a mission.** `kind` is `new` — never studied — or `changed` — studied at a
+different content hash. `status` is `open`, `queued` or `dismissed`; a decided finding stays in the
+table, because the record that somebody looked is the thing that stops the next pass asking again.
+
+The comparison is a read of the seed receipts `POST /knowledge/seed` has been writing since
+v0.3.8.154: `logical_content_hash` per studied source was already there and nothing had ever asked
+for it. The **watermark** is derived from the newest finding rather than stored beside the rows, so
+there is no second fact that can disagree with them.
+
+`scan` and the timer run the same pass as `POST /knowledge/seed` with queueing off — see
+`knowledge_auto_study` in `docs/CONFIGURATION.md`. Queueing carries `manage_knowledge` for the same
+reason seeding does: it spends model calls, and deciding the colony should go and work is an
+operator action, never an agent's.
 
 ---
 
