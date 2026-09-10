@@ -641,6 +641,46 @@ internal sealed class ForagerKnowledgeProvider : IKnowledgeProvider, IKnowledgeI
         return KnowledgeOutcome<KnowledgeJob>.Success(job);
     }
 
+    /// <summary>
+    /// `POST /api/knowledge/:id/review` — scope `review` upstream. v0.3.9.2.
+    ///
+    /// THE ID IS CHECKED AGAINST THE SCOPE FIRST, and that read is not redundant. This route is not
+    /// project-scoped upstream — the same hole `GetAsync` and `GetJobAsync` already close — so
+    /// without it a caller holding one project's scope could change an item belonging to another,
+    /// which is the tenant boundary failing in the one direction that WRITES.
+    /// </summary>
+    public async Task<KnowledgeOutcome<KnowledgeFact>> ApplyReviewAsync(
+        KnowledgeScope scope, string knowledgeId, string action, string? notes, string? actor,
+        CancellationToken cancellationToken)
+    {
+        var scoped = RequireScope<KnowledgeFact>(scope);
+        if (scoped is not null) return scoped;
+
+        if (!ReviewActions.Contains(action ?? "", StringComparer.OrdinalIgnoreCase))
+            return KnowledgeOutcome<KnowledgeFact>.Failed(KnowledgeFailure.Invalid,
+                $"'{action}' is not a review action; the producer takes {string.Join(", ", ReviewActions)}");
+
+        // Belongs to this scope? `GetAsync` already answers that question against this scope and
+        // returns NotFound when the answer is no.
+        var owner = await GetAsync(knowledgeId, scope, cancellationToken).ConfigureAwait(false);
+        if (!owner.Ok) return owner;
+
+        var applied = await _client.PostAsync<ForagerKnowledgeItem>(
+            $"knowledge/{ForagerClient.Segment(knowledgeId)}/review",
+            new { action, notes, actor = string.IsNullOrWhiteSpace(actor) ? "anthill" : actor },
+            _options().IngestionTimeoutMs, cancellationToken, projectScope: scope.ProjectRef)
+            .ConfigureAwait(false);
+        if (!applied.Ok || applied.Value is null) return Propagate<ForagerKnowledgeItem, KnowledgeFact>(applied);
+
+        // What the colony believed about this item is now wrong in at least one field.
+        _cache.InvalidateScope(scope);
+        return KnowledgeOutcome<KnowledgeFact>.Success(
+            ForagerMapping.ToFact(applied.Value, Array.Empty<string>()));
+    }
+
+    /// <summary>The producer's own four, spelled once. The proposal tool offers the same list.</summary>
+    private static readonly string[] ReviewActions = { "mark_reviewed", "reject", "restore", "archive" };
+
     public async Task<KnowledgeOutcome<KnowledgeJob>> GetJobAsync(
         string jobId, KnowledgeScope scope, CancellationToken cancellationToken)
     {

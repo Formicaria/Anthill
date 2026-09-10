@@ -27,6 +27,11 @@ var MemoryVault = (function () {
   };
   var knowledge = null;   // the derived branch, fetched once per open
   var dots = [];          // EVERY record, lean — what the chambers are seated from
+  /* WHICH KINDS ARE IN THE CHAMBERS. v0.3.9.2 — every kind is a dot by default, which is the
+     operator's own answer, and this is the control that lets them take one back OUT. Events are
+     8,400 of ~15,000 records on their colony: seeing the shape of everything else sometimes means
+     turning the run log off for a moment, and that is a viewing decision rather than a cap. */
+  var hidden = {};
 
   function $(id) { return document.getElementById(id); }
 
@@ -117,7 +122,7 @@ var MemoryVault = (function () {
     if (!view || !view.setVaultRecords) return;
 
     var byChamber = {};
-    dots.concat(knowledge || []).forEach(function (rec) {
+    dots.concat(knowledge || []).filter(function (rec) { return !hidden[rec.kind]; }).forEach(function (rec) {
       var c = rec.chamber || 'memory';
       (byChamber[c] = byChamber[c] || []).push(rec);
     });
@@ -179,6 +184,7 @@ var MemoryVault = (function () {
 
     var note = $('mv-total');
     if (note) note.textContent = state.total + ' record' + (state.total === 1 ? '' : 's');
+    renderKinds();
     renderGroups();
   }
 
@@ -198,6 +204,23 @@ var MemoryVault = (function () {
     if (o.indexOf('verified') >= 0 || o === 'succeeded' || o === 'passed' || o === 'completed') return 1;
     if (o.indexOf('fail') >= 0 || o === 'timed_out' || o === 'escalated') return 0.8;
     return 0.7;
+  }
+
+  /**
+   * THE LEGEND IS THE CONTROL. One row of kind chips: each says what colour a dot of that kind is
+   * in the chamber, and clicking it takes that kind out of the chamber and puts it back. A separate
+   * legend and filter would be two lists of the same kinds, one of which would eventually be wrong.
+   */
+  function renderKinds() {
+    var host = $('mv-kinds');
+    if (!host) return;
+    host.innerHTML = state.kinds.map(function (k) {
+      var off = !!hidden[k.key];
+      return '<button class="mv-chip mv-kind' + (off ? ' off' : '') + '" data-mvhide="' + esc(k.key) + '" '
+        + 'title="' + (off ? 'Show' : 'Hide') + ' ' + esc(k.label) + ' in the chambers">'
+        + '<span class="mv-dot sm" style="background:' + colorFor(k.key) + (off ? ';opacity:.25' : '') + '"></span>'
+        + esc(k.label) + '</button>';
+    }).join('');
   }
 
   function renderGroups() {
@@ -286,12 +309,20 @@ var MemoryVault = (function () {
     var folder = t.closest && t.closest('[data-mvkind]');
     var leafEl = t.closest && t.closest('[data-mvid]');
     var chip = t.closest && t.closest('[data-mvgroup]');
+    var hide = t.closest && t.closest('[data-mvhide]');
     var only = t.closest && t.closest('[data-mvonly]');
     var go = t.closest && t.closest('[data-mvgo]');
 
     if (t.closest && t.closest('[data-mvclose]')) { closeCard(); return; }
     if (go) { if (typeof window.go === 'function') window.go(go.dataset.mvgo); return; }
     if (only) { state.kind = only.dataset.mvonly; state.expanded[state.kind] = true; load(); return; }
+    if (hide) {
+      var k = hide.dataset.mvhide;
+      if (hidden[k]) delete hidden[k]; else hidden[k] = true;
+      render();
+      pushToChambers();
+      return;
+    }
     if (leafEl) { select(leafEl.dataset.mvid); return; }
     if (chip) {
       state.groupKey = state.groupKey === chip.dataset.mvgroup ? '' : chip.dataset.mvgroup;
