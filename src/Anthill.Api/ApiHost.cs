@@ -69,6 +69,7 @@ public static partial class ApiHost
     private static string UiThemesJs = "";
     private static string UiConsoleExtrasJs = "";
     private static string UiSettingsJs = "";   // v0.3.8.145: the Settings domain
+    private static string UiMemoryVaultJs = "";   // v0.3.9: the memory vault sidebar
     // Colony Live (design doc §17, stage 3) — projection layer + 3D renderer, split assets like the rest.
     private static string UiColonyTopologyJs = "";
     private static string UiColonyLiveJs = "";
@@ -287,6 +288,7 @@ public static partial class ApiHost
         UiRoutingControlsJs = LoadUiAsset("routing-controls.js");
         UiThemesJs = LoadUiAsset("themes.js");
         UiConsoleExtrasJs = LoadUiAsset("console-extras.js");
+        UiMemoryVaultJs = LoadUiAsset("memory-vault.js");
         UiSettingsJs = LoadUiAsset("settings.js");
         UiColonyTopologyJs = LoadUiAsset("colony-topology.js");
         UiColonyLiveJs = LoadUiAsset("colony-live.js");

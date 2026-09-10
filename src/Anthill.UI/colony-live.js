@@ -90,6 +90,13 @@
        enrolled by one-time token and keeps taking commands under its own identity whatever the
        colony calls it. That is the whole point — an operator labels their fleet for their own use
        case, and the fleet does not care. */
+    /* v0.3.9 — what the vault put in each chamber, and the local graph the sidebar last asked for.
+       `vaultLinks` maps a record id to 1 (a relation the colony recorded) or 2 (one this layer
+       derived), so the renderer can draw the inferred edge differently from the four that are
+       facts — the same distinction the sidebar draws with a dashed chip. */
+    var vaultChambers = {}, vaultLinks = {}, vaultLinkPts = [], vaultLinkOf = null, vaultGrouping = 'facet';
+    /** Drop a stale local graph off every seat, so a closed card leaves no lines behind. */
+    function clearRel(sec) { sec.pts.forEach(function (p) { if (p.rec && p.rec.rel) p.rec.rel = null; }); }
     var moundDefaults = [];
     var addedMounds = [];   // [{ id, label, pos }] — persisted; the sector defs are derived
     var bySec = {}; SEC.forEach(function (s) { bySec[s.id] = s; });
@@ -220,6 +227,9 @@
       (sec.residents || []).forEach(function (r) { var st = r.trail && isFinite(r.trail.strength) ? Number(r.trail.strength) : 0; if (r.roleId) trails[String(r.roleId).toLowerCase()] = st; (r.workers || []).forEach(function (w) { var id = (w && (w.id || w)) || ''; if (id) trails[String(id).toLowerCase()] = st; }); });
       function trailOf(ant) { var k = String(ant || '').toLowerCase(); return Object.prototype.hasOwnProperty.call(trails, k) ? Math.max(0, Math.min(1, trails[k])) : 0; }
       var seats = clusterSeats(sec, s.R), C = Math.max(1, seats.length);
+      // How many lattice rings this chamber's records will fill — needed BEFORE the first seat is
+      // placed, because the radius of ring 0 depends on how many rings follow it.
+      var ringCount = Math.max(1, Math.ceil(seats.reduce(function (n, cl) { return n + (cl.records || []).length; }, 0) / SLOTS));
       s.strata = [];
       seats.forEach(function (cl, ci) {
         // THE ORDERED FORMATION: one level (stratum) per cluster, records on an even golden-angle
@@ -235,6 +245,7 @@
           var durable = (verified ? .55 : .1) + pher * .45;
           var slot = Math.floor(unit(id, 'slot') * SLOTS) % SLOTS, probe = 0; while (taken[slot] && probe < SLOTS) { slot = (slot + 1) % SLOTS; probe++; }
           var ring = Math.floor(Object.keys(taken).length / SLOTS); taken[slot] = true;   // a 97th record starts a second, inner ring
+          if (ring >= SLOTS) { slot = Math.floor(unit(id, 'slot2') * SLOTS) % SLOTS; }
           /* THE RADIUS IS QUANTISED INTO SHELLS. v0.3.8.123 — this was a continuous function of
              durability, so no two records sat at quite the same distance and the cloud read as
              fuzz: the lattice underneath it is perfectly even, and a per-record radius was the one
@@ -244,7 +255,17 @@
              record lands in still comes only from its own durability, so its seat is as stable as
              it ever was. */
           var shell = verified ? 0 : durable > .34 ? 1 : 2;
-          var seatR = s.R * [.34, .62, .84][shell] * (ring ? .8 : 1);
+          /* v0.3.9 — RINGS GET THEIR OWN RADIUS ONCE THERE ARE MANY OF THEM.
+             The three shells were written for a chamber holding a few dozen records, where `ring`
+             is 0 and the second ring was a rare overflow at .8R. The vault feeds this the colony's
+             WHOLE memory — 8,400 events land in Memory alone, which is 88 rings — and every ring
+             past the first shared one radius, so a chamber would draw 96 dots and a smear.
+             With more than one ring the radius is spread across the sphere's usable band instead,
+             and the shells still order the first ring, so a colony with a normal topology looks
+             exactly as it did. */
+          var seatR = ringCount > 1
+            ? s.R * (.30 + .62 * (ring / Math.max(1, ringCount - 1)))
+            : s.R * [.34, .62, .84][shell];
           var o = [LATTICE[slot][0] * seatR, LATTICE[slot][1] * seatR, LATTICE[slot][2] * seatR];
           var ang = k * SPIRAL_STEP, rad = s.R * .86 * band * Math.sqrt((k + .55) / mcount);
           var org = [Math.cos(ang) * rad, y, Math.sin(ang) * rad];
@@ -663,6 +684,41 @@
     }
     // ---- environments ---------------------------------------------------------------------
     function softPoint(q, r, c, a){ if (!q || a <= 0) return; var rr = Math.max(2, r * q.s); var g = ctx.createRadialGradient(q.x, q.y, 0, q.x, q.y, rr); g.addColorStop(0, 'rgba(' + c + ',' + a + ')'); g.addColorStop(1, 'rgba(' + c + ',0)'); ctx.beginPath(); ctx.arc(q.x, q.y, rr, 0, TAU); ctx.fillStyle = g; ctx.fill(); }
+    /**
+     * THE LOCAL GRAPH ACROSS CHAMBERS. v0.3.9.
+     *
+     * Drawn from WORLD positions rather than seat indexes, because a mission's tasks live in the
+     * chambers that ran them and its artifacts in Output — the one-hop neighbourhood of almost any
+     * record crosses the colony. A DERIVED relation is dashed: four of the five relations are facts
+     * the colony recorded and the fifth is inferred from words, and a line an operator reads as
+     * provenance when it is a shared noun is the kind of wrong that teaches them to distrust the
+     * true ones.
+     */
+    function drawVaultLinks() {
+      if (!vaultLinkOf || !vaultLinkPts.length) return;
+      var from = null;
+      SEC.some(function (sec) {
+        return sec.pts.some(function (p) {
+          if (p.rec && p.rec.id === vaultLinkOf && p._w) { from = p._w; return true; }
+          return false;
+        });
+      });
+      if (!from) return;
+      var a = proj(from); if (!a) return;
+
+      vaultLinkPts.forEach(function (x) {
+        var p = x.sec.pts[x.idx]; if (!p || !p._w) return;
+        var b = proj(p._w); if (!b) return;
+        ctx.save();
+        ctx.setLineDash(x.derived ? [3, 4] : []);
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+        ctx.strokeStyle = isLight() ? 'rgba(52,64,84,.5)' : 'rgba(196,206,226,.42)';
+        ctx.lineWidth = 1; ctx.stroke();
+        ctx.restore();
+        ctx.beginPath(); ctx.arc(b.x, b.y, 2.6, 0, TAU);
+        ctx.fillStyle = isLight() ? 'rgba(52,64,84,.85)' : 'rgba(226,234,248,.85)'; ctx.fill();
+      });
+    }
     function drawStars(list, base, ts) { list.forEach(function (st) { var q = proj(st.p); if (!q) return; var tw = .55 + Math.sin(ts * .0011 + st.ph) * .35; ctx.beginPath(); ctx.arc(q.x, q.y, st.sz, 0, TAU); ctx.fillStyle = 'rgba(' + (st.c || '220,228,245') + ',' + (base * tw) + ')'; ctx.fill(); }); }
     function drawDust(ts) { DUST.forEach(function (d) { if (live()) { d.p[1] -= d.sp * 1.4; if (d.p[1] < -400) d.p[1] = 400; } var q = proj(d.p); if (!q) return; var tw = .55 + Math.sin(ts * .0009 + d.ph) * .35; ctx.beginPath(); ctx.arc(q.x, q.y, Math.max(.4, q.s), 0, TAU); ctx.fillStyle = 'rgba(172,182,208,' + (.10 * tw * fog(q.zc)) + ')'; ctx.fill(); }); }
     function envStrata(ts) {
@@ -789,6 +845,7 @@
       circStreams.forEach(function (cs, ci) { var c = h2(cs.col); drawStream(cs.ps.slice(0, Math.ceil(cs.ps.length * dens)), conduitRGB(c[0] + ',' + c[1] + ',' + c[2]), Math.min(1, .95 * cb), 1.6, circuit[ci] && circuit[ci].rev); });
       if (opts.trails) drawStream(retStream, conduitRGB('217,176,84'), .75 * cb, 1.4);
       drawSpheres(ts);
+      drawVaultLinks();
       drawAttention(ts);
       drawAnts(ts);
     }
@@ -1128,6 +1185,111 @@
       setAntStyle: function (roleId, patch) { var k = String(roleId || '').toLowerCase(); if (!k) return; var cur = antStyles[k] || { name: null, color: null }; patch = patch || {}; if ('name' in patch) cur.name = (typeof patch.name === 'string' && patch.name.trim()) ? patch.name.trim().slice(0, 28) : null; if ('color' in patch) cur.color = validColor(patch.color); if (cur.name || cur.color) antStyles[k] = cur; else delete antStyles[k]; if (lastScene) api.setTopology(lastScene); saveLayout(); },
       getAntStyle: function (roleId) { return Object.assign({ name: null, color: null }, antStyles[String(roleId || '').toLowerCase()] || {}); },
       stopMound: function (v) { bySec.mound.stopped = v !== false; },
+      /* ── v0.3.9 THE VAULT FEEDS THE CHAMBERS ───────────────────────────────────────────────
+         The colony already seats records on a lattice, orders them into strata when a chamber is
+         focused, and lets one be selected — that machinery is `rebuildSector` and it has been here
+         since the live view was built. What it was fed was the topology reducer's recent slice.
+
+         This hands it the WHOLE vault: every record the colony remembers, in the chamber the SERVER
+         says it lives in. Nothing about the seating, the strata, the hover or the selection is
+         reimplemented, which is the point — a second dot system would be a second answer to where a
+         record sits, and the sidebar's counts would eventually disagree with the picture.
+
+         CLUSTERS ARE THE SIDEBAR'S GROUPING. Switch the panel from outcome to topic to project and
+         the chamber re-forms along the same cut, because the cluster a record is put in here IS the
+         group the tree put it in. That is what makes the ordered formation mean something when you
+         fly in: the strata are the folders. */
+      setVaultRecords: function (byChamber, grouping) {
+        if (!byChamber) return;
+        vaultGrouping = grouping || vaultGrouping;
+        Object.keys(byChamber).forEach(function (id) {
+          var s = bySec[id]; if (!s) return;
+          var list = byChamber[id] || [];
+
+          // The clusters, in the order the tree shows them, from the group each record carries.
+          var order = [], seen = {};
+          list.forEach(function (r) {
+            var g = r.group || r.kind || 'record';
+            if (!seen[g]) { seen[g] = { id: g, label: g, records: [], count: 0 }; order.push(seen[g]); }
+            seen[g].records.push({
+              recordId: r.id, title: r.title || r.id, recordType: r.kind, ant: r.ant || r.kind,
+              missionId: r.mission_id || '', taskId: '', createdAt: r.when || '',
+              cluster: g,
+              // VERIFICATION IS THE COLONY'S OWN WORD, mapped rather than invented: it decides the
+              // shell a dot sits in and the brightness it is drawn with, and a record with no
+              // verdict must not be seated as though it passed.
+              verification: r.outcome && /verified|succeeded|passed|completed/i.test(r.outcome)
+                ? 'verified' : (r.outcome ? 'not_verified' : 'not_scanned'),
+            });
+            seen[g].count++;
+          });
+
+          vaultChambers[id] = true;
+          rebuildSector(s, {
+            id: id, label: s.serverLabel || s.defLabel,
+            residents: s.residents, runningTasks: [],
+            records: order.reduce(function (a, c) { return a.concat(c.records); }, []),
+            recordCount: list.length,
+            clusters: order,
+          });
+        });
+      },
+
+      /** Fly to one record's dot: its chamber first, then the seat itself. */
+      focusRecord: function (recordId, chamber) {
+        var s = bySec[chamber] || null;
+        var found = null, foundSec = null;
+        (s ? [s] : shown()).some(function (sec) {
+          var idx = -1;
+          sec.pts.some(function (p, i) { if (p.rec && p.rec.id === recordId) { idx = i; return true; } return false; });
+          if (idx < 0) return false;
+          found = idx; foundSec = sec; return true;
+        });
+
+        if (!foundSec) { if (s) api.focus(s.id); return false; }
+
+        // Focus the chamber (which is what starts the cross-fade into the ordered formation), then
+        // aim the camera at the seat rather than the chamber's centre.
+        api.focus(foundSec.id);
+        selRec = { sec: foundSec.id, idx: found };
+        var pt = foundSec.pts[found];
+        goal.tgt = [foundSec.pos[0] + pt.o[0], foundSec.pos[1] + pt.o[1], foundSec.pos[2] + pt.o[2]];
+        goal.dist = Math.max(70, foundSec.R * 2.1);
+        emit('record', pt.rec);
+        return true;
+      },
+
+      /** The local graph: the sidebar hands back what the SERVER said is related, and the renderer
+          lights those seats. Cleared with a null id, because a graph nobody asked for is noise. */
+      showLinks: function (recordId, links) {
+        vaultLinks = {}; vaultLinkPts = []; vaultLinkOf = null;
+        if (!recordId || !links || !links.length) { SEC.forEach(clearRel); return; }
+
+        links.forEach(function (l) { vaultLinks[l.id] = l.derived ? 2 : 1; });
+        vaultLinkOf = recordId;
+
+        var home = null;
+        SEC.forEach(function (sec) {
+          var rel = [];
+          sec.pts.forEach(function (p, i) {
+            if (!p.rec) return;
+            if (p.rec.id === recordId) home = { sec: sec, idx: i };
+            if (vaultLinks[p.rec.id]) vaultLinkPts.push({ sec: sec, idx: i, derived: vaultLinks[p.rec.id] === 2 });
+          });
+          sec._rel = rel;
+        });
+
+        /* THE IN-CHAMBER HALF USES THE HIGHLIGHT THAT WAS ALREADY HERE: `rec.rel` is a list of
+           seat indexes and the renderer has drawn those lines since the live view was built. The
+           cross-chamber half cannot use it — indexes are per chamber — so `drawVaultLinks` draws
+           those from world positions. One hop, two draws, because the data has two shapes. */
+        if (home) {
+          home.sec.pts[home.idx].rec.rel = vaultLinkPts
+            .filter(function (x) { return x.sec === home.sec; })
+            .map(function (x) { return x.idx; });
+        }
+      },
+
       setTopology: function (scene) {
         lastScene = scene || lastScene;
         /* The reducer's scene (colony-topology.js `project()`):
@@ -1305,7 +1467,12 @@
       if (moved) return;
       var m = local(e);
       var pi = pickPoint(m.x, m.y);
-      if (pi != null) { selRec = { sec: focused, idx: pi }; var s = bySec[focused]; var w = s.pts[pi]._w; if (w) { goal.tgt = w.slice(); goal.dist = Math.max(120, s.R * 2.2); } var rec = api.recordAt(focused, pi); if (!rec) return; if (rec.roleId) { setCrumb('colony survey → ' + s.label.toLowerCase() + ' → ' + rec.name); emit('resident', { sector: focused, index: pi, resident: rec }); return; } setCrumb('colony survey → ' + s.label.toLowerCase() + ' → ' + rec.title); emit('record', { sector: focused, index: pi, record: rec }); return; }
+      if (pi != null) { selRec = { sec: focused, idx: pi }; var s = bySec[focused]; var w = s.pts[pi]._w; if (w) { goal.tgt = w.slice(); goal.dist = Math.max(120, s.R * 2.2); } var rec = api.recordAt(focused, pi); if (!rec) return; if (rec.roleId) { setCrumb('colony survey → ' + s.label.toLowerCase() + ' → ' + rec.name); emit('resident', { sector: focused, index: pi, resident: rec }); return; } setCrumb('colony survey → ' + s.label.toLowerCase() + ' → ' + rec.title); emit('record', { sector: focused, index: pi, record: rec });
+        // v0.3.9 — AND THE PANEL FOLLOWS THE DOT. Clicking in the chamber and clicking in the tree
+        // are the same act from two ends; routing both through the vault means the card, the links
+        // and the tree selection cannot disagree about what is open.
+        if (typeof MemoryVault !== 'undefined' && MemoryVault.isOpen && MemoryVault.isOpen() && rec.id) MemoryVault.selectFromScene(rec.id);
+        return; }
       var vis = shown();
       for (var i = 0; i < vis.length; i++) {
         var s2 = vis[i], pr = proj(s2.pos);

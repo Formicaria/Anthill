@@ -111,6 +111,112 @@ public static partial class ApiHost
             ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
             return Results.Content(UiSettingsJs, "text/javascript; charset=utf-8");
         });
+        /* v0.3.9 — THE MEMORY VAULT'S OWN SURFACE.
+
+           `read_events` is the permission, and it is the right one rather than a new one: this
+           reads what the colony has already recorded, and every kind it returns is already visible
+           to a holder of that permission through some other page. A vault that invented a
+           permission would be claiming to expose something new, and it is not — it is one shape
+           over what was always there.
+
+           THE PROJECTION LIVES IN THE STORE, not here. These handlers pick arguments out of a
+           query string and hand back what `SqliteMemory` answered; the moment one of them starts
+           filtering or sorting for itself there are two answers to what the vault contains. */
+        app.MapGet("/memory/vault", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_events"); if (auth is not null) return auth;
+
+            var q = ctx.Request.Query;
+            var page = Queen.Memory.VaultQuery(
+                kind: q["kind"].ToString(),
+                query: q["q"].ToString(),
+                projectId: q["project"].ToString(),
+                outcome: q["outcome"].ToString(),
+                chamber: q["chamber"].ToString(),
+                from: q["from"].ToString(),
+                to: q["to"].ToString(),
+                grouping: string.IsNullOrWhiteSpace(q["group"].ToString()) ? "facet" : q["group"].ToString(),
+                limit: int.TryParse(q["limit"], out var lim) ? lim : 200,
+                offset: int.TryParse(q["offset"], out var off) ? off : 0);
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["records"] = page.Records.Select(VaultRecordPayload).ToList(),
+                ["total"] = page.Total,
+                ["kinds"] = page.Kinds.Select(k => new Dictionary<string, object?>
+                {
+                    ["key"] = k.Key, ["label"] = k.Label, ["count"] = k.Count,
+                }).ToList(),
+                ["groups"] = page.Groups.Select(g => new Dictionary<string, object?>
+                {
+                    ["key"] = g.Key, ["label"] = g.Label, ["count"] = g.Count,
+                }).ToList(),
+            });
+        });
+
+        /* EVERY dot, in the leanest shape that still says what a dot is. The operator asked for no
+           cap and their colony holds ~15,000 records; this is the call that has to mean it, so it
+           carries five fields and not nine. */
+        app.MapGet("/memory/vault/dots", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_events"); if (auth is not null) return auth;
+
+            var group = ctx.Request.Query["group"].ToString();
+            var dots = Queen.Memory.VaultDots(string.IsNullOrWhiteSpace(group) ? "facet" : group);
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["count"] = dots.Count,
+                ["dots"] = dots.Select(d => new Dictionary<string, object?>
+                {
+                    ["id"] = d.Id, ["kind"] = d.Kind, ["chamber"] = d.Chamber,
+                    ["outcome"] = d.Outcome, ["when"] = d.WhenUtc,
+                    ["title"] = d.Title, ["group"] = d.Group,
+                    ["mission_id"] = d.MissionId, ["project_id"] = d.ProjectId,
+                }).ToList(),
+            });
+        });
+
+        /* The knowledge branch, served on its own for the reason `VaultKnowledge` documents: these
+           records are derived from citation payloads, so the database cannot page them with the
+           rest and a list that pretended otherwise would return the wrong page. */
+        app.MapGet("/memory/vault/knowledge", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_events"); if (auth is not null) return auth;
+
+            var records = Queen.Memory.VaultKnowledge();
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["records"] = records.Select(VaultRecordPayload).ToList(),
+                ["total"] = records.Count,
+            });
+        });
+
+        /* The local graph, one hop. `derived` travels with every edge so the console can draw the
+           one relation that is inferred differently from the four the colony recorded. */
+        app.MapGet("/memory/vault/links", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_events"); if (auth is not null) return auth;
+
+            var id = ctx.Request.Query["id"].ToString();
+            if (string.IsNullOrWhiteSpace(id)) return ApiJson.Error("Which record?", "bad_request");
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["links"] = Queen.Memory.VaultLinks(id).Select(l => new Dictionary<string, object?>
+                {
+                    ["id"] = l.Id, ["kind"] = l.Kind, ["title"] = l.Title,
+                    ["relation"] = l.Relation, ["derived"] = l.Derived,
+                }).ToList(),
+            });
+        });
+
+        // v0.3.9: the memory vault — the Obsidian-like browser over everything the colony
+        // remembers. Its own file for the reason Settings got one: app.js is under a size guard.
+        app.MapGet("/ui/memory-vault.js", (HttpContext ctx) =>
+        {
+            ctx.Response.Headers.CacheControl = "no-store, must-revalidate";
+            return Results.Content(UiMemoryVaultJs, "text/javascript; charset=utf-8");
+        });
         // Colony Live (design doc §17, stage 3). Same-origin, same no-store policy — the CSP stays script-src
         // 'self'. Topology is the projection layer; live is the renderer; app.js only toggles them.
         app.MapGet("/ui/colony-topology.js", (HttpContext ctx) =>
@@ -840,4 +946,25 @@ public static partial class ApiHost
         MapProviderEndpoints(app);
         MapAgentEndpoints(app);   // v3.8.39: installable CLI agents — see ApiHost.Agents.cs
     }
+
+    /// <summary>
+    /// One vault record on the wire. v0.3.9 — spelled once because three routes return the shape and
+    /// the console reads the field names; three copies is how one of them comes to omit a field the
+    /// sidebar then renders as blank.
+    /// </summary>
+    private static Dictionary<string, object?> VaultRecordPayload(Anthill.Core.Memory.VaultRecord r) =>
+        new()
+        {
+            ["id"] = r.Id,
+            ["kind"] = r.Kind,
+            ["chamber"] = r.Chamber,
+            ["title"] = r.Title,
+            ["subtitle"] = r.Subtitle,
+            ["when"] = r.WhenUtc,
+            ["outcome"] = r.Outcome,
+            ["project_id"] = r.ProjectId,
+            ["mission_id"] = r.MissionId,
+            ["group"] = r.Group,
+            ["href"] = r.Href,
+        };
 }

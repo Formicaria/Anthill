@@ -637,6 +637,18 @@
       // one-time token and answers under its own identity whatever the colony calls it.
       var lm = liveApi(); if (lm && lm.addMound) lm.addMound();
     }
+    /* v0.3.9 — MEMORY OPENS THE VAULT. `view('memory')` still flies the camera to the chamber;
+       what changed is that the chamber now has something to browse, and the panel is part of that
+       view rather than a control you have to find. Survey and Esc close it, because the operator
+       asked for the panel and the Memory view to be one mode. */
+    else if (act === 'memory') {
+      view('memory');
+      if (typeof MemoryVault !== 'undefined') MemoryVault.open();
+    }
+    else if (act === 'survey') {
+      view('survey');
+      if (typeof MemoryVault !== 'undefined') MemoryVault.close();
+    }
     else if (act === 'ask') send('chat');
     else if (act === 'run') send('mission');
     else view(act);

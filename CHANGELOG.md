@@ -1,3 +1,55 @@
+## v0.3.9 - the colony's memory becomes a place you can walk through
+
+**THE 3.8 LINE IS CLOSED.** This opens 3.9, and the releases after it are v0.3.9.1, v0.3.9.2, and so
+on.
+
+**MEMORY WAS A CHAMBER YOU COULD FLY TO AND NOT LOOK INSIDE.** Clicking MEMORY moved the camera to a
+sphere of decorative particles. The colony held ~15,000 records -- 97 missions, 543 artifacts, 505
+tasks, 159 pheromone trails, 8,400 events -- and the only way to reach any of them was to know which
+page listed that kind.
+
+Clicking Memory now opens a vault: a tree of every kind the colony remembers, a search that crosses
+all of them, and a chamber whose dots ARE the records.
+
+**THE DOTS ARE THE RECORDS, AND THE MACHINERY WAS ALREADY HERE.** The live view has seated records on
+a Fibonacci lattice since it was built -- stable slots hashed per record, shells by durability, and
+an ordered formation the cloud cross-fades into when a chamber is focused. What it was fed was the
+topology reducer's recent slice. It is now fed the whole vault, in the chamber the SERVER says each
+record lives in. Nothing about the seating, the hover or the selection is reimplemented: a second dot
+system would be a second answer to where a record sits, and the sidebar's counts would eventually
+disagree with the picture.
+
+One change was needed underneath. The three radius shells were written for a chamber holding a few
+dozen records; 8,400 events in Memory is 88 lattice rings, and every ring past the first shared one
+radius -- so a chamber would have drawn 96 dots and a smear. With more than one ring the radius
+spreads across the sphere's usable band. A colony with an ordinary topology looks exactly as it did.
+
+**ONE HOME EACH.** Missions at the Queen, patches in the Forge, evidence and verdicts in Validation,
+artifacts in Output, trails and skills and events in Memory, conversations and consulted knowledge in
+Intel. That mapping exists ONCE -- `VaultChambers`, in C# and in the SQL the projection uses -- and a
+test drives every role in the roster through both spellings and requires the same answer.
+
+**THE CLUSTERS ARE THE FOLDERS.** The tree's second level switches between the colony's own facets,
+a derived topic, and the project; switching it re-forms the chamber along the same cut, because the
+cluster a dot is seated in IS the folder the tree filed it under. Each record carries its group from
+the server for exactly that reason.
+
+**THE LOCAL GRAPH, ON SELECTION.** No lines until a dot is picked, then one hop: a mission's steps,
+an artifact's writer and its readers, a task's result, the tasks that reinforced a trail. Four of
+those five relations are facts the colony recorded. The fifth -- same subject -- is inferred from
+words, and it is drawn DASHED, in the chamber and in the card, because a line an operator reads as
+provenance when it is a shared noun is the kind of wrong that teaches them to distrust the true ones.
+
+**KNOWLEDGE IS ONLY WHAT THIS COLONY TOUCHED**, and it is served on its own rather than in the paged
+query. Those records are derived from citation payloads, so SQLite cannot count or page them beside
+the rest, and a list that mixed the two would return the wrong page the moment either side grew.
+
+**READ-ONLY, STRUCTURALLY.** Every call the vault makes is a GET. Nothing here writes to memory.
+
+The permission is `read_events` rather than a new one: every kind this returns was already visible to
+a holder of it through some other page, and a vault that minted a permission would be claiming to
+expose something new when it is one shape over what was always there.
+
 ## v0.3.8.160 - a binding has two halves, and the import panel was a chore
 
 **THE PAGE COULD ONLY BIND THE ONE THING A MISSION IGNORES.** `.158` rebuilt the Knowledge page
