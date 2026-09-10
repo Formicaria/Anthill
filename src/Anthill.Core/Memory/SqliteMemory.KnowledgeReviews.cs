@@ -45,6 +45,7 @@ public sealed partial class SqliteMemory
                     mission_id TEXT,
                     proposed_by TEXT NOT NULL DEFAULT 'researcher',
                     status TEXT NOT NULL DEFAULT 'pending',
+                    applied_at TEXT,
                     decided_by TEXT,
                     decision_note TEXT,
                     proposed_at TEXT NOT NULL,
@@ -54,6 +55,13 @@ public sealed partial class SqliteMemory
                 CREATE INDEX IF NOT EXISTS ix_knowledge_reviews_status
                     ON knowledge_reviews(status, proposed_at);");
 
+            // v0.3.9.2 — a colony that already has this table gets the column rather than a new
+            // table: `applied` arrived a release after the rest, and a migration that dropped the
+            // proposals to add a column would lose the record of what an operator already decided.
+            var hasApplied = Query("PRAGMA table_info(knowledge_reviews);")
+                .Any(r => string.Equals(RowValues.Text(r, "name"), "applied_at", StringComparison.OrdinalIgnoreCase));
+            if (!hasApplied) NonQuery(conn, null, "ALTER TABLE knowledge_reviews ADD COLUMN applied_at TEXT;");
+
             _knowledgeReviewTablesReady = true;
         }
     }
@@ -61,10 +69,16 @@ public sealed partial class SqliteMemory
     /// <summary>
     /// One proposal and what became of it.
     ///
-    /// `Status` is `pending`, `accepted` or `declined`, and there is deliberately no `applied`.
-    /// Accepting records that the OPERATOR agreed; applying it to the knowledge base needs a producer
-    /// endpoint that does not exist (P13). A status this build can never reach would be a promise in
-    /// an enum, which is the shape of claim this repository refuses everywhere else.
+    /// `Status` is `pending`, `accepted`, `declined` — or, since v0.3.9.2, `applied`.
+    ///
+    /// THE FOURTH ONE WAS REFUSED ON PURPOSE AND IS NOW EARNED. `.155` wrote: "there is deliberately
+    /// no `applied`. Accepting records that the OPERATOR agreed; applying it to the knowledge base
+    /// needs a producer endpoint that does not exist (P13). A status this build can never reach
+    /// would be a promise in an enum." That was true of FORAGER 0.1.4. FORAGER 0.6 publishes
+    /// `POST /api/knowledge/:id/review` taking the same four actions this colony proposes, so the
+    /// status is now a thing that happens rather than a thing that was hoped for — and `AppliedAt`
+    /// is separate from `DecidedAt` because agreeing and doing are two moments, and an operator
+    /// looking at a stale knowledge base needs to know which one happened.
     /// </summary>
     public sealed record KnowledgeReview
     {
@@ -81,6 +95,9 @@ public sealed partial class SqliteMemory
         public string? DecisionNote { get; init; }
         public DateTime ProposedAt { get; init; } = AnthillTime.NowUtc();
         public DateTime? DecidedAt { get; init; }
+
+        /// <summary>When the producer accepted the change. Null while it is only agreed.</summary>
+        public DateTime? AppliedAt { get; init; }
     }
 
     public void SaveKnowledgeReview(KnowledgeReview review)
@@ -92,10 +109,10 @@ public sealed partial class SqliteMemory
             NonQuery(conn, null, @"
                 INSERT OR REPLACE INTO knowledge_reviews
                     (id, knowledge_id, project_ref, anthill_project_id, action, rationale, mission_id,
-                     proposed_by, status, decided_by, decision_note, proposed_at, decided_at)
+                     proposed_by, status, decided_by, decision_note, proposed_at, decided_at, applied_at)
                 VALUES
                     (@id, @knowledge_id, @project_ref, @anthill_project, @action, @rationale, @mission_id,
-                     @proposed_by, @status, @decided_by, @note, @proposed_at, @decided_at);",
+                     @proposed_by, @status, @decided_by, @note, @proposed_at, @decided_at, @applied_at);",
                 ("@id", review.Id),
                 ("@knowledge_id", review.KnowledgeId),
                 ("@project_ref", review.ProjectRef),
@@ -108,7 +125,8 @@ public sealed partial class SqliteMemory
                 ("@decided_by", (object?)review.DecidedBy ?? DBNull.Value),
                 ("@note", (object?)review.DecisionNote ?? DBNull.Value),
                 ("@proposed_at", review.ProposedAt.ToIso()),
-                ("@decided_at", (object?)review.DecidedAt?.ToIso() ?? DBNull.Value));
+                ("@decided_at", (object?)review.DecidedAt?.ToIso() ?? DBNull.Value),
+                ("@applied_at", (object?)review.AppliedAt?.ToIso() ?? DBNull.Value));
         }
     }
 
@@ -131,6 +149,29 @@ public sealed partial class SqliteMemory
         };
         SaveKnowledgeReview(decided);
         return decided;
+    }
+
+    /// <summary>
+    /// Record that the producer took the change. v0.3.9.2.
+    ///
+    /// SEPARATE FROM DECIDING, and only reachable from it: a proposal is applied after it is
+    /// accepted, never instead. The caller has already had FORAGER's answer — this records what
+    /// happened rather than deciding it, which is why it takes no `accept` argument and cannot
+    /// refuse anything. A review that is not `accepted` is left exactly as it is.
+    /// </summary>
+    public KnowledgeReview? MarkKnowledgeReviewApplied(string id, string? note)
+    {
+        var review = KnowledgeReviewById(id);
+        if (review is null || !string.Equals(review.Status, "accepted", StringComparison.Ordinal)) return null;
+
+        var applied = review with
+        {
+            Status = "applied",
+            AppliedAt = AnthillTime.NowUtc(),
+            DecisionNote = string.IsNullOrWhiteSpace(note) ? review.DecisionNote : note!.Trim(),
+        };
+        SaveKnowledgeReview(applied);
+        return applied;
     }
 
     public KnowledgeReview? KnowledgeReviewById(string id)
@@ -166,5 +207,6 @@ public sealed partial class SqliteMemory
         DecisionNote = RowValues.TextOrNull(row, "decision_note"),
         ProposedAt = RowValues.TimestampOrNow(row, "proposed_at"),
         DecidedAt = RowValues.Timestamp(row, "decided_at"),
+        AppliedAt = RowValues.Timestamp(row, "applied_at"),
     };
 }

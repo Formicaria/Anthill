@@ -405,6 +405,12 @@ public sealed partial class SqliteMemory
                   + "    OR (p.trail_key LIKE 'task_type:%' AND LOWER(t.task_type) = SUBSTR(p.trail_key, 11))) "
                   + "ORDER BY t.created_at DESC LIMIT @lim",
                     "reinforced by", false, ("@p", key), ("@lim", limit));
+
+                /* v0.3.9.2 — AND THE KEYS THAT NAME NO COLUMN. `capability:approval_gate` and
+                   `source_domain:example.com` are trails about things no task row carries, so the
+                   join above finds nothing for them and `.9` left them with no edges at all. Their
+                   suffix IS the subject, though, and the derived pass below can say so — labelled
+                   as inference, which is exactly what it is. */
                 break;
 
             case "conversation":
@@ -424,8 +430,106 @@ public sealed partial class SqliteMemory
                 break;
         }
 
+        // v0.3.9.2 — AND THE FIFTH RELATION, WHICH IS THE ONLY ONE THAT CAN BE WRONG.
+        //
+        // `.9`'s release notes described five relations, "four of those five facts the colony
+        // recorded, the fifth — same subject — inferred from words, drawn DASHED". Four were
+        // implemented. The dashed styling shipped with nothing to draw through it: a claim in a
+        // changelog with no code under it, which is the defect this release line keeps finding,
+        // this time in the notes rather than in the tree.
+        //
+        // WHAT MAKES IT HONEST IS THAT IT ADMITS WHAT IT IS. It matches on the record's most
+        // distinctive word — the longest token over four characters that is not scaffolding — and
+        // every edge it returns carries `Derived: true`, so the console dashes it and the operator
+        // can tell a shared noun from a provenance link. It also runs LAST and fills only what the
+        // recorded relations left of the budget: an inference must never crowd out a fact.
+        var room = limit - links.Count;
+        var subjects = VaultSubjects(id);
+
+        // NO SUBJECT MEANS NO EDGES, and the early return is the fix for the worse alternative. The
+        // first cut returned a sentinel string for a record with nothing distinctive and matched it
+        // with LIKE — which joined that record to EVERYTHING, the exact failure an inferred graph
+        // has to avoid to be worth drawing. A record whose title is all scaffolding has nothing to
+        // say about its subject, and saying nothing is the honest answer.
+        if (room > 0 && subjects.Count > 0)
+        {
+            var clauses = subjects.Select((_, i) => $"title LIKE @t{i}").ToList();
+            var parameters = subjects
+                .Select((word, i) => ((string, object?))($"@t{i}", "%" + word + "%"))
+                .Append(("@self", (object?)id))
+                .Append(("@lim", (object?)room))
+                .ToArray();
+
+            foreach (var row in Query(
+                VaultProjection + $@" SELECT id, kind, title FROM vault
+                                      WHERE id <> @self AND ({string.Join(" OR ", clauses)})
+                                      ORDER BY COALESCE(when_utc,'') DESC LIMIT @lim", parameters))
+            {
+                var linkId = RowValues.Text(row, "id");
+                if (linkId.Length == 0 || links.Any(l => l.Id == linkId)) continue;
+                links.Add(new VaultLink(linkId, RowValues.Text(row, "kind"), RowValues.Text(row, "title"),
+                    "same subject", true));
+            }
+        }
+
         return links.Take(limit).ToList();
     }
+
+    /// <summary>
+    /// THE WORDS THIS RECORD IS ABOUT, as far as words can say. v0.3.9.2.
+    ///
+    /// Deliberately the crudest thing that is still useful: every alternative — an extractor, an
+    /// embedding, a model — makes the colony's memory graph depend on something that can be
+    /// unavailable, slow, or differently opinionated between two runs. This is deterministic, costs
+    /// nothing, and is labelled as inference everywhere it is shown.
+    ///
+    /// UP TO THREE WORDS, NOT THE LONGEST ONE. The first cut took the longest token, which is not
+    /// the same as the most distinctive: "rotate the wireguard certificates" yielded
+    /// `certificates`, and the mission about configuring wireguard — plainly the same subject —
+    /// matched nothing. Any of a few candidates matching is the weaker rule and the more useful one.
+    ///
+    /// EMPTY IS A REAL ANSWER. A title that is all colony scaffolding has nothing to say about its
+    /// subject, and the caller draws no edges rather than falling back to something that matches
+    /// everything.
+    /// </summary>
+    private IReadOnlyList<string> VaultSubjects(string id)
+    {
+        var title = Query(VaultProjection + " SELECT title FROM vault WHERE id = @id", ("@id", id))
+            .Select(r => RowValues.Text(r, "title")).FirstOrDefault() ?? "";
+
+        // A TRAIL'S TITLE IS ITS KEY, and the half after the colon is the subject: `ant:builder`
+        // is about the builder, `source_domain:example.com` about that domain. Taking the longest
+        // word of the whole key would pick the KIND — `source_domain` — and join every trail of
+        // that kind to every other.
+        var colon = title.IndexOf(':');
+        if (colon > 0 && colon < title.Length - 1) title = title[(colon + 1)..];
+
+        return System.Text.RegularExpressions.Regex.Matches(title, @"[A-Za-z][A-Za-z0-9_.-]{4,}")
+            .Select(m => m.Value)
+            .Where(w => !VaultStopWords.Contains(w))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            // Longest first only as an ORDER, so the most specific candidates are the ones kept when
+            // a title has more than three — not as the single answer, which was the first cut's bug.
+            .OrderByDescending(w => w.Length)
+            .Take(3)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Words that appear in this colony's own scaffolding rather than in what a record is ABOUT.
+    /// Every one of them is a term the colony writes into its OWN titles — a subject match on
+    /// "mission" would join half the vault to the other half.
+    /// </summary>
+    private static readonly HashSet<string> VaultStopWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "mission", "task", "tasks", "colony", "anthill", "record", "records", "result", "results",
+        "answer", "request", "report", "verify", "check", "checked", "compile", "assemble",
+        "the", "this", "that", "with", "from", "into", "what", "which", "when", "where", "there",
+        "their", "them", "then", "than", "have", "has", "was", "were", "been", "being", "does",
+        "created", "started", "finished", "complete", "completed", "failed", "running",
+        "other", "another", "about", "these", "those", "would", "could", "should", "system",
+        "events", "event", "update", "updated", "change", "changes", "changed",
+    };
 
     /// <summary>
     /// KNOWLEDGE THIS COLONY ACTUALLY TOUCHED. v0.3.9 — the operator's answer to how much of a

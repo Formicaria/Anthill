@@ -117,44 +117,83 @@ public class KnowledgeReviewLifecycleTests
     public void AnUnknownProposal_IsRefused() =>
         Assert.Null(Fresh().DecideKnowledgeReview("no-such-id", true, "operator", null));
 
-    // ---- and the claim it must never make ---------------------------------------------------------
+    // ---- accepting and applying are two acts ------------------------------------------------------
 
     /// <summary>
-    /// THERE IS NO `applied`, AND THAT ABSENCE IS THE LOAD-BEARING PART.
+    /// ACCEPTING IS AGREEMENT. APPLYING IS THE CHANGE. v0.3.9.2 — and this test used to assert the
+    /// OPPOSITE, which is worth keeping visible rather than quietly rewriting.
     ///
-    /// Accepting records that an OPERATOR agreed with an objection. It does not change a knowledge
-    /// base and this build cannot: §1 gives FORAGER the classification, and the producer publishes
-    /// no mutation for a review — that is P13. A status this build could never reach would be a
-    /// promise living in an enum, which is the shape of claim this repository refuses everywhere
-    /// else, and the console says the same thing beside the button rather than in a doc.
+    /// `.155` wrote: "there is no `applied`, and that absence is the load-bearing part… the producer
+    /// publishes no mutation for a review — that is P13. A status this build could never reach would
+    /// be a promise living in an enum." Every word of that was true against FORAGER 0.1.4, and this
+    /// test held the console to saying so.
+    ///
+    /// FORAGER 0.6 publishes `POST /api/knowledge/:id/review`. So the absence stopped being
+    /// load-bearing and became stale, and what is asserted flips with it: accepting still does not
+    /// apply, and `applied` is now a state a proposal reaches by a SECOND, separate act.
     /// </summary>
     [Fact]
-    public void AcceptingIsAgreement_NeverApplication()
+    public void AcceptingIsAgreement_ApplyingIsASecondAct()
     {
         using var memory = Fresh();
         var proposal = Proposal();
         memory.SaveKnowledgeReview(proposal);
 
         var decided = memory.DecideKnowledgeReview(proposal.Id, true, "operator", null);
-
         Assert.Equal("accepted", decided!.Status);
-        Assert.NotEqual("applied", decided.Status);
+        Assert.Null(decided.AppliedAt);
 
-        var console = File.ReadAllText(Path.Combine(SourceText.RepoRoot(), "src", "Anthill.UI", "knowledge.js"));
-        Assert.Contains("does not change the knowledge base", console, StringComparison.OrdinalIgnoreCase);
+        var applied = memory.MarkKnowledgeReviewApplied(proposal.Id, null);
+        Assert.Equal("applied", applied!.Status);
+        Assert.NotNull(applied.AppliedAt);
+
+        // ONCE. A second apply is not an update — the record already says the change went.
+        Assert.Null(memory.MarkKnowledgeReviewApplied(proposal.Id, null));
     }
 
     /// <summary>
-    /// AND THE CONTRACT NAMES THE MISSING PRODUCER SURFACE. An accepted review with nowhere to go is
-    /// a gap in the integration, and this repository records those as numbered provisions rather than
-    /// leaving them for someone to rediscover — the same argument P11 made for the project listing.
+    /// AND A PROPOSAL NOBODY AGREED WITH CANNOT BE APPLIED. Applying is what happens after an
+    /// operator accepts, never instead of it: the mutation lane's whole justification is that a
+    /// person decided.
     /// </summary>
     [Fact]
-    public void TheContract_NamesWhereAnAcceptedReviewWouldGo()
+    public void APendingProposal_CannotBeApplied()
+    {
+        using var memory = Fresh();
+        var proposal = Proposal();
+        memory.SaveKnowledgeReview(proposal);
+
+        Assert.Null(memory.MarkKnowledgeReviewApplied(proposal.Id, null));
+
+        memory.DecideKnowledgeReview(proposal.Id, false, "operator", "not convinced");
+        Assert.Null(memory.MarkKnowledgeReviewApplied(proposal.Id, null));
+    }
+
+    /// <summary>
+    /// AND THE CONSOLE OFFERS THE SECOND ACT. The page said, beside the button, that accepting could
+    /// not change the knowledge base — correct then, misleading now.
+    /// </summary>
+    [Fact]
+    public void TheConsole_OffersApply()
+    {
+        var console = File.ReadAllText(Path.Combine(SourceText.RepoRoot(), "src", "Anthill.UI", "knowledge.js"));
+
+        Assert.Contains("knApplyReview", console, StringComparison.Ordinal);
+        Assert.Contains("/apply", console, StringComparison.Ordinal);
+        Assert.DoesNotContain("does not change the knowledge base", console, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// AND THE CONTRACT RECORDS THAT THE PRODUCER DELIVERED IT. P13 stays in the table — a provision
+    /// that vanishes when it lands leaves no record that it was ever the thing standing in the way.
+    /// </summary>
+    [Fact]
+    public void TheContract_RecordsP13AsDelivered()
     {
         var contract = File.ReadAllText(Path.Combine(SourceText.RepoRoot(), "docs", "FORAGER_SHARED_CONTRACT.md"));
 
         Assert.Contains("| P13 |", contract, StringComparison.Ordinal);
-        Assert.Contains("Applying a review decision", contract, StringComparison.Ordinal);
+        Assert.Contains("DELIVERED", contract, StringComparison.Ordinal);
+        Assert.Contains("/api/knowledge/:id/review", contract, StringComparison.Ordinal);
     }
 }

@@ -134,8 +134,10 @@ The reasoning the page used to carry in prose lives here instead:
   studied at their current version, up to 25 per click. A schedule is `knowledge_auto_study`, off by
   default, in the config file — an automation decision belongs where a decision is made, not behind a
   click that does not look like one.
-- **Accepting a review is not applying it.** FORAGER publishes no endpoint for applying a review
-  (P13), so acceptance records that the operator agreed and changes nothing in the knowledge base.
+- **Accepting a review and applying it are two acts.** Accepting records that the operator agreed;
+  **Apply** sends it to FORAGER (`POST /api/knowledge/:id/review`, delivered in 0.6 and consumed
+  since v0.3.9.2). The producer is called FIRST and the local `applied` status is recorded only if
+  it succeeded — a record saying a change landed when it did not is worse than no record.
 - **Two ways in, and only one of them has a fence.** Choosing files or a folder in the console
   UPLOADS them: a browser picker discloses a name and a stream and never a location, so there is no
   path to contain and none is invented. The colony is not reading the operator's filesystem — the

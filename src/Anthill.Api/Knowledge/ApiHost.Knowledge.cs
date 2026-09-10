@@ -658,6 +658,7 @@ public static partial class ApiHost
                     ["decision_note"] = r.DecisionNote,
                     ["proposed_at"] = r.ProposedAt,
                     ["decided_at"] = r.DecidedAt,
+                    ["applied_at"] = r.AppliedAt,
                 }).ToList(),
                 ["pending"] = reviews.Count(r => r.Status == "pending"),
             });
@@ -667,6 +668,58 @@ public static partial class ApiHost
         // rather than letting the word "accepted" imply an edit. §1 gives FORAGER the classification
         // and the ranking, and there is no producer surface for applying a review — that is P13.
         // A status this build could never reach would be a promise in an enum.
+        /* v0.3.9.2 — APPLYING A DECISION, WHICH IS THE HALF THAT WAS MISSING FOR 37 RELEASES.
+           `.121` shipped the proposal tool; `.155` gave it a lifecycle and stopped at "accepted",
+           because FORAGER 0.1.4 had no way to take the change — recorded in the contract as P13 and
+           in this file as a sentence telling the operator so. FORAGER 0.6 has one, taking exactly
+           the four actions this colony proposes.
+
+           ACCEPTED FIRST, AND ONLY ONCE. A proposal is applied after an operator agreed with it,
+           never instead of that; and the store refuses a second apply, so a double-click cannot
+           send the same change twice.
+
+           THE ORDER IS PRODUCER FIRST, RECORD SECOND. If FORAGER refuses, nothing here is marked
+           applied — a local record saying a change landed when it did not is worse than no record,
+           because the next reader has no reason to doubt it. */
+        app.MapPost("/knowledge/reviews/{id}/apply", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, KnowledgePermissions.Manage); if (auth is not null) return auth;
+
+            var review = Queen.Memory.KnowledgeReviewById(id);
+            if (review is null) return ApiJson.Error("No such proposal.", "not_found");
+            if (!string.Equals(review.Status, "accepted", StringComparison.Ordinal))
+                return ApiJson.Error(
+                    $"That proposal is '{review.Status}'. Accept it first — applying is what happens "
+                  + "after an operator agrees, not instead of it.", "conflict");
+
+            var ingestion = KnowledgeHost.Ingestion;
+            if (ingestion is null) return KnowledgeFailureResult(KnowledgeFailure.Disabled, "knowledge is not configured");
+
+            // The scope the PROPOSAL was raised in, not the console's current selection: a review
+            // belongs to the knowledge base it objected to.
+            var scope = ResolveScopeForStudy(review.AnthillProjectId);
+            if (!scope.IsQueryable) return KnowledgeScopeRefusal();
+
+            var applied = await ingestion.ApplyReviewAsync(
+                scope, review.KnowledgeId, review.Action, review.DecisionNote,
+                CurrentUsername(ctx) ?? "operator", ctx.RequestAborted).ConfigureAwait(false);
+            if (!applied.Ok || applied.Value is null)
+                return KnowledgeFailureResult(applied.Failure, applied.Reason);
+
+            var recorded = Queen.Memory.MarkKnowledgeReviewApplied(id, review.DecisionNote);
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["id"] = id,
+                ["status"] = recorded?.Status ?? "applied",
+                ["knowledge_id"] = review.KnowledgeId,
+                ["action"] = review.Action,
+                // What the item IS now, from the producer's own answer rather than from what we asked.
+                ["item_status"] = applied.Value.Status.ToString().ToLowerInvariant(),
+                ["item_support"] = applied.Value.Support.ToString().ToLowerInvariant(),
+            }, $"FORAGER applied '{review.Action}' to {review.KnowledgeId}.");
+        });
+
         app.MapPost("/knowledge/reviews/{id}/decide", async (HttpContext ctx, string id) =>
         {
             var auth = RequireAuth(ctx, KnowledgePermissions.Manage); if (auth is not null) return auth;
@@ -692,9 +745,10 @@ public static partial class ApiHost
                 ["status"] = decided.Status,
                 ["decided_by"] = decided.DecidedBy,
             }, accept
-                ? "Recorded as accepted. This does not change the knowledge base — FORAGER publishes "
-                + "no surface for applying a review yet (P13); the record is ANTHILL's, and says an "
-                + "operator agreed with the objection."
+                // v0.3.9.2 — this used to end "FORAGER publishes no surface for applying a review
+                // yet (P13)". It does now, so accepting is a decision with somewhere to go rather
+                // than a note to itself.
+                ? "Recorded as accepted. Apply it to send the change to FORAGER."
                 : "Recorded as declined. The knowledge item is unchanged.");
         });
 

@@ -150,6 +150,68 @@ public class MemoryVaultTests : IDisposable
         Assert.Contains(links, l => l.Title.Contains("Answer the request", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// THE FIFTH RELATION EXISTS, AND SAYS IT IS AN INFERENCE. v0.3.9.2.
+    ///
+    /// `.9`'s release notes described a derived "same subject" edge, drawn dashed beside four
+    /// recorded ones. Four were implemented; the dashed styling shipped with nothing to draw
+    /// through it. This is the assertion that makes the sentence true — and that the edge admits
+    /// what it is, because an inference an operator reads as provenance is worse than no edge.
+    /// </summary>
+    [Fact]
+    public void SameSubject_IsAnEdge_AndIsMarkedDerived()
+    {
+        var mem = Memory();
+        var first = new Mission { Goal = "rotate the wireguard certificates" };
+        var second = new Mission { Goal = "document how wireguard is configured" };
+        var unrelated = new Mission { Goal = "make the coffee order" };
+        mem.SaveMission(first);
+        mem.SaveMission(second);
+        mem.SaveMission(unrelated);
+
+        var links = mem.VaultLinks("mission:" + first.Id);
+
+        var subject = links.Where(l => l.Derived).ToList();
+        Assert.Contains(subject, l => l.Id == "mission:" + second.Id);
+        Assert.DoesNotContain(subject, l => l.Id == "mission:" + unrelated.Id);
+        Assert.All(subject, l => Assert.Equal("same subject", l.Relation));
+        // AND IT NEVER LINKS A RECORD TO ITSELF, which a LIKE over its own title otherwise would.
+        Assert.DoesNotContain(links, l => l.Id == "mission:" + first.Id);
+    }
+
+    /// <summary>
+    /// SCAFFOLDING IS NOT A SUBJECT. Every mission title contains the colony's own vocabulary, so a
+    /// match on "mission" or "answer" would join half the vault to the other half — the failure
+    /// mode that makes an inferred graph worthless rather than merely imprecise.
+    /// </summary>
+    [Fact]
+    public void SameSubject_IgnoresTheColonysOwnVocabulary()
+    {
+        var mem = Memory();
+        var a = new Mission { Goal = "answer the request" };
+        var b = new Mission { Goal = "answer the request again" };
+        mem.SaveMission(a);
+        mem.SaveMission(b);
+
+        Assert.DoesNotContain(mem.VaultLinks("mission:" + a.Id), l => l.Id == "mission:" + b.Id);
+    }
+
+    /// <summary>
+    /// AND AN INFERENCE NEVER CROWDS OUT A FACT. The derived pass runs last and fills only what the
+    /// recorded relations left of the budget.
+    /// </summary>
+    [Fact]
+    public void RecordedRelations_ComeFirst()
+    {
+        var mem = Memory();
+        var mission = Seed(mem);
+
+        var links = mem.VaultLinks("mission:" + mission.Id, limit: 3);
+
+        Assert.True(links.Count <= 3);
+        Assert.All(links.Take(2), l => Assert.False(l.Derived));
+    }
+
     [Fact]
     public void AnIdIsSplitOnItsFirstColon()
     {

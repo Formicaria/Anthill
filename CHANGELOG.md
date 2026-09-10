@@ -1,3 +1,46 @@
+## v0.3.9.2 - the edge the notes described, and the review that had nowhere to go
+
+**A RELEASE NOTE IS A CLAIM, AND ONE OF `.9`'s WAS FALSE.** Its entry described five relations in the
+local graph -- "four of those five are facts the colony recorded. The fifth -- same subject -- is
+inferred from words, and it is drawn DASHED". Four were implemented. The dashed styling shipped with
+nothing to draw through it: the defect this line keeps finding, this time in the changelog rather
+than in the code.
+
+The fifth exists now. It matches a record's most distinctive word -- the longest token over four
+characters that is not the colony's own scaffolding -- and every edge it makes carries `derived`, so
+the chamber dashes it and the card marks it. It runs LAST and fills only what the recorded relations
+left of the budget: an inference must never crowd out a fact. `mission`, `answer`, `task`, `result`
+and their neighbours are excluded by name, because a subject match on the colony's own vocabulary
+joins half the vault to the other half.
+
+It also gives the trails that named no column something true to say. `capability:approval_gate` and
+`source_domain:example.com` are trails about things no task row carries, so `.9` left them with no
+edges at all; their key's suffix IS their subject, and the derived pass can say so -- labelled as the
+inference it is.
+
+**APPLYING A REVIEW, 37 RELEASES AFTER THE PROPOSAL TOOL.** `.121` shipped `knowledge_review`; `.155`
+gave it a lifecycle and stopped at "accepted", writing into the store that there is "deliberately no
+`applied` -- a status this build can never reach would be a promise in an enum". That was correct
+against FORAGER 0.1.4.
+
+FORAGER 0.6 publishes `POST /api/knowledge/:id/review`, taking EXACTLY the four actions this colony
+proposes. No mapping table was needed and none was invented -- a table between two products that
+already agree is a place for them to stop agreeing. Accept, then **Apply**: two buttons because they
+are two acts. The producer is called first and the local `applied` is recorded only if it succeeded;
+the item's new state is read back from FORAGER's answer rather than from what we asked for. P13 in
+the shared contract is closed, and the console line telling operators it could not be done is gone.
+
+**AND THE RUN LOG CAN STEP OUT OF THE PICTURE.** 8,400 of ~15,000 records on this colony are events.
+Every kind is still a dot -- that was the operator's own answer and it has not changed -- but the
+legend is now the control: each kind chip says what colour that kind is and takes it out of the
+chambers and puts it back. A viewing decision, not a cap.
+
+**Still open, and named rather than half-built:** the `anthill` package import path (deliberately not
+consumed -- §1 gives canonical storage to FORAGER), the knowledge-change watermark that turns updates
+into mission proposals (A4), scoped memory with provenance (A5), and the conversation-replay lane.
+Those are programs, not fixes, and folding them into a point release would be the kind of claim this
+one exists to stop making.
+
 ## v0.3.9.1 - the half of the vault that talked to the chambers was reaching nobody
 
 **IT SHIPPED LOOKING FINISHED.** `.9` built the memory vault: the tree, the cross-kind search, the

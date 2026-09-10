@@ -416,6 +416,27 @@ public interface IKnowledgeIngestionProvider
     Task<KnowledgeOutcome<KnowledgeJob>> StartIngestionAsync(
         KnowledgeIngestionRequest request, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// APPLY A REVIEW DECISION TO THE KNOWLEDGE BASE. v0.3.9.2 — the producer capability the
+    /// contract listed as P13 and recorded as absent.
+    ///
+    /// It was absent against FORAGER 0.1.4, and `.155` built the whole proposal lifecycle around
+    /// that fact: a status this build could never reach would have been a promise in an enum.
+    /// FORAGER 0.6 publishes `POST /api/knowledge/:id/review` taking exactly the four actions this
+    /// colony proposes — `mark_reviewed`, `reject`, `restore`, `archive` — so the vocabulary needs
+    /// no mapping and none is invented. An action outside those four is refused HERE rather than
+    /// sent, because a mapping table between two products that already agree is a place for them to
+    /// stop agreeing.
+    ///
+    /// ON THE INGESTION INTERFACE, not the retrieval one: this is the mutating side, and the split
+    /// exists so that "this provider cannot change anything" stays expressible as a type.
+    /// </summary>
+    /// <returns>The item as the producer left it, so the console reports the state that now IS
+    /// rather than the one it asked for.</returns>
+    Task<KnowledgeOutcome<KnowledgeFact>> ApplyReviewAsync(
+        KnowledgeScope scope, string knowledgeId, string action, string? notes, string? actor,
+        CancellationToken cancellationToken);
+
     /// <summary>Real persisted job state. Never a synthesized or interpolated progress number.</summary>
     Task<KnowledgeOutcome<KnowledgeJob>> GetJobAsync(
         string jobId, KnowledgeScope scope, CancellationToken cancellationToken);

@@ -1792,6 +1792,8 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
        inferred, and a line an operator reads as provenance when it is a shared noun is the kind of
        wrong that teaches them to distrust the true ones. */
     .mv-chip.derived{border-style:dashed}
+    .mv-kindrow{padding-bottom:0}
+    .mv-kind.off{opacity:.5;text-decoration:line-through}
     .mv-tree{flex:1;overflow-y:auto;padding:4px 0 12px}
     .mv-folder,.mv-leaf{display:flex;align-items:center;gap:7px;padding:4px 12px;cursor:pointer;font-size:12px}
     .mv-folder{font-weight:600}
@@ -2418,6 +2420,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             </label>
             <button class="mv-btn" id="mv-clear">Clear</button>
           </div>
+          <div class="mv-groups mv-kindrow" id="mv-kinds"></div>
           <div class="mv-groups" id="mv-groups"></div>
           <div class="mv-tree" id="mv-tree"></div>
         </aside>

@@ -278,8 +278,8 @@ function knRenderShell(host) {
     + '<p class="kn-sub">Where two sources disagree. ANTHILL never picks a side for you.</p>'
     + '<div id="kn-conflicts"><div class="hud-state">Loading…</div></div></details>'
     + '<details class="kn-card"><summary>Review proposals</summary>'
-    + '<p class="kn-sub">Where the colony disagreed with a stored statement. Accepting records that '
-    + 'you agreed; it does not change the knowledge base.</p>'
+    + '<p class="kn-sub">Where the colony disagreed with a stored statement. Accept one to agree '
+    + 'with it, then <b>Apply</b> to send the change to FORAGER.</p>'
     + '<div id="kn-reviews"><div class="hud-state">Loading…</div></div></details>'
     + knBindingsCard(s);
 
@@ -1255,14 +1255,45 @@ async function knLoadReviews() {
         + `<p class="kn-lede">${escapeHtml(v.rationale || '')}</p>`
         + (v.mission_id ? `<p class="kn-sub">Raised by ${escapeHtml(v.proposed_by || 'a worker')} in mission <code>${escapeHtml(v.mission_id)}</code></p>` : '')
         + (v.decided_by ? `<p class="kn-sub">Decided by ${escapeHtml(v.decided_by)}${v.decision_note ? ': ' + escapeHtml(v.decision_note) : ''}</p>` : '')
+        /* v0.3.9.2 — ACCEPT, THEN APPLY, and they are two buttons because they are two acts.
+           Accepting is the operator agreeing; applying is FORAGER taking the change. `.155` could
+           only offer the first, and said so where the button was. */
         + (pending && knMayManage()
             ? `<button class="kn-btn kn-sm kn-primary" data-onclick="knDecideReview('${jsArg(v.id)}', true)">Accept</button>`
               + `<button class="kn-btn kn-sm" data-onclick="knDecideReview('${jsArg(v.id)}', false)">Decline</button>`
+            : '')
+        + (v.status === 'accepted' && knMayManage()
+            ? `<button class="kn-btn kn-sm kn-primary" data-onclick="knApplyReview('${jsArg(v.id)}')" `
+              + `title="Send this change to FORAGER">Apply to FORAGER</button>`
+            : '')
+        + (v.status === 'applied'
+            ? `<p class="kn-sub">Applied${v.applied_at ? ' ' + escapeHtml(String(v.applied_at).replace('T', ' ').slice(0, 16)) : ''} — FORAGER took the change.</p>`
             : '')
         + '</div>';
     }).join('') + '<div class="kn-say" id="kn-say-review"></div>';
   } catch (e) {
     host.innerHTML = '<div class="kn-empty">Proposals are not readable.</div>';
+  }
+}
+
+/**
+ * Send an accepted proposal to FORAGER. v0.3.9.2.
+ *
+ * The server applies it upstream FIRST and records the local `applied` only if that succeeded — a
+ * record saying a change landed when it did not is worse than no record, because nothing downstream
+ * has a reason to doubt it. So this reports whatever the server says happened and re-reads the list.
+ */
+async function knApplyReview(id) {
+  const say = document.getElementById('kn-say-review');
+  const tell = (msg, ok) => { if (say) { say.textContent = msg; say.className = 'kn-say' + (ok ? ' kn-ok' : ' kn-bad'); } };
+  tell('Applying…', true);
+  try {
+    const r = await api('/knowledge/reviews/' + encodeURIComponent(id) + '/apply', 'POST', {});
+    if (!r || !r.success) { tell((r && (r.error || r.message)) || 'FORAGER did not take the change.', false); return; }
+    await knLoadReviews();
+    tell(r.message || 'Applied.', true);
+  } catch (e) {
+    tell((e && e.message) || 'FORAGER did not take the change.', false);
   }
 }
 
