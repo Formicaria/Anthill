@@ -832,6 +832,7 @@ public sealed partial class SqliteMemory : IDisposable
             (18, "conversations", "Conversations, turns and escalation decisions persisted — a conversation survives restart and an escalated run reads as one history."),
             (19, "durable_attempts", "Workers and task attempts persisted with leases — a claim is atomic, a retry is a distinct attempt, and expired work is reclaimable."),
             (20, "artifact_evidence_store", "ADR-004 artifact and evidence stores (artifacts, evidence) — typed, hashed, append-only work products with provenance. Additive: nothing produces them yet."),
+            (21, "knowledge_seed_receipts", "v0.3.8.154 — the durable watermark for seeding missions from a bound FORAGER knowledge base. Column names are the shared contract's §5 change-feed envelope, adopted consumer-side now so producer events land in an already-shaped table when P2/P8 arrive; interim rows carry origin_kind 'synthesized:polling'. Created lazily on first use, like mission_jobs — recorded here so the ledger names every table the build can make."),
         };
         foreach (var (id, name, description) in migrations)
         {

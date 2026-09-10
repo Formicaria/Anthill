@@ -74,6 +74,10 @@ public static partial class ApiHost
     /// <param name="KnowledgeBase">The FORAGER project ref to bind it to. Empty UNBINDS.</param>
     private sealed record KnowledgeMapRequest(string? Project, string? KnowledgeBase);
 
+    /// <param name="Project">The ANTHILL project whose bound knowledge base to study. Empty means
+    /// the default binding, exactly as every other knowledge route reads it.</param>
+    private sealed record KnowledgeSeedRequest(string? Project);
+
     /// <summary>
     /// Build the module. Called from <c>Run()</c> before <c>builder.Build()</c>, and the result is
     /// passed to <c>Modules.LoadAll</c> — constructing it here rather than inline there is what lets
@@ -199,6 +203,16 @@ public static partial class ApiHost
                 ["project_map"] = AnthillRuntime.Knowledge.ProjectMap
                     .ToDictionary(kv => kv.Key, kv => (object?)kv.Value, StringComparer.Ordinal),
                 ["default_project"] = AnthillRuntime.Knowledge.DefaultProject,
+
+                // v0.3.8.154 — how much of each bound base the colony has already studied, so the
+                // console's button can say "12 already seeded" instead of offering an action whose
+                // effect the operator has to guess at. Counted from the receipts, which is the same
+                // record the seeding pass reads to decide what to skip: one source of truth, two
+                // readers.
+                ["seeded_counts"] = AnthillRuntime.Knowledge.ProjectMap
+                    .ToDictionary(kv => kv.Key,
+                                  kv => (object?)Queen.Memory.SeededSourceCount(kv.Value),
+                                  StringComparer.Ordinal),
 
                 // ---- What the console's on/off toggle needs to tell the truth. v0.3.8.124 -------
                 //
@@ -538,6 +552,45 @@ public static partial class ApiHost
                 : (project.Length == 0
                     ? "Default knowledge base cleared."
                     : $"Project '{project}' is no longer mapped to a knowledge base."));
+        });
+
+        // v0.3.8.154 — RUN THE COLONY OVER A KNOWLEDGE BASE.
+        //
+        // The operator's own request: "I should be able to click on one knowledge base and have it
+        // then run through the anthill automated missions to build its memory and pheromones."
+        //
+        // MANAGE, not Read: this queues real missions that spend real model calls. It is the same
+        // permission that binds the project, and for the same reason — deciding that the colony
+        // should go and work on a knowledge base is an operator action, never an agent's.
+        //
+        // What it builds, and the honest limits of that, are stated on `KnowledgeSeeder` and
+        // repeated to the operator in the console rather than left as a word that sounds bigger
+        // than the runtime.
+        app.MapPost("/knowledge/seed", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, KnowledgePermissions.Manage); if (auth is not null) return auth;
+
+            KnowledgeSeedRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<KnowledgeSeedRequest>().ConfigureAwait(false); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+
+            var project = (body?.Project ?? "").Trim();
+            var scope = ResolveKnowledgeScope(project);
+            if (!scope.IsQueryable) return KnowledgeScopeRefusal();
+
+            var result = await Anthill.Api.Knowledge.KnowledgeSeeder.SeedOnce(
+                Queen.Memory, Jobs, scope, project.Length == 0 ? null : project,
+                ctx.RequestAborted).ConfigureAwait(false);
+
+            if (!result.Ok) return ApiJson.Error(result.Message, "bad_request");
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["submitted"] = result.Submitted,
+                ["already_seeded"] = result.AlreadySeeded,
+                ["available"] = result.Available,
+                ["job_ids"] = result.JobIds,
+            }, result.Message);
         });
 
         // Start ingestion. Returns as soon as FORAGER has QUEUED the work — this request never waits

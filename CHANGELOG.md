@@ -1,3 +1,92 @@
+## v0.3.8.154 - click a knowledge base, and the colony goes and studies it
+
+**THE OPERATOR ASKED FOR THIS IN ONE SENTENCE, THREE RELEASES AGO:** "I should be able to click on
+one knowledge base and have it then run through the anthill automated missions to build its memory
+and pheromones." `.153` gave them the bindings panel. This is the button.
+
+**Study** queues one mission per document in the bound knowledge base — up to twenty-five a click —
+and skips every document already studied at its current version. The console shows how many of each
+base have been studied, counted from the same receipts the pass reads to decide what to skip: one
+record, two readers.
+
+**WHAT IT ACTUALLY BUILDS, IN THE SAME WORDS THE CONSOLE USES.** A seeded mission is an ordinary
+mission. When it finishes the archivist records one episodic memory candidate; a mission the verifier
+passes also records a procedural candidate and strengthens the three routes it took. A candidate is a
+RECORD, not a promoted memory — `MemoryCandidateIngest` stores rows and deliberately does not certify
+or promote them — and a pheromone trail is a ROUTE, not a fact. Studying a base teaches the colony
+which pipeline answers questions about it, not what the base says. Both are worth having, neither is
+"the colony has learned your documents", and the panel says so rather than letting the word "memory"
+carry a claim the runtime does not make.
+
+---
+
+**THE SECOND CLICK MUST DO NOTHING, AND THAT IS THE WHOLE ENGINEERING.**
+
+`FORAGER_SHARED_CONTRACT.md` §7 is unusually specific about how: at-least-once delivery with
+duplicate-safe effects, the receipt recorded BEFORE the work, and a stable key "derived from the
+source instance, mapped project, knowledge revision, action type and relevant automation-policy
+version". All five are in the key, and each one is a real fact about the world that should cause a
+document to be studied again.
+
+The sharpest is the GENERATION. §5 gives a restored or cloned FORAGER store a new one precisely
+because its history is not the old one — so without it, restoring a backup would leave every document
+reading as "already seeded", including documents that no longer exist. A missing content hash is
+recorded as `norev` rather than treated as "unchanged", because FORAGER does not always carry one and
+silence is not a version.
+
+**RECEIPT BEFORE QUEUE, and the ordering is the point.** A crash after the receipt and before the
+mission queue leaves a `received` row with no job, which the next pass finds and finishes. Reversed,
+the same crash would leave a queued mission with no row — a duplicate nothing can detect. The key is
+also handed to `ApiJobRegistry.Submit` as its idempotency key, so a repeat cannot even create a
+second job: the watermark and the queue check the same string.
+
+**AND THE COLUMN NAMES ARE THE PRODUCER'S.** `knowledge_seed_receipts` uses §5's change-feed envelope
+vocabulary — `event_id`, `sequence`, `revision_id`, `producer_instance_id`, `producer_generation`,
+`origin_kind`, `causation_id`, `logical_content_hash`, `publication_status` — adopted consumer-side
+now, as Phase 0 decision 3 commits both sides to, so that when the feed (P2) and the publication
+ledger (P8) land, producer events arrive in an already-shaped table instead of forcing a migration
+that reinterprets old rows. There is no feed yet: every row is made by polling `ListSourcesAsync`,
+and every row says so in `origin_kind`. The day a real event is recorded here, nothing has to guess
+which rows the consumer invented.
+
+**IT ENUMERATES DOCUMENTS, NOT FACTS, AND THAT IS FORCED.** `IKnowledgeProvider` has no
+enumerate-all-knowledge call — every retrieval surface is query-driven and the only listings that
+exist are sources and jobs. A document is also the only thing FORAGER assigns a durable id and a
+content hash to, so it is the only thing a watermark can honestly key on today. When P8 ships a
+revision ledger the key gains a real `revision_id` and nothing else about this changes.
+
+A document FORAGER has marked superseded or duplicate is not studied. It decided that; ANTHILL
+classifies nothing about knowledge, and starting here by studying a document its own producer marked
+as replaced would be the consumer overruling the producer on the producer's own subject.
+
+**THE GOAL IS A QUESTION**, which is a safety property rather than a style one: a question resolves
+to a class whose authority ceiling is `Observe`, so a pass that queues twenty-five missions from one
+click cannot patch, write or shell whatever any planner decides. The document's NAME reaches that
+goal from a filename somebody else chose, so it is quoted and bounded.
+
+---
+
+**AND A DIAGNOSTIC TEST OF THE COLONY WAS GRADED AS A FAILED DELIVERY.**
+
+From the operator's colony: "Run an end-to-end diagnostic mission… demonstrate that EVERY currently
+enabled executable role performs meaningful work." It mentioned fetching
+`https://www.rfc-editor.org/rfc/rfc8259` to check JSON rules. That bare url set the External flag,
+the goal's ordinary construction verbs — "Build", "Create", "Produce" — read as Change, and the
+mission was admitted to `external_action`: the class that promises something was SENT somewhere.
+`ExternalActionIntegrity` then refused it, correctly and unanswerably: "nothing was sent: no external
+destinations are configured, so 'JSON specification at https://…' names nothing this colony can
+reach." A test OF the colony was graded against a promise to send a message nobody asked it to send.
+
+`.109` had already written the rule that settles it: "World vs External is DIRECTION — External is
+where something GOES, World is where knowledge COMES FROM." A url says only that a place exists.
+Whether the colony is reading it or posting to it is said by the VERB, and a vocabulary list cannot
+see a verb — which is why the fix is in `ResolveTargets` rather than in a regex. A bare url is now a
+WORLD target; it becomes a destination when an outbound verb points at it.
+
+A NAMED delivery channel still stands alone: "webhook", "slack", "pagerduty" mean direction by
+themselves, whatever the sentence around them does. That asymmetry is the whole change — a proper
+noun for somewhere to send carries direction; a scheme does not.
+
 ## v0.3.8.153 - the refusal gets a control, and the route gets a caller
 
 **"No knowledge base is mapped for this project. Map it in `knowledge_project_map`, or set
