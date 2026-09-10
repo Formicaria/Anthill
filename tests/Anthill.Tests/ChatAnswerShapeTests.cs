@@ -411,4 +411,71 @@ public class ChatAnswerShapeTests
         Assert.Contains("https://www.iau.org/pluto", shown, StringComparison.Ordinal);
         Assert.Contains("Eight planets remain", shown, StringComparison.Ordinal);
     }
+
+    // ---- 6. a url is a place, not a direction -----------------------------------------------------
+
+    /// <summary>
+    /// THE OPERATOR'S DIAGNOSTIC MISSION, AND WHY IT COULD NOT PASS. v0.3.8.154.
+    ///
+    /// "Run an end-to-end diagnostic mission… demonstrate that EVERY currently enabled executable
+    /// role performs meaningful work" — a test OF the colony, which mentioned fetching
+    /// `https://www.rfc-editor.org/rfc/rfc8259` to check JSON rules. The bare url set the External
+    /// flag, ordinary construction verbs read as Change, and the mission was admitted to
+    /// `external_action`: the class that promises something was SENT somewhere. It was then refused,
+    /// correctly and unanswerably — "nothing was sent: no external destinations are configured".
+    ///
+    /// `.109` already wrote the rule: External is where something GOES, World is where knowledge
+    /// COMES FROM. A url says a place exists; the VERB says the direction.
+    /// </summary>
+    [Fact]
+    public void AMissionThatMerelyMentionsAUrl_IsNotAnExternalAction()
+    {
+        var specification = MissionIntake.Resolve(
+            "Run an end-to-end diagnostic mission: Active Colony Role Test. Build a small deliverable "
+          + "and produce an evidence-backed report. Fetch the JSON specification at "
+          + "https://www.rfc-editor.org/rfc/rfc8259 to validate the rules for arrays and numbers.");
+
+        Assert.NotEqual(MissionSpecification.ExternalActionClass, specification.MissionClass);
+        Assert.False(specification.Targets.HasFlag(MissionTargets.External),
+            "a url that is being READ is not a destination — see .109's direction rule");
+        Assert.True(specification.Targets.HasFlag(MissionTargets.World),
+            "a url IS somewhere outside the colony that can be read; that is what World means");
+    }
+
+    /// <summary>
+    /// AND SENDING TO ONE STILL IS. The verb is what carries the direction, so a request that posts
+    /// to a url must keep reaching the class that gates deliveries — otherwise this fix would have
+    /// bought a false negative with a false positive.
+    /// </summary>
+    [Theory]
+    [InlineData("post the release summary to https://hooks.example.com/build")]
+    [InlineData("send the report to https://hooks.example.com/build when the tests pass")]
+    [InlineData("publish the changelog to https://example.com/api/notes")]
+    public void SendingSomethingToAUrl_IsStillAnExternalDestination(string request)
+    {
+        Assert.True(MissionIntake.Resolve(request).Targets.HasFlag(MissionTargets.External));
+    }
+
+    /// <summary>
+    /// A NAMED DELIVERY CHANNEL NEEDS NO URL, which is the other half of the asymmetry: a proper
+    /// noun for somewhere to send carries direction by itself, and `.154` did not touch that list.
+    ///
+    /// THE FIRST CUT OF THIS TEST ASSERTED THE WRONG THING, and the mistake is worth keeping. It
+    /// used "tell the team's webhook…" and read `Resolve(...).Targets` — but `Resolve` returns
+    /// `MissionSpecification.General(request)` for a request no class claims, and `General` carries
+    /// `Targets = None`: the resolved dimensions are DISCARDED, not reported. So the assertion was
+    /// reading a field that says nothing about what `ResolveTargets` found, and "tell" is not a
+    /// change verb, so neither fixture reached a class at all. That is behaviour older than this
+    /// release and not what this release changed.
+    ///
+    /// Asserting on the CLASS is the honest test: a named channel plus an outbound verb still
+    /// reaches the lane that gates deliveries, with no url anywhere in the sentence.
+    /// </summary>
+    [Theory]
+    [InlineData("notify the team's slack that the build is green")]
+    [InlineData("post an incident to pagerduty when the disk fills")]
+    public void ANamedDestination_IsStillADestinationWithoutAUrl(string request)
+    {
+        Assert.Equal(MissionSpecification.ExternalActionClass, MissionIntake.Resolve(request).MissionClass);
+    }
 }

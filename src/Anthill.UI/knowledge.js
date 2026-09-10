@@ -642,17 +642,20 @@ function knMayManage() {
 
 function knBindingsCard(s) {
   const map = (s && s.project_map) || {};
+  const seeded = (s && s.seeded_counts) || {};
   const fallback = (s && s.default_project) || '';
   const rows = Object.keys(map).sort();
 
   const body = rows.length
     ? '<table class="kn-table"><thead><tr><th>ANTHILL project</th><th>FORAGER knowledge base</th>'
-      + (knMayManage() ? '<th></th>' : '') + '</tr></thead><tbody>'
+      + '<th>Documents</th>' + (knMayManage() ? '<th></th>' : '') + '</tr></thead><tbody>'
       + rows.map(p =>
           '<tr><td><code>' + escapeHtml(p) + '</code></td>'
         + '<td><code>' + escapeHtml(map[p]) + '</code></td>'
+        + '<td class="kn-sub">' + escapeHtml(String((seeded && seeded[p]) || 0)) + ' studied</td>'
         + (knMayManage()
-            ? '<td><button class="kn-btn kn-sm" data-onclick="knUnbind(\'' + jsArg(p) + '\')">Unbind</button></td>'
+            ? '<td><button class="kn-btn kn-sm" data-onclick="knSeed(\'' + jsArg(p) + '\')">Study</button>'
+              + '<button class="kn-btn kn-sm" data-onclick="knUnbind(\'' + jsArg(p) + '\')">Unbind</button></td>'
             : '')
         + '</tr>').join('')
       + '</tbody></table>'
@@ -681,6 +684,12 @@ function knBindingsCard(s) {
     + '<input id="kn-bind-base" class="kn-input" type="text" placeholder="FORAGER project ref" aria-label="FORAGER knowledge base">'
     + '<button class="kn-btn kn-primary" data-onclick="knBind()">Bind</button>'
     + '</div>'
+    + '<p class="kn-sub"><b>Study</b> runs the colony over the documents in that knowledge base — one '
+    + 'mission per document, up to 25 a click, skipping anything already studied at its current '
+    + 'version. Each finished mission records a memory candidate; one the verifier passes also '
+    + 'records a procedural candidate and strengthens the routes it took. A candidate is a record, '
+    + 'not a promoted memory, and a pheromone trail is a route rather than a fact — this teaches the '
+    + 'colony which pipeline answers questions about this base, not what the base says.</p>'
     + '<p class="kn-sub">The knowledge base is typed rather than chosen from a list because FORAGER '
     + 'publishes no way to enumerate its projects yet — that is P11 in '
     + '<code>docs/FORAGER_SHARED_CONTRACT.md</code>, and inventing an endpoint for it here would be '
@@ -716,6 +725,25 @@ async function knBind() {
     knSayBind(r.message || 'Bound.', true);
   } catch (e) {
     knSayBind((e && e.message) || 'The binding could not be written.', false);
+  }
+}
+
+/**
+ * Run the colony over a bound knowledge base. v0.3.8.154.
+ *
+ * One click is one PASS, not a subscription: it seeds what is new and says how much is left. That is
+ * deliberate — a button that silently enrolled a knowledge base into continuous work would be an
+ * automation decision made by a click that did not look like one.
+ */
+async function knSeed(project) {
+  knSayBind('Queueing missions…', true);
+  try {
+    const r = await api('/knowledge/seed', 'POST', { project: project });
+    if (!r || !r.success) { knSayBind((r && (r.error || r.message)) || 'Nothing was queued.', false); return; }
+    await loadKnowledge();
+    knSayBind(r.message || 'Queued.', true);
+  } catch (e) {
+    knSayBind((e && e.message) || 'Nothing was queued.', false);
   }
 }
 

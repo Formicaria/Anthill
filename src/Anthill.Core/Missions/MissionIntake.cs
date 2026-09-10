@@ -204,17 +204,53 @@ public static class MissionIntake
     /// </summary>
     private static readonly Regex ExternalTargets = new(
         @"\b(webhook|slack|discord|teams channel|pagerduty|opsgenie|endpoint|"
-      + @"external api|third[- ]party|https?://\S+)\b",
+      + @"external api|third[- ]party)\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// v0.3.8.154 — A URL IS A PLACE, NOT A DIRECTION, and it used to sit in
+    /// <see cref="ExternalTargets"/> above on the reasoning that "a url is a destination".
+    ///
+    /// FROM THE OPERATOR'S COLONY. A long diagnostic mission — "Run an end-to-end diagnostic
+    /// mission… demonstrate that EVERY currently enabled executable role performs meaningful work"
+    /// — mentioned fetching `https://www.rfc-editor.org/rfc/rfc8259` to check JSON rules. The bare
+    /// url set the External flag, the goal's ordinary construction verbs ("Build", "Create",
+    /// "Produce") read as Change, and the mission was admitted to `external_action`: the class that
+    /// promises something was SENT somewhere. `ExternalActionIntegrity` then refused it, correctly
+    /// and unanswerably — "nothing was sent: no external destinations are configured, so 'JSON
+    /// specification at https://…' names nothing this colony can reach". A test of the colony was
+    /// graded against a promise to send a message nobody had asked it to send.
+    ///
+    /// `.109` WROTE THE RULE THAT SETTLES THIS: "World vs External is DIRECTION — External is where
+    /// something GOES, World is where knowledge COMES FROM." A url on its own says only that a place
+    /// exists; whether the colony is reading it or posting to it is said by the VERB. So a bare url
+    /// is now a World target — somewhere outside the colony that can be read, which is exactly what
+    /// `WorldTargets` is for — and it becomes a DESTINATION only when an outbound verb points at it.
+    ///
+    /// A NAMED destination still stands alone, above: writing "webhook" or "pagerduty" is naming
+    /// somewhere to send, whatever the sentence around it does. That asymmetry is the whole content
+    /// of this change — a proper noun for a delivery channel means direction; a scheme does not.
+    /// </summary>
+    private static readonly Regex Url = new(@"https?://\S+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// The verbs that point AT a destination. A strict subset of <see cref="ChangeVerbs"/>'s
+    /// outbound half, kept separate because Change is far broader: "build", "create" and "update"
+    /// are Change and say nothing about sending anything anywhere.
+    /// </summary>
+    private static readonly Regex OutboundVerbs = new(
+        @"\b(post|posting|publish|publishing|send|sending|notify|notifying|deliver|delivering|"
+      + @"webhook|callback|push (?:to|it to))\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     /// <summary>
     /// v0.3.8.109 — the WORLD dimension: somewhere outside the colony that can be READ.
     ///
-    /// NO URL PATTERN HERE, and that is the one deliberate omission. <see cref="ExternalTargets"/>
-    /// matches a bare url because a url is a destination; matching one here too would set both flags
-    /// on every request carrying a link, and the research branch below refuses any request that also
-    /// names a destination. An operator who pastes a url and says "research this" is asking about a
-    /// page, and the honest way to reach that is a word, not a scheme.
+    /// NO URL PATTERN IN THIS LIST, and v0.3.8.154 changed what that means rather than leaving a
+    /// comment that had stopped being true. A bare url IS a World target now — it is added in
+    /// `ResolveTargets` rather than here, because whether it is somewhere to read or somewhere to
+    /// send depends on the verb beside it, which a vocabulary list cannot see. See `Url` above: the
+    /// old reading admitted a diagnostic mission to `external_action` for mentioning an RFC.
     ///
     /// `sources` and `citations` are PLURAL on purpose. <see cref="RepositoryTargets"/> already
     /// claims the singular `source` — the source tree — and the two mean opposite things. The word
@@ -702,6 +738,13 @@ public static class MissionIntake
         // that needs it. `.102` recorded what the other order costs: the Service flag existed
         // from `.98` with nothing resolving it, a dimension reaching nobody.
         if (ExternalTargets.IsMatch(request)) targets |= MissionTargets.External;
+
+        // v0.3.8.154 — a url is a DESTINATION only when something is being sent to it, and a place
+        // to READ otherwise. See `Url` above for the mission this was found in: a diagnostic test
+        // that mentioned fetching an RFC was admitted to the class that promises a delivery, and
+        // then refused for not having made one.
+        if (Url.IsMatch(request))
+            targets |= OutboundVerbs.IsMatch(request) ? MissionTargets.External : MissionTargets.World;
         // v0.3.8.109 — the World flag, declared and resolved in the release that needs it, per the
         // precedent `.102` set after the Service flag spent four releases reaching nobody.
         if (WorldTargets.IsMatch(request)) targets |= MissionTargets.World;
