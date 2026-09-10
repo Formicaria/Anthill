@@ -149,7 +149,7 @@ function knRemoteBlocked(s) {
  * of what is on rather than disappearing, because "knowledge is enabled" is
  * worth reading even by someone who may not change it.
  */
-function knGateBar(s) {
+function knGateBar(s, showEndpoint = true) {
   const ep = escapeHtml(s.configured_endpoint || s.endpoint || '—');
   let right;
   if (s.gate_env_pinned) {
@@ -161,8 +161,7 @@ function knGateBar(s) {
   }
 
   return '<div class="kn-gate">'
-    + '<span>Knowledge: <b class="kn-ok">enabled</b></span>'
-    + `<span class="kn-sub">${ep}</span>`
+    + (showEndpoint ? `<span class="kn-sub">${ep}</span>` : '')
     + '<span class="kn-gate-sp"></span>'
     + right
     + '</div>';
@@ -197,19 +196,10 @@ function knRenderShell(host) {
             : '');
     }
 
-    host.innerHTML = '<div class="kn-card"><h3>Knowledge is not configured</h3>'
-      + '<p class="kn-lede">This colony has no organizational knowledge base. Knowledge comes from '
-      + 'FORAGER, a separate local application that turns documents into evidence-backed, traceable '
-      + 'statements.</p>'
-      + `<p class="kn-sub">Endpoint: <code>${escapeHtml(ep || 'not set')}</code></p>`
-      + '<p class="kn-lede">Switching it on here sets <code>knowledge_enabled</code>. The endpoint '
-      + 'and the access token stay in the config file — they decide which service the colony '
-      + 'trusts, which is a decision to make in the file. Set '
-      + '<code>knowledge_forager_endpoint</code>; see <code>docs/FORAGER_INTEGRATION.md</code>.</p>'
-      + '<p class="kn-sub">Binding a project to a knowledge base is done here, once knowledge is on '
-      + '— under <b>Knowledge bases</b>. It used to be a config key too, and a refusal naming a key '
-      + 'to someone looking at a browser is not an answer.</p>'
-      + '<p class="kn-lede">Missions run normally without it.</p>'
+    host.innerHTML = '<div class="kn-card"><h3>Connect a knowledge base</h3>'
+      + '<p class="kn-lede">Knowledge comes from FORAGER, a separate local application that turns '
+      + 'documents into evidence-backed statements. Missions run normally without it.</p>'
+      + `<p class="kn-sub">Endpoint: <code>${escapeHtml(ep || 'not set — set knowledge_forager_endpoint in the config file')}</code></p>`
       + action
       + '<div class="kn-say" id="kn-say"></div></div>';
     return;
@@ -232,54 +222,70 @@ function knRenderShell(host) {
   }
 
   const projects = Array.isArray(s.projects) ? s.projects : [];
-  const backendNote = s.search_backend === 'sqlite-fts5'
-    ? 'ranked full-text search'
-    : 'substring fallback — no stemming or ranking';
+  const map = s.project_map || {};
+  const bound = knProject ? map[knProject] : (s.default_project || '');
+  const backendNote = s.search_backend === 'sqlite-fts5' ? 'ranked search' : 'substring fallback';
 
+  /* v0.3.8.157 — ONE CARD YOU ACT ON, AND EVERYTHING ELSE FOLDED AWAY.
+     The page had eight expanded cards and roughly nine hundred words of prose before an operator
+     reached a control, and the three things anyone actually comes here to do — connect, choose a
+     knowledge base, put documents in it — were spread across three of them, two screens apart. The
+     reasoning that prose carried is not deleted; it moved to docs/KNOWLEDGE_ARCHITECTURE.md and to
+     the code comments, which is where an argument belongs. A console says what is true now and
+     offers the next action. */
   host.innerHTML =
     '<div class="kn-card">'
-    + knGateBar(s)
     + '<div class="kn-searchrow">'
-    + '<input id="kn-q" class="kn-input" type="search" placeholder="Search organizational knowledge…" '
+    + `<span class="kn-pill kn-ok">connected</span> <code>${escapeHtml(s.endpoint || s.configured_endpoint || '')}</code>`
+    + `<span class="kn-sub">${escapeHtml(s.search_backend || '')} · ${escapeHtml(backendNote)}</span>`
+    + knGateBar(s, false)
+    + '</div>'
+    + knBaseRow(s, bound)
+    + knScheduleRow(s)
+    + knEndpointRow(s)
+    + '<div class="kn-say" id="kn-say-bind"></div>'
+    + '</div>'
+
+    + '<div class="kn-card">'
+    + '<div class="kn-searchrow">'
+    + '<input id="kn-q" class="kn-input" type="search" placeholder="Ask what the organization knows…" '
     + 'autocomplete="off" aria-label="Search organizational knowledge">'
     + '<button class="kn-btn kn-primary" data-onclick="knSearch()">Search</button>'
-    + '<button class="kn-btn" data-onclick="knRetrieve()" title="Assemble evidence-backed context, the way an agent receives it">Retrieve context</button>'
-    + '<button class="kn-btn" data-onclick="knEntity()" title="Look the query up as a person, project, customer or product">Look up entity</button>'
+    + '<button class="kn-btn" data-onclick="knRetrieve()" title="Assemble evidence-backed context, the way an agent receives it">Context</button>'
+    + '<button class="kn-btn" data-onclick="knEntity()" title="Look the query up as a person, project, customer or product">Entity</button>'
     + '</div>'
     + '<div class="kn-controls">'
     + (projects.length
         ? '<label class="kn-lbl">Project <select id="kn-project" class="kn-select" data-onchange="knSetProject()">'
           + '<option value="">(default)</option>'
-          + projects.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('')
+          + projects.map(p => `<option value="${escapeHtml(p)}"${p === knProject ? ' selected' : ''}>${escapeHtml(p)}</option>`).join('')
           + '</select></label>'
-        : '<span class="kn-sub">No project map configured — using the default knowledge base.</span>')
+        : '')
     + '<label class="kn-lbl"><input type="checkbox" id="kn-hist"> Include superseded</label>'
-    + `<span class="kn-sub">${escapeHtml(s.search_backend || '—')} · ${escapeHtml(backendNote)}`
-    + (s.model_provider ? ` · extraction: ${escapeHtml(s.model_provider)}` : '')
-    + '</span>'
     + '</div>'
     + '<div class="kn-say" id="kn-say"></div>'
     + '</div>'
+
     + '<div class="kn-cols">'
-    + '<div id="kn-results" class="kn-results"><div class="kn-empty">Search the knowledge base, or open the conflicts below to see where its sources disagree.</div></div>'
+    + '<div id="kn-results" class="kn-results"><div class="kn-empty">Search the knowledge base.</div></div>'
     + '<div id="kn-detail" class="kn-detail"><div class="kn-empty">Select a statement to see its evidence.</div></div>'
     + '</div>'
-    + knBindingsCard(s)
-    + '<div class="kn-card"><h3>Review proposals</h3>'
-    + '<p class="kn-lede">Where the colony read the evidence and disagreed with a stored statement. '
-    + 'Accepting records that you agreed — it does not change the knowledge base, because FORAGER '
-    + 'publishes no way to apply a review yet.</p>'
-    + '<div id="kn-reviews"><div class="hud-state">Loading…</div></div></div>'
-    + '<div class="kn-card"><h3>Conflicts</h3>'
-    + '<p class="kn-lede">Where two sources say different things. ANTHILL never picks a side on your behalf.</p>'
-    + '<div id="kn-conflicts"><div class="hud-state">Loading…</div></div></div>'
-    + '<div class="kn-card"><h3>Sources</h3>'
-    + '<p class="kn-lede">The documents this knowledge was extracted from. Duplicates and superseded versions are kept, never overwritten.</p>'
-    + '<div id="kn-sources"><div class="hud-state">Loading…</div></div></div>'
-    + '<div class="kn-card"><h3>Processing</h3>'
-    + '<p class="kn-lede">Ingestion runs in FORAGER. Progress below is its persisted stage state, not an estimate.</p>'
+
+    // FOLDED, NOT REMOVED. Each of these answers a question an operator has occasionally and
+    // nobody has on arrival, and `<details>` needs no state of its own to get that right.
+    + '<details class="kn-card" id="kn-import"><summary>Import documents</summary>'
     + knIngestForm()
-    + '<div id="kn-jobs"><div class="hud-state">Loading…</div></div></div>';
+    + '<div id="kn-jobs"><div class="hud-state">Loading…</div></div></details>'
+    + '<details class="kn-card"><summary>Sources</summary>'
+    + '<div id="kn-sources"><div class="hud-state">Loading…</div></div></details>'
+    + '<details class="kn-card"><summary>Conflicts</summary>'
+    + '<p class="kn-sub">Where two sources disagree. ANTHILL never picks a side for you.</p>'
+    + '<div id="kn-conflicts"><div class="hud-state">Loading…</div></div></details>'
+    + '<details class="kn-card"><summary>Review proposals</summary>'
+    + '<p class="kn-sub">Where the colony disagreed with a stored statement. Accepting records that '
+    + 'you agreed; it does not change the knowledge base.</p>'
+    + '<div id="kn-reviews"><div class="hud-state">Loading…</div></div></details>'
+    + knBindingsCard(s);
 
   const box = document.getElementById('kn-q');
   if (box) box.addEventListener('keydown', (e) => { if (e.key === 'Enter') knSearch(); });
@@ -288,6 +294,149 @@ function knRenderShell(host) {
   knLoadSources();
   knLoadJobs();
   knLoadReviews();
+}
+
+/**
+ * WHICH KNOWLEDGE BASE THIS PROJECT READS, AND THE THREE THINGS YOU DO WITH IT. v0.3.8.157.
+ *
+ * The whole of the common case in one row: bound or not, and Import / Study / Change beside it. The
+ * previous page put binding in a table three cards below the search box and ingestion in a fourth,
+ * so the ordinary path — connect, choose, import — crossed the entire page in the wrong order.
+ *
+ * TYPED RATHER THAN CHOSEN, still, and the note is now one line instead of a paragraph: FORAGER
+ * publishes no way to list its projects (P11), and inventing an endpoint here would be a second
+ * implementation of the same rule. The moment P11 lands this becomes a select and nothing else here
+ * changes.
+ */
+function knBaseRow(s, bound) {
+  const who = knProject ? `project <code>${escapeHtml(knProject)}</code>` : 'the default';
+
+  if (!knMayManage()) {
+    return bound
+      ? `<p class="kn-lede">${who} reads <code>${escapeHtml(bound)}</code>.</p>`
+      : `<p class="kn-lede">${who} has no knowledge base bound. Binding one needs <code>manage_knowledge</code>.</p>`;
+  }
+
+  if (bound) {
+    return `<p class="kn-lede">${who} reads <code>${escapeHtml(bound)}</code>.</p>`
+      + '<div class="kn-bindrow">'
+      + '<button class="kn-btn kn-primary" data-onclick="knImport()">Import documents</button>'
+      + `<button class="kn-btn" data-onclick="knSeed('${jsArg(knProject)}')" title="Run the colony over every document it has not studied yet, up to 25">Study</button>`
+      + `<button class="kn-btn" data-onclick="knUnbind('${jsArg(knProject)}')">Unbind</button>`
+      + '</div>';
+  }
+
+  return `<p class="kn-lede">${who} has no knowledge base bound, so missions in it retrieve nothing `
+    + 'and say so — never someone else\'s knowledge.</p>'
+    + '<div class="kn-bindrow">'
+    + '<input id="kn-bind-base" class="kn-input" type="text" placeholder="FORAGER project ref" aria-label="FORAGER knowledge base">'
+    + '<button class="kn-btn kn-primary" data-onclick="knBind()">Bind</button>'
+    + '</div>'
+    + '<p class="kn-sub">Use the project ref FORAGER shows for the knowledge base — it publishes no '
+    + 'way to list them yet (P11).</p>';
+}
+
+/**
+ * THE STUDY SCHEDULE, AS A SWITCH. v0.3.8.157.
+ *
+ * `.156` shipped `knowledge_auto_study` as a config key on the argument that a schedule for
+ * unattended work is a file decision. What that argument guards against is an automation nobody
+ * chose; a labelled switch is the opposite of that. It is off by default and it stays off until
+ * someone flips it here or writes the file.
+ *
+ * PINNED BY THE ENVIRONMENT IS A DIFFERENT STATE FROM OFF, and it is drawn as one: a write would
+ * persist to config.json, lose to the variable on the next projection, and leave the switch looking
+ * exactly as it did — the button that appears to do nothing. The gate above has said so since
+ * `.124` and this follows the same rule.
+ */
+function knScheduleRow(s) {
+  const on = (s && s.auto_study) === 'on';
+  const state = on
+    ? 'Studying every bound knowledge base every 6 hours, 25 documents a pass.'
+    : 'The colony studies a knowledge base only when you press Study.';
+
+  if (!knMayToggle()) {
+    return `<p class="kn-sub">Automatic study: <b>${on ? 'on' : 'off'}</b>. ${escapeHtml(state)}</p>`;
+  }
+
+  return '<div class="kn-bindrow">'
+    + '<label class="kn-lbl"><input type="checkbox" id="kn-autostudy"' + (on ? ' checked' : '')
+    + ' data-onchange="knSetAutoStudy()"> Study new documents automatically</label>'
+    + `<span class="kn-sub">${escapeHtml(state)}</span>`
+    + '</div>';
+}
+
+async function knSetAutoStudy() {
+  const on = !!document.getElementById('kn-autostudy')?.checked;
+  knSayBind(on ? 'Turning the schedule on…' : 'Turning the schedule off…', true);
+  try {
+    const r = await api('/settings', 'POST', { knowledge_auto_study: on ? 'on' : 'off' });
+    if (!r || !r.success) { knSayBind((r && r.message) || 'The setting could not be written.', false); return; }
+    await loadKnowledge();
+    knSayBind(on
+      ? 'Automatic study is on. The first pass runs within six hours; Study runs one now.'
+      : 'Automatic study is off. Study still works on demand.', true);
+  } catch (e) {
+    knSayBind((e && e.message) || 'The setting could not be written.', false);
+  }
+}
+
+/**
+ * WHERE FORAGER IS, AND THE ONE VALUE THIS FIELD CANNOT SET. v0.3.8.157.
+ *
+ * Writable because moving FORAGER to another port on this machine is an ordinary thing to do and
+ * should not require editing JSON. LOOPBACK ONLY, because pointing the colony's source of
+ * organizational fact at a host across the network is the decision the file exists for — the server
+ * refuses a non-loopback write unless `knowledge_forager_allow_remote` is already true in the file,
+ * and this field says so rather than letting the refusal arrive as a mystery.
+ */
+function knEndpointRow(s) {
+  const ep = (s && (s.configured_endpoint || s.endpoint)) || '';
+  if (!knMayToggle()) return '';
+
+  return '<details class="kn-sub"><summary>Change where FORAGER is</summary>'
+    + '<div class="kn-bindrow">'
+    + `<input id="kn-endpoint" class="kn-input" type="text" value="${escapeHtml(ep)}" `
+    + 'placeholder="http://127.0.0.1:8790" aria-label="FORAGER endpoint">'
+    + '<button class="kn-btn" data-onclick="knSetEndpoint()">Save</button>'
+    + '</div>'
+    + '<p class="kn-sub">This machine only. A FORAGER on another host needs '
+    + '<code>knowledge_forager_allow_remote</code> in the config file first — it has no '
+    + 'authentication of its own, so reaching one across a network is a decision to make there.</p>'
+    + '</details>';
+}
+
+async function knSetEndpoint() {
+  const value = (document.getElementById('kn-endpoint')?.value || '').trim();
+  knSayBind('Saving…', true);
+  try {
+    const r = await api('/settings', 'POST', { knowledge_forager_endpoint: value });
+    if (!r || !r.success) { knSayBind((r && r.message) || 'The endpoint could not be written.', false); return; }
+
+    // THE EFFECT, NOT THE MESSAGE. `ApplySettingsUpdate` refuses a non-loopback endpoint by NOT
+    // APPLYING it, and still answers success for the request as a whole — so reading the reply
+    // would report a refusal as a save. Re-read what the colony is actually configured with and
+    // say which of the two happened. A claim is not a result.
+    await loadKnowledge();
+    const now = (knStatus && (knStatus.configured_endpoint || knStatus.endpoint)) || '';
+    if (value && now !== value) {
+      knSayBind('Refused: that endpoint is not on this machine, and '
+        + 'knowledge_forager_allow_remote is off in the config file. Still using ' + now + '.', false);
+      return;
+    }
+    knSayBind('Endpoint saved. Live on the next request — no restart needed.', true);
+  } catch (e) {
+    knSayBind((e && e.message) || 'The endpoint could not be written.', false);
+  }
+}
+
+/** Open the import panel and put the cursor in it. The button and the panel are one action. */
+function knImport() {
+  const panel = document.getElementById('kn-import');
+  if (!panel) return;
+  panel.open = true;
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  document.getElementById('kn-ingest-paths')?.focus();
 }
 
 function knSetProject() {
@@ -653,55 +802,36 @@ function knBindingsCard(s) {
   const rows = Object.keys(map).sort();
 
   const body = rows.length
-    ? '<table class="kn-table"><thead><tr><th>ANTHILL project</th><th>FORAGER knowledge base</th>'
-      + '<th>Documents</th>' + (knMayManage() ? '<th></th>' : '') + '</tr></thead><tbody>'
+    ? '<table class="kn-table"><thead><tr><th>ANTHILL project</th><th>Knowledge base</th>'
+      + '<th>Studied</th>' + (knMayManage() ? '<th></th>' : '') + '</tr></thead><tbody>'
       + rows.map(p =>
           '<tr><td><code>' + escapeHtml(p) + '</code></td>'
         + '<td><code>' + escapeHtml(map[p]) + '</code></td>'
-        + '<td class="kn-sub">' + escapeHtml(String((seeded && seeded[p]) || 0)) + ' studied</td>'
+        + '<td class="kn-sub">' + escapeHtml(String((seeded && seeded[p]) || 0)) + '</td>'
         + (knMayManage()
             ? '<td><button class="kn-btn kn-sm" data-onclick="knSeed(\'' + jsArg(p) + '\')">Study</button>'
               + '<button class="kn-btn kn-sm" data-onclick="knUnbind(\'' + jsArg(p) + '\')">Unbind</button></td>'
             : '')
         + '</tr>').join('')
       + '</tbody></table>'
-    : '<div class="kn-empty">No project is bound to a knowledge base yet. A mission in an unbound '
-      + 'project retrieves nothing and says so — it never falls back to someone else’s knowledge.</div>';
+    : '<div class="kn-empty">Nothing bound yet.</div>';
 
-  const fallbackRow =
-    '<p class="kn-sub">Default knowledge base: '
-    + (fallback ? '<code>' + escapeHtml(fallback) + '</code>' : '<i>none</i>')
-    + ' — used by the console when no project is selected. A MISSION never falls back to it: a '
-    + 'mission reading a knowledge base that is not its own is the failure the mapping exists to '
-    + 'prevent.</p>';
-
-  if (!knMayManage()) {
-    return '<div class="kn-card"><h3>Knowledge bases</h3>' + body + fallbackRow
-         + '<p class="kn-sub">Changing a binding needs <code>manage_knowledge</code>.</p></div>';
-  }
-
-  return '<div class="kn-card"><h3>Knowledge bases</h3>'
-    + '<p class="kn-lede">Which FORAGER knowledge base each ANTHILL project reads. A project with no '
-    + 'binding refuses rather than guessing.</p>'
+  return '<details class="kn-card"><summary>All bindings</summary>'
+    + '<p class="kn-sub">Which knowledge base each project reads. A project with no binding refuses '
+    + 'rather than guessing, and a mission never falls back to the default — reading a knowledge base '
+    + 'that is not its own is the failure the mapping exists to prevent.</p>'
     + body
-    + fallbackRow
-    + '<div class="kn-bindrow">'
-    + '<input id="kn-bind-project" class="kn-input" type="text" placeholder="ANTHILL project id (blank = the default)" aria-label="ANTHILL project id">'
-    + '<input id="kn-bind-base" class="kn-input" type="text" placeholder="FORAGER project ref" aria-label="FORAGER knowledge base">'
-    + '<button class="kn-btn kn-primary" data-onclick="knBind()">Bind</button>'
-    + '</div>'
-    + '<p class="kn-sub"><b>Study</b> runs the colony over the documents in that knowledge base — one '
-    + 'mission per document, up to 25 a click, skipping anything already studied at its current '
-    + 'version. Each finished mission records a memory candidate; one the verifier passes also '
-    + 'records a procedural candidate and strengthens the routes it took. A candidate is a record, '
-    + 'not a promoted memory, and a pheromone trail is a route rather than a fact — this teaches the '
-    + 'colony which pipeline answers questions about this base, not what the base says.</p>'
-    + '<p class="kn-sub">The knowledge base is typed rather than chosen from a list because FORAGER '
-    + 'publishes no way to enumerate its projects yet — that is P11 in '
-    + '<code>docs/FORAGER_SHARED_CONTRACT.md</code>, and inventing an endpoint for it here would be '
-    + 'a second implementation of the same rule. Use the project ref FORAGER shows for the '
-    + 'knowledge base.</p>'
-    + '<div class="kn-say" id="kn-say-bind"></div></div>';
+    + '<p class="kn-sub">Default (console only): '
+    + (fallback ? '<code>' + escapeHtml(fallback) + '</code>' : '<i>none</i>') + '</p>'
+    + (knMayManage()
+        ? '<div class="kn-bindrow">'
+          + '<input id="kn-map-project" class="kn-input" type="text" placeholder="ANTHILL project id (blank = default)" aria-label="ANTHILL project id">'
+          + '<input id="kn-map-base" class="kn-input" type="text" placeholder="FORAGER project ref" aria-label="FORAGER knowledge base">'
+          + '<button class="kn-btn" data-onclick="knBindOther()">Bind</button>'
+          + '</div>'
+          + '<div class="kn-say" id="kn-say-map"></div>'
+        : '<p class="kn-sub">Changing a binding needs <code>manage_knowledge</code>.</p>')
+    + '</details>';
 }
 
 function knSayBind(msg, ok) {
@@ -718,19 +848,38 @@ function knSayBind(msg, ok) {
  * stated in the placeholder — the two must agree or the field lies about what it does.
  */
 async function knBind() {
-  const project = (document.getElementById('kn-bind-project')?.value || '').trim();
   const base = (document.getElementById('kn-bind-base')?.value || '').trim();
+  if (!base) { knSayBind('Enter the FORAGER project ref to bind to.', false); return; }
+  await knWriteBinding(knProject, base, knSayBind);
+}
 
-  if (!base) { knSayBind('Enter the FORAGER project ref to bind to. To remove a binding, use Unbind.', false); return; }
+/** The same write, from the folded table, for a project that is not the one selected above. */
+async function knBindOther() {
+  const say = (msg, ok) => {
+    const el = document.getElementById('kn-say-map');
+    if (el) { el.textContent = msg || ''; el.className = 'kn-say' + (msg ? (ok ? ' kn-ok' : ' kn-bad') : ''); }
+  };
+  const base = (document.getElementById('kn-map-base')?.value || '').trim();
+  if (!base) { say('Enter the FORAGER project ref to bind to.', false); return; }
+  await knWriteBinding((document.getElementById('kn-map-project')?.value || '').trim(), base, say);
+}
 
-  knSayBind('Binding…', true);
+/**
+ * ONE WRITER FOR TWO CONTROLS. The row at the top and the table below it bind the same thing; two
+ * copies of this call is how one of them ends up sending a field the other stopped sending.
+ *
+ * An empty project sets the DEFAULT rather than erroring, which is the route's own rule and is
+ * stated in the placeholder — the two must agree or the field lies about what it does.
+ */
+async function knWriteBinding(project, base, say) {
+  say('Binding…', true);
   try {
     const r = await api('/knowledge/project-map', 'POST', { project: project, knowledge_base: base });
-    if (!r || !r.success) { knSayBind((r && (r.error || r.message)) || 'The binding could not be written.', false); return; }
+    if (!r || !r.success) { say((r && (r.error || r.message)) || 'The binding could not be written.', false); return; }
     await loadKnowledge();
-    knSayBind(r.message || 'Bound.', true);
+    say(r.message || 'Bound.', true);
   } catch (e) {
-    knSayBind((e && e.message) || 'The binding could not be written.', false);
+    say((e && e.message) || 'The binding could not be written.', false);
   }
 }
 
@@ -783,18 +932,17 @@ async function knUnbind(project) {
 
 function knIngestForm() {
   if (!knMayManage()) {
-    return '<p class="kn-sub">Starting ingestion needs <code>manage_knowledge</code>.</p>';
+    return '<p class="kn-sub">Starting an import needs <code>manage_knowledge</code>.</p>';
   }
   return '<div class="kn-ingest">'
+    + '<p class="kn-sub">Folders or files inside the colony workspace, one per line. FORAGER parses '
+    + 'them; ANTHILL never reads them, and a path that leaves the workspace is refused.</p>'
     + '<textarea id="kn-ingest-paths" class="kn-input" rows="3" '
-    + 'placeholder="Folders or files to ingest, one per line — inside the colony workspace" '
-    + 'aria-label="Paths to ingest"></textarea>'
+    + 'placeholder="docs/&#10;handbook/policies.md" aria-label="Paths to import"></textarea>'
     + '<div class="kn-bindrow">'
-    + '<label class="kn-lbl"><input type="checkbox" id="kn-ingest-force"> Re-read unchanged sources</label>'
-    + '<button class="kn-btn kn-primary" data-onclick="knStartIngest()">Start ingestion</button>'
+    + '<label class="kn-lbl"><input type="checkbox" id="kn-ingest-force"> Re-read unchanged files</label>'
+    + '<button class="kn-btn kn-primary" data-onclick="knStartIngest()">Import</button>'
     + '</div>'
-    + '<p class="kn-sub">Paths are resolved against the colony workspace and refused if they leave '
-    + 'it. FORAGER parses the documents; ANTHILL never reads them.</p>'
     + '<div class="kn-say" id="kn-say-ingest"></div></div>';
 }
 

@@ -703,8 +703,30 @@ public sealed class AnthillConfig
     // The colony's organizational knowledge comes from FORAGER, a separate local application. See
     // docs/FORAGER_INTEGRATION.md for the boundary and docs/KNOWLEDGE_API.md for the surface.
     //
-    // EVERY KEY HERE IS FileOnly EXCEPT THE ON/OFF SWITCH, and the line is drawn where it is on
-    // purpose. v0.3.8.124 moved exactly one key across it; the rest did not move.
+    // THREE KEYS ARE CONSOLE-WRITABLE AND THE REST ARE NOT, and the line is drawn where it is on
+    // purpose. v0.3.8.124 moved the on/off switch; v0.3.8.157 moved the endpoint (loopback only —
+    // see below) and the study schedule. Nothing else has moved.
+    //
+    // v0.3.8.157 — WHY TWO MORE CROSSED. The operator's argument, and it is correct: nobody edits
+    // JSON to turn a feature on, so a control that only exists in a file is a control most colonies
+    // will never use. The answer is not to move everything — it is to move what a CONSOLE may safely
+    // decide, and to keep what a compromised console must not.
+    //
+    // `knowledge_auto_study` decides whether the colony studies its own bound knowledge bases on a
+    // timer. Its blast radius is missions this colony queues against knowledge the operator already
+    // mapped, at an Observe ceiling, on the operator's own machine. `.156` argued it was a file
+    // decision because "a decision belongs where a decision is made" — but a labelled switch in the
+    // console IS the decision being made, explicitly, by the person it belongs to. The thing that
+    // argument was really guarding against is an automation that starts without anyone choosing it,
+    // and a toggle is the opposite of that. It stays OFF by default.
+    //
+    // `knowledge_forager_endpoint` decides which service the colony trusts as its source of fact,
+    // which is exactly the decision a compromised console must not make — so it crossed WITH A
+    // GUARD rather than plainly: `ApplySettingsUpdate` refuses a non-loopback endpoint unless
+    // `knowledge_forager_allow_remote` is already true IN THE FILE. What a console can do is point
+    // the colony at a different port on this machine, which is the case an operator actually has;
+    // what it cannot do is send the colony's questions to a host across the network, which is the
+    // case the rule exists for.
     //
     // WHAT STAYS IN THE FILE, and why. knowledge_forager_endpoint decides which service the colony
     // trusts as the source of organizational fact. knowledge_forager_token is the credential for it.
@@ -736,7 +758,10 @@ public sealed class AnthillConfig
         Section = "knowledge", SectionNote = """Organizational knowledge, retrieved from FORAGER (https://github.com/Formicaria/Forager) -- a separate local application that turns documents into canonical, evidence-backed knowledge. OFF BY DEFAULT: with knowledge_enabled false every knowledge tool refuses at call time (tools stay registered so role readiness does not depend on the flag), the console reports the feature as unconfigured, and nothing about an existing colony changes. ANTHILL never parses documents, never stores knowledge and never resolves conflicts -- it asks FORAGER, and presents what comes back with its support level and its provenance intact. This integration adds NO tables to ANTHILL's database, so enabling and disabling it are both safe. Retrieval is scoped: knowledge_project_map decides which FORAGER project a mission's ANTHILL project may read, and a mission whose project is unmapped retrieves nothing rather than falling back to a default.""")]
     [JsonPropertyName("knowledge_enabled")] public bool KnowledgeEnabled { get; set; } = false;
 
-    [ConfigKey(Security = ConfigSecurity.Environment, EnvOverride = "ANTHILL_KNOWLEDGE_FORAGER_ENDPOINT",
+    // Editable, and LOOPBACK-ONLY from the console — the guard is in `ApplySettingsUpdate`, not
+    // here, because an attribute can say who may write a key and not what value is acceptable.
+    [ConfigKey(Exposure = ConfigExposure.Editable,
+        Security = ConfigSecurity.Environment, EnvOverride = "ANTHILL_KNOWLEDGE_FORAGER_ENDPOINT",
         ExampleJson = "\"http://127.0.0.1:8790\"")]
     [JsonPropertyName("knowledge_forager_endpoint")] public string KnowledgeForagerEndpoint { get; set; } = "http://127.0.0.1:8790";
 
@@ -780,7 +805,8 @@ public sealed class AnthillConfig
     /// missions whose class carries an `Observe` ceiling, which is the property that makes an
     /// unattended lane safe enough to offer at all.
     /// </summary>
-    [ConfigKey(Security = ConfigSecurity.Safety, EnvOverride = "ANTHILL_KNOWLEDGE_AUTO_STUDY",
+    [ConfigKey(Exposure = ConfigExposure.Editable,
+        Security = ConfigSecurity.Safety, EnvOverride = "ANTHILL_KNOWLEDGE_AUTO_STUDY",
         ExampleJson = "\"off\"")]
     [JsonPropertyName("knowledge_auto_study")] public string KnowledgeAutoStudy { get; set; } = "off";
 

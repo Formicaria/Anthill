@@ -386,8 +386,33 @@ public sealed record KnowledgeContext
         if (!string.IsNullOrWhiteSpace(Metadata.Degradation))
             text.Append("\nNOTE: partial retrieval — ").Append(Metadata.Degradation).Append('\n');
 
+        // v0.3.8.157 — THE CITABLE IDENTITIES, LAST. Everything above is for a model deciding what
+        // to believe; this is for the answer that follows having something to be held to. See
+        // `KnowledgeCitations` for why the identity is a url and why the writer and the reader of
+        // this block live in one file.
+        text.Append(KnowledgeCitations.RenderBlock(Citable()));
+
         return text.ToString();
     }
+
+    /// <summary>
+    /// WHAT AN ANSWER MAY REST ON, out of everything this context holds. v0.3.8.157.
+    ///
+    /// EVIDENCE, AND NOT <see cref="KnowledgeFact.HasProvenance"/>, which is the near-miss worth
+    /// naming. That predicate is Rule 9 — a fact carries evidence OR is explicitly UNRESOLVED, and
+    /// there is no third state — so it is TRUE for a statement whose supporting text could not be
+    /// located. The renderer prints exactly that statement as UNRESOLVED and tells the model not to
+    /// rely on it without checking the source itself; handing it back as a citable source would let
+    /// an answer rest on the one fact this context has said it cannot support. Citable means there
+    /// is something to go and read.
+    ///
+    /// The statement is the title because a citation an operator reads should say what was cited.
+    /// </summary>
+    public IReadOnlyList<KnowledgeCitation> Citable() =>
+        Facts.Where(f => f.EvidenceIds.Count > 0)
+             .Select(f => new KnowledgeCitation(
+                 KnowledgeCitations.UrlFor(Metadata.Scope.ProjectRef, f.KnowledgeId), f.Statement))
+             .ToList();
 
     private static string Words(KnowledgeSupport support) => support switch
     {

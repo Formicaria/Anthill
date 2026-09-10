@@ -15,7 +15,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "0.3.8.156";
+    public const string Version = "0.3.8.157";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -616,9 +616,15 @@ public static class AnthillRuntime
     /// <remarks>
     /// The setter is INTERNAL rather than private so the suite can drive the pass without writing a
     /// config file — `InternalsVisibleTo("Anthill.Tests")`, which widens nothing for anyone else.
-    /// It is not `ApplySettingsUpdate`-editable and must not become so: this key decides whether a
-    /// colony does unattended work, which is a file decision by the same argument
-    /// `knowledge_forager_allow_remote` makes one line of reasoning away.
+    ///
+    /// v0.3.8.157 — IT IS NOW `ApplySettingsUpdate`-EDITABLE, reversing `.156`'s judgement, and the
+    /// reversal is worth stating rather than quietly making. `.156` said a schedule for unattended
+    /// work is a file decision. What that argument actually guards against is an automation that
+    /// STARTS WITHOUT ANYONE CHOOSING IT — and a labelled switch in the console is the opposite of
+    /// that: it is the decision, made explicitly, by the person it belongs to. The alternative was a
+    /// control that exists only in JSON, which for most colonies means a control that is never used.
+    /// It still ships OFF, a typo still reads as off, and `knowledge_forager_allow_remote` — the key
+    /// `.156` reasoned from — did NOT move, because that one widens who the colony may talk to.
     /// </remarks>
     public static string KnowledgeAutoStudy { get; internal set; } = "off";
 
@@ -1521,6 +1527,45 @@ public static class AnthillRuntime
     /// the merged config is re-projected into the live runtime gates, and the result is persisted
     /// back to config.json so it survives a restart. Returns the keys that were actually applied.
     /// </summary>
+    /// <summary>The endpoint key, spelled once for the guard below and its test.</summary>
+    public const string KnowledgeEndpointKey = "knowledge_forager_endpoint";
+
+    /// <summary>
+    /// A WRITE THE CONSOLE MAY MAKE IN GENERAL AND NOT WITH THIS VALUE. v0.3.8.157.
+    ///
+    /// `ConfigExposure` says WHO may write a key; it cannot say WHICH VALUES are acceptable, and
+    /// `knowledge_forager_endpoint` is the first key where those two questions have different
+    /// answers. An operator moving FORAGER to a different port on their own machine is the ordinary
+    /// case and should not require editing JSON. Pointing the colony's source of organizational
+    /// fact at a host across the network is the case the section is FileOnly for — a compromised
+    /// console must not be able to redirect what the colony believes, and FORAGER has no
+    /// authentication of its own to make the far end prove anything.
+    ///
+    /// So the console may write a LOOPBACK endpoint, and anything else only when
+    /// `knowledge_forager_allow_remote` is ALREADY TRUE IN THE FILE — the operator having made that
+    /// decision where it belongs. `UrlSafety.IsLoopbackBindHost` is the same predicate the knowledge
+    /// client refuses on, so the console cannot accept a value the client will then reject.
+    ///
+    /// REFUSED MEANS NOT APPLIED, silently to the config and visibly to the caller: the key is
+    /// absent from the returned list, which is exactly how the settings surface already reports a
+    /// key it would not write. A refusal that wrote the value and logged a warning would be worse
+    /// than either honest answer.
+    ///
+    /// An EMPTY value is allowed through: clearing the endpoint configures nothing and reaches
+    /// nobody, which is a way to switch the feature off rather than a way to redirect it.
+    /// </summary>
+    private static bool RefusedSettingWrite(string key, JsonElement value)
+    {
+        if (!string.Equals(key, KnowledgeEndpointKey, StringComparison.OrdinalIgnoreCase)) return false;
+        if (Config.KnowledgeForagerAllowRemote) return false;
+
+        var raw = (value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : "").Trim();
+        if (raw.Length == 0) return false;
+
+        return !(Uri.TryCreate(raw, UriKind.Absolute, out var uri)
+              && Anthill.SDK.Common.UrlSafety.IsLoopbackBindHost(uri.Host));
+    }
+
     public static List<string> ApplySettingsUpdate(Dictionary<string, JsonElement> updates)
     {
         lock (InitLock)
@@ -1531,6 +1576,7 @@ public static class AnthillRuntime
             foreach (var (key, value) in updates)
             {
                 if (!ConfigCatalog.IsEditable(key)) continue;
+                if (RefusedSettingWrite(key, value)) continue;
                 dict[key] = value;
                 applied.Add(key);
             }

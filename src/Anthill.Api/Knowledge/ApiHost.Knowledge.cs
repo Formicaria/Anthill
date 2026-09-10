@@ -254,6 +254,11 @@ public static partial class ApiHost
                 // shown an Enable button deserves to know that before pressing it, not after.
                 ["allow_remote"] = AnthillRuntime.Knowledge.AllowRemote,
 
+                // v0.3.8.157 — the study schedule, so the console can draw the switch in the state
+                // the colony is actually in. Projected the same way the runtime reads it: anything
+                // unrecognised is `off`, so the page cannot show a schedule that is not running.
+                ["auto_study"] = AnthillRuntime.KnowledgeAutoStudy,
+
                 // AND WHETHER THE SWITCH IS PINNED BY THE ENVIRONMENT.
                 //
                 // `AnthillRuntime` projects `Enabled` as env-over-file, so on a colony that exports

@@ -107,12 +107,13 @@ public sealed record KnowledgeOptions
     /// this check could meaningfully survive anyway. ANY OTHER NAME IS NOT LOOPBACK: an unresolvable
     /// or unparseable host fails closed and needs knowledge_forager_allow_remote set deliberately.
     /// </summary>
-    internal static bool IsLoopback(Uri uri)
-    {
-        if (System.Net.IPAddress.TryParse(uri.Host, out var address))
-            return System.Net.IPAddress.IsLoopback(address);
-        return string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase);
-    }
+    /// v0.3.8.157 — ONE IMPLEMENTATION, IN THE SDK. `AnthillRuntime` has to answer the same
+    /// question now that the console may write the endpoint, and two spellings of "is this
+    /// loopback" is the shape this repository keeps paying for. `UrlSafety.IsLoopbackBindHost`
+    /// answers it identically — parsed address, the whole 127/8 range, `::1` with or without
+    /// brackets, and the literal `localhost` — and lives where both callers can reach it.
+    internal static bool IsLoopback(Uri uri) =>
+        Anthill.SDK.Common.UrlSafety.IsLoopbackBindHost(uri.Host);
 }
 
 /// <summary>

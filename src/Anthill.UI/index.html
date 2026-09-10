@@ -2971,6 +2971,14 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
              marks metadata; support levels borrow the semantic status colours so a direct fact and
              an unverified claim are distinguishable at a glance and not only by reading. */
           #page-knowledge .kn-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:10px}
+          /* v0.3.8.157 — the folded sections. A card whose heading is a disclosure control reads as
+             the same card, so the page keeps one visual language whether a section is open or not. */
+          #page-knowledge details.kn-card>summary{cursor:pointer;font-weight:600;color:var(--fg);list-style:none;user-select:none}
+          #page-knowledge details.kn-card>summary::-webkit-details-marker{display:none}
+          #page-knowledge details.kn-card>summary::before{content:'\25B8  ';color:var(--dim)}
+          #page-knowledge details.kn-card[open]>summary::before{content:'\25BE  '}
+          #page-knowledge details.kn-card>summary:hover{color:var(--muted)}
+          #page-knowledge details.kn-card[open]>summary{margin-bottom:8px}
           #page-knowledge h3{font-size:12px;margin:0 0 4px}
           #page-knowledge .kn-lede{font-size:10px;color:var(--dim);margin:0 0 8px;line-height:1.5}
           #page-knowledge .kn-sub{font-size:8px;color:var(--dim);font-family:var(--mono)}
