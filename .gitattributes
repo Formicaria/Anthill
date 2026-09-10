@@ -16,6 +16,28 @@
 # file in the repository on the next checkout — a diff touching thousands of lines, mixed into
 # whatever release happened to carry it, for a problem that only ever affected five files. The five
 # are named by extension so a sixth added tomorrow is covered without anybody remembering.
+#
+# ----------------------------------------------------------------------------------------------
+# AMENDED 2026-09-10, ahead of the monorepo consolidation. The paragraph above is right about the
+# risk and wrong about the number, and it is worth leaving both in view rather than pretending the
+# original call was made badly.
+#
+# Measured before touching anything: 599 of 940 tracked files here read `i/lf w/crlf` — LF in the
+# index, CRLF on disk. That looks exactly like the thousand-line renormalize the paragraph above
+# refuses to sign off on. It isn't. The index is already LF on every one of them, because
+# `core.autocrlf=input` has been sitting in .git/config normalizing on the way in this entire time.
+# Turning on `* text=auto eol=lf` moves two files. Two. Not thousands.
+#
+# So the narrowness was buying nothing, and it was quietly costing something. anthill was only
+# clean because of a value in .git/config — which is the exact "rule that depends on every clone
+# being configured the same way" the paragraph above calls not a rule. It was just aimed at the
+# wrong setting. .git/config does not survive a subtree merge into the monorepo. This file does.
+# So the rule lives here now, where it travels with the code.
+# ----------------------------------------------------------------------------------------------
+
+# Text is LF in the repo and LF on disk, everywhere, no exceptions worth arguing about.
+* text=auto eol=lf
+
 *.sh text eol=lf
 
 # The same reasoning inverted, and worth stating rather than leaving to `text=auto`'s guess: a
@@ -23,3 +45,38 @@
 # parses. These are the one case where the conversion is the correct behaviour.
 *.cmd text eol=crlf
 *.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Shebang files that carry no extension. `.githooks/pre-push` is the one that bit: the *.sh rule
+# above never matched it, so the hook was one bad checkout away from the same `$'\r': command not
+# found` garbage that started all this. Named explicitly so it cannot drift back.
+.githooks/* text eol=lf
+build.sh text eol=lf
+
+# Deployed onto Linux boxes and read by systemd and polkit, both of which are humourless about \r.
+*.template text eol=lf
+deploy/lxc/** text eol=lf
+Dockerfile text eol=lf
+
+# Never transform these. Signing certs and packed artifacts get mangled silently, which is the
+# worst way for a thing to break.
+*.ico binary
+*.png binary
+*.jpg binary
+*.gif binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.tar binary
+*.tgz binary
+*.7z binary
+*.nupkg binary
+*.snupkg binary
+*.pfx binary
+*.snk binary
+*.dll binary
+*.exe binary
+*.pdb binary
+*.bin binary
+*.woff binary
+*.woff2 binary
