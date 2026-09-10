@@ -15,7 +15,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "0.3.9.2";
+    public const string Version = "0.3.9.3";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -610,8 +610,10 @@ public static class AnthillRuntime
     public static string AutoUpdate { get; private set; } = "silent";
 
     /// <summary>
-    /// v0.3.8.156 - off | on. Whether bound knowledge bases are studied on a timer as well as on a
-    /// click. See AnthillConfig.KnowledgeAutoStudy for why the default is off.
+    /// v0.3.9.3 - off | suggest | on. What the timer does with bound knowledge bases: nothing,
+    /// analysis without queueing, or analysis that queues. See AnthillConfig.KnowledgeAutoStudy for
+    /// why the default is off, and KnowledgeSeeder.SeedOnce's `queue` argument for why `suggest`
+    /// costs one boolean rather than a second code path.
     /// </summary>
     /// <remarks>
     /// The setter is INTERNAL rather than private so the suite can drive the pass without writing a
@@ -1382,7 +1384,7 @@ public static class AnthillRuntime
         KnowledgeAutoStudy = (Env("ANTHILL_KNOWLEDGE_AUTO_STUDY") ?? config.KnowledgeAutoStudy ?? "")
             .Trim().ToLowerInvariant() switch
         {
-            "on" => "on", _ => "off",
+            "on" => "on", "suggest" => "suggest", _ => "off",
         };
         AutonomyAutoApplyEnabled = config.AutonomyAutoApplyEnabled;
         AutonomyAutoApplyPaths = (config.AutonomyAutoApplyPaths ?? new())

@@ -3,13 +3,24 @@ using Anthill.Core.Configuration;
 namespace Anthill.Api.Knowledge;
 
 /// <summary>
-/// STUDY BOUND KNOWLEDGE BASES ON A TIMER, WHEN THE OPERATOR HAS SAID SO. v0.3.8.156.
+/// STUDY BOUND KNOWLEDGE BASES ON A TIMER, WHEN THE OPERATOR HAS SAID SO. v0.3.9.3.
 ///
 /// `.154` gave the operator a Study button and argued, in the button's own comment, for why it was a
 /// button: "a button that silently enrolled a knowledge base into continuous work would be an
 /// automation decision made by a click that did not look like one." That argument is unchanged. What
 /// changed is that there is now a way to make that decision where a decision belongs — in the config
 /// file, once, as `knowledge_auto_study: on` — instead of it being unavailable.
+///
+/// v0.3.9.3 (A4) ADDS A THIRD MODE, `suggest`, AND IT IS THE INTERESTING ONE. `off` and `on` are a
+/// choice between knowing nothing and acting unattended, and most operators want neither: they want
+/// to be told what changed and to decide. `suggest` runs the identical pass and queues nothing —
+/// every new or changed document is filed as a finding the console lists, with a Queue button beside
+/// it. The analysis is not a second, cheaper code path bolted on for the mode; it is the SAME pass,
+/// which is why `SeedOnce` grew a `queue` argument rather than the mode being asked about twice.
+///
+/// WHICH MEANS `on` IS NOW STRICTLY MORE THAN `suggest`, not a different behaviour: it records the
+/// same findings and then also queues them. An operator who moves from `on` back to `suggest` loses
+/// the queueing and keeps the visibility, which is the ordering the words already imply.
 ///
 /// ONE PASS, ONE IMPLEMENTATION. This calls `KnowledgeSeeder.SeedOnce`, the same method the button
 /// calls, which is why `SeedOnce` was written to return a typed result rather than log and return
@@ -38,7 +49,11 @@ public static class KnowledgeStudyStager
 
     private static int _running;
 
-    public sealed record StudyPass(bool Ran, string Message, int Submitted, int Projects);
+    public sealed record StudyPass(bool Ran, string Message, int Submitted, int Projects)
+    {
+        /// <summary>New or changed documents this pass filed as findings. v0.3.9.3 (A4).</summary>
+        public int Noticed { get; init; }
+    }
 
     /// <summary>Starts the background pass. Returns immediately; never throws into the caller.</summary>
     public static void Start(CancellationToken cancel = default)
@@ -70,9 +85,17 @@ public static class KnowledgeStudyStager
     /// </summary>
     public static async Task<StudyPass> StudyIfEnabled(CancellationToken cancel = default)
     {
-        if (!string.Equals(AnthillRuntime.KnowledgeAutoStudy, "on", StringComparison.OrdinalIgnoreCase))
+        // THE MODE IS READ ONCE, HERE, and carried into the pass as a boolean. Asking
+        // `knowledge_auto_study` again further down would be a second place that decides what the
+        // setting means, and the third time this repository builds that shape it will cost the same
+        // as the first two did.
+        var mode = AnthillRuntime.KnowledgeAutoStudy;
+        var queue = string.Equals(mode, "on", StringComparison.OrdinalIgnoreCase);
+        var suggest = string.Equals(mode, "suggest", StringComparison.OrdinalIgnoreCase);
+
+        if (!queue && !suggest)
             return new StudyPass(false,
-                $"knowledge_auto_study is '{AnthillRuntime.KnowledgeAutoStudy}'; nothing was studied.", 0, 0);
+                $"knowledge_auto_study is '{mode}'; nothing was studied.", 0, 0);
 
         if (!AnthillRuntime.Knowledge.Enabled)
             return new StudyPass(false, "knowledge is not enabled; nothing was studied.", 0, 0);
@@ -90,6 +113,7 @@ public static class KnowledgeStudyStager
                 return new StudyPass(true, "no project is bound to a knowledge base.", 0, 0);
 
             var submitted = 0;
+            var noticed = 0;
             foreach (var project in bindings)
             {
                 if (cancel.IsCancellationRequested) break;
@@ -98,17 +122,26 @@ public static class KnowledgeStudyStager
                 if (!scope.IsQueryable) continue;
 
                 var result = await KnowledgeSeeder
-                    .SeedOnce(ApiHost.Queen.Memory, ApiHost.Jobs, scope, project, cancel)
+                    .SeedOnce(ApiHost.Queen.Memory, ApiHost.Jobs, scope, project, cancel, queue)
                     .ConfigureAwait(false);
 
                 submitted += result.Submitted;
+                noticed += result.Changes;
             }
 
-            return new StudyPass(true,
-                submitted == 0
+            // TWO MODES, TWO SENTENCES. A `suggest` pass that reported "queued 0 missions" would read
+            // as a pass that failed rather than as the mode the operator chose — and the number that
+            // matters in that mode is the one the console is about to show them.
+            var message = suggest
+                ? noticed == 0
+                    ? $"nothing has changed across {bindings.Count} bound project(s)."
+                    : $"noticed {noticed} new or changed document(s) across {bindings.Count} bound "
+                      + "project(s); nothing was queued."
+                : submitted == 0
                     ? $"nothing new to study across {bindings.Count} bound project(s)."
-                    : $"queued {submitted} mission(s) across {bindings.Count} bound project(s).",
-                submitted, bindings.Count);
+                    : $"queued {submitted} mission(s) across {bindings.Count} bound project(s).";
+
+            return new StudyPass(true, message, submitted, bindings.Count) { Noticed = noticed };
         }
         finally
         {

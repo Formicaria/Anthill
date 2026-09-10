@@ -147,6 +147,32 @@ public class ShippedChangelogTests
         return Regex.Replace(Regex.Replace(entry, @"docs/archive/v\d+/", "docs/"), @"\s+", " ").Trim();
     }
 
+    /// <summary>The path of the frozen pre-renumbering history. v0.3.9.3.</summary>
+    private static string ArchivePath() =>
+        Path.Combine(Root(), "docs", "archive", "CHANGELOG-pre-v0.3.md");
+
+    /// <summary>
+    /// EVERY entry the repository has ever written, across both changelog files. v0.3.9.3.
+    ///
+    /// The three EXCUSE LEDGERS below — corrections, misnamings, duplicate release commits — name
+    /// versions from the whole history, including `3.0.0` and `3.8.18`, and their guards ask only
+    /// "does this release exist". Moving the pre-renumbering entries to `docs/archive/` made three
+    /// of those names look invented, which is the split creating exactly the failure it must not: a
+    /// record that reads as incomplete because it is now kept in two files.
+    ///
+    /// The guards that are genuinely about the ACTIVE LINE — the tagged-entry comparison and the
+    /// release-commit sweep — keep reading `CHANGELOG.md` alone, because their subject is the line
+    /// being written and not the record.
+    /// </summary>
+    private static Dictionary<string, string> AllEntries()
+    {
+        var all = Entries(File.ReadAllText(Path.Combine(Root(), "CHANGELOG.md")));
+        if (!File.Exists(ArchivePath())) return all;
+        foreach (var (version, text) in Entries(File.ReadAllText(ArchivePath())))
+            all.TryAdd(version, text);
+        return all;
+    }
+
     /// <summary>The `## vX` entries in a changelog, keyed by version, text and all.</summary>
     private static Dictionary<string, string> Entries(string changelog)
     {
@@ -161,6 +187,57 @@ public class ShippedChangelogTests
             result[matches[i].Groups["v"].Value] = changelog[start..end];
         }
         return result;
+    }
+
+    /// <summary>
+    /// THE CHANGELOG IS TWO FILES AND ONE RECORD. v0.3.9.3.
+    ///
+    /// `CHANGELOG.md` had reached 1.2 MB, of which 6,600 lines were pre-renumbering history that no
+    /// guard in this suite polices — `DocsConsistencyTests` scopes uniqueness and ordering to the
+    /// active line precisely because those headings hold fifteen frozen duplicates. It moved,
+    /// unedited, to `docs/archive/CHANGELOG-pre-v0.3.md`.
+    ///
+    /// WHAT THIS GUARDS IS THE SEAM, and the seam is the only thing a split can get wrong. Two files
+    /// invite exactly two failures: an entry that exists in neither, and an entry that exists in
+    /// both. A CLEAN CUT ON THE VERSION PREFIX rules out both by construction — every `0.x` entry
+    /// lives in the active file and nothing else does — so that is what is asserted, in both
+    /// directions, rather than a count that would need editing every release.
+    ///
+    /// It also asserts the archive is NOT EMPTY. A guard whose subject file has been deleted or
+    /// truncated would otherwise pass both halves of the cut vacuously, which is how a check that
+    /// was scoped correctly still ends up asserting nothing.
+    /// </summary>
+    [Fact]
+    public void TheChangelogSplit_IsCleanInBothDirections()
+    {
+        var archivePath = ArchivePath();
+        Assert.True(File.Exists(archivePath),
+            "docs/archive/CHANGELOG-pre-v0.3.md is missing. The pre-renumbering history moved there "
+          + "at v0.3.9.3 and CHANGELOG.md points at it; losing the file loses the record.");
+
+        var active = Entries(File.ReadAllText(Path.Combine(Root(), "CHANGELOG.md")));
+        var archived = Entries(File.ReadAllText(archivePath));
+
+        Assert.True(archived.Count >= 100,
+            $"The changelog archive holds {archived.Count} entries. It shipped with 183 and history "
+          + "does not shrink — something has truncated it.");
+
+        var strayInActive = active.Keys.Where(v => !v.StartsWith("0.", StringComparison.Ordinal))
+            .OrderBy(v => v, StringComparer.Ordinal).ToList();
+        Assert.True(strayInActive.Count == 0,
+            "CHANGELOG.md holds pre-renumbering entries, which belong in "
+          + "docs/archive/CHANGELOG-pre-v0.3.md: " + string.Join(", ", strayInActive));
+
+        var strayInArchive = archived.Keys.Where(v => v.StartsWith("0.", StringComparison.Ordinal))
+            .OrderBy(v => v, StringComparer.Ordinal).ToList();
+        Assert.True(strayInArchive.Count == 0,
+            "The archive holds entries from the ACTIVE line, so the changelog now answers \"what is "
+          + "in this release\" from two places and can disagree with itself: "
+          + string.Join(", ", strayInArchive));
+
+        var both = active.Keys.Intersect(archived.Keys, StringComparer.Ordinal).ToList();
+        Assert.True(both.Count == 0,
+            "These versions have an entry in BOTH files: " + string.Join(", ", both));
     }
 
     /// <summary>
@@ -418,7 +495,7 @@ public class ShippedChangelogTests
     [Fact]
     public void TheMisnamingList_NamesOnlyReleasesThatExist()
     {
-        var entries = Entries(File.ReadAllText(Path.Combine(Root(), "CHANGELOG.md")));
+        var entries = AllEntries();
 
         var unknown = MisnamedReleaseCommits.Keys
             .Concat(DuplicateReleaseCommits.Keys)
@@ -440,7 +517,7 @@ public class ShippedChangelogTests
     [Fact]
     public void TheCorrectionList_NamesOnlyReleasesThatExist()
     {
-        var entries = Entries(File.ReadAllText(Path.Combine(Root(), "CHANGELOG.md")));
+        var entries = AllEntries();
 
         var unknown = CorrectedAfterShipping.Keys
             .Where(v => !entries.ContainsKey(v))

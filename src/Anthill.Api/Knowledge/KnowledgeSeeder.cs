@@ -59,6 +59,9 @@ public static class KnowledgeSeeder
     public sealed record SeedResult(
         bool Ok, string Message, int Submitted, int AlreadySeeded, int Available, IReadOnlyList<string> JobIds)
     {
+        /// <summary>Findings this pass recorded — new or changed documents. v0.3.9.2 (A4).</summary>
+        public int Changes { get; init; }
+
         public static SeedResult No(string message) =>
             new(false, message, 0, 0, 0, Array.Empty<string>());
     }
@@ -67,9 +70,18 @@ public static class KnowledgeSeeder
     /// One pass over one knowledge base. Never throws: a seeding pass that can fault the caller is a
     /// button that can take the console down.
     /// </summary>
+    /// <param name="queue">
+    /// Whether findings become missions in this pass. v0.3.9.2 (A4) — the policy question, expressed
+    /// as an argument rather than as a second switch this method reads for itself.
+    ///
+    /// ANALYSIS ALWAYS RUNS; QUEUEING IS THE DECISION. `knowledge_auto_study: suggest` passes false
+    /// and the operator gets a list of what changed; `on` passes true; the Study button passes true
+    /// whatever the setting, because pressing it IS the decision. One pass, three callers, one rule
+    /// — which is the shape `.156` chose deliberately and this keeps.
+    /// </param>
     public static async Task<SeedResult> SeedOnce(
         SqliteMemory memory, ApiJobRegistry jobs, KnowledgeScope scope,
-        string? anthillProjectId, CancellationToken cancel)
+        string? anthillProjectId, CancellationToken cancel, bool queue = true)
     {
         if (!scope.IsQueryable) return SeedResult.No("No knowledge base is mapped for this project.");
 
@@ -96,6 +108,13 @@ public static class KnowledgeSeeder
             var submitted = new List<string>();
             var already = 0;
             var considered = 0;
+            var changes = 0;
+
+            /* v0.3.9.2 (A4) — WHAT THE COLONY LAST STUDIED, so a document that MOVED can be told
+               from one it has never seen. `.154` has recorded the content hash on every receipt
+               since it shipped; nothing ever read them back, so "what changed" was answerable and
+               was never asked. This is that read. */
+            var studied = memory.StudiedContentHashes(scope.ProjectRef ?? "");
 
             foreach (var source in sources.Value)
             {
@@ -113,6 +132,35 @@ public static class KnowledgeSeeder
                 var key = SqliteMemory.SeedActionKey(
                     instance, generation, scope.ProjectRef ?? "", source.SourceId,
                     source.ContentHash, ActionType, PolicyVersion);
+
+                /* THE FINDING IS RECORDED WHETHER OR NOT IT IS QUEUED, and before it is queued.
+                   A change the colony noticed and did not act on is the thing A4 exists to make
+                   visible; a change it acted on is the same finding with a mission attached. Two
+                   records — one for "we saw this" and one for "we did something" — would be two
+                   answers to when the colony first knew. */
+                var previous = studied.TryGetValue(source.SourceId, out var was) ? was : null;
+                var moved = previous is not null
+                         && !string.Equals(previous, source.ContentHash, StringComparison.Ordinal);
+                if (previous is null || moved)
+                {
+                    var recorded = memory.TryRecordKnowledgeChange(new SqliteMemory.KnowledgeChange
+                    {
+                        Id = Guid.NewGuid().ToString(),
+                        ProjectRef = scope.ProjectRef ?? "",
+                        AnthillProjectId = anthillProjectId,
+                        SourceId = source.SourceId,
+                        SourceName = source.Name,
+                        Kind = moved ? "changed" : "new",
+                        PreviousHash = previous,
+                        CurrentHash = source.ContentHash,
+                        ActionKey = key,
+                    });
+                    if (recorded) changes++;
+                }
+
+                // SUGGEST STOPS HERE. The analysis has run, the finding is filed, and nothing is
+                // queued — which is exactly what the mode means.
+                if (!queue) continue;
 
                 var receipt = new SqliteMemory.KnowledgeSeedReceipt
                 {
@@ -135,10 +183,19 @@ public static class KnowledgeSeeder
 
                 var job = jobs.Submit(GoalFor(source), idempotencyKey: key, projectId: anthillProjectId);
                 memory.MarkSeedSubmitted(key, job.Id);
+                memory.MarkKnowledgeChangeQueued(key, job.Id);
                 submitted.Add(job.Id);
             }
 
-            var message = submitted.Count == 0
+            // ANALYSIS-ONLY HAS ITS OWN SENTENCE. Reporting "queued 0 missions" for a pass that was
+            // never going to queue any would read as a failure of the pass rather than as the mode
+            // the operator chose.
+            var message = !queue
+                ? changes > 0
+                    ? $"Noticed {changes} new or changed document(s). Nothing was queued — automatic "
+                      + "study is set to suggest."
+                    : "Nothing has changed in this knowledge base since the colony last read it."
+                : submitted.Count == 0
                 ? already > 0
                     ? $"Nothing new to study — all {already} document(s) in this knowledge base have already been seeded."
                     : "This knowledge base has no documents to study yet."
@@ -148,7 +205,10 @@ public static class KnowledgeSeeder
                         ? $" {considered - submitted.Count - already} more will follow on the next pass."
                         : "");
 
-            return new SeedResult(true, message, submitted.Count, already, considered, submitted);
+            return new SeedResult(true, message, submitted.Count, already, considered, submitted)
+            {
+                Changes = changes,
+            };
         }
         catch (OperationCanceledException)
         {
@@ -158,6 +218,69 @@ public static class KnowledgeSeeder
         {
             Console.Error.WriteLine($"[knowledge-seed] pass failed: {error}");
             return SeedResult.No($"The seeding pass failed: {error.Message}");
+        }
+    }
+
+    /// <summary>
+    /// QUEUE ONE FINDING, on the operator's click. v0.3.9.3 (A4).
+    ///
+    /// `suggest` mode files findings and queues nothing; this is the button beside each one. It is
+    /// HERE rather than in the route because the ordering it obeys — receipt written before the job
+    /// is submitted, §7 — is the same ordering `SeedOnce` obeys, and the whole reason a crash between
+    /// the two is recoverable is that there is exactly one place that gets the order right.
+    ///
+    /// IT PROBES FOR THE PRODUCER'S IDENTITY rather than trusting the finding's, and that is not
+    /// belt-and-braces. A finding can sit in the list for days; if the FORAGER behind it has been
+    /// restored from a backup in the meantime, its generation has changed and a receipt written under
+    /// the old one would claim the colony studied a document that no longer exists. The ACTION KEY
+    /// keeps the identity it was detected under, because that is what makes "already queued" mean the
+    /// same thing on the second click as it did on the first.
+    /// </summary>
+    public static async Task<SeedResult> QueueChange(
+        SqliteMemory memory, ApiJobRegistry jobs, SqliteMemory.KnowledgeChange change,
+        CancellationToken cancel)
+    {
+        try
+        {
+            var availability = await ApiHost.KnowledgeHost.Provider.ProbeAsync(cancel).ConfigureAwait(false);
+            if (!availability.Usable)
+                return SeedResult.No($"The knowledge base is not usable: {availability.Reason ?? "no reason given"}.");
+
+            var receipt = new SqliteMemory.KnowledgeSeedReceipt
+            {
+                EventId = Guid.NewGuid().ToString(),
+                ActionKey = change.ActionKey,
+                ProjectRef = change.ProjectRef,
+                AnthillProjectId = change.AnthillProjectId,
+                SourceId = change.SourceId,
+                SourceName = change.SourceName,
+                LogicalContentHash = change.CurrentHash,
+                ProducerInstanceId = availability.InstanceId ?? "",
+                ProducerGeneration = availability.InstanceGeneration ?? "",
+            };
+
+            if (!memory.TryRecordSeedIntent(receipt))
+                return SeedResult.No(
+                    "That document has already been queued at this version. The finding is stale — "
+                  + "dismiss it, or wait for the mission that is already running.");
+
+            var job = jobs.Submit(
+                GoalForName(change.SourceName), idempotencyKey: change.ActionKey,
+                projectId: change.AnthillProjectId);
+            memory.MarkSeedSubmitted(change.ActionKey, job.Id);
+            memory.MarkKnowledgeChangeQueued(change.ActionKey, job.Id);
+
+            return new SeedResult(true, $"Queued a mission over \"{Trim(change.SourceName)}\".",
+                1, 0, 1, new[] { job.Id });
+        }
+        catch (OperationCanceledException)
+        {
+            return SeedResult.No("The request was cancelled.");
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"[knowledge-seed] queue failed: {error}");
+            return SeedResult.No($"Queueing failed: {error.Message}");
         }
     }
 
@@ -172,8 +295,15 @@ public static class KnowledgeSeeder
     /// holds the knowledge tools and the mission is already inside the knowledge scope, so it
     /// retrieves what it needs and the goal stays a sentence.
     /// </summary>
-    public static string GoalFor(KnowledgeSource source) =>
-        $"What does the knowledge base establish about \"{Trim(source.Name)}\"? "
+    public static string GoalFor(KnowledgeSource source) => GoalForName(source.Name);
+
+    /// <summary>
+    /// The same goal, from a name alone — because a finding queued days later has the name and not
+    /// the source. ONE SENTENCE, ONE PLACE: two spellings of the goal would give the same document
+    /// two mission shapes depending on which button started it.
+    /// </summary>
+    public static string GoalForName(string? name) =>
+        $"What does the knowledge base establish about \"{Trim(name)}\"? "
       + "Summarise the facts it records, the support level behind each, and anything it leaves "
       + "contested or unresolved.";
 

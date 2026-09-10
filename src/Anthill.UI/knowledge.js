@@ -277,6 +277,11 @@ function knRenderShell(host) {
     + '<details class="kn-card"><summary>Conflicts</summary>'
     + '<p class="kn-sub">Where two sources disagree. ANTHILL never picks a side for you.</p>'
     + '<div id="kn-conflicts"><div class="hud-state">Loading…</div></div></details>'
+    + '<details class="kn-card" id="kn-changes-card"' + (knOpenChanges(s) ? ' open' : '') + '>'
+    + `<summary>What changed${knOpenChanges(s) ? ` <span class="kn-badge">${knOpenChanges(s)}</span>` : ''}</summary>`
+    + '<p class="kn-sub">Documents the colony has never studied, or has studied at an older version. '
+    + 'Noticing is not studying — press <b>Study this</b> on the ones worth a mission.</p>'
+    + '<div id="kn-changes"><div class="hud-state">Loading…</div></div></details>'
     + '<details class="kn-card"><summary>Review proposals</summary>'
     + '<p class="kn-sub">Where the colony disagreed with a stored statement. Accept one to agree '
     + 'with it, then <b>Apply</b> to send the change to FORAGER.</p>'
@@ -290,7 +295,11 @@ function knRenderShell(host) {
   knLoadSources();
   knLoadJobs();
   knLoadReviews();
+  knLoadChanges();
 }
+
+/** How many findings are waiting. Read from status so the badge is drawn with the shell. */
+function knOpenChanges(s) { return (s && s.open_changes) || 0; }
 
 /**
  * ONE LINE THAT SAYS WHERE YOU STAND, AND THE ONE THING TO DO NEXT.
@@ -371,7 +380,7 @@ function knStatusCard(s, bound, signedOut) {
 function knSteps(s, bound, signedOut) {
   var connected = !!(s && s.enabled && s.reachable);
   var authed = connected && !signedOut;
-  var studying = (s && s.auto_study) === 'on';
+  var studying = knStudyMode(s) !== 'off';
 
   function step(n, done, label, note) {
     return '<li class="kn-step' + (done ? ' done' : '') + '">'
@@ -393,8 +402,9 @@ function knSteps(s, bound, signedOut) {
     // studies knowledge through its PROJECT's binding, so the button cannot exist for the default.
     + step(4, !!bound && studying, 'Study it',
         !bound ? 'Available once a project is bound.'
-          : studying ? 'Every 6 hours, 25 documents a pass.'
-          : 'Press <b>Study</b> below to read new documents once, or tick <b>Study new documents automatically</b>.')
+          : knStudyMode(s) === 'on' ? 'Automatically, every 6 hours, 25 documents a pass.'
+          : knStudyMode(s) === 'suggest' ? 'The colony lists what changed every 6 hours; you choose what it studies.'
+          : 'Press <b>Study</b> below to read every new document once, or pick a schedule beside it.')
     + '</ol>';
 }
 
@@ -508,35 +518,147 @@ function knDefaultWarning() {
 }
 
 /**
- * THE STUDY SCHEDULE, AS A SWITCH. v0.3.8.157 — shown only where it means something, which is under
- * a bound knowledge base: a schedule with nothing to study is a control that cannot do anything.
+ * WHAT THE SCHEDULE DOES. v0.3.9.3 (A4) — three choices where `.157` offered two.
+ *
+ * A CHECKBOX WAS THE WRONG SHAPE and the operator's own path showed why: ticking it meant "go and
+ * work unattended", leaving it clear meant "tell me nothing", and the thing most operators actually
+ * want — be told what changed, decide myself — had no box to tick. The middle mode is the default
+ * recommendation for that reason and the select says so in its own words rather than in a tooltip.
+ *
+ * Shown only under a bound knowledge base: a schedule with nothing to study is a control that
+ * cannot do anything.
  */
+var KN_STUDY_MODES = [
+  ['off',     'Off',                 'The colony studies this base only when you press Study.'],
+  ['suggest', 'Tell me what changed', 'Every 6 hours the colony checks for new or changed documents and lists them below. It queues nothing.'],
+  ['on',      'Study automatically',  'Every 6 hours the colony reads new or changed documents and queues missions over them, 25 a pass.'],
+];
+
+function knStudyMode(s) {
+  const raw = (s && s.auto_study) || 'off';
+  return KN_STUDY_MODES.some(m => m[0] === raw) ? raw : 'off';
+}
+
 function knScheduleRow(s) {
-  const on = (s && s.auto_study) === 'on';
-  const state = on
-    ? 'Studying new documents every 6 hours, 25 a pass.'
-    : 'The colony studies this base only when you press Study.';
+  const mode = knStudyMode(s);
+  const row = KN_STUDY_MODES.find(m => m[0] === mode);
 
   if (!knMayToggle()) {
-    return `<p class="kn-sub">Automatic study: <b>${on ? 'on' : 'off'}</b>. ${escapeHtml(state)}</p>`;
+    return `<p class="kn-sub">Automatic study: <b>${escapeHtml(row[1])}</b>. ${escapeHtml(row[2])}</p>`;
   }
 
-  return '<label class="kn-lbl"><input type="checkbox" id="kn-autostudy"' + (on ? ' checked' : '')
-    + ' data-onchange="knSetAutoStudy()"> Study new documents automatically</label>'
-    + `<span class="kn-sub"> ${escapeHtml(state)}</span>`;
+  return '<div class="kn-schedrow"><label class="kn-lbl" for="kn-autostudy">On a schedule:</label>'
+    + '<select id="kn-autostudy" class="kn-select" data-onchange="knSetAutoStudy()">'
+    + KN_STUDY_MODES.map(m =>
+        `<option value="${m[0]}"${m[0] === mode ? ' selected' : ''}>${escapeHtml(m[1])}</option>`).join('')
+    + '</select></div>'
+    + `<p class="kn-sub">${escapeHtml(row[2])}</p>`;
 }
 
 async function knSetAutoStudy() {
-  const on = !!document.getElementById('kn-autostudy')?.checked;
-  knSayBind(on ? 'Turning the schedule on…' : 'Turning the schedule off…', true);
+  const mode = document.getElementById('kn-autostudy')?.value || 'off';
+  const row = KN_STUDY_MODES.find(m => m[0] === mode) || KN_STUDY_MODES[0];
+  knSayBind('Saving…', true);
   try {
-    const r = await api('/settings', 'POST', { knowledge_auto_study: on ? 'on' : 'off' });
+    const r = await api('/settings', 'POST', { knowledge_auto_study: mode });
     if (!r || !r.success) { knSayBind((r && r.message) || 'The setting could not be written.', false); return; }
     await loadKnowledge();
-    knSayBind(on ? 'Automatic study is on.' : 'Automatic study is off. Study still works on demand.', true);
+    knSayBind(row[2], true);
   } catch (e) {
     knSayBind((e && e.message) || 'The setting could not be written.', false);
   }
+}
+
+/**
+ * WHAT CHANGED SINCE THE COLONY LAST READ THIS BASE. v0.3.9.3 (A4).
+ *
+ * A FINDING IS NOT A MISSION. Each row is something the colony noticed — a document it has never
+ * studied, or one whose content hash has moved since it did — and the two buttons are the operator's
+ * two answers: study it, or say no and keep the record of having said so. Dismissing does not delete
+ * the row, because a pass that re-raised a document the operator had already declined would be
+ * asking the same question until it got the answer it wanted.
+ */
+async function knLoadChanges() {
+  const host = document.getElementById('kn-changes');
+  if (!host) return;
+  try {
+    const r = await api('/knowledge/changes?status=open');
+    if (!r || !r.success) {
+      host.innerHTML = `<div class="kn-empty">${escapeHtml((r && r.message) || 'Findings are not readable.')}</div>`;
+      return;
+    }
+    const list = (r.data && r.data.changes) || [];
+    const mode = (r.data && r.data.auto_study) || 'off';
+
+    if (!list.length) {
+      // WHY IT IS EMPTY, not only that it is. "Nothing to show" over a colony that was never going
+      // to look is the console reporting a result it never computed.
+      host.innerHTML = '<div class="kn-empty">'
+        + (mode === 'off'
+            ? 'The colony is not checking for changes. Set the schedule above to <b>Tell me what changed</b>, or press <b>Check now</b>.'
+            : 'Nothing new or changed since the colony last read this knowledge base.')
+        + '</div>' + knChangesTools();
+      return;
+    }
+
+    host.innerHTML = list.map(c => '<div class="kn-hit">'
+      + `<div class="kn-stmt"><b>${escapeHtml(c.source_name || c.source_id)}</b></div>`
+      + `<div class="kn-sub">${c.kind === 'changed' ? 'Changed since the colony studied it' : 'Never studied'}`
+      + ` · noticed ${escapeHtml(String(c.detected_at || '').slice(0, 16).replace('T', ' '))}</div>`
+      + (knMayManage()
+          ? '<div class="kn-bindrow">'
+            + `<button class="kn-btn kn-sm kn-primary" data-onclick="knQueueChange('${jsArg(c.id)}')">Study this</button>`
+            + `<button class="kn-btn kn-sm" data-onclick="knDismissChange('${jsArg(c.id)}')">Not now</button>`
+            + '</div>'
+          : '')
+      + '</div>').join('') + knChangesTools();
+  } catch (e) {
+    host.innerHTML = '<div class="kn-empty">Findings are not readable.</div>';
+  }
+}
+
+function knChangesTools() {
+  if (!knProject) return '';
+  return '<div class="kn-bindrow">'
+    + `<button class="kn-btn" data-onclick="knScanChanges('${jsArg(knProject)}')" `
+    + 'title="Read the knowledge base now and list what has changed. Queues nothing.">Check now</button>'
+    + '</div><div class="kn-say" id="kn-say-changes"></div>';
+}
+
+async function knScanChanges(project) {
+  const say = document.getElementById('kn-say-changes');
+  if (say) { say.className = 'kn-say ok'; say.textContent = 'Reading the knowledge base…'; }
+  try {
+    const r = await api('/knowledge/changes/scan', 'POST', { project: project || '' });
+    if (say) {
+      say.className = 'kn-say ' + (r && r.success ? 'ok' : 'err');
+      say.textContent = (r && r.message) || 'The check failed.';
+    }
+    if (r && r.success) await knLoadChanges();
+  } catch (e) {
+    if (say) { say.className = 'kn-say err'; say.textContent = (e && e.message) || 'The check failed.'; }
+  }
+}
+
+async function knQueueChange(id) {
+  const say = document.getElementById('kn-say-changes');
+  try {
+    const r = await api(`/knowledge/changes/${encodeURIComponent(id)}/queue`, 'POST', {});
+    if (say) {
+      say.className = 'kn-say ' + (r && r.success ? 'ok' : 'err');
+      say.textContent = (r && r.message) || 'The mission could not be queued.';
+    }
+    await knLoadChanges();
+  } catch (e) {
+    if (say) { say.className = 'kn-say err'; say.textContent = (e && e.message) || 'The mission could not be queued.'; }
+  }
+}
+
+async function knDismissChange(id) {
+  try {
+    await api(`/knowledge/changes/${encodeURIComponent(id)}/dismiss`, 'POST', { note: '' });
+    await knLoadChanges();
+  } catch (e) { /* the list reloads on the next render either way */ }
 }
 
 /**

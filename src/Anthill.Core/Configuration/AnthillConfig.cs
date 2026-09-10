@@ -801,14 +801,26 @@ public sealed class AnthillConfig
     [JsonPropertyName("knowledge_forager_allow_remote")] public bool KnowledgeForagerAllowRemote { get; set; } = false;
 
     /// <summary>
-    /// v0.3.8.156 — STUDY BOUND KNOWLEDGE BASES ON A TIMER, or only when asked. `off` | `on`.
+    /// v0.3.9.3 — WHAT THE TIMER DOES WITH BOUND KNOWLEDGE BASES. `off` | `suggest` | `on`.
+    ///
+    /// `off` — nothing happens on a timer. The Study button still works; it always has.
+    /// `suggest` — every six hours the colony reads each bound base and FILES what is new or
+    ///   changed, queueing nothing. The console lists those findings with a Queue button beside
+    ///   each. This is the mode for an operator who wants to be told, not acted for.
+    /// `on` — the same pass, and it queues.
+    ///
+    /// `on` is strictly more than `suggest` rather than a different behaviour, which is a property
+    /// of there being ONE pass with a `queue` argument instead of two lanes that drift.
+    ///
+    /// A value that is none of the three reads as `off`, in the file and in the environment alike.
     ///
     /// OFF BY DEFAULT, AND THAT IS THE DESIGN RATHER THAN CAUTION. `.154` shipped the Study button
     /// and said in its own comment why it was a button: "a button that silently enrolled a knowledge
     /// base into continuous work would be an automation decision made by a click that did not look
-    /// like one." Turning that into a schedule is exactly such a decision, so it is made in the file,
-    /// once, deliberately — the same argument `knowledge_forager_allow_remote` above makes about
-    /// reaching an unauthenticated service.
+    /// like one." Turning that into a schedule is exactly such a decision, so it is made once,
+    /// deliberately, by the person it belongs to — `.157` moved that decision from the file to a
+    /// labelled control in the console without weakening it, because a control that exists only in
+    /// JSON is, for most colonies, a control nobody ever uses.
     ///
     /// WHAT IT COSTS WHEN ON: one pass every six hours over each bound project, queueing at most
     /// twenty-five missions per project per pass, skipping every document already studied at its

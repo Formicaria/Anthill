@@ -58,6 +58,11 @@ public class KnowledgeStudyStagerTests : IDisposable
         // time an explanatory line is added to the code it guards.
         var arm = SourceText.MemberBody(runtime, at);
         Assert.Contains("\"on\" => \"on\"", arm, StringComparison.Ordinal);
+        // v0.3.9.3 (A4) — AND THE THIRD MODE, which is the one an operator is most likely to
+        // misspell because it is the only one that is not a word they already know from a toggle.
+        // `sugest` must read as `off` and not as "close enough": a schedule that ran because of a
+        // typo is precisely the automation-nobody-chose this arm exists to refuse.
+        Assert.Contains("\"suggest\" => \"suggest\"", arm, StringComparison.Ordinal);
         Assert.Contains("_ => \"off\"", arm, StringComparison.Ordinal);
         // AND THE ENVIRONMENT IS READ IN THE SAME ARM. The key declares
         // `ANTHILL_KNOWLEDGE_AUTO_STUDY`, and `ConfigCatalogTests` holds that a declared override
@@ -138,6 +143,59 @@ public class KnowledgeStudyStagerTests : IDisposable
         // Sleeps through the cancellation handle, never `Thread.Sleep` — a stop must be prompt.
         Assert.Contains("cancel.WaitHandle.WaitOne(Interval)", stager, StringComparison.Ordinal);
         Assert.DoesNotContain("Thread.Sleep", stager, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// `suggest` RUNS THE PASS AND QUEUES NOTHING. v0.3.9.3 (A4).
+    ///
+    /// The mode exists because `off` and `on` are a choice between knowing nothing and acting
+    /// unattended, and the operator's actual question — "tell me what changed, I'll decide" — had no
+    /// setting. What makes it cheap is that it is not a second pass: the stager reads the mode ONCE
+    /// and hands `SeedOnce` a boolean, so `on` is strictly `suggest` plus queueing rather than a
+    /// parallel lane that can drift from it. Both halves of that are pinned here, because the drift
+    /// is invisible until the day the two disagree about a document.
+    /// </summary>
+    [Fact]
+    public void SuggestIsTheSamePassWithQueueingOff_NotASecondLane()
+    {
+        var stager = Stager();
+
+        // The mode is read once and carried as a decision, not asked again downstream.
+        var reads = stager.Split("AnthillRuntime.KnowledgeAutoStudy").Length - 1;
+        Assert.True(reads == 1,
+            $"KnowledgeStudyStager reads knowledge_auto_study {reads} times. Two readers of one "
+          + "setting are two places that decide what it means, and they diverge on the release "
+          + "somebody edits one of them.");
+
+        Assert.Contains("\"suggest\"", stager, StringComparison.Ordinal);
+
+        // ONE CALL TO ONE PASS. A `suggest` branch calling a different method would be the shape
+        // `UpdateStager` argued against first and this repository has paid for at four seams since.
+        Assert.Equal(1, stager.Split(".SeedOnce(").Length - 1);
+        Assert.Contains("scope, project, cancel, queue)", stager, StringComparison.Ordinal);
+
+        // AND THE PASS TAKES IT AS AN ARGUMENT rather than consulting the config for itself.
+        var seeder = File.ReadAllText(Path.Combine(
+            SourceText.RepoRoot(), "src", "Anthill.Api", "Knowledge", "KnowledgeSeeder.cs"));
+        Assert.Contains("bool queue = true", seeder, StringComparison.Ordinal);
+        Assert.DoesNotContain("AnthillRuntime.KnowledgeAutoStudy", seeder);
+    }
+
+    /// <summary>
+    /// AND `suggest` IS NOT `off`: a mode that refused at the gate would be a third spelling of off
+    /// wearing a name that promises something. The pass runs; what it does not do is queue.
+    /// </summary>
+    [Fact]
+    public async System.Threading.Tasks.Task WithSuggest_ThePassIsNotRefusedAtTheModeGate()
+    {
+        AnthillRuntime.KnowledgeAutoStudy = "suggest";
+
+        var pass = await KnowledgeStudyStager.StudyIfEnabled();
+
+        // It may still stop at the knowledge gate — the suite's colonies run with knowledge off —
+        // but the message must not be the mode refusing it.
+        Assert.DoesNotContain("knowledge_auto_study is 'suggest'", pass.Message, StringComparison.Ordinal);
+        Assert.Equal(0, pass.Submitted);
     }
 
     private static string Stager() => File.ReadAllText(Path.Combine(
