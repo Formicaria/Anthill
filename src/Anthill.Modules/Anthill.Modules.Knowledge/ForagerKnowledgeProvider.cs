@@ -577,6 +577,70 @@ internal sealed class ForagerKnowledgeProvider : IKnowledgeProvider, IKnowledgeI
         return KnowledgeOutcome<KnowledgeJob>.Success(ForagerMapping.ToJob(started.Value));
     }
 
+    /// <summary>
+    /// UPLOADED FILES, THEN PROCESSING. v0.3.8.160 — `POST /api/projects/:id/sources` as multipart,
+    /// which is the route FORAGER's own uploader uses.
+    ///
+    /// The registration response names what was REJECTED as well as what was taken (unsupported
+    /// type, too large, duplicate), and those names are carried into the job's note rather than
+    /// dropped: "nothing happened to four of the fifty files I chose" is the fact an operator needs,
+    /// and a success that quietly ingested forty-six is how a knowledge base comes to be missing
+    /// documents nobody knows about.
+    /// </summary>
+    public async Task<KnowledgeOutcome<KnowledgeJob>> UploadSourcesAsync(
+        KnowledgeScope scope, IReadOnlyList<KnowledgeUpload> files, bool force,
+        CancellationToken cancellationToken)
+    {
+        var scoped = RequireScope<KnowledgeJob>(scope);
+        if (scoped is not null) return scoped;
+
+        if (files is null || files.Count == 0)
+            return KnowledgeOutcome<KnowledgeJob>.Failed(KnowledgeFailure.Invalid, "no files were uploaded");
+
+        var options = _options();
+
+        using var form = new System.Net.Http.MultipartFormDataContent();
+        foreach (var file in files)
+        {
+            var part = new System.Net.Http.ByteArrayContent(file.Content);
+            if (!string.IsNullOrWhiteSpace(file.ContentType))
+                part.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType!);
+            // `files` is the field name FORAGER reads; the name travels as the filename so a
+            // document keeps the identity the operator knows it by.
+            form.Add(part, "files", file.FileName);
+        }
+
+        var registered = await _client.PostAsync<ForagerRegistration>(
+            $"projects/{ForagerClient.Segment(scope.ProjectRef!)}/sources",
+            form, options.IngestionTimeoutMs, cancellationToken).ConfigureAwait(false);
+        if (!registered.Ok) return Propagate<ForagerRegistration, KnowledgeJob>(registered);
+
+        var rejected = registered.Value?.Rejected ?? new List<ForagerRejection>();
+
+        var started = await _client.PostAsync<ForagerJob>(
+            $"projects/{ForagerClient.Segment(scope.ProjectRef!)}/process",
+            new { force }, options.IngestionTimeoutMs, cancellationToken).ConfigureAwait(false);
+        if (!started.Ok || started.Value is null) return Propagate<ForagerJob, KnowledgeJob>(started);
+
+        _cache.InvalidateScope(scope);
+
+        var job = ForagerMapping.ToJob(started.Value);
+        if (rejected.Count > 0)
+            job = job with
+            {
+                // WARNINGS, which the job view already renders. A refusal that arrives as prose in a
+                // toast is a refusal nobody can find again ten minutes later.
+                Warnings = job.Warnings
+                    .Concat(rejected.Take(10).Select(r => $"not ingested — {r.Name}: {r.Reason ?? "refused"}"))
+                    .Concat(rejected.Count > 10
+                        ? new[] { $"and {rejected.Count - 10} more file(s) were not ingested" }
+                        : Array.Empty<string>())
+                    .ToList(),
+            };
+
+        return KnowledgeOutcome<KnowledgeJob>.Success(job);
+    }
+
     public async Task<KnowledgeOutcome<KnowledgeJob>> GetJobAsync(
         string jobId, KnowledgeScope scope, CancellationToken cancellationToken)
     {

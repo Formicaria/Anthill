@@ -373,8 +373,41 @@ public interface IKnowledgeProvider
 /// implementation had to stub out methods it must never perform. Splitting them makes "this provider
 /// cannot ingest" expressible as a type rather than as a runtime refusal.
 /// </summary>
+/// <summary>
+/// ONE FILE AN OPERATOR CHOSE IN THEIR BROWSER. v0.3.8.160.
+///
+/// BYTES, NOT A PATH, and that is forced rather than chosen: a browser file picker hands JavaScript
+/// a name and a content stream and deliberately never the location on disk. So a console that lets
+/// someone pick a folder cannot describe what they picked as a path — the file itself has to travel.
+/// The alternative was what the page did before, which is to ask a person to TYPE a path, and the
+/// operator's verdict on that was the reason this exists.
+/// </summary>
+public sealed record KnowledgeUpload
+{
+    /// <summary>The file's own name — or its path RELATIVE to the folder that was picked, which is
+    /// all a browser discloses and is enough to keep a document set's shape.</summary>
+    public required string FileName { get; init; }
+
+    public required byte[] Content { get; init; }
+
+    public string? ContentType { get; init; }
+}
+
 public interface IKnowledgeIngestionProvider
 {
+    /// <summary>
+    /// Register uploaded FILES and start processing. v0.3.8.160.
+    ///
+    /// The sibling of <see cref="StartIngestionAsync"/> for material that never had a path this
+    /// colony could name. No workspace guard runs over these and none can: there is no path to
+    /// contain. What replaces it is that the bytes came from the operator's own browser session,
+    /// through an authenticated console route, and are handed to the producer as an upload rather
+    /// than as an instruction to go and read something.
+    /// </summary>
+    Task<KnowledgeOutcome<KnowledgeJob>> UploadSourcesAsync(
+        KnowledgeScope scope, IReadOnlyList<KnowledgeUpload> files, bool force,
+        CancellationToken cancellationToken);
+
     /// <summary>
     /// Register files and start processing. Returns as soon as the job is queued — never waits for
     /// parsing. Paths must ALREADY have been resolved through the workspace guard by the caller;

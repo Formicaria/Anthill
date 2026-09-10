@@ -162,8 +162,15 @@ async function api(path, method='GET', body=null, timeoutMs=10000) {
   const run=(async()=>{
     const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),timeoutMs);
     try{
-      const opts = { method, headers: { 'Authorization': 'Bearer '+TOKEN, 'Content-Type': 'application/json' }, signal:ctl.signal };
-      if (body) opts.body = JSON.stringify(body);
+      // v0.3.8.160 — A FormData BODY GOES AS ITSELF. The browser sets multipart/content-type with
+      // the boundary, and a Content-Type we set here would overwrite it with one that has no
+      // boundary in it — which the server then cannot parse, silently, as a malformed form. One
+      // fetch for the whole console is worth keeping; teaching it the second body kind is cheaper
+      // than a second client that drifts.
+      const isForm = (typeof FormData !== 'undefined') && (body instanceof FormData);
+      const opts = { method, headers: { 'Authorization': 'Bearer '+TOKEN }, signal:ctl.signal };
+      if (!isForm) opts.headers['Content-Type'] = 'application/json';
+      if (body) opts.body = isForm ? body : JSON.stringify(body);
       const r = await fetch(url(path), opts);
       if (r.status === 401) { if(typeof onUnauthorized==='function') onUnauthorized(); throw new Error('unauthorized'); }
       if (r.status === 429) {
@@ -2446,24 +2453,9 @@ function renderUpdateBanner(){
     banner.style.background='rgba(var(--queen-rgb),.08)';
     banner.style.border='1px solid var(--queen)';
     banner.style.color='var(--queen)';
-    // v0.3.8.149 — WHAT TO DO ABOUT IT COMES FROM THE SERVER, because it depends on how this
-    // colony was installed and the browser cannot know that. The old text told EVERY operator to
-    // run the LXC upgrade command — false for the Windows app, an unzipped folder and a container
-    // alike, which is three quarters of the ways to install this.
-    //
-    // (The stray "?" that opened this line was a flattened glyph, the same defect the v0.3.8.144
-    // sweep chased out of the rest of the console. It is words now.)
-    const notes=u.release_url
-      ? `<a href="${escapeHtml(u.release_url)}" target="_blank" rel="noopener" style="color:var(--queen);text-decoration:underline;">Release notes</a> · `
-      : '';
-    if(u.staged_version){
-      // Already downloaded and checksum-verified: there is nothing to click, only a restart.
-      banner.innerHTML=`<b>v${escapeHtml(u.staged_version)}</b> is downloaded, verified and ready. `+notes+
-        `It installs the next time Anthill starts — your colony's memory is kept.`;
-    } else {
-      banner.innerHTML=`Update available: <b>v${escapeHtml(u.latest)}</b> (you have v${escapeHtml(u.current)}). `+notes+
-        escapeHtml(u.remediation||'');
-    }
+    banner.innerHTML=`? Update available: <b>v${escapeHtml(u.latest)}</b> (you have v${escapeHtml(u.current)}). `+
+      (u.release_url?`<a href="${escapeHtml(u.release_url)}" target="_blank" rel="noopener" style="color:var(--queen);text-decoration:underline;">Release notes</a> · `:'')+
+      `On the LXC: <span style="font-family:var(--mono)">cd /opt/anthill/src && git pull && bash deploy/lxc/setup.sh</span>`;
     if(dot) dot.style.display='';
   } else {
     if(dot) dot.style.display='none';

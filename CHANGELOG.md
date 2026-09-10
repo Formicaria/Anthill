@@ -1,3 +1,60 @@
+## v0.3.8.160 - a binding has two halves, and the import panel was a chore
+
+**THE PAGE COULD ONLY BIND THE ONE THING A MISSION IGNORES.** `.158` rebuilt the Knowledge page
+around a picker for FORAGER's knowledge bases and, in doing so, dropped the selector for the other
+half of a binding: which ANTHILL PROJECT it is for. So every Bind wrote the console DEFAULT --
+and `Queen.ResolveKnowledgeScope` refuses to let a mission fall back to the default ON PURPOSE,
+because a mission reading a knowledge base that is not its own is the single failure the project map
+exists to prevent. The page let an operator configure the console, told them it was bound, and left
+every mission retrieving nothing.
+
+The project selector is back, as a LIST of this colony's own projects rather than the id field it
+used to be -- for the same reason FORAGER's half is a list. When nothing but the default is bound,
+the row says so where the control is: *the default is used by this page only; a MISSION never falls
+back to it.*
+
+**AND THE IMPORT PANEL ASKED FOR TYPED PATHS.** Inside the colony workspace, one per line. That is a
+fence expressed as a chore: the workspace guard exists to stop the COLONY reaching arbitrary files,
+not to make a person move their documents somewhere else before they can hand them over.
+
+Choose files, or a whole folder. They UPLOAD -- and the absence of a path check there is not a hole
+that was skipped, it is the shape of the thing: a browser picker hands JavaScript a name and a
+content stream and deliberately never a location on disk. Nothing is being resolved, no filesystem is
+being read on the colony's behalf, and the bytes come from the operator's own authenticated session.
+Import BY PATH survives, folded, because a folder of ten thousand documents already on this machine
+should be NAMED rather than pushed through a browser -- and that route still tells the colony to go
+and read something, so it keeps its fence.
+
+The caps are FORAGER's own, quoted rather than invented (400 files, 100 MB per import) and refused
+here with those numbers instead of being sent to fail there. Files FORAGER rejects -- unsupported
+type, duplicate -- come back as job WARNINGS rather than a toast, because "four of my fifty files
+did nothing" is a fact an operator needs to be able to find again ten minutes later.
+
+**One fetch, two body kinds.** `api()` now sends a `FormData` body as itself: setting a JSON
+content type over a multipart body strips the boundary the browser generated, and the server then
+fails to parse a form that looks perfectly well-formed from the outside.
+
+**And the refusal that named a card that no longer exists.** "Map it on the Knowledge page, under
+'Knowledge bases'" pointed at a section `.158` had removed, plus two config keys an operator no
+longer needs to touch. It now names the control that is actually there, and says which half to bind.
+
+## v0.3.8.159 - the instructions named a menu that does not exist
+
+`.158` drew a **signed out** state with three steps for fixing it, and step one said "In FORAGER,
+open Settings -> API tokens". FORAGER has no such menu. `settings/tokens` is what the ROUTE is
+called; the page an operator is looking at calls the section **Programs that may use Forager** and
+the button **Give a program access**.
+
+The operator went looking, did not find it, and reported that there was nowhere to make a token --
+which is the correct conclusion from what the console told them. An instruction that names something
+the person cannot see does not merely fail to help: it tells them the page is out of date, and on
+that evidence they are right.
+
+The steps now quote FORAGER's own words, name the program (`Anthill`), say what to allow it -- read
+and ingest, plus review if the colony should raise review proposals -- and note that the key is shown
+once. `docs/KNOWLEDGE_ARCHITECTURE.md` carries the same wording, with the route named separately as
+the thing it is: an implementation detail no operator should have to translate.
+
 ## v0.3.8.158 - the page told you it was connected to something that was refusing it
 
 **READ FROM THE RUNNING FORAGER, NOT FROM OUR NOTES ABOUT IT.** The operator said the Knowledge page

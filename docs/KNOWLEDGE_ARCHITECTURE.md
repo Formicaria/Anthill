@@ -136,12 +136,20 @@ The reasoning the page used to carry in prose lives here instead:
   click that does not look like one.
 - **Accepting a review is not applying it.** FORAGER publishes no endpoint for applying a review
   (P13), so acceptance records that the operator agreed and changes nothing in the knowledge base.
+- **Two ways in, and only one of them has a fence.** Choosing files or a folder in the console
+  UPLOADS them: a browser picker discloses a name and a stream and never a location, so there is no
+  path to contain and none is invented. The colony is not reading the operator's filesystem — the
+  operator is handing over documents in an authenticated session. Importing BY PATH still tells the
+  colony to go and read something, and keeps its fence.
 - **Import paths are fenced twice.** `POST /knowledge/jobs` resolves every path through the colony's
   workspace guard before anything is sent, and FORAGER has its own allowed-roots fence on the far
   side. Neither is trusted to be the only one.
 - **The credential lives here.** FORAGER 0.6 authenticates every route that carries knowledge, so
-  the colony needs an integration token (`fgr_…`, made on FORAGER's Settings page with scopes
-  `read` and `ingest`, plus `review` if the colony should raise review proposals). The Knowledge page
+  the colony needs an integration token (`fgr_…`). In FORAGER's own words it is made under
+  **Settings → Programs that may use Forager → Give a program access**, allowed to read and ingest,
+  plus review if the colony should raise review proposals. (The route is `POST /api/settings/tokens`;
+  the console must quote the WORDS, not the route — v0.3.8.159 fixed instructions that named a
+  "Settings → API tokens" menu FORAGER does not have.) The Knowledge page
   writes it and can never read it back. A colony with no token reports **signed out** rather than
   connected — v0.3.8.158, after a probe that read only the producer's PUBLIC `/ready` route reported
   a healthy connection to a colony whose every retrieval was refused.
