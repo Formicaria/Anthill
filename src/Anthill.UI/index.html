@@ -2979,6 +2979,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           #page-knowledge details.kn-card[open]>summary::before{content:'\25BE  '}
           #page-knowledge details.kn-card>summary:hover{color:var(--muted)}
           #page-knowledge details.kn-card[open]>summary{margin-bottom:8px}
+          #page-knowledge .kn-file{font-size:11px;color:var(--muted);max-width:100%}
+          #page-knowledge .kn-file::file-selector-button{font:inherit;padding:5px 10px;margin-right:8px;border-radius:5px;border:1px solid var(--border);background:var(--inner);color:var(--fg);cursor:pointer}
+          #page-knowledge .kn-file::file-selector-button:hover{border-color:var(--muted)}
+          #page-knowledge .kn-ingest details>summary{cursor:pointer;margin:8px 0 4px}
           #page-knowledge h3{font-size:12px;margin:0 0 4px}
           /* v0.3.8.158 — READABLE. These were 10px and 8px MONOSPACE, which is the size a caption
              gets when nobody ever read it at 100% zoom: every explanatory line on the page rendered

@@ -35,6 +35,7 @@
 let knStatus = null;      // last /knowledge/status payload
 let knProject = '';       // ANTHILL project id scoping the view ('' = configured default)
 let knBases = [];         // knowledge bases FORAGER reports (GET /knowledge/projects)
+let knColonyProjects = []; // this colony's own projects — what a binding can be made FOR
 let knLastQuery = '';
 
 /* Support levels, in the words the operator should read. The key is what the
@@ -96,6 +97,21 @@ async function loadKnowledge() {
         if (p && p.success && p.data && Array.isArray(p.data.projects)) knBases = p.data.projects;
       } catch (_) { /* the page works without the picker; the bind row says so */ }
     }
+
+    /* v0.3.8.160 — AND THIS COLONY'S OWN PROJECTS, which is the half `.158` dropped.
+       A binding is FROM an ANTHILL project TO a FORAGER knowledge base. `.158` rebuilt the page
+       with the FORAGER half and no way to choose the ANTHILL half, so every Bind wrote the
+       DEFAULT — and `Queen.ResolveKnowledgeScope` refuses to let a MISSION fall back to the
+       default on purpose. The page was offering the one binding that cannot feed the colony. */
+    knColonyProjects = [];
+    try {
+      const cp = await api('/projects');
+      if (cp && cp.success && cp.data && Array.isArray(cp.data.projects))
+        knColonyProjects = cp.data.projects.filter(x => !x.archived);
+    } catch (_) { /* the selector degrades to the default, which the row then labels honestly */ }
+
+    // One project and nothing chosen yet is not an ambiguity — it is the answer.
+    if (!knProject && knColonyProjects.length === 1) knProject = knColonyProjects[0].id;
 
     knRenderShell(host);
   } catch (e) {
@@ -292,11 +308,18 @@ function knStatusCard(s, bound, signedOut) {
   if (signedOut) {
     body = '<p class="kn-lede">FORAGER answered, and refused this colony\'s credential. Knowledge '
       + 'retrieval will return nothing until it has one.</p>'
+      /* THE WORDS FORAGER ACTUALLY USES. v0.3.8.159 — the first cut of these steps said
+         "Settings → API tokens", which is what the ROUTE is called (`POST /api/settings/tokens`)
+         and not what the operator sees. FORAGER's Settings page calls the section "Programs that
+         may use Forager" and the control "Give a program access". An instruction that names a menu
+         the person is looking at and cannot find is worse than no instruction: it tells them the
+         page is out of date, and they are right. */
       + '<ol class="kn-steps">'
-      + '<li>In FORAGER, open <b>Settings → API tokens</b> and create one. Scopes: <code>read</code> '
-      + 'and <code>ingest</code>' + '&nbsp;(add <code>review</code> if you want the colony to raise '
-      + 'review proposals).</li>'
-      + '<li>Copy the token — it starts <code>fgr_</code> and FORAGER shows it once.</li>'
+      + '<li>In FORAGER, open <b>Settings</b> and find <b>Programs that may use Forager</b>.</li>'
+      + '<li>Click <b>Give a program access</b>. Call it <i>Anthill</i>, and let it read and ingest '
+      + '(add review as well if the colony should raise review proposals). All projects, unless you '
+      + 'want this colony limited to some of them.</li>'
+      + '<li>Copy the key it shows — it starts <code>fgr_</code> and FORAGER shows it once.</li>'
       + '<li>Paste it here.</li>'
       + '</ol>'
       + (knMayToggle()
@@ -336,6 +359,7 @@ function knStatusCard(s, bound, signedOut) {
 /** The card you work in once the colony can actually talk to FORAGER. */
 function knWorkCard(s, bound, bases) {
   return '<div class="kn-card">'
+    + knProjectRow()
     + knBaseRow(s, bound, bases)
     + '<div class="kn-say" id="kn-say-bind"></div>'
     + '</div>'
@@ -362,13 +386,17 @@ function knWorkCard(s, bound, bases) {
  * shared contract is closed by the producer having done it.
  */
 function knBaseRow(s, bound, bases) {
-  const who = knProject ? `Project <code>${escapeHtml(knProject)}</code>` : 'This colony';
+  const project = knColonyProjects.find(x => x.id === knProject);
+  const who = knProject
+    ? `<b>${escapeHtml(project ? project.name : knProject)}</b>`
+    : 'The console default';
 
   if (bound) {
     const base = bases.find(b => b.project_ref === bound);
     return `<p class="kn-lede">${who} reads <b>${escapeHtml(base ? base.name : bound)}</b>`
       + (base ? ` <span class="kn-sub">${base.source_count} document(s), ${base.knowledge_count} statement(s)</span>` : '')
       + '</p>'
+      + knDefaultWarning()
       + (knMayManage()
           ? '<div class="kn-bindrow">'
             + '<button class="kn-btn kn-primary" data-onclick="knImport()">Import documents</button>'
@@ -391,6 +419,7 @@ function knBaseRow(s, bound, bases) {
 
   return `<p class="kn-lede">${who} has no knowledge base bound, so its missions retrieve nothing `
     + 'and say so — never someone else\'s knowledge. Pick one:</p>'
+    + knDefaultWarning()
     + '<div class="kn-bindrow">'
     + '<select id="kn-bind-base" class="kn-select" aria-label="FORAGER knowledge base">'
     + bases.map(b => `<option value="${escapeHtml(b.project_ref)}">${escapeHtml(b.name)}`
@@ -398,6 +427,42 @@ function knBaseRow(s, bound, bases) {
     + '</select>'
     + '<button class="kn-btn kn-primary" data-onclick="knBind()">Bind</button>'
     + '</div>';
+}
+
+/**
+ * WHICH ANTHILL PROJECT THIS BINDING IS FOR. v0.3.8.160.
+ *
+ * A binding has two halves and `.158` shipped one of them. Restored as a SELECT over the colony's
+ * own projects rather than the text field it used to be, for the same reason the FORAGER half is a
+ * select: an operator should not have to know an id to use a page about the thing the id names.
+ */
+function knProjectRow() {
+  if (!knColonyProjects.length) {
+    return '<p class="kn-sub">This colony has no projects yet. A binding belongs to a project — '
+         + 'make one on the Projects page, then come back.</p>';
+  }
+
+  return '<label class="kn-lbl">Knowledge for '
+    + '<select id="kn-project" class="kn-select" data-onchange="knSetProject()">'
+    + knColonyProjects.map(p => `<option value="${escapeHtml(p.id)}"${p.id === knProject ? ' selected' : ''}>`
+        + `${escapeHtml(p.name || p.id)}</option>`).join('')
+    + `<option value=""${knProject ? '' : ' selected'}>the console default</option>`
+    + '</select></label>';
+}
+
+/**
+ * THE DEFAULT IS NOT A BINDING, AND SAYING SO IS THE WHOLE POINT.
+ *
+ * `Queen.ResolveKnowledgeScope` refuses a mission whose project is unmapped rather than falling
+ * back to the default — a mission reading a knowledge base that is not its own is the single
+ * failure the map exists to prevent. So a colony that bound ONLY the default has configured the
+ * console and nothing else, and every mission still retrieves nothing. That is a sentence the page
+ * has to say where the control is, not in a doc.
+ */
+function knDefaultWarning() {
+  if (knProject) return '';
+  return '<p class="kn-sub kn-bad">The default is used by this page only. A MISSION never falls '
+       + 'back to it — bind the project itself, or the colony still retrieves nothing.</p>';
 }
 
 /**
@@ -517,6 +582,10 @@ function knImport() {
 
 function knSetProject() {
   knProject = (document.getElementById('kn-project')?.value || '');
+  // A REDRAW, not just a reload: which project is selected decides what the bind row says and
+  // whether the default warning is showing, and those are the controls the operator is looking at.
+  const host = document.getElementById('kn-body');
+  if (host) knRenderShell(host);
   knLoadConflicts();
   knLoadSources();
   knLoadJobs();
@@ -1006,20 +1075,78 @@ async function knUnbind(project) {
    and this field is trusted by neither.
    ───────────────────────────────────────────────────────────────────────────── */
 
+/**
+ * PICK FILES, OR A WHOLE FOLDER. v0.3.8.160.
+ *
+ * The panel used to be a textarea asking for paths inside the colony workspace, one per line —
+ * a fence expressed as a chore. Material an operator wants in a knowledge base lives wherever they
+ * keep it, and the workspace guard exists to stop the COLONY reaching arbitrary files, not to make
+ * a person move their documents before they can hand them over.
+ *
+ * `webkitdirectory` is what makes "choose a folder" possible in a browser at all. It is
+ * non-standard, universally implemented, and degrades to nothing worse than a second button that
+ * does the same as the first — so the file picker beside it is not a fallback to apologise for.
+ *
+ * THE PATH FIELD SURVIVES, folded, and that is not indecision: a folder of ten thousand documents
+ * already sitting on this machine should be named, not uploaded through a browser, and FORAGER
+ * reads it directly. Two ways in, for two genuinely different cases.
+ */
 function knIngestForm() {
   if (!knMayManage()) {
     return '<p class="kn-sub">Starting an import needs <code>manage_knowledge</code>.</p>';
   }
   return '<div class="kn-ingest">'
-    + '<p class="kn-sub">Folders or files inside the colony workspace, one per line. FORAGER parses '
-    + 'them; ANTHILL never reads them, and a path that leaves the workspace is refused.</p>'
-    + '<textarea id="kn-ingest-paths" class="kn-input" rows="3" '
-    + 'placeholder="docs/&#10;handbook/policies.md" aria-label="Paths to import"></textarea>'
+    + '<p class="kn-lede">Choose documents from anywhere on this machine. FORAGER parses them; '
+    + 'ANTHILL never reads them.</p>'
     + '<div class="kn-bindrow">'
-    + '<label class="kn-lbl"><input type="checkbox" id="kn-ingest-force"> Re-read unchanged files</label>'
-    + '<button class="kn-btn kn-primary" data-onclick="knStartIngest()">Import</button>'
+    + '<input type="file" id="kn-files" class="kn-file" multiple data-onchange="knUpload(false)" '
+    + 'aria-label="Choose files to import">'
+    + '<input type="file" id="kn-folder" class="kn-file" webkitdirectory directory multiple '
+    + 'data-onchange="knUpload(true)" aria-label="Choose a folder to import">'
     + '</div>'
+    + '<div class="kn-bindrow">'
+    + '<label class="kn-lbl"><input type="checkbox" id="kn-ingest-force"> Re-read files FORAGER has already seen</label>'
+    + '</div>'
+    + '<p class="kn-sub">Up to 400 files and 100 MB per import — FORAGER\'s own limit. Larger sets go '
+    + 'in batches, or by path below.</p>'
+    + '<details><summary class="kn-sub">Import by path instead (for material already on this machine)</summary>'
+    + '<textarea id="kn-ingest-paths" class="kn-input" rows="2" '
+    + 'placeholder="C:\\Users\\you\\Documents\\handbook" aria-label="Paths to import"></textarea>'
+    + '<button class="kn-btn" data-onclick="knStartIngest()">Import by path</button>'
+    + '<p class="kn-sub">Resolved against the colony workspace and refused if it leaves it. FORAGER '
+    + 'has its own allowed-roots fence on the far side.</p>'
+    + '</details>'
     + '<div class="kn-say" id="kn-say-ingest"></div></div>';
+}
+
+/**
+ * Hand the chosen files to the colony, which hands them to FORAGER.
+ *
+ * `webkitRelativePath` is kept as the name when a folder was picked, so a document set arrives with
+ * its shape rather than as a flat pile of basenames.
+ */
+async function knUpload(fromFolder) {
+  const input = document.getElementById(fromFolder ? 'kn-folder' : 'kn-files');
+  const chosen = Array.from((input && input.files) || []);
+  if (!chosen.length) return;
+
+  const body = new FormData();
+  body.append('project', knProject);
+  body.append('force', document.getElementById('kn-ingest-force')?.checked ? 'true' : 'false');
+  for (const file of chosen) body.append('files', file, file.webkitRelativePath || file.name);
+
+  knSayIngest(`Uploading ${chosen.length} file(s)…`, true);
+  try {
+    // FormData goes as multipart with a boundary the browser sets; `api()` must not stringify it or
+    // name a content type of its own.
+    const r = await api('/knowledge/upload', 'POST', body, 300000);
+    if (input) input.value = '';
+    if (!r || !r.success) { knSayIngest((r && (r.error || r.message)) || 'The import did not start.', false); return; }
+    knSayIngest(r.message || 'Import started.', true);
+    knLoadJobs();
+  } catch (e) {
+    knSayIngest((e && e.message) || 'The import did not start.', false);
+  }
 }
 
 function knSayIngest(msg, ok) {

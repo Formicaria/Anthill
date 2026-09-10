@@ -114,7 +114,13 @@ internal sealed class ForagerClient : IDisposable
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.Token);
         if (!string.IsNullOrWhiteSpace(projectScope))
             request.Headers.TryAddWithoutValidation("X-Forager-Project", projectScope);
-        if (body is not null)
+        // v0.3.8.160 — A CALLER MAY SUPPLY THE CONTENT ITSELF. Multipart uploads cannot be
+        // expressed as "an object to serialise", and giving them their own send method would mean a
+        // second copy of everything above this line: the credential, the loopback refusal, the
+        // timeout, the error mapping. One send path, two kinds of body.
+        if (body is HttpContent prepared)
+            request.Content = prepared;
+        else if (body is not null)
             request.Content = new StringContent(JsonSerializer.Serialize(body, Json), Encoding.UTF8, "application/json");
 
         HttpResponseMessage response;

@@ -125,6 +125,21 @@ internal sealed class ForagerPage<T>
 /// fields a consumer picker needs are read; the response carries more and the additive rule says an
 /// unread field is not an error.
 /// </summary>
+/// <summary>`POST /api/projects/:id/sources` — what was taken and what was refused. v0.3.8.160.</summary>
+internal sealed class ForagerRegistration
+{
+    [JsonPropertyName("registered")] public int? Registered { get; set; }
+    [JsonPropertyName("replaced")] public int? Replaced { get; set; }
+    [JsonPropertyName("duplicates")] public int? Duplicates { get; set; }
+    [JsonPropertyName("rejected")] public List<ForagerRejection>? Rejected { get; set; }
+}
+
+internal sealed class ForagerRejection
+{
+    [JsonPropertyName("name")] public string? Name { get; set; }
+    [JsonPropertyName("reason")] public string? Reason { get; set; }
+}
+
 internal sealed class ForagerProject
 {
     [JsonPropertyName("id")] public string? Id { get; set; }

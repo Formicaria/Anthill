@@ -788,6 +788,71 @@ public static partial class ApiHost
             return ApiJson.Ok(KnowledgeJobPayload(result.Value), "Ingestion queued.");
         });
 
+        /* v0.3.8.160 — PICK FILES, NOT PATHS.
+           The Import panel asked an operator to TYPE folder paths, inside the colony workspace, one
+           per line. That is a fence expressed as a chore: material an operator wants in a knowledge
+           base is wherever they keep it, and moving it under the workspace first — to satisfy a
+           guard whose job is to stop the COLONY reaching arbitrary files — is work the guard was
+           never meant to create.
+
+           BYTES, AND THEREFORE NO PATH TO CONTAIN. A browser file picker hands JavaScript a name
+           and a stream and never a location, so nothing here can be run through `WorkspacePathGuard`
+           and nothing needs to be: no path is being resolved, no filesystem is being read on this
+           colony's behalf, and the operator is handing over documents they chose themselves in an
+           authenticated session. The path route above keeps its fence for exactly the reason it has
+           one — it tells the colony to go and READ something.
+
+           THE CAPS ARE THE PRODUCER'S, quoted rather than invented: FORAGER's settings page reports
+           100 MB and 400 files per request, and a request over either is refused HERE with those
+           numbers rather than sent to fail there. */
+        app.MapPost("/knowledge/upload", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, KnowledgePermissions.Manage); if (auth is not null) return auth;
+            var scope = ResolveKnowledgeScope(ctx.Request.Form["project"].ToString());
+            if (!scope.IsQueryable) return KnowledgeScopeRefusal();
+
+            var ingestion = KnowledgeHost.Ingestion;
+            if (ingestion is null) return KnowledgeFailureResult(KnowledgeFailure.Disabled, "knowledge is not configured");
+
+            if (!ctx.Request.HasFormContentType)
+                return ApiJson.Error("Upload the files as multipart/form-data.", "bad_request");
+
+            var form = await ctx.Request.ReadFormAsync(ctx.RequestAborted).ConfigureAwait(false);
+            var posted = form.Files;
+            if (posted.Count == 0) return ApiJson.Error("Choose at least one file to import.", "bad_request");
+            if (posted.Count > MaxUploadFiles)
+                return ApiJson.Error($"That is {posted.Count} files; FORAGER accepts {MaxUploadFiles} per import. "
+                                   + "Import them in batches.", "bad_request");
+
+            var total = posted.Sum(f => f.Length);
+            if (total > MaxUploadBytes)
+                return ApiJson.Error($"That is {total / (1024 * 1024)} MB; FORAGER accepts "
+                                   + $"{MaxUploadBytes / (1024 * 1024)} MB per import. Import them in batches.",
+                                   "bad_request");
+
+            var files = new List<KnowledgeUpload>();
+            foreach (var file in posted)
+            {
+                using var stream = new MemoryStream();
+                await file.CopyToAsync(stream, ctx.RequestAborted).ConfigureAwait(false);
+                files.Add(new KnowledgeUpload
+                {
+                    // The picker sends a folder-relative path when a folder was chosen, and it is
+                    // kept: a document set's shape is part of what it means.
+                    FileName = string.IsNullOrWhiteSpace(file.FileName) ? "upload" : file.FileName,
+                    Content = stream.ToArray(),
+                    ContentType = file.ContentType,
+                });
+            }
+
+            var force = string.Equals(form["force"].ToString(), "true", StringComparison.OrdinalIgnoreCase);
+            var result = await ingestion.UploadSourcesAsync(scope, files, force, ctx.RequestAborted).ConfigureAwait(false);
+            if (!result.Ok || result.Value is null) return KnowledgeFailureResult(result.Failure, result.Reason);
+
+            return ApiJson.Ok(KnowledgeJobPayload(result.Value),
+                $"{files.Count} file(s) handed to FORAGER; processing started.");
+        }).DisableAntiforgery();
+
         app.MapPost("/knowledge/jobs/{id}/cancel", async (HttpContext ctx, string id) =>
         {
             var auth = RequireAuth(ctx, KnowledgePermissions.Manage); if (auth is not null) return auth;
@@ -862,6 +927,10 @@ public static partial class ApiHost
     /// The refusal for an unresolvable scope. Names the configuration key, because the only person
     /// who can fix this is an operator and "no scope" tells them nothing.
     /// </summary>
+    /// <summary>FORAGER's own per-request import limits, as its settings page reports them.</summary>
+    private const int MaxUploadFiles = 400;
+    private const long MaxUploadBytes = 100L * 1024 * 1024;
+
     private static IResult KnowledgeScopeRefusal() =>
         ApiJson.Error(
             // v0.3.8.153 — IT NAMES THE PLACE, NOT ONLY THE KEY.
@@ -871,9 +940,12 @@ public static partial class ApiHost
             // set either. `.148` built the route; this release built the control, so the refusal
             // finally points somewhere a reader can go. The keys stay named — a scripted caller
             // reading this over HTTP has no Knowledge tab — but they are no longer the only answer.
-            "No knowledge base is mapped for this project. Map it on the Knowledge page, under "
-          + "\"Knowledge bases\" — or set knowledge_project_map / knowledge_default_project in the "
-          + "config file. Knowledge cannot be retrieved until it is bound.", "not_found");
+            // v0.3.8.160 — it named a card ("Knowledge bases") that the rebuilt page no longer has,
+            // and two config keys an operator no longer needs to touch. A refusal that sends someone
+            // looking for a control that is not there is worse than one that says nothing.
+            "This project has no knowledge base bound. Pick one at the top of the Knowledge page — "
+          + "and bind the PROJECT, not the console default: a mission never falls back to the "
+          + "default.", "not_found");
 
     /// <summary>
     /// A provider failure as an HTTP answer. The status codes matter to the console: unavailable and
