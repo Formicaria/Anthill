@@ -29,6 +29,25 @@ var MemoryVault = (function () {
   var dots = [];          // EVERY record, lean — what the chambers are seated from
 
   function $(id) { return document.getElementById(id); }
+
+  /**
+   * THE RENDERER, THROUGH ITS PUBLISHED SEAM. v0.3.9.1.
+   *
+   * v0.3.9 reached for a helper that is PRIVATE to colony-home.js's IIFE, so the guard in front of
+   * every call to it was false in this file: the chambers were never handed the vault, a leaf never
+   * moved the camera, and no local graph was ever drawn. The tree, the search, the card and the
+   * links all worked, so the feature looked finished — the half that talks to the 3D view was
+   * declared and reaching nobody, which is the defect this repository has now found at every layer
+   * it has.
+   *
+   * `window.ColonyHost.live()` is the seam the host publishes for exactly this, and it is the only
+   * way in from here.
+   */
+  function live() {
+    try { return (window.ColonyHost && window.ColonyHost.live()) || null; }
+    catch (_) { return null; }
+  }
+
   function esc(s) { return (typeof escapeHtml === 'function') ? escapeHtml(s == null ? '' : String(s)) : String(s == null ? '' : s); }
 
   /** The colours the chamber uses, so a row in the tree and its dot read as the same thing. */
@@ -94,16 +113,15 @@ var MemoryVault = (function () {
    * because the cluster a dot sits in IS the folder the tree filed it under.
    */
   function pushToChambers() {
-    var live = null;
-    try { live = (typeof liveApi === 'function') ? liveApi() : null; } catch (_) { live = null; }
-    if (!live || !live.setVaultRecords) return;
+    var view = live();
+    if (!view || !view.setVaultRecords) return;
 
     var byChamber = {};
     dots.concat(knowledge || []).forEach(function (rec) {
       var c = rec.chamber || 'memory';
       (byChamber[c] = byChamber[c] || []).push(rec);
     });
-    live.setVaultRecords(byChamber, state.group);
+    view.setVaultRecords(byChamber, state.group);
   }
 
   function fail(msg) {
@@ -206,8 +224,8 @@ var MemoryVault = (function () {
 
     // THE CAMERA FIRST, so the card lands where the eye already is.
     try {
-      var live = (typeof liveApi === 'function') ? liveApi() : null;
-      if (live && live.focusRecord) live.focusRecord(rec.id, rec.chamber);
+      var view = live();
+      if (view && view.focusRecord) view.focusRecord(rec.id, rec.chamber);
     } catch (_) { /* the panel is useful without the 3D view; never let it take the card down */ }
 
     card(rec, null);
@@ -215,8 +233,8 @@ var MemoryVault = (function () {
       var r = await api('/memory/vault/links?id=' + encodeURIComponent(rec.id));
       var links = (r && r.success && r.data && r.data.links) || [];
       card(rec, links);
-      var live2 = (typeof liveApi === 'function') ? liveApi() : null;
-      if (live2 && live2.showLinks) live2.showLinks(rec.id, links);
+      var view2 = live();
+      if (view2 && view2.showLinks) view2.showLinks(rec.id, links);
     } catch (_) { /* links are an enrichment, not the record */ }
   }
 
@@ -256,8 +274,8 @@ var MemoryVault = (function () {
     var host = $('mv-card');
     if (host) { host.hidden = true; host.innerHTML = ''; }
     state.selected = null;
-    var live = (typeof liveApi === 'function') ? liveApi() : null;
-    if (live && live.showLinks) live.showLinks(null, []);
+    var view = live();
+    if (view && view.showLinks) view.showLinks(null, []);
     render();
   }
 

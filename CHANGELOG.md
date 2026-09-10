@@ -1,3 +1,39 @@
+## v0.3.9.1 - the half of the vault that talked to the chambers was reaching nobody
+
+**IT SHIPPED LOOKING FINISHED.** `.9` built the memory vault: the tree, the cross-kind search, the
+card, the links, the projection behind all of it. Every one of those worked. The half that hands the
+vault to the 3D view never ran once -- so the dots were still the old topology slice, clicking a leaf
+never moved the camera, and no local graph was ever drawn.
+
+**THE CAUSE IS THIS REPOSITORY'S OLDEST DEFECT, AT A LAYER IT HAD NOT REACHED YET.** `memory-vault.js`
+called `liveApi()` behind `typeof liveApi === 'function'`. `liveApi` is PRIVATE to
+`colony-home.js`'s IIFE, so that guard is false in every other file: three call sites were skipped
+in silence, nothing threw, and the feature looked complete because the parts that did not need the
+renderer were fine. Declared and reaching nobody -- found in a contract, then in a route, then in a
+plan step, and now in a console module.
+
+The renderer is reached through `window.ColonyHost.live()`, which is the seam the host publishes for
+exactly this. `ConsoleAssetSplitTests` now refuses any console file that calls a helper private to
+another one: these files are IIFEs with one export each, so a name defined in another file's closure
+is by construction a call into a private scope, and the typeof guard in front of it is what makes the
+mistake silent.
+
+**THE CAMERA LANDS ON THE SEAT, NOT WHERE THE SEAT WOULD BE IF THE SPHERE HAD NEVER TURNED.** Flying
+to a record added the seat's offset to the chamber's centre; chambers ROTATE, so that aims at where
+the dot was at angle zero. It now uses the world position the renderer last projected.
+
+**THE PANEL BELONGS TO THE MEMORY VIEW, SO IT LEAVES WITH IT.** `.9` closed it on Survey and on Esc
+and nothing else, so Mission, Mounds and Follow flew the camera elsewhere and left the panel standing
+over the result.
+
+**AND THE KNOWLEDGE PAGE SAYS WHAT THE PATH IS.** The operator reported, after a release that rebuilt
+that page around this exact path, that they still could not tell how to make the colony study what
+FORAGER holds. The page stated what was true at each moment and never stated the SEQUENCE, so someone
+who had done three of the four things could not see which one was missing. Four steps now sit at the
+top, ticked from the colony's own state -- connect, credential, bind a project, study it -- and the
+fourth names the requirement the operator kept hitting: study runs through a PROJECT's binding, so it
+cannot exist for the console default.
+
 ## v0.3.9 - the colony's memory becomes a place you can walk through
 
 **THE 3.8 LINE IS CLOSED.** This opens 3.9, and the releases after it are v0.3.9.1, v0.3.9.2, and so

@@ -3086,6 +3086,13 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           #page-knowledge .kn-status{padding-bottom:10px}
           #page-knowledge .kn-steps{margin:8px 0 12px;padding-left:20px;font-size:12px;line-height:1.7;color:var(--fg);max-width:78ch}
           #page-knowledge .kn-steps li{margin-bottom:4px}
+          /* v0.3.9.1 — the four steps, as a path rather than four separate truths. */
+          #page-knowledge .kn-flow{list-style:none;display:flex;flex-wrap:wrap;gap:6px 18px;margin:0 0 12px;padding:0}
+          #page-knowledge .kn-flow li{display:flex;align-items:baseline;gap:7px;font-size:12px;color:var(--dim)}
+          #page-knowledge .kn-flow li.done{color:var(--fg)}
+          #page-knowledge .kn-tick{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;
+            border-radius:50%;border:1px solid var(--border);font-size:10px;flex:0 0 auto}
+          #page-knowledge .kn-flow li.done .kn-tick{border-color:transparent;background:rgba(99,211,166,.18);color:#63d3a6}
           #page-knowledge .kn-status details>summary{cursor:pointer;margin-top:8px;font-size:11px;color:var(--dim)}
           #page-knowledge .kn-status details[open]>summary{margin-bottom:6px}
           #page-knowledge .kn-searchrow{display:flex;gap:6px;flex-wrap:wrap}

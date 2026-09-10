@@ -1253,7 +1253,14 @@
         api.focus(foundSec.id);
         selRec = { sec: foundSec.id, idx: found };
         var pt = foundSec.pts[found];
-        goal.tgt = [foundSec.pos[0] + pt.o[0], foundSec.pos[1] + pt.o[1], foundSec.pos[2] + pt.o[2]];
+        /* THE SEAT'S WORLD POSITION WHEN THE FRAME HAS ONE. `pt.o` is the seat's offset in the
+           chamber's own frame and the chamber ROTATES, so adding it to the chamber's centre aims at
+           where the dot was when the sphere last happened to be at angle zero. `_w` is what the
+           renderer actually projected last frame — the place the operator is looking at. It is
+           absent only before the first paint, which is the one moment the offset is also correct. */
+        goal.tgt = pt._w
+          ? pt._w.slice()
+          : [foundSec.pos[0] + pt.o[0], foundSec.pos[1] + pt.o[1], foundSec.pos[2] + pt.o[2]];
         goal.dist = Math.max(70, foundSec.R * 2.1);
         emit('record', pt.rec);
         return true;
