@@ -334,6 +334,7 @@ function knStatusCard(s, bound, signedOut) {
   }
 
   return '<div class="kn-card kn-status">'
+    + knSteps(s, bound, signedOut)
     + '<div class="kn-statusline">'
     + `<span class="kn-dot ${dot}"></span><b>${word}</b>`
     + `<code class="kn-ep">${endpoint}</code>`
@@ -354,6 +355,47 @@ function knStatusCard(s, bound, signedOut) {
     + knEndpointRow(s)
     + '<div class="kn-say" id="kn-say-conn"></div>'
     + '</div>';
+}
+
+/**
+ * WHERE YOU ARE IN THE FOUR STEPS. v0.3.9.1.
+ *
+ * The operator's report was that they still did not understand how to make the colony study what
+ * FORAGER holds — after a release that rebuilt this page around exactly that path. The page said
+ * what was true at each moment and never said what the PATH was, so an operator who had done three
+ * of four things could not see which one was missing.
+ *
+ * Four steps, ticked from the colony's own state. Nothing here is a new fact; it is the facts
+ * already on this page, arranged as the sequence they actually are.
+ */
+function knSteps(s, bound, signedOut) {
+  var connected = !!(s && s.enabled && s.reachable);
+  var authed = connected && !signedOut;
+  var studying = (s && s.auto_study) === 'on';
+
+  function step(n, done, label, note) {
+    return '<li class="kn-step' + (done ? ' done' : '') + '">'
+      + '<span class="kn-tick">' + (done ? '✓' : n) + '</span>'
+      + '<span><b>' + escapeHtml(label) + '</b>'
+      + (note ? ' <span class="kn-sub">' + note + '</span>' : '') + '</span></li>';
+  }
+
+  return '<ol class="kn-flow">'
+    + step(1, connected, 'Connect to FORAGER',
+        connected ? '' : 'FORAGER is not answering on ' + escapeHtml(s.configured_endpoint || 'the configured endpoint') + '.')
+    + step(2, authed, 'Give this colony a credential',
+        authed ? '' : 'FORAGER → Settings → Programs that may use Forager.')
+    + step(3, !!bound, 'Bind a project to a knowledge base',
+        bound ? '' : (knProject
+          ? 'Pick one below.'
+          : 'Choose the ANTHILL project first — the console default is not a binding a mission can use.'))
+    // STUDY IS THE STEP THE OPERATOR COULD NOT FIND, and it names its own requirement: a mission
+    // studies knowledge through its PROJECT's binding, so the button cannot exist for the default.
+    + step(4, !!bound && studying, 'Study it',
+        !bound ? 'Available once a project is bound.'
+          : studying ? 'Every 6 hours, 25 documents a pass.'
+          : 'Press <b>Study</b> below to read new documents once, or tick <b>Study new documents automatically</b>.')
+    + '</ol>';
 }
 
 /** The card you work in once the colony can actually talk to FORAGER. */

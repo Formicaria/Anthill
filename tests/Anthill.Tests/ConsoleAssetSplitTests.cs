@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Text.RegularExpressions;
 using Xunit;
 
@@ -158,4 +161,48 @@ public class ConsoleAssetSplitTests
             "the same top-level function is defined in more than one console asset; the later load "
             + "silently wins: " + string.Join(", ", duplicates));
     }
+    /// <summary>
+    /// A CONSOLE FILE REACHES ANOTHER ONE THROUGH A PUBLISHED SEAM, NEVER THROUGH ITS PRIVATES.
+    /// v0.3.9.1.
+    ///
+    /// THE DEFECT, and it shipped. `memory-vault.js` called `liveApi()` — a helper PRIVATE to
+    /// `colony-home.js`'s IIFE — behind `typeof liveApi === 'function'`. That guard is false in
+    /// every other file, so the chambers were never handed the vault, a leaf never moved the
+    /// camera, and no local graph was ever drawn. Nothing threw. The tree, the search and the card
+    /// all worked, so the feature looked finished and half of it was reaching nobody.
+    ///
+    /// WHAT MAKES IT CHECKABLE is that these files are IIFEs with exactly one export each: what a
+    /// file publishes it hangs on `window`. So a name that is defined inside another file's closure
+    /// and used here is, by construction, a call into a private scope — and the typeof guard in
+    /// front of it is what turns the mistake silent.
+    /// </summary>
+    [Fact]
+    public void NoConsoleScript_CallsAnotherFilesPrivateHelper()
+    {
+        // The known private helpers, by the file that owns them. A name added here is a name that
+        // must be reached through `window.<Module>` from anywhere else.
+        var privates = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["liveApi"] = "colony-home.js (reach the renderer with window.ColonyHost.live())",
+        };
+
+        var problems = new List<string>();
+        foreach (var file in Directory.GetFiles(Path.Combine(SourceText.RepoRoot(), "src", "Anthill.UI"), "*.js"))
+        {
+            var name = Path.GetFileName(file);
+            var code = SourceText.CodeOnly(File.ReadAllText(file));
+
+            foreach (var (helper, owner) in privates)
+            {
+                if (owner.StartsWith(name, StringComparison.Ordinal)) continue;   // its own file may use it
+                if (!Regex.IsMatch(code, @"\b" + Regex.Escape(helper) + @"\s*\(")) continue;
+                problems.Add($"{name} calls `{helper}()`, which is private to {owner}. It is not "
+                           + "defined in this file's scope, so the call is skipped silently and "
+                           + "whatever it was wiring reaches nobody.");
+            }
+        }
+
+        Assert.True(problems.Count == 0, string.Join("\n  ", problems));
+    }
+
 }

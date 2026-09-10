@@ -651,7 +651,14 @@
     }
     else if (act === 'ask') send('chat');
     else if (act === 'run') send('mission');
-    else view(act);
+    else {
+      /* v0.3.9.1 — THE VAULT BELONGS TO THE MEMORY VIEW, so it leaves with it.
+         `.9` closed it on Survey and on Esc and nothing else, so Mission, Mounds and Follow all
+         flew the camera somewhere the panel was not about and left it standing over the result.
+         Every remaining act here is a VIEW change; a view that is not Memory closes it. */
+      view(act);
+      if (typeof MemoryVault !== 'undefined') MemoryVault.close();
+    }
   }
   function init() {
     var page = $('page-colony'); if (!page) return;
