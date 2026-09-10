@@ -108,20 +108,21 @@ public class KnowledgeGateTests : IDisposable
     // ---- What did NOT cross ---------------------------------------------------------------------
 
     /// <summary>
-    /// THE ENDPOINT, THE TOKEN AND THE REMOTE PERMISSION STAY A FILE EDIT.
+    /// THE TOKEN AND THE REMOTE PERMISSION STAY A FILE EDIT.
     ///
-    /// These are the keys the section was made FileOnly for. `knowledge_forager_endpoint` decides
-    /// which service the colony trusts as the source of organizational fact;
-    /// `knowledge_forager_allow_remote` permits sending the colony's queries to a service that has
-    /// no authentication of its own, across a network. Each is a security decision that a
-    /// compromised console must not be able to make, and none of them is made easier to reach by the
-    /// switch above being writable.
+    /// `knowledge_forager_token` is the credential; `knowledge_forager_allow_remote` permits sending
+    /// the colony's queries to a service that has no authentication of its own, ACROSS A NETWORK.
+    /// Each is a security decision a compromised console must not be able to make.
+    ///
+    /// v0.3.8.157 — the ENDPOINT left this list and did not become unguarded. It is writable from
+    /// the console only as a LOOPBACK address; anything else is refused unless the file already
+    /// permits a remote one. So the console can move FORAGER to another port on this machine, and
+    /// cannot redirect the colony's source of fact off it. The test below holds that.
     /// </summary>
     [Theory]
-    [InlineData("knowledge_forager_endpoint")]
     [InlineData("knowledge_forager_token")]
     [InlineData("knowledge_forager_allow_remote")]
-    public void TheEndpointTokenAndRemotePermission_StayInTheFile(string key)
+    public void TheTokenAndRemotePermission_StayInTheFile(string key)
     {
         Assert.NotNull(ConfigCatalog.Find(key));
         Assert.False(ConfigCatalog.IsEditable(key),
@@ -131,6 +132,79 @@ public class KnowledgeGateTests : IDisposable
           + "if it is genuinely meant to move, say why on the property and update "
           + "TheEditableSurface_IsExactlyWhatItWasBeforeItBecameAProjection in the same commit.");
     }
+
+    /// <summary>
+    /// THE ENDPOINT CROSSED WITH A VALUE GUARD, AND THE GUARD IS WHAT MAKES THE CROSSING SAFE.
+    /// v0.3.8.157.
+    ///
+    /// Driven rather than asserted about: `ApplySettingsUpdate` is the method behind `POST
+    /// /settings`, and a refused key is simply absent from what it returns — the same shape it
+    /// already uses for a key it will not write at all. A test that only checked `IsEditable` would
+    /// pass on a key that was editable and accepted anything, which is the hole this guard exists
+    /// to close.
+    /// </summary>
+    [Fact]
+    public void TheConsole_MayMoveTheEndpointOnThisMachine_AndNotOffIt()
+    {
+        Assert.True(ConfigCatalog.IsEditable(AnthillRuntime.KnowledgeEndpointKey));
+        Assert.False(AnthillRuntime.Knowledge.AllowRemote,
+            "knowledge_forager_allow_remote is true in this environment, which legitimately permits "
+          + "a remote endpoint — so this guard cannot measure the refusal. Unset it for the test run.");
+
+        var before = AnthillRuntime.Knowledge.Endpoint;
+        try
+        {
+            var loopback = Write(AnthillRuntime.KnowledgeEndpointKey, "http://127.0.0.1:9911");
+            Assert.Contains(AnthillRuntime.KnowledgeEndpointKey, loopback);
+            Assert.Equal("http://127.0.0.1:9911", AnthillRuntime.Knowledge.Endpoint);
+
+            // localhost by name, and ::1, are the same decision spelled differently.
+            Assert.Contains(AnthillRuntime.KnowledgeEndpointKey, Write(AnthillRuntime.KnowledgeEndpointKey, "http://localhost:9912"));
+
+            var remote = Write(AnthillRuntime.KnowledgeEndpointKey, "http://knowledge.example.com:8790");
+            Assert.DoesNotContain(AnthillRuntime.KnowledgeEndpointKey, remote);
+            Assert.Equal("http://localhost:9912", AnthillRuntime.Knowledge.Endpoint);
+        }
+        finally
+        {
+            Write(AnthillRuntime.KnowledgeEndpointKey, before);
+        }
+    }
+
+    /// <summary>
+    /// AND THE STUDY SCHEDULE IS A SWITCH THAT MOVES THE COLONY. v0.3.8.157, reversing `.156`'s
+    /// file-only judgement: what that argument guarded against is an automation nobody chose, and a
+    /// labelled toggle is the opposite of that. Asserted through the runtime the stager reads, not
+    /// through the catalog — an editable key the projection then dropped is the same button doing
+    /// nothing, one layer down.
+    /// </summary>
+    [Fact]
+    public void TheStudySchedule_IsWritableFromTheConsole()
+    {
+        var before = AnthillRuntime.KnowledgeAutoStudy;
+        try
+        {
+            Assert.Contains("knowledge_auto_study", Write("knowledge_auto_study", "on"));
+            Assert.Equal("on", AnthillRuntime.KnowledgeAutoStudy);
+
+            Assert.Contains("knowledge_auto_study", Write("knowledge_auto_study", "off"));
+            Assert.Equal("off", AnthillRuntime.KnowledgeAutoStudy);
+
+            // A typo still reads as off, from this surface as from the file.
+            Write("knowledge_auto_study", "yes please");
+            Assert.Equal("off", AnthillRuntime.KnowledgeAutoStudy);
+        }
+        finally
+        {
+            AnthillRuntime.KnowledgeAutoStudy = before;
+        }
+    }
+
+    private static List<string> Write(string key, string value) =>
+        AnthillRuntime.ApplySettingsUpdate(new Dictionary<string, JsonElement>
+        {
+            [key] = JsonSerializer.SerializeToElement(value),
+        });
 
     /// <summary>
     /// THE PROJECT MAP IS NOT A SETTING, AND SINCE `.148` IT IS NOT A FILE EDIT EITHER.
@@ -270,6 +344,47 @@ public class KnowledgeGateTests : IDisposable
     /// route and recorded the missing panel as a UI GAP; this asserts the panel exists, because a
     /// route with no caller is the same defect the ledger entry was standing in for.
     /// </summary>
+    /// <summary>
+    /// THE THREE THINGS AN OPERATOR COMES HERE TO DO ARE IN ONE CARD. v0.3.8.157.
+    ///
+    /// The page had eight expanded cards and the ordinary path — connect, choose a knowledge base,
+    /// put documents in it — crossed all of them in the wrong order: binding lived in a table three
+    /// cards below the search box, and ingestion in a fourth below that. This asserts the shape that
+    /// replaced it rather than the prose: one row that states what this project reads and offers
+    /// Import, Study and Unbind beside it, and an Import button that opens the panel it names.
+    /// </summary>
+    [Fact]
+    public void TheConsole_OffersBindingAndImportInOnePlace()
+    {
+        var console = ConsoleSource();
+
+        Assert.Contains("knBaseRow", console, StringComparison.Ordinal);
+        Assert.Contains("knImport", console, StringComparison.Ordinal);
+        // The button and the panel are one action: an Import control that only scrolled would be a
+        // label for a place rather than a thing that happens.
+        Assert.Contains("panel.open = true", console, StringComparison.Ordinal);
+        Assert.Contains("kn-ingest-paths", console, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// AND THE REST IS FOLDED RATHER THAN DELETED. Sources, conflicts, proposals, jobs and the full
+    /// binding table each answer a question an operator has occasionally and nobody has on arrival.
+    /// Their loaders still run — the ids they write into must exist whether the section is open or
+    /// not, which is exactly what `&lt;details&gt;` gives and a tab would not.
+    /// </summary>
+    [Fact]
+    public void TheSecondaryPanels_AreFoldedAndStillLoaded()
+    {
+        var console = ConsoleSource();
+
+        Assert.Contains("<details class=\"kn-card\"", console, StringComparison.Ordinal);
+        foreach (var id in new[] { "kn-sources", "kn-conflicts", "kn-reviews", "kn-jobs" })
+        {
+            Assert.Contains($"id=\"{id}\"", console, StringComparison.Ordinal);
+            Assert.Contains($"getElementById('{id}')", console, StringComparison.Ordinal);
+        }
+    }
+
     [Fact]
     public void TheConsole_BindsAProjectToAKnowledgeBase()
     {

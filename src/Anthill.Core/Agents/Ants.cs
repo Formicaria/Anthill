@@ -197,6 +197,45 @@ public sealed class ResearcherAnt : BaseAnt
         toolResults.Add(_tools.RunTool(Tools.ColonySelfKnowledgeTool.ToolName, mission.Id, task.Id, Name,
             new() { ["topic"] = mission.Goal }));
 
+        /* v0.3.8.157 — AND WHAT THE ORGANIZATION KNOWS, when this mission's project has a knowledge
+         * base bound to it.
+         *
+         * THE DEFECT, and it is the same one three releases in a row have found one layer further
+         * out. v0.3.8.121 granted this role the knowledge tools; v0.3.8.136 entered the scope so a
+         * dispatched call would resolve instead of refusing; v0.3.8.156 guaranteed a PLAN STEP whose
+         * description asks for a retrieval. Nothing dispatched one. This handler is deterministic —
+         * it calls the tools it decides to call and never asks a model which — so a task description
+         * naming `knowledge_retrieve` reached no chooser at all. The contract said the researcher
+         * held the knowledge tools, the plan said a step would use them, and the knowledge base was
+         * read by nobody.
+         *
+         * GATED ON THE SCOPE, NOT ON THE TASK, and not on a keyword. `KnowledgeScopeContext.HasScope`
+         * is only true when the operator mapped this project to a knowledge base — that mapping IS
+         * the operator saying this project has knowledge worth reading, and re-deciding it here from
+         * words in a goal would be the composed-goal keyword trigger that has caused three separate
+         * defects in recent releases.
+         *
+         * THE GOAL IS THE QUERY, exactly as it is for `colony_self_knowledge` above, and the cost
+         * argument is the one difference worth stating: this one leaves the process. It is one
+         * retrieval per researcher task against a base the operator chose to bind, and a colony that
+         * bound a knowledge base and then read it only when a keyword fired would be the harder
+         * behaviour to explain.
+         */
+        IReadOnlyList<Anthill.SDK.Knowledge.KnowledgeCitation> knowledgeCitations =
+            Array.Empty<Anthill.SDK.Knowledge.KnowledgeCitation>();
+        if (Anthill.SDK.Knowledge.KnowledgeScopeContext.HasScope)
+        {
+            var retrieval = _tools.RunTool(Anthill.SDK.Knowledge.KnowledgeToolNames.Retrieve,
+                mission.Id, task.Id, Name, new() { ["query"] = mission.Goal });
+
+            // KEPT WHETHER IT SUCCEEDED OR NOT, the rule `search_workspace` states above: "I asked
+            // the knowledge base and it had nothing" and "I never asked" are different facts, and
+            // this researcher's own context must not be able to hide which one happened.
+            toolResults.Add(retrieval);
+            if (retrieval.Success)
+                knowledgeCitations = Anthill.SDK.Knowledge.KnowledgeCitations.Read(retrieval.Output);
+        }
+
         // v0.3.8.98 — THE RUNTIME HALF, dispatched when the TASK says that is what it is for.
         //
         // Branching on the task's declared capability rather than on its worker id or on words in
@@ -261,7 +300,9 @@ public sealed class ResearcherAnt : BaseAnt
             // Configured-offline mode: the local summary IS the deliverable — a plain success.
             var offline = "Researcher Ant summarized local context without LLM routing.\n\n" + rawContext +
                    $"\n\nResearch Finding:\nANTHILL v{AnthillRuntime.Version} supports read-only external research when web search is enabled.";
-            return TextResult(Name, offline);
+            // The record is of the CONSULTATION, not of the model call: the retrieval happened, and
+            // an offline colony that read the knowledge base has still read it.
+            return WithKnowledgeRecord(TextResult(Name, offline), knowledgeCitations, mission.Goal);
         }
 
         var prompt = $@"Summarize only the context that is relevant to the mission below.
@@ -289,9 +330,10 @@ Return format:
             // degradation disclosed as a structured warning, not silently as ordinary success and
             // not a task failure that would discard usable context.
             var fallback = "Researcher routed model unavailable. Fallback context brief:\n\n" + rawContext;
-            return AntExecutionResult.SucceededWithWarnings(
+            return WithKnowledgeRecord(AntExecutionResult.SucceededWithWarnings(
                 "Researcher fell back to a local context brief (routed model unavailable).",
-                new[] { $"provider_failure[{call.Status.Name()}]: {TextUtil.Truncate(call.Content, 300)}" }, fallback);
+                new[] { $"provider_failure[{call.Status.Name()}]: {TextUtil.Truncate(call.Content, 300)}" }, fallback),
+                knowledgeCitations, mission.Goal);
         }
         // v0.3.8.57 — the four sections the prompt above DEMANDS, extracted rather than flattened.
         //
@@ -305,7 +347,9 @@ Return format:
         // like "the researcher found nothing", and every consumer downstream would believe the
         // second. See ResearchBrief for why the builder gets no equivalent.
         var brief = Anthill.SDK.Artifacts.ResearchBrief.TryParse(call.Content);
-        var text = WithRecallRecord(TextResult(Name, call.Content, call: call), mission);
+        var text = WithKnowledgeRecord(
+            WithRecallRecord(TextResult(Name, call.Content, call: call), mission),
+            knowledgeCitations, mission.Goal);
         return brief is null
             ? text with
             {
@@ -335,6 +379,46 @@ Return format:
     ///
     /// Never throws: a mission whose recall record fails to build still answers, unsourced.
     /// </summary>
+    /// <summary>
+    /// WHAT THE ORGANIZATION'S KNOWLEDGE BASE WAS ASKED, as a record a citation can resolve against.
+    /// v0.3.8.157.
+    ///
+    /// THE SAME SHAPE AS <see cref="WithRecallRecord"/> AND THE WEB ANT'S SOURCE SET, deliberately,
+    /// and the schema is theirs rather than a new one. `CitationIntegrity` resolves against
+    /// `ArtifactSchemas.CitableRecords`, the builder LISTS the same set, and a third record type
+    /// would have to be added to both — which is exactly the drift `ArtifactSchemas.CitableRecords`
+    /// was named once to prevent. A knowledge statement is a thing this mission went and read; that
+    /// is what `source_set` means, and `knowledge:` in the url slot is what says which kind.
+    ///
+    /// NO CITATIONS, NO ARTIFACT. An empty `source_set` would record that a retrieval happened and
+    /// resolve nothing, and `CitationIntegrity`'s recall walk already refuses to treat an empty one
+    /// as evidence — writing one here would be asking a downstream gate to ignore what this layer
+    /// chose to write. A knowledge base that answered with nothing is reported in the tool context
+    /// above, where it belongs, as a finding.
+    /// </summary>
+    private static AntExecutionResult WithKnowledgeRecord(AntExecutionResult result,
+        IReadOnlyList<Anthill.SDK.Knowledge.KnowledgeCitation> citations, string query)
+    {
+        if (citations.Count == 0) return result;
+        return WithArtifact(result, Anthill.SDK.Artifacts.ArtifactSchemas.SourceSet,
+            "Knowledge consulted", KnowledgeSourceSetPayload(query, citations));
+    }
+
+    /// <summary>
+    /// The payload, spelled where a test can drive it without a colony. `url` and `title` are the
+    /// field names <see cref="Anthill.SDK.Artifacts.SourceSetPayload"/> reads — and this method
+    /// exists as its own function so the round trip through that parser is asserted against what the
+    /// PRODUCER actually writes, which is the one property its own documentation says a fixture
+    /// cannot give you.
+    /// </summary>
+    internal static string KnowledgeSourceSetPayload(string query,
+        IReadOnlyList<Anthill.SDK.Knowledge.KnowledgeCitation> citations) =>
+        Json.Dumps(new
+        {
+            query,
+            sources = citations.Select(c => new { Url = c.Url, Title = c.Title }),
+        }, indented: true);
+
     private AntExecutionResult WithRecallRecord(AntExecutionResult result, Mission mission)
     {
         try

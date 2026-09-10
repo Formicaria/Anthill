@@ -1,3 +1,120 @@
+## v0.3.8.157 - the knowledge lane finally runs end to end
+
+Three releases built a lane and nothing walked down it. `.121` built the knowledge tools and granted
+them to the researcher. `.136` found that no scope was ever entered, so every knowledge call an ant
+dispatched refused, and entered one. `.156` guaranteed a plan step whose description asks for a
+retrieval. A knowledge-backed answer still rendered every claim `[UNSOURCED]`. This release closes
+the remaining three gaps and rebuilds the page an operator uses to reach any of it.
+
+## THE RESEARCHER NEVER CALLED THE TOOL
+
+It is a DETERMINISTIC handler -- it dispatches the tools it decides to dispatch and never asks a
+model which -- so `.156`'s step description naming `knowledge_retrieve` reached no chooser at all.
+The contract said the role held the knowledge tools, the plan said a step would use them, and the
+knowledge base was read by nobody. That is this repository's oldest defect shape found one layer
+further out again, and `.156` is the release that added the newest instance of it.
+
+The dispatch is now gated on the mission's ambient scope: the operator binding a project to a
+knowledge base IS the operator saying this project has knowledge worth reading, and re-deciding that
+here from words in a goal would be the composed-goal keyword trigger that has caused three separate
+defects in recent releases.
+
+## AND THERE WAS NOTHING TO CITE
+
+`CitationIntegrity` resolves a citation against `source_set` records; nothing ever wrote one for a
+knowledge item, so the organization's own documents were the one class of evidence this colony could
+read and could not cite. A statement is now citable as `knowledge:<project>/<id>` -- the vocabulary
+`mission:<id>` established in `.99`, whose comment gives the rule this follows: ONE vocabulary for
+what may be cited is what lets ONE gate resolve all of them. The project ref is part of the identity
+rather than decoration: an id means nothing without the knowledge base it came from, and a citation
+that cannot be resolved back to a tenant cannot be audited.
+
+**The schema is `source_set`, not a new one.** `ArtifactSchemas.CitableRecords` is named once because
+the builder LISTS it and the gate RESOLVES against it; a third record type would have to be added to
+both, and drift between two spellings is what naming it once prevents.
+
+**Evidence, and NOT `HasProvenance`** -- the near miss worth stating. That predicate is Rule 9: a fact
+carries evidence OR is explicitly UNRESOLVED, there is no third state, so it is TRUE for a statement
+whose supporting text could not be located. The renderer prints that same statement as UNRESOLVED and
+tells the model not to rely on it. Citing on the predicate would have handed back, as something to
+rest on, the one fact the context says it cannot support.
+
+**One file holds the writer and the reader**, which is `SourceSetPayload`'s hard-won lesson: there the
+producer serialised `"Url"` while both readers looked for `"url"`, both found nothing, silently, and
+the suite passed because its fixtures were written the way the readers expected. The citable block is
+rendered and parsed in `KnowledgeCitations`, and the test asserts the round trip against what the
+producer actually emits.
+
+Also: the researcher's contract now declares what it has been writing since `.57` and `.99` --
+`research_brief` and `recall_set` were produced by a role declaring only `text`, the drift that file
+warns about, in the file that warns about it.
+
+## THE PAGE SAID EVERYTHING AND OFFERED NOTHING
+
+Eight expanded cards and roughly nine hundred words before a control. The three things an operator
+comes here to do -- connect to FORAGER, choose a knowledge base, put documents into it -- were spread
+across three cards two screens apart, in the wrong order: binding lived in a table three cards below
+the search box and ingestion in a fourth below that. Every card led with a paragraph arguing for its
+own design.
+
+The arguments were right and they were in the wrong place. Why a mission never falls back to the
+default knowledge base, why the base is typed rather than picked from a list, why accepting a review
+is not applying one -- all of it stays, in `docs/KNOWLEDGE_ARCHITECTURE.md` §3b and in the code
+comments, where an argument belongs. A console states what is true NOW and offers the next action.
+
+**One card you act on.** Connection and its on/off switch on one line; below it, one row saying what
+this project reads with Import, Study and Unbind beside it, or the field to bind one if it reads
+nothing. Import opens the panel it names and puts the cursor in it -- a button that only scrolled
+would be a label for a place rather than a thing that happens.
+
+**And the rest folded, not deleted.** Sources, conflicts, review proposals, import jobs and the full
+binding table are `<details>` sections rather than tabs for a specific reason: their loaders run on
+page enter and write into ids that must exist whether or not anyone has opened the section, which a
+tab that discards its panel would break.
+
+**One writer for two binding controls.** The row at the top and the table below it write the same
+mapping through `knWriteBinding`; two copies of that call is how one of them ends up sending a field
+the other stopped sending.
+
+## AND THE SWITCHES THAT MATTER ARE SWITCHES
+
+Nobody edits JSON to turn a feature on. A control that exists only in a config file is, for most
+colonies, a control that is never used -- and between `.121` and `.156` the two things an operator
+most plausibly wants to change about knowledge were the two things the console would not let them
+change. Two keys crossed the line, and the line moved where it could move safely rather than wherever
+it was inconvenient.
+
+`knowledge_auto_study` is now a toggle on the Knowledge page, and this REVERSES `.156`'s own
+judgement, said out loud rather than quietly done. That release argued a schedule for unattended work
+is a file decision. What the argument actually guards against is an automation that starts without
+anyone choosing it, and a labelled switch is the opposite of that: it is the decision, made
+explicitly, by the person it belongs to. It still ships off, and a typo still reads as off.
+
+`knowledge_forager_endpoint` crossed WITH A VALUE GUARD rather than plainly, because exposure and
+acceptability are two different questions and this is the first key where they have different
+answers. `ConfigExposure` says who may write a key; it cannot say which values are allowed. So
+`ApplySettingsUpdate` refuses a non-loopback endpoint unless `knowledge_forager_allow_remote` is
+ALREADY TRUE IN THE FILE. What the console gained is "move FORAGER to another port on this machine".
+What it did not gain is "redirect what this colony believes to a host across the network" -- the
+decision the section is FileOnly for, and FORAGER has no authentication of its own to make the far
+end prove anything.
+
+**The token and the remote permission did not move**, and would not have been safe to move. The
+credential is a credential; the remote permission is the one that widens who the colony may talk to.
+
+**Refused means not applied, and the page checks the effect.** A refused key is simply absent from
+what `ApplySettingsUpdate` returns while the request still answers success -- so the console re-reads
+what the colony is now configured with and reports which of the two happened. Reading the reply would
+have reported a refusal as a save; a claim is not a result.
+
+**One loopback rule.** `KnowledgeOptions.IsLoopback` now delegates to `UrlSafety.IsLoopbackBindHost`,
+which is what the runtime guard also calls. Two spellings of "is this loopback" -- one accepting a
+value the other would refuse -- is a defect this repository has paid for in other shapes.
+
+The editable surface goes 106 -> 108. It was recorded as 105: `auto_update` crossed at `.149` without
+that line being updated, so the figure had already fallen behind the surface it describes -- which is
+the defect the guard exists to catch, corrected here rather than quietly rebased.
+
 ## v0.3.8.156 - the study pass gets a schedule, and what the colony studied finally reaches the plan
 
 **`.154` SHIPPED STUDY AS A BUTTON AND ARGUED FOR WHY**, in the button's own comment: "a button that

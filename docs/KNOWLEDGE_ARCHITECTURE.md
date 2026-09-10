@@ -115,13 +115,45 @@ becomes `Unknown` and renders as `UNKNOWN SUPPORT`, not as a fact.
 
 ---
 
+## 3b. The console (v0.3.8.157)
+
+One card carries the whole ordinary path: the FORAGER connection with its on/off switch, then a row
+saying which knowledge base the selected project reads, with **Import**, **Study** and **Unbind**
+beside it — or the field to bind one when it reads nothing. Sources, conflicts, review proposals,
+import jobs and the full binding table are folded below it.
+
+The reasoning the page used to carry in prose lives here instead:
+
+- **A project with no binding refuses rather than guessing.** A mission never falls back to the
+  default knowledge base; the default exists for a console operator with no project selected. A
+  mission reading a knowledge base that is not its own is the single failure the mapping prevents.
+- **The knowledge base is typed, not chosen from a list.** FORAGER publishes no way to enumerate its
+  projects — P11 in `docs/FORAGER_SHARED_CONTRACT.md` — and inventing an endpoint here would be a
+  second implementation of the same rule. When P11 lands the field becomes a select.
+- **Study is one pass, not a subscription.** It runs the colony over documents that base has not
+  studied at their current version, up to 25 per click. A schedule is `knowledge_auto_study`, off by
+  default, in the config file — an automation decision belongs where a decision is made, not behind a
+  click that does not look like one.
+- **Accepting a review is not applying it.** FORAGER publishes no endpoint for applying a review
+  (P13), so acceptance records that the operator agreed and changes nothing in the knowledge base.
+- **Import paths are fenced twice.** `POST /knowledge/jobs` resolves every path through the colony's
+  workspace guard before anything is sent, and FORAGER has its own allowed-roots fence on the far
+  side. Neither is trusted to be the only one.
+- **The remote permission is not togglable from the console.** `knowledge_forager_allow_remote` is a
+  file decision: FORAGER has no authentication of its own, so reaching one across a network is not a
+  click.
+
 ## 4. Configuration
 
-Every key here is `FileOnly` **except the on/off switch**. `knowledge_forager_endpoint` names the
-service the colony trusts as its source of fact, and `knowledge_project_map` decides which knowledge
-a mission may read; neither should be reachable from a compromised console. `knowledge_enabled` only
-decides whether the colony uses what the file already configured, which is why it — and only it —
-is console-writable.
+Three keys are console-writable — the on/off switch, the study schedule, and the endpoint **as a loopback address only**. Everything else is `FileOnly`. `knowledge_forager_token` is a credential and
+`knowledge_forager_allow_remote` widens who the colony may talk to; neither is reachable from a
+compromised console. `knowledge_enabled` only
+decides whether the colony uses what the file already configured. `knowledge_auto_study` decides whether
+this colony studies knowledge it has already been given, at an Observe ceiling — a labelled switch is the
+deliberate choice its file-only argument was protecting. The endpoint is guarded by VALUE rather than by
+exposure: `AnthillRuntime.RefusedSettingWrite` accepts only a loopback address from the console, so moving
+FORAGER to another port here is a click and pointing the colony at a host across the network is still a file
+edit.
 
 Full table in [`CONFIGURATION.md`](CONFIGURATION.md). The load-bearing ones:
 

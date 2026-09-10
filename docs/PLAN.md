@@ -18,7 +18,7 @@ it in. `AUTONOMY-10.md` folded into this file; role mechanics live in
 | `docs/adr/` | durable architectural decisions | release status |
 | `docs/archive/**` | historical snapshots | anything presented as current |
 
-Shipping release: **v0.3.8.156**. Everything below the rule is a record, not a state.
+Shipping release: **v0.3.8.157**. Everything below the rule is a record, not a state.
 
 **v0.3.8.97 correction (recorded here, not by rewriting history).** `v0.3.8.97` is tagged and
 released at `a828dfe`. Its own CHANGELOG entry says the tag waits for the live qualification pack;
@@ -503,6 +503,19 @@ class-independent, reported through `PlanSubstitutions.KnowledgeBaseBound`, and 
 `simple_answer` alone, whose promise is that the answer rests on nothing retrieved. The condition is
 read from the scope the Queen entered, never from the project map a second time: two readers of
 "which knowledge may this mission read" is the one failure the scope model exists to prevent.
+
+**And what it reads is citable.** v0.3.8.157. `.156` planned the step; the researcher is a
+deterministic handler and never dispatched the tool, so the step reached no chooser. The retrieval is
+now dispatched whenever the mission's scope is queryable, and every evidence-backed statement it
+returns is recorded in a `source_set` as `knowledge:<project>/<id>` — the `mission:<id>` vocabulary
+from `.99`, so one gate resolves all three kinds. Facts that are UNRESOLVED are deliberately NOT
+citable: `HasProvenance` is true for them by Rule 9, and citing on it would let an answer rest on the
+one statement the context says it cannot support.
+
+**And the page an operator uses was rebuilt around it.** v0.3.8.157. Connect, bind, import — one
+card, in that order, with sources, conflicts, review proposals, jobs and the full binding table
+folded below. The arguments the page used to carry as prose moved to `docs/KNOWLEDGE_ARCHITECTURE.md`
+§3b, which is where an argument belongs; a console says what is true now and offers the next action.
 
 **Off by default, and it adds no tables.** `knowledge_enabled` ships false; an existing config loads
 unchanged and the database is untouched in both directions, so enabling and disabling are equally

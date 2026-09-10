@@ -360,7 +360,11 @@ public static class AntExecutionCatalog
                             // decide.
                             Anthill.SDK.Knowledge.KnowledgeToolNames.Review),
             ForbiddenTools: S("apply_patch", "shell_command", "write_text_file"),
-            ProducedArtifactTypes: S("text"),
+            // v0.3.8.157 — DECLARED TO MATCH WHAT IT ACTUALLY WRITES. This read `S("text")` while
+            // the handler had been emitting `research_brief` since v0.3.8.57 and `recall_set` since
+            // v0.3.8.99: the drift this file's own header warns about, in the file that warns about
+            // it. `source_set` joins in the release that dispatches the retrieval behind it.
+            ProducedArtifactTypes: S("text", "research_brief", "recall_set", "source_set"),
             AllowedHandoffRoles: S("web", "file", "ui_cartographer", "coder", "builder"),
             AllowsModelCalls: true, AllowsSideEffects: false, ProducesPatchProposals: false,
             // Context, and nothing else. It assembles a brief from the goal, recalled memory and a
