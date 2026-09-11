@@ -95,6 +95,9 @@
        derived), so the renderer can draw the inferred edge differently from the four that are
        facts — the same distinction the sidebar draws with a dashed chip. */
     var vaultChambers = {}, vaultLinks = {}, vaultLinkPts = [], vaultLinkOf = null, vaultGrouping = 'facet';
+    /* WHAT THE VAULT LAST HANDED EACH CHAMBER, KEPT. v0.3.9.4 — see `vaultOver` below for why a
+       chamber the vault owns cannot be rebuilt from the topology snapshot alone. */
+    var vaultSectors = {};
     /** Drop a stale local graph off every seat, so a closed card leaves no lines behind. */
     function clearRel(sec) { sec.pts.forEach(function (p) { if (p.rec && p.rec.rel) p.rec.rel = null; }); }
     var moundDefaults = [];
@@ -218,6 +221,36 @@
        focus are untouched. */
     var SLOTS = 96, LATTICE = [];
     for (var li = 0; li < SLOTS; li++) { var zz = 1 - 2 * (li + .5) / SLOTS, rr = Math.sqrt(Math.max(0, 1 - zz * zz)), ph = li * GOLDEN; LATTICE.push([Math.cos(ph) * rr, zz, Math.sin(ph) * rr]); }
+    /* WHY THE VAULT'S RECORDS SURVIVE A TOPOLOGY POLL. v0.3.9.4.
+
+       THE DEFECT, stated plainly because it is this repository's most-named one wearing yet another
+       hat: `setVaultRecords` set `vaultChambers[id] = true` and NOTHING EVER READ IT. The colony
+       polls `/colony/topology` on a timer, `setTopology` calls `rebuildSector(s, sec)` for every
+       sector in the snapshot, and the snapshot carries the reducer's RECENT SLICE — a handful of
+       records, or none. So the next poll after the panel pushed the vault replaced eight thousand
+       dots with nothing, and the only way back was a reload and another click on Memory, because a
+       reload is the only thing that makes the panel push again. The operator's report — "they
+       disappear fully when i click off, and i can only see them again by refreshing" — is exactly
+       that timer, and "randomly" is the poll interval landing wherever it lands.
+
+       Recording a flag and never consulting it is DECLARED AND REACHING NOBODY, and the fix is the
+       one this repository always reaches for: read it at the one place the decision is made.
+
+       WHAT IT MERGES, AND WHY IT IS A MERGE RATHER THAN A SKIP. The two sources own different
+       halves. Residents, running tasks and presence are LIVE — a chamber whose ants stopped
+       updating because the panel had been opened would be a worse defect than the one being fixed.
+       Records and their clusters belong to the vault, which holds the whole set the snapshot has
+       never seen. So each half comes from the source that actually knows it. */
+    function vaultOver(sec) {
+      var held = sec && vaultChambers[sec.id] ? vaultSectors[sec.id] : null;
+      if (!held) return sec;
+      return {
+        id: sec.id, label: sec.label,
+        residents: sec.residents || [], runningTasks: sec.runningTasks || [],
+        records: held.records, clusters: held.clusters, recordCount: held.recordCount,
+      };
+    }
+
     function rebuildSector(s, sec) {
       var old = {}; s.pts.forEach(function (p) { if (p.rec) old[p.rec.id] = p; });
       var pts = [], links = [], taken = {};
@@ -227,15 +260,76 @@
       (sec.residents || []).forEach(function (r) { var st = r.trail && isFinite(r.trail.strength) ? Number(r.trail.strength) : 0; if (r.roleId) trails[String(r.roleId).toLowerCase()] = st; (r.workers || []).forEach(function (w) { var id = (w && (w.id || w)) || ''; if (id) trails[String(id).toLowerCase()] = st; }); });
       function trailOf(ant) { var k = String(ant || '').toLowerCase(); return Object.prototype.hasOwnProperty.call(trails, k) ? Math.max(0, Math.min(1, trails[k])) : 0; }
       var seats = clusterSeats(sec, s.R), C = Math.max(1, seats.length);
-      // How many lattice rings this chamber's records will fill — needed BEFORE the first seat is
-      // placed, because the radius of ring 0 depends on how many rings follow it.
-      var ringCount = Math.max(1, Math.ceil(seats.reduce(function (n, cl) { return n + (cl.records || []).length; }, 0) / SLOTS));
+
+      /* v0.3.9.4 — HOW MANY RECORDS THIS CHAMBER HOLDS, AND A SEAT INDEX FOR EACH.
+         `.9` seated a record at the 96-slot lattice position its id hashed to, with a linear probe
+         on collision and a `ring` derived from how many slots were taken. That worked for the few
+         dozen records the topology reducer used to feed this, and broke completely on the vault:
+         once all 96 slots are taken `Object.keys(taken).length` STOPS GROWING, so `ring` is pinned
+         at 1 forever and every record past the 96th was seated at one radius on one of 96
+         directions — 8,400 dots stacked into 96 piles. The probe, meanwhile, ran its full 96 steps
+         and handed back the slot it started on, so it cost time and changed nothing.
+
+         WHAT REPLACES IT is a Fibonacci sphere over the chamber's WHOLE population: direction n of
+         N is even by construction at any N, with no slots to run out of and no collisions to probe.
+
+         AND THE INDEX IS A HASH PERMUTATION, NOT THE READING ORDER, which is the half that matters.
+         Records arrive grouped by cluster, and a Fibonacci index walks the sphere pole to pole — so
+         feeding it the reading order would give each cluster a contiguous BAND of latitudes, which
+         is the tiered-rings picture this release exists to remove, rebuilt by accident. Ranking by
+         a hash of the id decorrelates the two: every cluster is spread over the whole sphere, and a
+         record's seat still depends only on its own id and the set it is in. */
+      var seatIds = [];
+      seats.forEach(function (cl) {
+        (cl.records || []).forEach(function (r) {
+          seatIds.push(String(r.recordId || r.id || (r.title + r.createdAt)));
+        });
+      });
+      var total = seatIds.length, dense = total > SLOTS, seatRank = {};
+      if (dense) {
+        seatIds.map(function (id) { return { id: id, k: unit(id, 'seat') }; })
+          .sort(function (a, b) { return a.k - b.k || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0); })
+          .forEach(function (e, i) { if (seatRank[e.id] == null) seatRank[e.id] = i; });
+      }
+
+      /* DENSITY DECIDES THE DOT, because a chamber holding 8,000 records and one holding 20 cannot
+         be drawn with the same mark. At vault scale the dots overlapped into a solid white lens and
+         the arrangement underneath them — which is the whole point of arranging them — could not be
+         seen at all. A chamber with a normal topology's worth of records is untouched (scale 1). */
+      var szScale = total > 2000 ? .34 : total > 600 ? .45 : total > 150 ? .62 : total > 40 ? .8 : 1;
+      var aScale = total > 2000 ? .5 : total > 600 ? .66 : total > 150 ? .82 : 1;
+
+      /* HOW MUCH ROOM EACH FOLDER GETS. v0.3.9.4.
+
+         `.9` gave every cluster the same vertical slice — `y = ((ci + .5) / C - .5) * R * 1.55` —
+         which is right when the folders are comparable and badly wrong on the vault, where one
+         folder holds 8,549 records and the next holds four. The big one had to fit eight thousand
+         points into the same slice as a folder of four, so it flattened into a plate: about 1.7R
+         across and no depth at all. That is the operator's "it's like on a 2D plane", and it is
+         precisely what it was.
+
+         The height is now a SHARE. By the square root of the count, not the count itself: linear
+         shares would give a 4-record folder a slice one two-thousandth of a radius tall, which is
+         not a folder anyone can see or click. Square root keeps a small folder legible while still
+         letting a large one occupy the depth it needs — and it makes the picture say something
+         true, because the proportions of the chamber are now the proportions of what it holds. */
+      var span = s.R * 1.55;
+      var wsum = 0, weights = seats.map(function (cl) {
+        var w = Math.sqrt(Math.max(1, (cl.records || []).length)); wsum += w; return w;
+      });
+      wsum = wsum || 1;
+      var bands = [], yCursor = -span / 2;
+      weights.forEach(function (w) {
+        var h = span * (w / wsum);
+        bands.push({ mid: yCursor + h / 2, h: h });
+        yCursor += h;
+      });
       s.strata = [];
       seats.forEach(function (cl, ci) {
         // THE ORDERED FORMATION: one level (stratum) per cluster, records on an even golden-angle
         // spiral within it; the cloud cross-fades into this when the chamber is focused.
         var mcount = Math.max(1, cl.records.length);
-        var y = ((ci + .5) / C - .5) * s.R * 1.55;
+        var y = bands[ci].mid;
         var band = Math.sqrt(Math.max(.12, 1 - Math.pow(y / (s.R * 1.05), 2)));
         s.strata.push({ id: cl.id, label: cl.label, count: cl.count, y: y, band: band });
         cl.records.forEach(function (r, k) {
@@ -243,9 +337,19 @@
           var place = r.place || hashPlace(String(id));
           var verified = r.verification === 'verified', pher = trailOf(r.ant);
           var durable = (verified ? .55 : .1) + pher * .45;
-          var slot = Math.floor(unit(id, 'slot') * SLOTS) % SLOTS, probe = 0; while (taken[slot] && probe < SLOTS) { slot = (slot + 1) % SLOTS; probe++; }
-          var ring = Math.floor(Object.keys(taken).length / SLOTS); taken[slot] = true;   // a 97th record starts a second, inner ring
-          if (ring >= SLOTS) { slot = Math.floor(unit(id, 'slot2') * SLOTS) % SLOTS; }
+          var dir;
+          if (dense) {
+            // Even directions at any N. See the seat-index note above for why the index is a hash
+            // rank rather than the order these records arrived in.
+            var n = seatRank[String(id)] || 0;
+            var dz = 1 - 2 * (n + .5) / total, dr = Math.sqrt(Math.max(0, 1 - dz * dz)), dph = n * GOLDEN;
+            dir = [Math.cos(dph) * dr, dz, Math.sin(dph) * dr];
+          } else {
+            var slot = Math.floor(unit(id, 'slot') * SLOTS) % SLOTS, probe = 0;
+            while (taken[slot] && probe < SLOTS) { slot = (slot + 1) % SLOTS; probe++; }
+            taken[slot] = true;
+            dir = LATTICE[slot];
+          }
           /* THE RADIUS IS QUANTISED INTO SHELLS. v0.3.8.123 — this was a continuous function of
              durability, so no two records sat at quite the same distance and the cloud read as
              fuzz: the lattice underneath it is perfectly even, and a per-record radius was the one
@@ -255,26 +359,42 @@
              record lands in still comes only from its own durability, so its seat is as stable as
              it ever was. */
           var shell = verified ? 0 : durable > .34 ? 1 : 2;
-          /* v0.3.9 — RINGS GET THEIR OWN RADIUS ONCE THERE ARE MANY OF THEM.
-             The three shells were written for a chamber holding a few dozen records, where `ring`
-             is 0 and the second ring was a rare overflow at .8R. The vault feeds this the colony's
-             WHOLE memory — 8,400 events land in Memory alone, which is 88 rings — and every ring
-             past the first shared one radius, so a chamber would draw 96 dots and a smear.
-             With more than one ring the radius is spread across the sphere's usable band instead,
-             and the shells still order the first ring, so a colony with a normal topology looks
-             exactly as it did. */
-          var seatR = ringCount > 1
-            ? s.R * (.30 + .62 * (ring / Math.max(1, ringCount - 1)))
-            : s.R * [.34, .62, .84][shell];
-          var o = [LATTICE[slot][0] * seatR, LATTICE[slot][1] * seatR, LATTICE[slot][2] * seatR];
-          var ang = k * SPIRAL_STEP, rad = s.R * .86 * band * Math.sqrt((k + .55) / mcount);
-          var org = [Math.cos(ang) * rad, y, Math.sin(ang) * rad];
+          /* THE SHELL KEEPS ITS MEANING AT EVERY SCALE. v0.3.9.4 — `.9` replaced the three shells
+             with a per-RING radius as soon as a chamber held more than 96 records, which threw the
+             meaning away (a dot's distance stopped saying anything about the record) to buy a
+             spread that the pinned `ring` index then failed to deliver anyway. Depth is what a
+             shell says — verified and well-trailed records sit deeper — and that is worth keeping
+             whether a chamber holds twenty records or eight thousand.
+             The only concession to scale is a small per-record radial offset in a dense chamber, so
+             three shells read as three soft strata rather than three hard glass surfaces. It is
+             hashed from the id, so it is as stable as the seat it adjusts. */
+          var base = [.34, .62, .84][shell];
+          var seatR = s.R * (dense ? base + (unit(id, 'depth') - .5) * .10 : base);
+          var o = [dir[0] * seatR, dir[1] * seatR, dir[2] * seatR];
+          /* A STRATUM IS A LENS, NOT A PLATE. v0.3.9.4.
+             The ordered formation put every record of a cluster on one plane at `y`, on an
+             equal-area spiral. For a folder of thirty that is a legible disc; for the vault's
+             8,549-record "(no verdict)" folder it is a solid white ellipse with no arrangement
+             visible inside it — the operator's "clumped together in tiers", and a fair description.
+             The spiral now fills a SLAB: a handful of evenly-spaced layers across most of the gap
+             to the next stratum, each layer its own equal-area spiral. The folders stay separate
+             and readable, and a large one reads as a thick lens of ordered points rather than a
+             blank shape. The layer count grows as the cube root, so a small folder is still one
+             plane and looks exactly as it did. */
+          var layers = Math.max(1, Math.min(11, Math.round(Math.cbrt(mcount))));
+          var perLayer = Math.max(1, Math.ceil(mcount / layers));
+          var layer = k % layers, depth = Math.floor(k / layers);
+          var slab = bands[ci].h * .78;   // most of this folder's own share, leaving a gap to read by
+          var yk = layers > 1 ? y + ((layer / (layers - 1)) - .5) * slab : y;
+          var ang = k * SPIRAL_STEP, rad = s.R * .86 * band * Math.sqrt((depth + .55) / perLayer);
+          var org = [Math.cos(ang) * rad, yk, Math.sin(ang) * rad];
           var rec = { id: id, title: r.title || r.recordType || 'record', type: r.recordType || r.type || 'record', ant: r.ant || '—', mission: r.missionId || '', taskId: r.taskId || '', time: r.createdAt || '', verif: r.verification || 'not_scanned', cluster: cl.id, pher: pher };
           var prev = old[id], pt = prev || { born: performance.now(), ph: place.b * TAU, rec: null };
           var radN = Math.min(1, Math.hypot(o[0], o[1], o[2]) / s.R), edge = 1 - .72 * Math.pow(radN, 2.6);
           if (prev && (Math.abs(prev.o[0] - o[0]) + Math.abs(prev.o[1] - o[1]) + Math.abs(prev.o[2] - o[2])) > .5) pt.settle = { from: prev.o.slice(), to: o.slice(), t: 0 };
           pt.o = o.slice(); pt.org = org; pt.layer = verified ? 2 : 0; pt.cl = ci; pt.stratum = ci;   // o is its own array: the settle interpolates INTO it from a frozen `to`
-          pt.sz = (1.15 + pher * 1.7) * (.72 + .28 * edge) * .9; pt.a = Math.min(1, .82 + pher * .2) * (.86 + .14 * edge); pt.coreMix = Math.min(1, Math.pow(1 - radN, 1.5) * 1.15);
+          pt.sz = (1.15 + pher * 1.7) * (.72 + .28 * edge) * .9 * szScale;
+          pt.a = Math.min(1, .82 + pher * .2) * (.86 + .14 * edge) * aScale; pt.coreMix = Math.min(1, Math.pow(1 - radN, 1.5) * 1.15);
           pt.rec = rec; pt.resident = null;
           pts.push(pt);
         });
@@ -1099,7 +1219,11 @@
     var api = {
       survey: function () { SEC.forEach(function (s) { s.frozen = null; }); focused = null; follow = false; selRec = null; unwind(); goal.yaw = -.3; goal.pitch = .4; goal.dist = fitDist(); goal.tgt = [0, 20, 0]; setCrumb('colony survey'); emit('deselect'); },
       focus: function (id) { var s = bySec[id]; if (!s) return; if (s.frozen == null) s.frozen = live() ? performance.now() * s.rot : 0; focused = id; follow = false; goal.tgt = s.pos.slice(); goal.dist = s.R * 4.6; setCrumb('colony survey → ' + s.label.toLowerCase()); emit('sector', s); },
-      followMission: function () { follow = true; focused = null; goal.dist = 460; setCrumb('following active mission'); },
+      // v0.3.9.4 — IT EMITS `deselect`, because it sets `focused = null` and that is what the word
+      // means. Without it, the one listener that decides whether the vault panel is up never heard
+      // that the camera had left the memory chamber, and Follow was the branch that had to close
+      // the panel by hand — a second copy of the rule, kept in step until it wasn't.
+      followMission: function () { follow = true; focused = null; goal.dist = 460; setCrumb('following active mission'); emit('deselect'); },
       resetView: function () { api.survey(); },
       resetLayout: function () { SEC.forEach(function (s) { s.pos = s.defPos.slice(); s.label = s.serverLabel || s.defLabel; s.renamed = false; s.style = { color: null, glow: 1, bright: 1 }; }); antStyles = {}; rebuildAll(); if (lastScene) api.setTopology(lastScene); saveLayout(); if (!focused) api.survey(); },
       resetAll: function () { api.resetLayout(); api.survey(); },
@@ -1138,7 +1262,9 @@
         moundDefaults = list.filter(function (a) { return a && typeof a.name === 'string' && a.name; })
           .slice(0, 24).map(function (a) { return { name: String(a.name).slice(0, 40), role: String(a.role || '').slice(0, 80) }; });
         // A chamber added before the roster arrived fills in now rather than staying empty.
-        SEC.forEach(function (s2) { if (s2.added) rebuildSector(s2, { residents: moundResidents(s2.id), records: [], clusters: [] }); });
+        // v0.3.9.4 — through `vaultOver`, like every other rebuild: filling in a roster must not
+        // empty a mound chamber the vault is feeding.
+        SEC.forEach(function (s2) { if (s2.added) rebuildSector(s2, vaultOver({ id: s2.id, residents: moundResidents(s2.id), records: [], clusters: [] })); });
       },
       /** Add a mound chamber. Returns its id. The label is the operator's from the first frame. */
       addMound: function (label) {
@@ -1147,7 +1273,7 @@
         var rec = { id: id, label: String(label || ('MICROMOUND ' + n)).toUpperCase().slice(0, 28), pos: nextMoundSeat(addedMounds.length) };
         addedMounds.push(rec);
         var s2 = mountAddedMound(rec);
-        rebuildSector(s2, { residents: moundResidents(id), records: [], clusters: [] });
+        rebuildSector(s2, vaultOver({ id: id, residents: moundResidents(id), records: [], clusters: [] }));
         rebuildAll(); saveLayout(); api.focus(id);
         return id;
       },
@@ -1202,6 +1328,20 @@
       setVaultRecords: function (byChamber, grouping) {
         if (!byChamber) return;
         vaultGrouping = grouping || vaultGrouping;
+
+        /* A CHAMBER THE VAULT NO LONGER FEEDS GOES BACK TO THE SNAPSHOT. Hiding a kind, or
+           switching the grouping, can empty a chamber that had records a moment ago — and holding
+           the old payload for it would leave dots the panel says are not there, which is the
+           sidebar and the picture disagreeing about what the colony remembers. That disagreement is
+           the exact failure the vault was built as ONE system to prevent. */
+        Object.keys(vaultChambers).forEach(function (id) {
+          if (byChamber[id]) return;
+          delete vaultChambers[id]; delete vaultSectors[id];
+          var s0 = bySec[id];
+          if (s0) rebuildSector(s0, { id: id, label: s0.serverLabel || s0.defLabel,
+                                      residents: s0.residents, runningTasks: [],
+                                      records: [], recordCount: 0, clusters: [] });
+        });
         Object.keys(byChamber).forEach(function (id) {
           var s = bySec[id]; if (!s) return;
           var list = byChamber[id] || [];
@@ -1224,12 +1364,20 @@
             seen[g].count++;
           });
 
+          /* HELD, NOT JUST APPLIED. The push happens once, when the panel opens; the topology
+             poll rebuilds every chamber every few seconds. Keeping the payload is what lets
+             `vaultOver` put it back each time instead of the snapshot's recent slice erasing it. */
           vaultChambers[id] = true;
+          vaultSectors[id] = {
+            records: order.reduce(function (a, c) { return a.concat(c.records); }, []),
+            recordCount: list.length,
+            clusters: order,
+          };
           rebuildSector(s, {
             id: id, label: s.serverLabel || s.defLabel,
             residents: s.residents, runningTasks: [],
-            records: order.reduce(function (a, c) { return a.concat(c.records); }, []),
-            recordCount: list.length,
+            records: vaultSectors[id].records,
+            recordCount: vaultSectors[id].recordCount,
             clusters: order,
           });
         });
@@ -1315,7 +1463,7 @@
           named[sec.id] = true;
           s.serverLabel = String(sec.label || s.defLabel).toUpperCase();
           if (!s.renamed) s.label = s.serverLabel;
-          rebuildSector(s, sec);
+          rebuildSector(s, vaultOver(sec));
         });
         SEC.forEach(function (s) {
           // An ADDED mound is the operator's, not the server's: the snapshot has never heard of it

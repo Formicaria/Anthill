@@ -1,3 +1,98 @@
+## v0.3.9.4 - the vault made usable: five reports, five silent failures
+
+**EVERY ONE OF THESE WAS A CONTROL OR A RECORD THAT REACHED NOBODY, and every one of them LOOKED
+right.** That is the shape this repository names most often, and `.9` shipped five of them into one
+feature in a row, because the memory vault is the first thing here with two writers, two DOM roots
+and two orders of magnitude more records than the machinery underneath it was written for.
+
+### The dots vanished on a timer
+
+`setVaultRecords` set `vaultChambers[id] = true`. **Nothing ever read it.** The console polls
+`/colony/topology`, `setTopology` rebuilds every sector in the snapshot, and the snapshot carries the
+reducer's RECENT slice — a handful of records or none. So the next poll after the panel opened
+replaced eight thousand dots with nothing, and the only way back was a reload, because a reload is
+the only thing that makes the panel push again. The operator's words: "they disappear fully when i
+click off, and i can only see them again by refreshing the ui and then clicking memory again."
+
+`vaultOver` reads the flag at the one place the decision is made, and `setVaultRecords` now HOLDS
+what it pushed so there is something to put back. It MERGES rather than skips: residents, running
+tasks and presence stay live — a chamber whose ants froze because a panel was open would be a worse
+defect than the one being fixed — and only records and clusters come from the vault.
+
+### 8,400 records into 96 piles
+
+The cloud seated a record at the 96-slot lattice position its id hashed to, with a `ring` derived
+from how many slots were taken. Once all 96 are taken that count STOPS GROWING, so `ring` was pinned
+at 1 forever: every record past the 96th sat at one radius on one of 96 directions. The probe that
+was meant to resolve collisions ran its full 96 steps and handed back the slot it started on.
+
+A Fibonacci sphere over the chamber's whole population replaces it — even by construction at any N,
+no slots to exhaust, no collisions to probe. **And the index is a hash permutation, not the reading
+order**, which is the half that matters: records arrive grouped by cluster and a Fibonacci index
+walks pole to pole, so feeding it the reading order would give each folder a contiguous band of
+latitudes — the tiered-rings picture this release exists to remove, rebuilt by accident.
+
+The three shells keep their meaning at every scale. `.9` had thrown that away above 96 records,
+trading "a dot's distance says something about the record" for a spread its pinned `ring` then failed
+to deliver anyway.
+
+### "It's like on a 2D plane"
+
+The focused formation gave every cluster the same vertical slice and put its records on one plane.
+For a folder of thirty that is a legible disc. For the vault's 8,549-record *(no verdict)* folder it
+is a solid white ellipse about 1.7R across with no depth and no arrangement visible inside it.
+
+Two changes. A stratum's height is now its SHARE of the chamber — by the square root of the count, so
+a 4-record folder stays clickable while a large one gets the depth it needs, and the proportions of
+the picture become the proportions of what it holds. And the spiral fills a SLAB rather than a plane:
+a handful of evenly spaced layers across most of that share, each its own equal-area spiral. A small
+folder is still one plane and looks exactly as it did.
+
+### Dots far bigger than they needed to be
+
+A chamber holding 8,000 records and one holding 20 cannot be drawn with the same mark; at vault scale
+the dots overlapped into a solid lens and hid the arrangement that is the entire point of arranging
+them. Size and alpha now scale with the chamber's population. Below ~40 records nothing changes.
+
+### The record card was inert — all of it
+
+`#mv-card` is a SIBLING of `#mv-panel`, not a child; it has to be, because it floats left of the
+340px column and nesting it would clip it. The module bound ONE delegated click listener, to the
+panel. So the card's ✕ did nothing, its link chips did nothing, and "Open the full record" did
+nothing. The operator reported the ✕; it was never only the ✕.
+
+A delegated listener aimed at the wrong subtree fails exactly as silently as one that was never
+written, which is why this shipped. `TheVaultsClickHandler_IsBoundToEveryHostItDrawsControlsInto`
+asserts the registration count structurally, so a third host added later and not bound fails here
+instead of in an operator's hands.
+
+### The panel followed a button instead of the camera
+
+`.9` opened the vault from the Memory button; `.9.1` closed it in the two toolbar branches that had
+been missed. That is three places deciding whether the panel is up, and it covers the toolbar and
+nothing else — which is not how anyone moves around this view. Clicking another chamber in the 3D
+scene changed the camera without touching a button, so the panel stayed open over a chamber it was
+not about and the Memory tab stayed lit for a view the operator had left.
+
+The rule is stated once now, where the focus actually changes: **focus is `memory` → the panel is
+open; anything else → it is closed.** Every route in goes through `ColonyLive.focus`, which emits
+`sector`, so the button, a click in the scene and a record flown to from the tree all arrive at one
+rule instead of three copies of it. `followMission` emits `deselect`, which it always should have —
+it sets `focused = null`, and that is what the word means.
+
+### Sixteen rows saying nothing
+
+Opening an event in the vault produced a card of sixteen link chips all reading *same subject:
+task_result_summarized*. The colony writes thousands of events under that exact title; its tokens
+survive the stop-word list, because `summarized` is not scaffolding the way `mission` is, so every
+one of them matched every other. Sixteen true statements that tell the reader nothing — the title is
+already printed above them, and an edge whose whole content is "there is more of this" is noise in
+the shape of a finding.
+
+A derived edge now requires the other record's title to DIFFER. It is the narrowest rule that removes
+it, and it leaves every genuine case intact: "rotate the wireguard certificates" still reaches the
+mission about configuring wireguard, because those are not the same title.
+
 ## v0.3.9.3 - the colony notices what changed, and asks before acting on it
 
 **THE ANSWER WAS ALREADY IN THE DATABASE AND NOTHING HAD EVER ASKED FOR IT.** `.154` shipped seeding

@@ -1260,8 +1260,12 @@ public class ColonyLiveGuardTests
         Assert.DoesNotContain("emit('moundsettings'", live);
         Assert.DoesNotContain("live.on('moundsettings'", home);
 
-        // The one way in is the registry, and the button beside `+ Mound` opens it.
-        Assert.Contains("if (act === 'mounds') { go('/colony/mounds'); return; }", home);
+        // The one way in is the registry, and the button beside `+ Mound` opens it. Asserted as two
+        // facts rather than one exact line since v0.3.9.4, when the branch also had to drop the
+        // vault panel — navigating away is leaving the chamber. What this guard is about is that
+        // `mounds` NAVIGATES and stops, which both halves still say.
+        Assert.Contains("if (act === 'mounds')", home);
+        Assert.Contains("go('/colony/mounds'); return;", home);
         Assert.Contains("act === 'moundopen'", home);
 
         // Both chambers that present as mounds are flagged as such, in the sector table.
@@ -1494,7 +1498,14 @@ public class ColonyLiveGuardTests
         // Records sit in shells rather than at a continuous radius, and which shell is still
         // decided by the record's own durability — so its seat is as stable as it ever was.
         Assert.Contains("var shell = verified ? 0 : durable > .34 ? 1 : 2;", live);
-        Assert.Contains("s.R * [.34, .62, .84][shell]", live);
+        // v0.3.9.4 — the shell table is still what decides the radius; it is now read into `base`
+        // because a dense chamber offsets it slightly per record. `.9` had ABANDONED the shells
+        // above 96 records, which threw away the meaning this assertion exists to protect, so the
+        // guard is pinned to the table rather than to one spelling of the multiplication.
+        Assert.Contains("[.34, .62, .84][shell]", live);
+        Assert.Contains("seatR = s.R * (dense ?", live);
+        // The hashed lattice slot still seats a chamber that FITS the lattice. Above it, an even
+        // Fibonacci direction over the whole population replaces the slot that had run out.
         Assert.Contains("unit(id, 'slot')", live);
 
         // VACUITY FLOOR: this is the function that actually seats a chamber's contents.

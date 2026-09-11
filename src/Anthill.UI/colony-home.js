@@ -54,7 +54,9 @@
     var btn = document.querySelector('[data-homeact="' + act + '"]'); if (btn && btn.disabled) return;
     // Mounds is NAVIGATION, not a camera move, so it is answered before the renderer is consulted —
     // the registry opens whether or not the colony view has finished loading. v0.3.8.124.
-    if (act === 'mounds') { go('/colony/mounds'); return; }
+    // Navigating away is leaving the chamber, so the panel goes with it — the same rule, at the one
+    // act that changes the page instead of the camera and so never reaches a focus event. v0.3.9.4.
+    if (act === 'mounds') { vaultFollows(null); go('/colony/mounds'); return; }
     var live = liveApi();
     // v0.3.8.125: with no renderer there is nothing to move. This used to fall through to the
     // classic canvas's `colonyResetView`, which was a real answer while there were two renderers;
@@ -589,14 +591,36 @@
   }
 
   // The renderer announces focus changes; the sector panel follows them. The host fires onLive
+  /* THE VAULT PANEL IS A FUNCTION OF THE FOCUSED CHAMBER. v0.3.9.4.
+
+     `.9` opened it from the Memory BUTTON and closed it from every other toolbar act. That covers
+     the toolbar and nothing else — and the toolbar is not how an operator moves around this view.
+     Clicking another chamber in the 3D scene, or clicking a dot that lives somewhere else, changes
+     the camera without touching a button, so the panel stayed open over a chamber it was not about
+     and the Memory tab stayed lit for a view the operator had left. That was the report: "when i
+     click off the memory chamber, the memory tab at the top should no longer be selected and the
+     leaf shouldnt open."
+
+     The rule is now stated once, where the focus actually changes: FOCUS IS memory → the panel is
+     open; anything else → it is closed. Every route into the memory chamber goes through
+     `ColonyLive.focus`, which emits `sector`, so the button, a click in the scene and a record
+     flown to from the tree all arrive at the same rule instead of three copies of it — and the
+     copies were the defect, not an oversight in one of them.
+
+     `survey` and `followMission` emit `deselect`, which is the same rule with no chamber. */
+  function vaultFollows(sectorId) {
+    if (typeof MemoryVault === 'undefined') return;
+    if (sectorId === 'memory') MemoryVault.open(); else MemoryVault.close();
+  }
+
   // with every renderer it creates (and null when it tears one down), so a remount re-hooks.
   function hookLive(live) {
     if (!live) { showSector(null); showRecord(null); return; }
-    live.on('sector', function (s) { showSector(s); showRecord(null); markView(null); });
+    live.on('sector', function (s) { showSector(s); showRecord(null); markView(s && s.id === 'memory' ? 'memory' : null); vaultFollows(s && s.id); });
     // v0.3.8.124 — there is no `moundsettings` event any more. A mound chamber's second click used
     // to open its settings page and now does nothing special: a chamber is a chamber, and settings
     // are reached from the registry, which is the one place that lists every mound.
-    live.on('deselect', function () { showSector(null); showRecord(null); });
+    live.on('deselect', function () { showSector(null); showRecord(null); vaultFollows(null); });
     live.on('record', function (r) { showRecord(r); });
     live.on('resident', function (h) { showResident(h); });
     applyEnv(initialEnv()); restoreView();
@@ -637,27 +661,16 @@
       // one-time token and answers under its own identity whatever the colony calls it.
       var lm = liveApi(); if (lm && lm.addMound) lm.addMound();
     }
-    /* v0.3.9 — MEMORY OPENS THE VAULT. `view('memory')` still flies the camera to the chamber;
-       what changed is that the chamber now has something to browse, and the panel is part of that
-       view rather than a control you have to find. Survey and Esc close it, because the operator
-       asked for the panel and the Memory view to be one mode. */
-    else if (act === 'memory') {
-      view('memory');
-      if (typeof MemoryVault !== 'undefined') MemoryVault.open();
-    }
-    else if (act === 'survey') {
-      view('survey');
-      if (typeof MemoryVault !== 'undefined') MemoryVault.close();
-    }
     else if (act === 'ask') send('chat');
     else if (act === 'run') send('mission');
     else {
-      /* v0.3.9.1 — THE VAULT BELONGS TO THE MEMORY VIEW, so it leaves with it.
-         `.9` closed it on Survey and on Esc and nothing else, so Mission, Mounds and Follow all
-         flew the camera somewhere the panel was not about and left it standing over the result.
-         Every remaining act here is a VIEW change; a view that is not Memory closes it. */
+      /* v0.3.9.4 — EVERY VIEW ACT IS JUST A VIEW ACT NOW, including Memory.
+         `.9` opened the vault here and `.9.1` closed it in the two branches that had been missed,
+         which left three places deciding whether the panel is up. It is decided in ONE — the focus
+         change itself, in `vaultFollows` — so a camera move made by clicking the scene obeys the
+         same rule as one made by clicking this toolbar. Three branches agreeing was never the
+         property that mattered; there being one branch is. */
       view(act);
-      if (typeof MemoryVault !== 'undefined') MemoryVault.close();
     }
   }
   function init() {
