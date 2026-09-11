@@ -46,6 +46,54 @@ public static class MissionIntake
       + @"determine|determining|report|inventory|examine|examining|analy[sz]e|analy[sz]ing)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    /* v0.3.9.8 — A QUESTION ABOUT THE ORGANIZATION'S OWN KNOWLEDGE IS A RETRIEVAL, NOT A RECALL.
+
+       THE DEFECT, and it was found by reading the operator's live colony after the first real Study
+       pass. All fifty seeded missions planned as `builder -> verifier`. No researcher, no
+       `knowledge_retrieve`, nothing ever opened the knowledge base — and every one of them then
+       graded `completed_verified` at 1.0 while its answer said, correctly, that it had found
+       nothing. One of them reads: "The knowledge base contains no established facts about
+       '1988.txt'. The prior task output only describes the mission's parameters."
+
+       WHY. `KnowledgeSeeder` phrases its goal as a question, because a question resolves to a class
+       whose authority ceiling is `Observe` — that was a deliberate safety property and it still is.
+       A question with no target and an `Explain` intent lands in the `simple_answer` branch below.
+       And `simple_answer`'s whole promise, in its own words, is that "the answer rests on nothing
+       retrieved and nothing inspected": `EnsureClassCoverage` therefore excludes the knowledge step
+       for that class, and the planner's reduction would strip it anyway
+       (`tasks.RemoveAll(t => !ConsumesEvidence(t))`).
+
+       So the one lane built to read a bound knowledge base was the one lane that could never read
+       it. Every layer was correct on its own terms — `.156` inserts the step, `.157` made the
+       researcher dispatch the tool, `.9.6` made the binding reach the resolver — and the mission
+       that needed all three took a path that skipped the first.
+
+       THE FIX IS HERE, NOT IN THE PLANNER, and the reason matters. Inserting the step for
+       `simple_answer` would have contradicted the class's promise, and suppressing the reduction
+       would have re-opened the ten-minute taco failure `.145` closed. Nothing is wrong with the
+       class; what is wrong is putting THIS request in it. A request that asks what the knowledge
+       base holds cannot be answered from what is already known — that is a description of a
+       retrieval — so it is not a `simple_answer`, and the two conditions below say exactly that.
+
+       SCOPED, DELIBERATELY. It only applies when a knowledge scope is actually in force. On a colony
+       with no binding there is nothing to retrieve, `simple_answer` remains the honest reading, and
+       this changes no behaviour at all. And it is narrow by construction: it matches requests that
+       NAME the knowledge base or ask what the organization knows. "How do you make tacos?" in a
+       bound project is still a `simple_answer`, which is the property `.145` paid for. */
+    private static readonly Regex KnowledgeQuestions = new(
+        @"\b(knowledge base|knowledge-base|what the organi[sz]ation knows|"
+      + @"what do we know about|what does this (?:project|organi[sz]ation) know|"
+      + @"our (?:documents|documentation|knowledge))\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// True when this request is asking for the organization's own knowledge AND there is a bound
+    /// knowledge base to ask. Both halves are required: the phrasing alone means nothing on a colony
+    /// that has nothing to retrieve from.
+    /// </summary>
+    private static bool AsksTheKnowledgeBase(string request) =>
+        Anthill.SDK.Knowledge.KnowledgeScopeContext.HasScope && KnowledgeQuestions.IsMatch(request);
+
     private static readonly Regex CapabilityQuestions = new(
         @"\b(capable|capabilit(?:y|ies)|abilit(?:y|ies)|what can it do|strengths?|weakness(?:es)?|"
       + @"limitations?|good and bad|shortcomings?)\b",
@@ -445,6 +493,9 @@ public static class MissionIntake
         if (Tools.ColonySelfKnowledge.AsksForADefinition(request)
             && !CapabilityQuestions.IsMatch(request)
             && !AssessVerbs.IsMatch(request)
+            // v0.3.9.8 — a FOURTH thing takes it back out, for the same reason as the three above:
+            // shipped documentation cannot answer what the organization's own knowledge base holds.
+            && !AsksTheKnowledgeBase(request)
             && freshness != MissionFreshness.Current)
             return new MissionSpecification
             {
@@ -640,8 +691,13 @@ public static class MissionIntake
         // sentences the class was designed around.
         // v0.3.8.145 — or a whole-message greeting/acknowledgement (`GreetingShape`), which is
         // answered from what is already known just as a question is, and changes nothing.
+        // v0.3.9.8 — AND THE FOURTH CONDITION, which is the same doctrine as the three that take a
+        // request back out of the definition branch above: this class answers from what is already
+        // known, so a request that asks what the KNOWLEDGE BASE holds is not one of its members.
+        // See `KnowledgeQuestions` for what the seeded Study missions did without it.
         if (intent == MissionIntent.Explain
             && targets == MissionTargets.None
+            && !AsksTheKnowledgeBase(request)
             && (QuestionShape.IsMatch(request) || GreetingShape.IsMatch(request)))
             return new MissionSpecification
             {

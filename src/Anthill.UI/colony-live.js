@@ -214,13 +214,19 @@
       });
     }
     /* SYMMETRIC CLOUD SEATS. The reference seated records inside their cluster with a hashed
-       direction, which reads as lopsided clumps once one cluster dominates. The cloud is now a
-       fixed Fibonacci lattice of 96 slots on the sphere — evenly spread by construction — and a
-       record takes the slot its id hashes to (linear probe on collision), at a radius its
-       durability decides. Stable per record, symmetric per chamber, and the ordered strata on
-       focus are untouched. */
-    var SLOTS = 96, LATTICE = [];
-    for (var li = 0; li < SLOTS; li++) { var zz = 1 - 2 * (li + .5) / SLOTS, rr = Math.sqrt(Math.max(0, 1 - zz * zz)), ph = li * GOLDEN; LATTICE.push([Math.cos(ph) * rr, zz, Math.sin(ph) * rr]); }
+       direction, which reads as lopsided clumps once one cluster dominates.
+
+       v0.3.9.8 — THE FIXED 96-SLOT LATTICE IS GONE, and `SLOTS` survives it as a THRESHOLD only.
+       The lattice was a table of 96 even directions that a record claimed by hashing to a slot and
+       linear-probing on collision; it gave a record a stable seat and, up to 96 records, an even
+       one. `.9.4` replaced it above 96 with a Fibonacci sphere over the chamber's whole population
+       and left it in place below — which meant two chambers on one screen drawn by two different
+       algorithms, and the operator saw exactly that. The replacement is stable AND even at every N,
+       so there is nothing left for the lattice to do.
+
+       `SLOTS` still marks where a chamber becomes DENSE, which is a different question: it decides
+       whether the three radius shells are drawn hard or softened, not where a record sits. */
+    var SLOTS = 96;
     /* WHY THE VAULT'S RECORDS SURVIVE A TOPOLOGY POLL. v0.3.9.4.
 
        THE DEFECT, stated plainly because it is this repository's most-named one wearing yet another
@@ -253,7 +259,7 @@
 
     function rebuildSector(s, sec) {
       var old = {}; s.pts.forEach(function (p) { if (p.rec) old[p.rec.id] = p; });
-      var pts = [], links = [], taken = {};
+      var pts = [], links = [];
       // the trail the colony recorded for whichever unit authored a record; a role with no trail is
       // null, which is not zero — nothing has run
       var trails = {};
@@ -285,12 +291,29 @@
           seatIds.push(String(r.recordId || r.id || (r.title + r.createdAt)));
         });
       });
+      /* ONE SEATING RULE AT EVERY SIZE. v0.3.9.8 — and this is a correction to `.9.4`.
+
+         `.9.4` applied the even Fibonacci seating only above 96 records, on the argument that "a
+         colony with a normal topology looks exactly as it did". That argument was about not
+         disturbing what worked; what it actually produced was TWO chambers drawn by two different
+         algorithms, side by side. MEMORY holds thousands and got the even sphere. FORGE holds
+         thirty-three — coder and ui_cartographer records — so it kept the hashed 96-slot lattice
+         with its collision probing, which clumps. The operator read that, correctly, as FORGE
+         having reverted to an older look, because next to the new one it had.
+
+         There was never a reason for two. The old lattice existed to give a record a STABLE seat;
+         the hash-rank Fibonacci gives stability AND evenness at any N, so the lattice bought
+         nothing the replacement does not. Two implementations of one rule is the shape this
+         repository spends most of its releases removing, and keeping the second one behind a size
+         threshold is the version of it that hides until somebody looks at two chambers at once.
+
+         The SHELLS are a separate rule and they stay separate: three hard radii when a chamber is
+         sparse, softened by a per-record offset when it is dense. That is a deliberate look rather
+         than an algorithm, and `.123` argued for it. */
       var total = seatIds.length, dense = total > SLOTS, seatRank = {};
-      if (dense) {
-        seatIds.map(function (id) { return { id: id, k: unit(id, 'seat') }; })
-          .sort(function (a, b) { return a.k - b.k || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0); })
-          .forEach(function (e, i) { if (seatRank[e.id] == null) seatRank[e.id] = i; });
-      }
+      seatIds.map(function (id) { return { id: id, k: unit(id, 'seat') }; })
+        .sort(function (a, b) { return a.k - b.k || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0); })
+        .forEach(function (e, i) { if (seatRank[e.id] == null) seatRank[e.id] = i; });
 
       /* DENSITY DECIDES THE DOT, because a chamber holding 8,000 records and one holding 20 cannot
          be drawn with the same mark. At vault scale the dots overlapped into a solid white lens and
@@ -337,19 +360,12 @@
           var place = r.place || hashPlace(String(id));
           var verified = r.verification === 'verified', pher = trailOf(r.ant);
           var durable = (verified ? .55 : .1) + pher * .45;
-          var dir;
-          if (dense) {
-            // Even directions at any N. See the seat-index note above for why the index is a hash
-            // rank rather than the order these records arrived in.
-            var n = seatRank[String(id)] || 0;
-            var dz = 1 - 2 * (n + .5) / total, dr = Math.sqrt(Math.max(0, 1 - dz * dz)), dph = n * GOLDEN;
-            dir = [Math.cos(dph) * dr, dz, Math.sin(dph) * dr];
-          } else {
-            var slot = Math.floor(unit(id, 'slot') * SLOTS) % SLOTS, probe = 0;
-            while (taken[slot] && probe < SLOTS) { slot = (slot + 1) % SLOTS; probe++; }
-            taken[slot] = true;
-            dir = LATTICE[slot];
-          }
+          // EVEN DIRECTIONS AT ANY N, from a hash rank rather than the order these records arrived
+          // in — see the seat-index note above for why the order matters and why there is only one
+          // of these now.
+          var n = seatRank[String(id)] || 0;
+          var dz = 1 - 2 * (n + .5) / total, dr = Math.sqrt(Math.max(0, 1 - dz * dz)), dph = n * GOLDEN;
+          var dir = [Math.cos(dph) * dr, dz, Math.sin(dph) * dr];
           /* THE RADIUS IS QUANTISED INTO SHELLS. v0.3.8.123 — this was a continuous function of
              durability, so no two records sat at quite the same distance and the cloud read as
              fuzz: the lattice underneath it is perfectly even, and a per-record radius was the one
