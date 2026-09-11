@@ -363,6 +363,24 @@ var MemoryVault = (function () {
     panel.dataset.bound = '1';
     panel.addEventListener('click', onClick);
 
+    /* THE CARD IS NOT INSIDE THE PANEL, AND THE HANDLER HAD TO LEARN THAT. v0.3.9.4.
+
+       `#mv-card` is a SIBLING of `#mv-panel`, not a child — it has to be, because it floats to the
+       LEFT of the panel over the 3D view, and nesting it would clip it inside a 340px column. One
+       delegated listener on the panel therefore never saw a single click in the card, so every
+       control it draws was inert: the ✕ did nothing, the link chips did nothing, and "Open the full
+       record" did nothing. The card LOOKED right, which is why it shipped — a delegated listener
+       that reaches the wrong subtree fails silently and identically to one that was never written.
+
+       The listener is delegated, so one more registration on the other root costs nothing and both
+       go through the same `onClick`. Two handlers with two copies of the routing would be the split
+       this repository spends most of its releases undoing. */
+    var cardHost = $('mv-card');
+    if (cardHost && !cardHost.dataset.bound) {
+      cardHost.dataset.bound = '1';
+      cardHost.addEventListener('click', onClick);
+    }
+
     var box = $('mv-q');
     if (box) {
       var timer = null;

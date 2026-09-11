@@ -278,8 +278,7 @@ public sealed partial class SqliteMemory
     /// this folder full of".
     ///
     /// THE FACET IS THE COLONY'S OWN and cannot be wrong — it is a value the colony recorded. The
-    /// first-word grouping is derived and can be, which is why the two are never mixed in one list,
-    /// and why v0.3.9.3 renamed its label from "by topic" to what it actually cuts on.
+    /// TOPIC is derived from words and can be, which is why the two are never mixed in one list.
     /// </summary>
     private IReadOnlyList<VaultGroupCount> VaultGroups(string grouping, string filter,
         List<(string, object?)> args)
@@ -300,14 +299,9 @@ public sealed partial class SqliteMemory
         {
             "project" => "CASE WHEN COALESCE(project_id,'') = '' THEN '(no project)' ELSE project_id END",
             "chamber" => "chamber",
-            /* THE FIRST WORD OF THE TITLE, and since v0.3.9.3 the console calls it that.
-               It was labelled "by topic", which claimed an extraction pass that does not exist and
-               is not planned: a record titled "Fix the WireGuard handshake" groups under `fix`, and
-               an operator told they are looking at topics reads that as the colony's judgement about
-               subject matter rather than as a substring. The grouping is useful and cheap — it needs
-               no index and no pass — and it stays; the label now says what it does. The KEY is
-               unchanged (`topic`), because renaming a query parameter to fix a word on a page would
-               break every link and bookmark carrying it. */
+            // The first word of the title. A crude topic and honestly a crude one — it is the
+            // grouping the operator can SEE is derived, sitting beside two that are the colony's own
+            // facts, and it costs no index and no extraction pass to offer.
             "topic" => "LOWER(TRIM(SUBSTR(title, 1, INSTR(title || ' ', ' ') - 1)))",
             _ => "CASE WHEN COALESCE(outcome,'') = '' THEN '(no verdict)' ELSE outcome END",
         };
@@ -451,6 +445,7 @@ public sealed partial class SqliteMemory
         // recorded relations left of the budget: an inference must never crowd out a fact.
         var room = limit - links.Count;
         var subjects = VaultSubjects(id);
+        var selfTitle = VaultTitle(id);
 
         // NO SUBJECT MEANS NO EDGES, and the early return is the fix for the worse alternative. The
         // first cut returned a sentinel string for a record with nothing distinctive and matched it
@@ -463,12 +458,28 @@ public sealed partial class SqliteMemory
             var parameters = subjects
                 .Select((word, i) => ((string, object?))($"@t{i}", "%" + word + "%"))
                 .Append(("@self", (object?)id))
+                .Append(("@selftitle", (object?)selfTitle))
                 .Append(("@lim", (object?)room))
                 .ToArray();
 
+            /* AN IDENTICAL TITLE IS NOT A SHARED SUBJECT. v0.3.9.4.
+               The colony writes thousands of events titled exactly `task_result_summarized`. Its
+               tokens survive the stop-word list — `summarized` is not colony scaffolding in the way
+               `mission` is — so every one of those events matched every other, and opening one in
+               the vault produced a card of sixteen rows all reading "same subject:
+               task_result_summarized". Sixteen true statements that tell the reader nothing: the
+               title is already on the card, and an edge whose whole content is "there is more of
+               this" is noise wearing the shape of a finding.
+
+               Requiring the other record's title to DIFFER is the narrowest rule that removes it.
+               It costs nothing — two records with the same title are exactly the pairs an inferred
+               subject edge cannot justify — and it leaves every genuine case intact: "rotate the
+               wireguard certificates" still reaches the mission about configuring wireguard,
+               because those two titles are not the same title. */
             foreach (var row in Query(
                 VaultProjection + $@" SELECT id, kind, title FROM vault
-                                      WHERE id <> @self AND ({string.Join(" OR ", clauses)})
+                                      WHERE id <> @self AND COALESCE(title,'') <> @selftitle
+                                        AND ({string.Join(" OR ", clauses)})
                                       ORDER BY COALESCE(when_utc,'') DESC LIMIT @lim", parameters))
             {
                 var linkId = RowValues.Text(row, "id");
@@ -500,8 +511,7 @@ public sealed partial class SqliteMemory
     /// </summary>
     private IReadOnlyList<string> VaultSubjects(string id)
     {
-        var title = Query(VaultProjection + " SELECT title FROM vault WHERE id = @id", ("@id", id))
-            .Select(r => RowValues.Text(r, "title")).FirstOrDefault() ?? "";
+        var title = VaultTitle(id);
 
         // A TRAIL'S TITLE IS ITS KEY, and the half after the colon is the subject: `ant:builder`
         // is about the builder, `source_domain:example.com` about that domain. Taking the longest
@@ -520,6 +530,11 @@ public sealed partial class SqliteMemory
             .Take(3)
             .ToList();
     }
+
+    /// <summary>One record's title, from the same projection every other vault read uses.</summary>
+    private string VaultTitle(string id) =>
+        Query(VaultProjection + " SELECT title FROM vault WHERE id = @id", ("@id", id))
+            .Select(r => RowValues.Text(r, "title")).FirstOrDefault() ?? "";
 
     /// <summary>
     /// Words that appear in this colony's own scaffolding rather than in what a record is ABOUT.
@@ -582,14 +597,7 @@ public sealed partial class SqliteMemory
                     Outcome = null,
                     ProjectId = null,
                     MissionId = mission,
-                    // v0.3.9.3 — THE KNOWLEDGE PAGE, AND NOT THE STATEMENT ON IT. `.9.2` shipped
-                    // these records with no link at all, so a knowledge dot was the one kind the
-                    // operator could open and then have nowhere to go. The console router takes
-                    // DECLARED routes only — `go()` has one parameterised route and it is a project
-                    // — so there is no honest way to deep-link one statement today, and inventing a
-                    // fragment the router ignores would be a link that looks like it works. The page
-                    // it lands on carries the search box the id is findable in.
-                    Href = "/knowledge",
+                    Href = null,
                 };
                 if (seen.Count >= limit) return seen.Values.ToList();
             }

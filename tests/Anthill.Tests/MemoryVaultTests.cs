@@ -180,6 +180,37 @@ public class MemoryVaultTests : IDisposable
     }
 
     /// <summary>
+    /// AN IDENTICAL TITLE IS NOT A SHARED SUBJECT. v0.3.9.4.
+    ///
+    /// The colony writes thousands of events titled exactly `task_result_summarized`. Its tokens
+    /// survive the stop-word list — `summarized` is not scaffolding the way `mission` is — so every
+    /// one matched every other, and opening one in the vault gave the operator a card of sixteen
+    /// rows all reading "same subject: task_result_summarized". Sixteen true statements that say
+    /// nothing: the title is already printed above them, and an edge whose entire content is "there
+    /// is more of this" is noise in the shape of a finding.
+    ///
+    /// The rule is the narrowest one that removes it, and the second assertion is the one that
+    /// matters — a guard that only proved the noise was gone would also pass if the derived pass had
+    /// been deleted, which is the cure being worse than the disease.
+    /// </summary>
+    [Fact]
+    public void SameSubject_SkipsRecordsWithTheIdenticalTitle_ButNotMerelySimilarOnes()
+    {
+        var mem = Memory();
+        var a = new Mission { Goal = "wireguard handshake timeout" };
+        var twin = new Mission { Goal = "wireguard handshake timeout" };
+        var kin = new Mission { Goal = "wireguard handshake retried after timeout" };
+        mem.SaveMission(a);
+        mem.SaveMission(twin);
+        mem.SaveMission(kin);
+
+        var links = mem.VaultLinks("mission:" + a.Id);
+
+        Assert.DoesNotContain(links, l => l.Id == "mission:" + twin.Id);
+        Assert.Contains(links, l => l.Id == "mission:" + kin.Id && l.Derived);
+    }
+
+    /// <summary>
     /// SCAFFOLDING IS NOT A SUBJECT. Every mission title contains the colony's own vocabulary, so a
     /// match on "mission" or "answer" would join half the vault to the other half — the failure
     /// mode that makes an inferred graph worthless rather than merely imprecise.

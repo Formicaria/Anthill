@@ -176,6 +176,75 @@ public class ConsoleAssetSplitTests
     /// and used here is, by construction, a call into a private scope — and the typeof guard in
     /// front of it is what turns the mistake silent.
     /// </summary>
+    /// <summary>
+    /// A DELEGATED LISTENER MUST COVER EVERY ROOT ITS CONTROLS ARE DRAWN INTO. v0.3.9.4.
+    ///
+    /// THE DEFECT, and it shipped for two releases: `memory-vault.js` bound one click listener to
+    /// `#mv-panel` and drew the record card into `#mv-card`, which is a SIBLING of the panel in
+    /// `index.html` — it has to be, because the card floats to the left of the 340px column and
+    /// nesting it would clip it. So every control the card drew was inert. The ✕ did nothing, the
+    /// link chips did nothing, "Open the full record" did nothing, and the card LOOKED correct,
+    /// which is why nobody caught it: a delegated listener aimed at the wrong subtree fails exactly
+    /// as silently as one that was never written.
+    ///
+    /// THE GUARD IS STRUCTURAL rather than a list of button names. Every element id the module
+    /// emits `data-mv*` attributes into is a root that has to be bound, and there are two; asserting
+    /// the two bindings exist is the smallest check that cannot be satisfied by a card that merely
+    /// renders. A third host added later and not bound fails here rather than in an operator's
+    /// hands.
+    /// </summary>
+    [Fact]
+    public void TheVaultsClickHandler_IsBoundToEveryHostItDrawsControlsInto()
+    {
+        var code = SourceText.CodeOnly(File.ReadAllText(Path.Combine(
+            SourceText.RepoRoot(), "src", "Anthill.UI", "memory-vault.js")));
+
+        foreach (var host in new[] { "mv-panel", "mv-card" })
+        {
+            Assert.True(
+                Regex.IsMatch(code, @"\$\(['""]" + host + @"['""]\)"),
+                $"memory-vault.js no longer looks up #{host}.");
+        }
+
+        // Both roots register the SAME handler. Two handlers with two copies of the routing would
+        // pass a naive check and diverge on the first control added to only one of them.
+        var registrations = Regex.Matches(code, @"addEventListener\(\s*['""]click['""]\s*,\s*onClick\s*\)").Count;
+        Assert.True(registrations >= 2,
+            $"memory-vault.js registers `onClick` on {registrations} root(s). The panel and the card "
+          + "are SIBLINGS in index.html — the card floats outside the panel column on purpose — so "
+          + "one registration leaves every control the card draws inert, silently. That is how the "
+          + "✕, the link chips and 'Open the full record' all shipped doing nothing.");
+    }
+
+    /// <summary>
+    /// THE VAULT'S RECORDS SURVIVE A TOPOLOGY POLL. v0.3.9.4.
+    ///
+    /// `.9` recorded `vaultChambers[id] = true` in `setVaultRecords` and NOTHING EVER READ IT, so
+    /// the next `/colony/topology` poll rebuilt the memory chamber from the reducer's recent slice
+    /// and eight thousand dots vanished. The operator's report was "they disappear fully when i
+    /// click off, and i can only see them again by refreshing" — a reload being the only thing that
+    /// makes the panel push again.
+    ///
+    /// Declared and reaching nobody, at the seam between two writers of one chamber. The guard is
+    /// that `setTopology`'s rebuild goes through the merge rather than straight to `rebuildSector`,
+    /// because that call site IS the rule.
+    /// </summary>
+    [Fact]
+    public void TheTopologyPoll_DoesNotOverwriteAChamberTheVaultOwns()
+    {
+        var code = SourceText.CodeOnly(File.ReadAllText(Path.Combine(
+            SourceText.RepoRoot(), "src", "Anthill.UI", "colony-live.js")));
+
+        Assert.True(code.Contains("rebuildSector(s, vaultOver(sec))", StringComparison.Ordinal),
+            "setTopology rebuilds sectors straight from the snapshot again. The snapshot carries the "
+          + "reducer's RECENT slice, so a chamber the vault has filled is emptied on the next poll — "
+          + "which is exactly the defect v0.3.9.4 fixed. Route it through `vaultOver`.");
+
+        Assert.True(code.Contains("vaultSectors[id] =", StringComparison.Ordinal),
+            "setVaultRecords no longer HOLDS what it pushed. `vaultOver` has nothing to put back, so "
+          + "the flag it reads is true and the records are gone — the same defect one step in.");
+    }
+
     [Fact]
     public void NoConsoleScript_CallsAnotherFilesPrivateHelper()
     {
