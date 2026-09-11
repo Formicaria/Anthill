@@ -788,6 +788,30 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // replayed mission loads the one it was admitted under rather than acquiring a new one from
         // whatever intake says today.
         var contract = Missions.MissionContracts.LoadOrCreate(Memory, mission);
+
+        /* v0.3.9.9 — THE KNOWLEDGE SCOPE IS ENTERED BEFORE THE MISSION IS CLASSIFIED, and that
+           ordering is the whole of this change.
+
+           `.136` entered the scope so a knowledge tool an ant dispatched would resolve; it entered
+           it a hundred and thirty lines below here, which was late enough for every tool and too
+           late for INTAKE. `.9.8` then taught intake that a question about the knowledge base is not
+           a `simple_answer` — by asking `KnowledgeScopeContext.HasScope` — and shipped, and changed
+           nothing, because `MissionContext.Create` runs on the next line and classification happens
+           inside it. The ambient it consults did not exist yet.
+
+           Which is this feature's own defect one more time, now committed by the fix for it: a guard
+           reading a context nobody had established. `.9.8`'s test passed because it entered the
+           scope itself before calling `Resolve` — it built a world production never creates, which
+           is the precise way a source-level fix can be green and inert at the same time.
+
+           `ResolveKnowledgeScope` is a pure function of the mission and the settings, so it can be
+           answered here as easily as below; nothing between the two points contributed to it. The
+           scope is entered FIRST and unwinds with the method exactly as it did, and the event that
+           reports it stays where it was, beside the other ambient boundaries. `QueenKnowledgeScopeOrderTests`
+           pins the order, because "A is set up before B reads it" is not visible at either site. */
+        var knowledgeScope = ResolveKnowledgeScope(mission, AnthillRuntime.Knowledge);
+        using var knowledgeAmbient = Anthill.SDK.Knowledge.KnowledgeScopeContext.Enter(knowledgeScope);
+
         var context = MissionContext.Create(mission, profile, missionStartedAt, contract);
 
         // One token governs the whole mission: external cancel OR the deadline, whichever comes first.
@@ -917,8 +941,6 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // ambient boundaries so they enter and unwind together, and an unmapped or projectless
         // mission enters the REFUSAL rather than nothing — a scope was set, and it retrieves
         // nothing, which is what the tenant boundary promises.
-        var knowledgeScope = ResolveKnowledgeScope(mission, AnthillRuntime.Knowledge);
-        using var knowledgeAmbient = Anthill.SDK.Knowledge.KnowledgeScopeContext.Enter(knowledgeScope);
         if (AnthillRuntime.Knowledge.Enabled)
             Memory.LogEvent(mission.Id, SDK.Events.EventTypes.MissionKnowledgeScope,
                 knowledgeScope.IsQueryable

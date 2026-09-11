@@ -1,3 +1,53 @@
+## v0.3.9.9 - the fix for it was green and inert, for its own reason
+
+**v0.3.9.8 SHIPPED, THE OPERATOR INSTALLED IT, QUEUED MORE MISSIONS, AND NOTHING CHANGED.** Read out
+of the live database again: three new seeded missions at 09:58, all `builder -> verifier`, all
+`class_needs_no_plan`. In the whole history of that colony, zero tasks have ever named
+`knowledge_retrieve`.
+
+`.9.8` taught intake that a question ABOUT the knowledge base cannot be a `simple_answer` — the one
+class from which the knowledge step is excluded — by asking `KnowledgeScopeContext.HasScope`. Correct
+rule, correct place, and **it is consulted at a moment when the answer is always no.**
+
+`Queen.RunMission` builds the mission context on one line and enters the knowledge scope **a hundred
+and thirty lines below it**. The context is where the mission is classified. `.136` put the entry
+there and was right to for what it needed — late enough for every tool an ant dispatches — and it is
+far too late for intake.
+
+So this is the feature's own defect one more time, committed this time by the fix for it: **a guard
+reading a context nobody had established yet.** `ResolveKnowledgeScope` is a pure function of the
+mission and the settings; nothing between the two points contributed to it. The entry moves above
+`MissionContext.Create` and unwinds exactly as it did.
+
+### The test that should have caught it is what caused it
+
+`SeededStudyMissionTests` entered the scope itself before calling `MissionIntake.Resolve` — the
+obvious way to test a function that reads an ambient, and the reason a wrong fix went green. It built
+a world production never creates.
+
+A unit test that establishes the precondition it is verifying is not a weak test. It is a test **of a
+different program**, and it will pass forever while the real one does nothing.
+
+`QueenKnowledgeScopeOrderTests` asserts the ORDER, in the source, because ordering is invisible at
+both sites: the line that enters the scope is right, the line that classifies is right, and only
+their sequence is wrong. It also pins that there is exactly ONE entry, because "before" stops meaning
+anything the moment there are two.
+
+### And the receipts had to be released
+
+Every one of the 1,602 documents carries a `v1` seed receipt from passes that never opened the
+knowledge base — so a fresh Study would correctly report "nothing new to study" and the fix would
+have stayed untestable.
+
+`KnowledgeSeeder.PolicyVersion` goes to `v2`. That constant exists for exactly this and says so: bump
+it "when the goal text or the unit of work changes in a way that should re-run over knowledge already
+seeded — that is the only honest way to say 'seed it again', and it keeps the record of what the
+previous pass did instead of deleting it." The goal text is unchanged; what a study mission DOES
+changed. Deleting the receipts would have thrown away the evidence of the defect along with its
+consequences.
+
+**Pressing Study after this release will re-seed from the beginning, twenty-five at a time.**
+
 ## v0.3.9.8 - the one lane built to read the knowledge base was the one lane that could not
 
 **THE FIRST STUDY PASS THAT EVER COMPLETED, READ OUT OF THE OPERATOR'S LIVE COLONY DATABASE.** Fifty
