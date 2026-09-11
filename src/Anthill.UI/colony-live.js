@@ -573,12 +573,20 @@
       var byW = 780 * ew / Math.max(200, W * .74), byH = 780 * eh / Math.max(200, H * .62);
       return Math.max(420, Math.min(1400, Math.max(byW, byH)));
     }
+    /* PROJECT ONE WORLD POINT. v0.3.9.7 — THE CAMERA BASIS IS NO LONGER RECOMPUTED PER POINT.
+       This called `Math.cos/sin` on the yaw and the pitch INSIDE the per-point projection: four
+       trig calls per point, per frame, all four computing the same numbers because the camera does
+       not move within a frame. At the vault's scale — 15,000 records in one chamber — that is about
+       3.6 million redundant trig calls a second, and it was the largest single cost in the frame.
+
+       The cache it needs already existed. `lightPrep()` has stored `LT.cyw/syw/cp/sp` once per frame
+       since the lighting was written, and `shadeAt` has been reading them the whole time; `proj`
+       simply never did. Not an oversight anyone could see — the old code was self-contained and
+       correct, and correct-but-recomputed does not look like anything. */
     function proj(p) {
       var rx = p[0] - cam.tgt[0], ry = p[1] - cam.tgt[1], rz = p[2] - cam.tgt[2];
-      var cyw = Math.cos(cam.yaw), syw = Math.sin(cam.yaw);
-      var x1 = rx * cyw - rz * syw, z1 = rx * syw + rz * cyw;
-      var cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
-      var y1 = ry * cp - z1 * sp, z2 = ry * sp + z1 * cp;
+      var x1 = rx * LT.cyw - rz * LT.syw, z1 = rx * LT.syw + rz * LT.cyw;
+      var y1 = ry * LT.cp - z1 * LT.sp, z2 = ry * LT.sp + z1 * LT.cp;
       var zc = z2 + cam.dist;
       if (zc < 60) return null;
       var s = 780 / zc;
@@ -1054,9 +1062,62 @@
           var a = proj(wa), b = proj(wb);
           if (a && b && Math.hypot(a.x - b.x, a.y - b.y) < 90 * pr.s) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
         });
+        /* ── GRAIN BATCHING. v0.3.9.7 ──────────────────────────────────────────────────────
+           A RECORD USED TO COST A COLOUR STRING AND A FILL, EACH, EVERY FRAME. The grain branch
+           built `'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')'` per point and assigned it to
+           `fillStyle`, so the canvas PARSED fifteen thousand CSS colour strings a frame, then took
+           fifteen thousand separate `beginPath`/`arc`/`fill` submissions to draw fifteen thousand
+           one-pixel discs. Neither cost is the dots being numerous; both are the dots being drawn
+           one at a time.
+
+           Points are collected into buckets keyed by their colour with alpha and core-mix
+           QUANTISED, then each bucket is drawn as ONE path with many sub-arcs and one fill. A
+           chamber that took 15,000 style changes takes about a hundred. The quantisation is the
+           only visible change and it is invisible: twenty alpha steps and eight mix steps across
+           grains that are seldom more than two pixels across.
+
+           IT FLUSHES BEFORE THE FIRST RESIDENT, not after the loop, and that is what keeps the
+           layering exactly as it was. Records are pushed into `s.pts` before residents, so ants
+           have always painted over grains; deferring every grain to the end of the loop would have
+           silently inverted that. The flush is lazy — the first ant triggers it — so nothing had to
+           be restructured into two passes. */
+        var grainBuckets = null, grainN = 0;
+        function flushGrains() {
+          if (!grainN) return;
+          for (var gk in grainBuckets) {
+            var arr = grainBuckets[gk];
+            ctx.fillStyle = gk;
+            ctx.beginPath();
+            for (var gi = 0; gi < arr.length; gi += 3) {
+              // `moveTo` before each arc: without it the canvas joins consecutive sub-arcs with a
+              // line and the chamber fills with a web of hairlines.
+              ctx.moveTo(arr[gi] + arr[gi + 2], arr[gi + 1]);
+              ctx.arc(arr[gi], arr[gi + 1], arr[gi + 2], 0, TAU);
+            }
+            ctx.fill();
+          }
+          grainBuckets = null; grainN = 0;
+        }
+
+        /* AND AT SURVEY DISTANCE, A SAMPLE. v0.3.9.7 — a chamber holding the whole vault is forty
+           pixels across when it is not focused, and fifteen thousand grains inside forty pixels is
+           a disc whichever of them you draw. Every Nth point is drawn instead, chosen by INDEX so
+           the choice is stable frame to frame (a random or distance-based sample shimmers) and
+           uniform across clusters (the array is ordered by cluster, so a stride crosses all of
+           them). Flying in lifts it: the moment a chamber is focused, every grain is drawn.
+
+           A SKIPPED POINT CLEARS ITS `_q`. The picker reads `_q`, and leaving a stale one would
+           make a grain clickable where it used to be rather than where it is. The selected point
+           and anything linked to it are never skipped — those are exactly the dots being looked
+           at. */
+        var lodStride = (!isFocused && s.pts.length > 3000)
+          ? Math.ceil(s.pts.length / 3000) : 1;
+
         s.pts.forEach(function (p, pi) {
           if (p.settle) { p.settle.t = Math.min(1, p.settle.t + .02); var k = 1 - Math.pow(1 - p.settle.t, 3); for (var d = 0; d < 3; d++) p.o[d] = p.settle.from[d] + (p.settle.to[d] - p.settle.from[d]) * k; if (p.settle.t >= 1) delete p.settle; }
           if (p.hidden) { p._q = null; return; }
+          if (lodStride > 1 && !p.resident && pi % lodStride !== 0
+              && pi !== selHere && !(relSet && relSet.indexOf(pi) >= 0)) { p._q = null; return; }
           var w = ptWorld(s, p, cr, sr, m);
           var q = proj(w); if (!q) return;
           p._q = q; p._w = w;
@@ -1068,7 +1129,10 @@
           // idle = the chamber colour; disabled = grey. A record is shell (chamber) or core (verified).
           var col;
           if (res) { var ac = p.antColor ? h2(p.antColor) : null; if (ac && isLight()) ac = shade3(ac, .7); col = res.status === 'disabled' ? '110,118,134' : ac ? ac.join(',') : (res.status === 'working' ? c1.join(',') : c0.join(',')); }
-          else { var mix = p.layer === 2 ? 1 : (p.coreMix || 0); col = Math.round(c0[0] + (c1[0] - c0[0]) * mix) + ',' + Math.round(c0[1] + (c1[1] - c0[1]) * mix) + ',' + Math.round(c0[2] + (c1[2] - c0[2]) * mix); }
+          // The mix is QUANTISED to eight steps so grains sharing a shade share a batch. It was a
+          // continuous function of `coreMix`, which gave almost every grain its own colour string
+          // and therefore its own fill — the cost the batching exists to remove.
+          else { var mix = p.layer === 2 ? 1 : Math.round((p.coreMix || 0) * 8) / 8; col = Math.round(c0[0] + (c1[0] - c0[0]) * mix) + ',' + Math.round(c0[1] + (c1[1] - c0[1]) * mix) + ',' + Math.round(c0[2] + (c1[2] - c0[2]) * mix); }
           var tw = res ? (res.status === 'working' && live() ? .8 + Math.sin(ts * .004 + p.ph) * .2 : 1) : (live() && p.layer === 0 ? .85 + Math.sin(ts * .0012 + p.ph) * .15 : 1);
           var hp = isFocused && hovPt === pi;
           var sh = shadeAt(w, s.pos);                 // lit hemisphere + rim, per point, per frame
@@ -1076,6 +1140,7 @@
           var rad = Math.max(.6, p.sz * q.s * (.95 + .5 * sh) * (res ? 1 : 1 + m * .4)) * (hp ? 1.5 : 1);
           var alpha = Math.min(1, a * tw * (.7 + .8 * sh) * LT.expo * (hp ? 1.4 : 1));
           if (res) {
+            flushGrains();   // ants paint over grains, exactly as the point order always meant
             // AN ANT IS NOT A GRAIN: a soft halo, a bright core and a ring — the record grains are
             // flat discs. Working ants pulse; a worker is the same shape, smaller.
             var hrad = rad * 2.6, hg2 = ctx.createRadialGradient(q.x, q.y, 0, q.x, q.y, hrad);
@@ -1092,7 +1157,12 @@
                under the sky — and the shape reads the same in both. */
             ctx.beginPath(); ctx.arc(q.x, q.y, rad * .45, 0, TAU); ctx.fillStyle = isLight() ? 'rgba(20,28,42,' + (alpha * .82) + ')' : 'rgba(255,250,240,' + (alpha * .85) + ')'; ctx.fill();
             ctx.beginPath(); ctx.arc(q.x, q.y, rad + 2.2, 0, TAU); ctx.strokeStyle = 'rgba(' + col + ',' + (alpha * (res.status === 'working' ? .9 * tw : .45)) + ')'; ctx.lineWidth = res.status === 'working' ? 1.4 : .9; ctx.stroke();
-          } else { ctx.beginPath(); ctx.arc(q.x, q.y, rad, 0, TAU); ctx.fillStyle = 'rgba(' + col + ',' + alpha + ')'; ctx.fill(); }
+          } else {
+            var key = 'rgba(' + col + ',' + (Math.round(alpha * 20) / 20) + ')';
+            if (!grainBuckets) grainBuckets = {};
+            (grainBuckets[key] || (grainBuckets[key] = [])).push(q.x, q.y, rad);
+            grainN++;
+          }
           // Every ant at tier 2 — INCLUDING THE WORKERS HANGING OFF EACH ROLE, which `fixed` still
           // omits. A worker is drawn smaller and labelled smaller, so the role reads as the parent
           // and the sub-ants read as its children rather than as nine peers of equal weight.
@@ -1111,12 +1181,16 @@
              there, still clickable, and still name themselves on hover — an unreadable wall of
              overprinted text would not have told the operator anything the tooltip does not. */
           if (!res && tier >= 3 && p.rec && p.rec.title && labelBudget > 0) {
+            // Text goes ON the grains, so the pending batch is drawn first. Bounded by
+            // `labelBudget`, and tier 3 only happens flown right in, where few grains are visible.
+            flushGrains();
             labelBudget--;
             label(String(p.rec.title).slice(0, 28), q.x, q.y - rad - 5,
               "6.5px 'IBM Plex Mono',monospace", ink(.5 * m), 'center');
           }
-          if (hp) { ctx.beginPath(); ctx.arc(q.x, q.y, Math.max(4, p.sz * q.s + 5), 0, TAU); ctx.strokeStyle = 'rgba(' + c0.join(',') + ',.7)'; ctx.lineWidth = 1; ctx.stroke(); }
+          if (hp) { flushGrains(); ctx.beginPath(); ctx.arc(q.x, q.y, Math.max(4, p.sz * q.s + 5), 0, TAU); ctx.strokeStyle = 'rgba(' + c0.join(',') + ',.7)'; ctx.lineWidth = 1; ctx.stroke(); }
         });
+        flushGrains();   // a chamber with no residents never hit the lazy flush above
         if (selHere != null && s.pts[selHere]._q) {
           var sq = s.pts[selHere]._q;
           var pl = live() ? 1 + Math.sin(ts * .004) * .12 : 1;

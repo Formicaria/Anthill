@@ -636,35 +636,30 @@ public static partial class ApiHost
             var project = (body?.Project ?? "").Trim();
             var knowledgeBase = (body?.KnowledgeBase ?? "").Trim();
 
-            // AN EMPTY KNOWLEDGE BASE UNBINDS, and unbinding is a real operation rather than an
-            // error: an operator who mapped the wrong project must be able to say so, and the
-            // honest end state of that is an unmapped project that refuses — never a silent
-            // fallback to whatever was there before.
-            if (project.Length == 0)
-            {
-                AnthillRuntime.Config.KnowledgeDefaultProject = knowledgeBase;
-            }
-            else if (knowledgeBase.Length == 0)
-            {
-                AnthillRuntime.Config.KnowledgeProjectMap.Remove(project);
-            }
-            else
-            {
-                AnthillRuntime.Config.KnowledgeProjectMap[project] = knowledgeBase;
-            }
+            /* AN EMPTY KNOWLEDGE BASE UNBINDS, and unbinding is a real operation rather than an
+               error: an operator who mapped the wrong project must be able to say so, and the
+               honest end state of that is an unmapped project that refuses — never a silent
+               fallback to whatever was there before.
 
-            // PERSISTED IMMEDIATELY. `KnowledgeOptions` re-reads the runtime per call, so the next
-            // retrieval sees this without a restart — and writing the file in the same breath means
-            // a mapping an operator made cannot survive only until the process ends, which is how a
-            // setting comes to disagree with the file that is supposed to define it.
-            AnthillRuntime.SaveConfig();
+               v0.3.9.6 — THE WRITE GOES THROUGH `SetKnowledgeBinding`, WHICH IS THE FIX.
+               This used to edit `Config.KnowledgeProjectMap` here and call `SaveConfig()`. The file
+               was written correctly and the LIVE RUNTIME was never re-projected —
+               `Knowledge.ProjectMap` is a copy taken in `ProjectConfig` — so `/knowledge/status`
+               went on reporting "no knowledge base bound" straight after a successful bind, and,
+               far worse, `Queen.ResolveKnowledgeScope` reads that same copy: the project genuinely
+               retrieved nothing until the colony restarted. The comment that used to sit here said
+               "`KnowledgeOptions` re-reads the runtime per call, so the next retrieval sees this
+               without a restart" — true about the reader, false about the writer, and believing it
+               is why nobody checked. Both halves are one method now, exactly as `.96` did for
+               model routes after the identical mistake. */
+            var map = AnthillRuntime.SetKnowledgeBinding(project, knowledgeBase);
 
             return ApiJson.Ok(new Dictionary<string, object?>
             {
                 ["project"] = project,
                 ["knowledge_base"] = knowledgeBase,
                 ["bound"] = knowledgeBase.Length > 0,
-                ["project_map"] = AnthillRuntime.Config.KnowledgeProjectMap,
+                ["project_map"] = map,
                 ["default_project"] = AnthillRuntime.Config.KnowledgeDefaultProject,
             }, knowledgeBase.Length > 0
                 ? (project.Length == 0

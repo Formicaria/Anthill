@@ -1,3 +1,115 @@
+## v0.3.9.7 - it was not the number of particles
+
+**THE OPERATOR ASKED WHETHER THE LIVE VIEW STRUGGLED BECAUSE THERE WERE TOO MANY DOTS.** It did not.
+Fifteen thousand one-pixel discs is not a lot for a canvas. Each of them cost far more than a
+one-pixel disc has any business costing, and all three reasons are the same reason: they were drawn
+one at a time.
+
+### `proj` recomputed the camera basis for every point
+
+```js
+var cyw = Math.cos(cam.yaw), syw = Math.sin(cam.yaw);
+var cp  = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+```
+
+Inside the per-point projection. Four trig calls per point, per frame, every one of them computing
+the same four numbers — the camera does not move within a frame. At the vault's scale that is about
+**3.6 million redundant trig calls a second**, and it was the largest single cost in the frame.
+
+**The cache it needed already existed.** `lightPrep()` has stored `LT.cyw/syw/cp/sp` once per frame
+since the lighting was written, and `shadeAt` has read them the whole time. `proj` simply never did.
+Nobody could have seen it in review: the old code was self-contained and correct, and
+correct-but-recomputed does not look like anything.
+
+### Every grain built a colour string the canvas then had to parse
+
+The grain branch concatenated `'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')'` per point and
+assigned it to `fillStyle` — fifteen thousand CSS colour parses a frame — then took its own
+`beginPath`/`arc`/`fill`.
+
+Points now go into buckets keyed by their colour with alpha quantised to twenty steps and the core
+mix to eight, and each bucket draws as **one path with many sub-arcs and one fill**. A chamber that
+took 15,000 style changes takes about a hundred. The quantisation is the only visible change and it
+is invisible, on grains seldom more than two pixels across.
+
+**The flush is lazy, and that is what preserves the layering.** Records sit before residents in the
+point array, so ants have always painted over grains; deferring every grain to the end of the loop
+would have silently inverted that. The first ant triggers the flush instead, as do a tier-3 label and
+a hover ring — each of those is a thing that belongs ON TOP of the grains, and each gets its own
+flush rather than a comment promising it will be fine.
+
+### And at survey distance, a sample
+
+A chamber holding the whole vault is forty pixels across when it is not focused, and fifteen thousand
+grains inside forty pixels is a disc whichever of them you draw. Above three thousand points an
+unfocused chamber draws every Nth, **chosen by index**: a random or distance-based sample changes
+membership between frames and the chamber crawls. The array is ordered by cluster, so a stride
+crosses every folder evenly rather than dropping one. Focusing lifts it entirely.
+
+A skipped point clears its `_q`. The picker reads `_q`, and a stale one makes a grain clickable where
+it USED to be — reported as "clicking does nothing", and nearly impossible to reproduce on purpose.
+The selected point and anything linked to it are never skipped, being exactly the dots being looked
+at.
+
+### Why these are source guards
+
+A frame-rate assertion needs a canvas, a GPU and a machine whose load nobody controls; it fails for
+reasons unrelated to this code, which is how a performance test comes to be disabled and then
+deleted. What needs protecting is three shapes that each read as perfectly correct code — a
+self-contained projection, a colour built where it is used, a fill beside its path. None of them
+looks like a defect. That is precisely why review is not what keeps them out.
+
+## v0.3.9.6 - the binding was real on disk and absent from the running colony
+
+**`.9.5` FIXED THE HALF OF BIND THAT FAILED. THIS IS THE HALF THAT SUCCEEDED AND STILL DID NOTHING.**
+
+With the wire name fixed, the route wrote the mapping correctly: `Config.KnowledgeProjectMap` gained
+the entry, `SaveConfig()` put it on disk, and the response said so. The page then re-rendered and
+went on saying **"has no knowledge base bound"**.
+
+`AnthillRuntime.Knowledge` is an immutable snapshot built once in `ProjectConfig`, and its
+`ProjectMap` is a **copy**. Nothing re-projected it, so the live runtime kept the old map until the
+next restart.
+
+**The visible half is the harmless one.** `/knowledge/status` reports the projected map, so the page
+contradicted the success message it had just printed — annoying, and it is what got reported. The
+other half does the damage: `Queen.ResolveKnowledgeScope` reads that same projected map, so a freshly
+bound project **genuinely retrieved nothing**, and every mission under it would have said so
+correctly. A binding that was true on disk, absent from the running colony, with no error anywhere —
+because both halves of the write worked. They just wrote different things.
+
+### This exact remedy is four years of releases old
+
+`v0.3.8.96` found the mirror image in model routing: `POST /routes/{role}` mutated the live
+dictionary and then called `SaveConfig`, which serializes the `Config` OBJECT the handler never
+touched — so every save wrote the stale routes back and a route survived exactly until the next
+restart. Its fix, and its sentence: *"The two halves live in one method now, under the same lock the
+bulk settings path uses, so they cannot be updated separately again."*
+
+`SetKnowledgeBinding` is that method for the project map. It updates the config, swaps the live
+`KnowledgeSettings` record (replaced rather than edited — every reader takes the snapshot whole, so a
+half-updated one can never be observed), and saves, under `InitLock`.
+
+**And the comment that used to sit on the route is why nobody checked.** It read: *"`KnowledgeOptions`
+re-reads the runtime per call, so the next retrieval sees this without a restart."* True about the
+reader. False about the writer. A confident sentence about the half that worked.
+
+The environment is not re-read on this path: `knowledge_default_project` is env-over-file, and an
+operator editing the map must not silently lose an override their unit file set.
+
+### Three assertions, and the one that would have caught it
+
+`BindingAProject_IsVisibleToTheResolverImmediately` asks `KnowledgeSettings.ProjectRefFor` — the
+resolver a MISSION uses — rather than the config a mission never sees. Checking the config would have
+passed against the defect, which is exactly what every existing test did.
+
+`TheLiveSettingsAndThePersistedConfig_NeverDisagree` pins them to each other in both directions,
+because the failure was two stores each internally consistent and disagreeing with each other.
+
+`OnlyTheRuntimeItself_WritesTheProjectMap` is a source guard: the defect could only exist because a
+handler reached past the runtime into the config, and any future handler that does the same
+reintroduces it identically.
+
 ## v0.3.9.5 - Bind unbound, because a field name differed by an underscore
 
 **THE OPERATOR PRESSED BIND AND THE PAGE TOLD THEM THEIR PROJECT WAS NO LONGER MAPPED TO A KNOWLEDGE
