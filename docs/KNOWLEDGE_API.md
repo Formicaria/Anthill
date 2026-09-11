@@ -80,6 +80,19 @@ second implementation §1 forbids.
 
 ---
 
+## Request field names
+
+**Request bodies are snake_case, exactly like responses, and every multi-word field says so in the
+record that reads it.** `ReadFromJsonAsync` uses ASP.NET's default HTTP JSON options — camelCase
+naming, case-INsensitive matching — and case-insensitive is not separator-insensitive: `knowledge_base`
+and `knowledgeBase` differ by an underscore and do not match.
+
+That is not theoretical. It shipped: `POST /knowledge/project-map` declared `KnowledgeBase` with no
+wire name, the console sent `knowledge_base`, the field arrived null, and an empty knowledge base
+means UNBIND — so the **Bind** button removed the mapping and reported it accurately. Fixed at
+v0.3.9.5; `RequestWireNameTests` scans every request record the API deserializes so the next one
+fails a test instead of a button.
+
 ## Routes
 
 ### `GET /knowledge/status`

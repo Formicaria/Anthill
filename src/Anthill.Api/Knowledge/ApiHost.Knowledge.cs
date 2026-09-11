@@ -5,6 +5,7 @@ using Anthill.Core.Security;
 using Anthill.Core.Tools;
 using Anthill.Modules.Knowledge;
 using Anthill.SDK.Knowledge;
+using System.Text.Json.Serialization;
 
 namespace Anthill.Api;
 
@@ -66,25 +67,62 @@ public static partial class ApiHost
         KnowledgeGateEnvVar.Length > 0
      && !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(KnowledgeGateEnvVar));
 
-    private sealed record KnowledgeRetrieveRequest(string? Query, string? Project, int? TopK, bool? IncludeHistorical);
-    private sealed record KnowledgeIngestRequest(string? Project, string[]? Paths, bool? Force);
+    /* ── WIRE NAMES ARE snake_case, AND THEY ARE WRITTEN DOWN. v0.3.9.5 ────────────────────────
+       THE DEFECT, and it made Bind UNBIND. `ReadFromJsonAsync<T>` uses ASP.NET's default HTTP JSON
+       options: camelCase naming, case-INsensitive matching. Case-insensitive is not
+       separator-insensitive — `knowledge_base` and `knowledgeBase` differ by an underscore, so the
+       console's field matched nothing and `KnowledgeBase` arrived null. The route reads an empty
+       knowledge base as "unbind", which is a real and necessary operation, so it did exactly what
+       it was told: it removed the mapping and said so. The operator pressed Bind and was told their
+       project was no longer mapped to a knowledge base.
+
+       `Project` bound fine, being one word, which is why the message could name the right project —
+       the half that worked is what made the half that did not look like a wording problem.
+
+       THE LESSON WAS ALREADY WRITTEN DOWN ONE DIRECTORY OVER. `ApiHost.Micromound.cs` has carried it
+       verbatim since v0.3.8.114: "Wire names are PROTOCOL.md's, not the web default's: a device is
+       not a browser, and case-insensitive camelCase matching does not bridge snake_case." Every
+       request shape there is annotated. This module never applied it — and its RESPONSES have always
+       been snake_case, so requests and responses disagreed about the same field in the same file.
+
+       Every multi-word field is annotated now, and `RequestWireNameTests` scans the whole API for
+       the next one rather than trusting this comment to be read. */
+
+    /// <param name="TopK">Not sent by the console today; annotated anyway, because an unannotated
+    /// field is one caller away from being this defect again.</param>
+    private sealed record KnowledgeRetrieveRequest(
+        [property: JsonPropertyName("query")] string? Query,
+        [property: JsonPropertyName("project")] string? Project,
+        [property: JsonPropertyName("top_k")] int? TopK,
+        [property: JsonPropertyName("include_historical")] bool? IncludeHistorical);
+
+    private sealed record KnowledgeIngestRequest(
+        [property: JsonPropertyName("project")] string? Project,
+        [property: JsonPropertyName("paths")] string[]? Paths,
+        [property: JsonPropertyName("force")] bool? Force);
 
     /// <param name="Project">The ANTHILL project id to bind. Empty binds the DEFAULT instead, which
     /// is the scope a mission that names no project resolves to.</param>
     /// <param name="KnowledgeBase">The FORAGER project ref to bind it to. Empty UNBINDS.</param>
-    private sealed record KnowledgeMapRequest(string? Project, string? KnowledgeBase);
+    private sealed record KnowledgeMapRequest(
+        [property: JsonPropertyName("project")] string? Project,
+        [property: JsonPropertyName("knowledge_base")] string? KnowledgeBase);
 
     /// <param name="Project">The ANTHILL project whose bound knowledge base to study. Empty means
     /// the default binding, exactly as every other knowledge route reads it.</param>
-    private sealed record KnowledgeSeedRequest(string? Project);
+    private sealed record KnowledgeSeedRequest(
+        [property: JsonPropertyName("project")] string? Project);
 
     /// <summary>v0.3.9.3 (A4). <paramref name="Note"/> is why the operator is not acting on it.</summary>
-    private sealed record KnowledgeChangeDecision(string? Note);
+    private sealed record KnowledgeChangeDecision(
+        [property: JsonPropertyName("note")] string? Note);
 
     /// <param name="Accept">True records agreement with the proposal; false records refusal.</param>
     /// <param name="Note">Optional, and worth writing: the next reader of this row is somebody
     /// deciding whether the colony's objections are usually right.</param>
-    private sealed record KnowledgeReviewDecision(bool? Accept, string? Note);
+    private sealed record KnowledgeReviewDecision(
+        [property: JsonPropertyName("accept")] bool? Accept,
+        [property: JsonPropertyName("note")] string? Note);
 
     /// <summary>
     /// Build the module. Called from <c>Run()</c> before <c>builder.Build()</c>, and the result is

@@ -29,7 +29,21 @@ public static partial class ApiHost
 
     private sealed record AllowlistUpsertRequest(string? Id, string? Target, string? Kind, string? Note, bool? Enabled);
     private sealed record AllowlistBulkRequest(string? Action, List<string>? Ids); // v2.5.4 R4: enable | disable | remove
-    private sealed record CredentialUpsertRequest(string? Id, string? Kind, string? TargetHost, string? Secret);
+    /* v0.3.9.5 — `target_host` IS THE WIRE NAME, because that is what the console sends.
+       Found by `RequestWireNameTests`, which pairs each console POST body with the record the
+       route deserializes: the page posts `target_host`, this record spelled it `targetHost` under
+       the default camelCase policy, and case-insensitive matching does not bridge an underscore —
+       so `TargetHost` arrived null and every credential saved here was stored against an EMPTY
+       host. Silently, with a success envelope, exactly as `knowledge_base` did.
+
+       The rest of this module's records are correct as they stand: `infrastructure.js` sends
+       camelCase everywhere else (`nodeId`, `fromKind`, `internetExposed`), which the default policy
+       matches. This one field was the odd one out, and that is precisely the kind of thing a
+       reviewer does not see and a scan does. */
+    private sealed record CredentialUpsertRequest(
+        string? Id, string? Kind,
+        [property: System.Text.Json.Serialization.JsonPropertyName("target_host")] string? TargetHost,
+        string? Secret);
     private sealed record NodeUpsertRequest(string? Id, string? Name, string? Kind, string? Address, string? Os, List<string>? RoleTags, string? Notes);
     private sealed record ServiceUpsertRequest(string? Id, string? Name, string? NodeId, string? Url, List<int>? Ports, string? Protocol, string? Owner, string? Criticality, bool? InternetExposed, string? Notes);
     private sealed record DependencyUpsertRequest(string? Id, string? FromKind, string? FromId, string? ToKind, string? ToId, string? DependencyKind, string? Notes);
