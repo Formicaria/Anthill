@@ -50,7 +50,19 @@ public static class KnowledgeSeeder
     /// honest way to say "seed it again", and it keeps the record of what the previous pass did
     /// instead of deleting it.
     /// </summary>
-    public const string PolicyVersion = "v1";
+    /* v0.3.9.9 — BUMPED TO v2, and this is the constant's documented purpose rather than a way
+       around the receipts.
+
+       Every one of the operator's 1,602 documents carries a `v1` receipt from passes that planned
+       `builder -> verifier` and never opened the knowledge base. Those missions ran, completed and
+       graded `completed_verified` at 1.0 while reporting they had found nothing — so the receipts
+       are accurate about what happened and useless as a record of the base having been studied.
+
+       The goal TEXT is unchanged; what a study mission DOES changed, which is exactly the case this
+       constant names. Bumping it makes every document eligible again WITHOUT deleting the record of
+       what the `v1` passes did — a deletion would have thrown away the evidence of the defect along
+       with its consequences. */
+    public const string PolicyVersion = "v2";
 
     /// <summary>How many documents one pass will seed. A base with a thousand documents must not
     /// become a thousand queued missions because somebody clicked a button.</summary>
