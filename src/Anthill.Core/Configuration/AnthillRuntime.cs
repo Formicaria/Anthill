@@ -15,7 +15,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "0.3.9.5";
+    public const string Version = "0.3.9.7";
     // Bumped WITH the tables, not ahead of them. This number is stamped into every database
     // (anthill_meta.schema_version) and reported as expected_schema_version, so a build that
     // advertised 22 without a task_attempts table would mark those databases as already migrated and
@@ -1668,6 +1668,67 @@ public static class AnthillRuntime
             ModelRouting[role] = new Dictionary<string, string>(route);
             Config.ModelRoutes[role] = new Dictionary<string, string>(route);
             SaveConfig();
+        }
+    }
+
+    /// <summary>
+    /// v0.3.9.6 — bind, unbind or set the default knowledge base, in the live runtime AND the
+    /// persisted config, atomically. Returns the map as it now stands.
+    ///
+    /// THE SAME DEFECT AS <see cref="SetModelRoute"/>, IN MIRROR IMAGE, and it made **Bind** a
+    /// decoration. `POST /knowledge/project-map` mutated <c>Config.KnowledgeProjectMap</c> and
+    /// called <see cref="SaveConfig"/>. That half is correct — the file is written. What nothing
+    /// did was RE-PROJECT: <c>Knowledge.ProjectMap</c> is a COPY taken in <c>ProjectConfig</c>, so
+    /// the live runtime kept the old map until the next restart.
+    ///
+    /// Which had two consequences, and the invisible one is the serious one. `/knowledge/status`
+    /// reports the projected map, so the page went on saying "no knowledge base bound" immediately
+    /// after reporting a successful bind — that is the half an operator can see. The half they
+    /// cannot: <c>Queen.ResolveKnowledgeScope</c> reads the same projected map, so a freshly bound
+    /// project genuinely retrieved NOTHING, and every mission under it would have said so
+    /// correctly. The binding was real on disk and absent from the running colony.
+    ///
+    /// `.96` wrote the remedy for the model-route version of this and it is repeated here verbatim:
+    /// the two halves live in one method, under the lock the bulk settings path uses, so they
+    /// cannot be updated separately again. The route's old comment claimed "KnowledgeOptions
+    /// re-reads the runtime per call, so the next retrieval sees this without a restart" — true
+    /// about the reader, false about the writer, and that sentence is why nobody looked.
+    /// </summary>
+    public static Dictionary<string, string> SetKnowledgeBinding(string project, string knowledgeBase)
+    {
+        lock (InitLock)
+        {
+            project = (project ?? "").Trim();
+            knowledgeBase = (knowledgeBase ?? "").Trim();
+
+            // AN EMPTY PROJECT SETS THE DEFAULT — the route's own rule, kept here because this is
+            // now the one place that decides what a write to the map means.
+            if (project.Length == 0) Config.KnowledgeDefaultProject = knowledgeBase;
+            else if (knowledgeBase.Length == 0) Config.KnowledgeProjectMap.Remove(project);
+            else Config.KnowledgeProjectMap[project] = knowledgeBase;
+
+            /* THE LIVE SETTINGS ARE REPLACED, NOT EDITED, and that is the design rather than a
+               workaround for `init`. `KnowledgeSettings` is an immutable snapshot on purpose: every
+               reader takes it whole, so a half-updated one can never be observed mid-write. The
+               update is therefore a swap of the whole record, built from the config that was just
+               changed — which also means the projection rule lives in exactly one expression and
+               cannot drift from `ProjectConfig`'s.
+
+               The environment is NOT re-read here: `DefaultProject` is env-over-file, and an
+               operator editing the map must not silently lose an override their unit file set. The
+               currently projected value is carried forward, and a pinned default stays pinned. */
+            Knowledge = Knowledge with
+            {
+                ProjectMap = new Dictionary<string, string>(
+                    Config.KnowledgeProjectMap ?? new Dictionary<string, string>(),
+                    StringComparer.OrdinalIgnoreCase),
+                DefaultProject = Env("ANTHILL_KNOWLEDGE_DEFAULT_PROJECT") ?? Config.KnowledgeDefaultProject,
+            };
+
+            SaveConfig();
+            return new Dictionary<string, string>(
+                Config.KnowledgeProjectMap ?? new Dictionary<string, string>(),
+                StringComparer.OrdinalIgnoreCase);
         }
     }
 
