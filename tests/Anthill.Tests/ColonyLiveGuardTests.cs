@@ -1504,13 +1504,19 @@ public class ColonyLiveGuardTests
         // guard is pinned to the table rather than to one spelling of the multiplication.
         Assert.Contains("[.34, .62, .84][shell]", live);
         Assert.Contains("seatR = s.R * (dense ?", live);
-        // The hashed lattice slot still seats a chamber that FITS the lattice. Above it, an even
-        // Fibonacci direction over the whole population replaces the slot that had run out.
-        Assert.Contains("unit(id, 'slot')", live);
+        /* A RECORD'S SEAT COMES FROM ITS OWN ID, AND THERE IS ONE SEATING RULE. v0.3.9.8.
+           This used to assert `unit(id, 'slot')` — the hashed slot into a fixed 96-direction
+           lattice — beside the Fibonacci sphere that `.9.4` used above 96 records. Two algorithms,
+           and the guard held both, so it was satisfied by a colony drawing MEMORY one way and FORGE
+           the other. The lattice is gone: the hash RANK gives a stable seat and an even one at any
+           size, which is all the lattice was ever for. */
+        Assert.Contains("unit(id, 'seat')", live);
+        // `Code()` has already stripped comments, so this is about the CODE and not about the note
+        // explaining why the lattice went away.
+        Assert.DoesNotContain("LATTICE", live);
 
         // VACUITY FLOOR: this is the function that actually seats a chamber's contents.
         Assert.Contains("function rebuildSector(s, sec)", live);
-        Assert.Contains("LATTICE.push(", live);
     }
 
     /// <summary>

@@ -1,3 +1,101 @@
+## v0.3.9.8 - the one lane built to read the knowledge base was the one lane that could not
+
+**THE FIRST STUDY PASS THAT EVER COMPLETED, READ OUT OF THE OPERATOR'S LIVE COLONY DATABASE.** Fifty
+seeded missions. Every one planned `builder -> verifier`. No researcher, no `knowledge_retrieve`,
+nothing in any of the fifty graphs ever opened the knowledge base. And every one of them graded
+`completed_verified` with a success score of **1.0**, on an answer that said:
+
+> The knowledge base contains no established facts about "1988.txt." ... The prior task output only
+> describes the mission's parameters and mode ... but does not include any substantive findings.
+
+A perfect score for answering a question about documents it never opened. That is worse than a
+failure, and not by a little: a graded success **reinforces the pheromone trails for the route that
+took it**. Seeding — whose entire stated purpose is to build pheromone memory — was teaching the
+colony that the way to answer a question about the organization's knowledge is to not look.
+
+### Every layer was correct on its own terms
+
+`KnowledgeSeeder` phrases its goal as a QUESTION deliberately: a question resolves to a class whose
+authority ceiling is `Observe`, which is the property that makes it safe to start twenty-five of
+these with one click. That argument still holds.
+
+A question with no target and an `Explain` intent is a `simple_answer`. And `simple_answer`'s
+promise, stated in its own comment, is that *"the answer rests on nothing retrieved and nothing
+inspected"* — so `EnsureClassCoverage` excludes the knowledge step for that class, and the planner's
+own reduction (`tasks.RemoveAll(t => !ConsumesEvidence(t))`) would strip it even if something
+inserted one.
+
+Read together: **the single lane built to read a bound knowledge base was the one lane that could
+never read it.** `.156` inserts the step. `.157` made the researcher actually dispatch the tool.
+`.9.6` made the binding reach the resolver. The mission that needed all three took the path that
+skipped the first, and the event log says so in one line — `mission_plan_substituted:
+class_needs_no_plan` — sitting directly beneath `mission_knowledge_scope: resolves to
+proj_97a2e36953e5`. The scope was right there. Nothing was ever going to ask it anything.
+
+### The fix is in intake, and where it is NOT is the point
+
+Two wrong fixes were available and both were tempting.
+
+**Inserting the step for `simple_answer`** would contradict the class's own promise — it is defined
+by the absence of retrieval, and a class that sometimes retrieves is not a class.
+
+**Suppressing the reduction** would buy back the failure `.145` paid for: "how do you make tacos?"
+planned seven tasks, hit a 240-second research cap, and died on the 600-second budget with NOT
+ANSWERED. Ten minutes for a child's question, and the first thing a new operator experiences.
+
+Nothing is wrong with the class. What is wrong is putting THIS request in it. **A request that asks
+what the knowledge base holds cannot be answered from what is already known — that is a description
+of a retrieval.** So intake no longer classifies it as `simple_answer`, which is the same doctrine as
+the three conditions that already take a request back OUT of the definition branch beside it.
+
+It is scoped twice over. It applies only when a knowledge scope is actually in force, so a colony
+that has bound nothing sees no behaviour change at all; and it matches only requests that NAME the
+knowledge base or ask what the organization knows. Tacos in a bound project is still a
+`simple_answer`.
+
+### The guard asserts the plan, not the class
+
+`TheSeededGoal_PlansAStepThatReadsTheKnowledgeBase` takes the seeder's own goal — through
+`GoalForName`, so the two cannot drift — and asserts the resulting plan contains a researcher step
+naming `knowledge_retrieve`. A test that asserted the class name instead would go green while the
+plan stayed builder-and-verifier, which is exactly the mistake that let this ship: `KnowledgePlanningTests`
+has held the knowledge step since `.156` and passed throughout, because it never planned the one goal
+production actually sends.
+
+`AnOrdinaryQuestion_StaysTrivial_EvenInsideABoundProject` holds the other side, so the next person to
+widen this cannot widen the class out of existence.
+
+### And FORGE looked like it had reverted, because it had
+
+Reported in the same sitting: the FORGE chamber "seems to look like it reverted back to its old set
+up." It had, and not by accident — by my own scoping.
+
+`.9.4` replaced the record seating with an even Fibonacci sphere over a chamber's whole population,
+and applied it **only above 96 records**, on the argument that "a colony with a normal topology looks
+exactly as it did." That argument was about not disturbing what worked. What it actually produced was
+two chambers, on one screen, drawn by two different algorithms: MEMORY holds thousands and got the
+even sphere; FORGE holds thirty-three — the `coder` and `ui_cartographer` records — so it kept the
+hashed 96-slot lattice with its collision probing, which clumps. Beside the new one, the old one
+reads as a regression, and calling it one is fair.
+
+**There was never a reason for two.** The lattice existed to give a record a STABLE seat; the
+hash-rank Fibonacci gives stability AND evenness at any N, so the lattice bought nothing its
+replacement does not. It is deleted, `SLOTS` survives it as a threshold for whether the radius shells
+are drawn hard or softened — a different question, about how a dot looks rather than where it sits —
+and every chamber is now seated by one rule.
+
+Two implementations of one rule is the shape this repository spends most of its releases removing.
+Keeping the second one behind a size threshold is the version of it that hides until somebody looks
+at two chambers at once, which is worse, and the guard was complicit: it asserted BOTH spellings, so
+it was satisfied by a colony drawing one chamber each way.
+
+### What is still unverified
+
+Whether the fifty missions now produce something WORTH having. The answer above was correct — the
+base really does hold nothing about a file named `1988.txt` — so this release makes the colony look
+before it answers, and says nothing yet about whether looking helps. That is the next Study pass, not
+this entry.
+
 ## v0.3.9.7 - it was not the number of particles
 
 **THE OPERATOR ASKED WHETHER THE LIVE VIEW STRUGGLED BECAUSE THERE WERE TOO MANY DOTS.** It did not.
