@@ -1,3 +1,75 @@
+## v0.3.9.5 - Bind unbound, because a field name differed by an underscore
+
+**THE OPERATOR PRESSED BIND AND THE PAGE TOLD THEM THEIR PROJECT WAS NO LONGER MAPPED TO A KNOWLEDGE
+BASE.** It was telling the truth. That is the whole defect, and every part of it behaved correctly.
+
+`ReadFromJsonAsync<T>` uses ASP.NET's default HTTP JSON options: camelCase naming policy,
+case-INsensitive matching. **Case-insensitive is not separator-insensitive.** The console posted
+`{"project": "...", "knowledge_base": "..."}`; `KnowledgeMapRequest` declared `KnowledgeBase`, which
+the policy spells `knowledgeBase`; the two differ by an underscore, so nothing matched and the field
+arrived null.
+
+An empty knowledge base means UNBIND — a real operation the page needs, because an operator who
+mapped the wrong project has to be able to say so. So the route did exactly what the missing field
+told it: removed the mapping, and said so in green. `Project` is one word, camelCase and snake_case
+agree on it, so it bound fine and the message could name the right project. **No exception, no log,
+a success envelope, and a message that was accurate about the opposite of what the button promised.**
+
+The same mismatch had been quietly disabling `include_historical` on `POST /knowledge/retrieve` since
+that route shipped — the *Include superseded* checkbox on **Context** did nothing — and `top_k` was
+one caller away from the same thing.
+
+Every multi-word field in the Knowledge module now declares its wire name. The Infrastructure module
+does NOT need the same treatment and did not get it: see below.
+
+### The lesson was already in this repository, in prose, one directory over
+
+`ApiHost.Micromound.cs` has carried it verbatim since **v0.3.8.114**: *"Wire names are PROTOCOL.md's,
+not the web default's: a device is not a browser, and case-insensitive camelCase matching does not
+bridge snake_case."* Every request shape in that module is annotated. It was learned there because
+enrolment could not be walked through, and it was written down clearly.
+
+The Knowledge module was written without reading it. Its RESPONSES have been snake_case since the day
+it shipped, so one file disagreed with itself about the name of one field for four releases.
+
+Every multi-word request field in the module now declares `[property: JsonPropertyName(...)]`.
+
+### And a third copy of the comment would have been the same mistake
+
+Two modules already carried this rule in prose, and the second was written without reading the first.
+So it is a guard — but the FIRST version of that guard asserted the wrong rule, and that is worth
+recording, because being wrong about it is how the right rule got found.
+
+It demanded `[JsonPropertyName]` on every multi-word request field. It found thirty-four across the
+Infrastructure module, **every one of them correct**: `infrastructure.js` sends camelCase
+(`nodeId`, `fromKind`, `internetExposed`) and the default policy matches that exactly. Annotating
+them snake_case would have broken a working console to satisfy a test. There is no repository-wide
+convention to enforce here, and inventing one would be a guard imposing a rule rather than protecting
+a property — Micromound is snake_case because a device is not a browser, Infrastructure is camelCase
+because it is one.
+
+**The property that matters is that the two ends AGREE**, so that is what `RequestWireNameTests`
+asserts now. It pairs each console `api('<route>', 'POST', {…})` with the record the matching
+`MapPost` deserializes, and requires every key in the body to be a name that record will bind — its
+`[JsonPropertyName]` if it has one, otherwise the camelCase of its property, compared
+case-insensitively exactly as the runtime compares them. Twenty-two console bodies pair with a route
+today; the floor asserts fifteen, so adding a call never means editing a test.
+
+### It found a second live instance the moment it ran
+
+`POST /infrastructure/credentials` sends `target_host`. `CredentialUpsertRequest` spelled it
+`targetHost`. **Every credential saved from the Infrastructure page has been stored against an empty
+host** — silently, with a success envelope, for as long as that page has existed. Nobody reported it;
+nobody would, because the credential saves and the field it lost is one you only miss later.
+
+One defect reported by an operator, one found by the guard written for it, in a module nobody was
+looking at. That is the entire argument for writing the guard instead of the third comment.
+
+The coverage floor is the usual one and it is not decoration: both halves of the pairing are regex
+over source, and either silently matching nothing leaves the comparison green over an empty set —
+the failure mode this suite has now found in seven separate checks, including a `colony-live.js`
+guard that was passing against a branch the code no longer took.
+
 ## v0.3.9.4 - the vault made usable: five reports, five silent failures
 
 **EVERY ONE OF THESE WAS A CONTROL OR A RECORD THAT REACHED NOBODY, and every one of them LOOKED
