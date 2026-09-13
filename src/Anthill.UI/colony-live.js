@@ -14,6 +14,13 @@
    exists that the scene did not put there: a chamber's grains are its RECORDS, its orbs
    are its registry RESIDENTS, and an empty chamber is a fact, drawn empty.
 
+   THE ONE THING ON SCREEN THE SCENE DID NOT PUT THERE is an operator's PLAN chamber, and
+   it is fenced off rather than trusted. A plan is a label somebody placed for a mound they
+   intend to enrol; it holds no device id, it is built by a constructor that refuses one, and
+   it is drawn dashed and open with hollow seats and no conduit to the Queen. See the chamber
+   kinds below. Every other claim on this canvas is a record, a registry entry, a recorded
+   event or a fleet listing.
+
    Public API:
      const live = ColonyLive.create();
      live.mount(containerEl);          // creates canvas + overlays inside
@@ -51,6 +58,42 @@
   // chamber's real record groupings (event types), largest first; the fourth seat is the verified core.
   var LAYOUT_SCHEMA = 3;
 
+  /* ── WHAT A CHAMBER IS ALLOWED TO CLAIM — W3-08 ──────────────────────────────────────────────
+     Three kinds, and the kind is not a flag stuck on the side of an object anyone can also set
+     by hand. It decides what the object is physically able to hold.
+
+       colony  a chamber the registry fills. Present when the snapshot named it.
+       device  a chamber that stands for enrolled hardware. It HOLDS the mound ids the fleet
+               listing returned; `deviceBacked` is a getter over that list.
+       plan    an operator's placeholder from `+ Mound`. `setDevices` throws on one, so it cannot
+               become device-backed by any route — including a future edit that means well.
+
+     `.122` through `.129` had one boolean, `added`, and `setTopology` answered it with
+     `if (s.added) s.present = true;`. Everything downstream then treated the result as a mound:
+     the device ring that says "this one is hardware", an authority conduit from the Queen, and
+     seven residents reporting `idle`. Three claims about a device nobody had enrolled. The flag
+     itself was never the problem — the problem was that nothing stopped the next person setting
+     it on something that mattered, and a comment asking nicely is not a mechanism.
+
+     So `deviceBacked` has no setter. Under `'use strict'` an assignment to it throws rather than
+     quietly doing nothing, and the only way to make it true is to hand the chamber ids that came
+     off the wire. */
+  var CHAMBER_COLONY = 'colony', CHAMBER_DEVICE = 'device', CHAMBER_PLAN = 'plan';
+  function makeChamber(d, kind) {
+    var s = Object.assign({ morph: 0, frozen: null, defPos: d.pos.slice(), defLabel: d.label,
+      present: false, pts: [], links: [], records: [], residents: [], planned: [], clusters: [],
+      counts: null, style: { color: null, glow: 1, bright: 1 } }, d, { pos: d.pos.slice() });
+    var devices = [];
+    Object.defineProperty(s, 'chamberKind', { value: kind, enumerable: true });
+    Object.defineProperty(s, 'devices', { enumerable: true, get: function () { return devices.slice(); } });
+    Object.defineProperty(s, 'deviceBacked', { enumerable: true, get: function () { return devices.length > 0; } });
+    Object.defineProperty(s, 'setDevices', { value: function (ids) {
+      if (kind !== CHAMBER_DEVICE) throw new Error('colony-live: ' + s.id + ' is a ' + kind + ' chamber and holds no devices');
+      devices = (ids || []).map(function (x) { return String(x == null ? '' : x); }).filter(function (x) { return !!x; });
+    } });
+    return s;
+  }
+
   function create() {
     var root = null, cv = null, ctx = null, tip = null, crumb = null;
     var W = 0, H = 0, scx = 0, scy = 0, raf = 0, ro = null, destroyed = false;
@@ -77,13 +120,25 @@
     var live = function () { return !reduced && opts.motion !== 'off'; };
 
     var rnd = lcg(42);
-    var SEC = SECTOR_DEFS.map(function (d) { return Object.assign({ morph: 0, frozen: null, defPos: d.pos.slice(), defLabel: d.label, present: false, pts: [], links: [], records: [], residents: [], clusters: [], counts: null, style: { color: null, glow: 1, bright: 1 } }, d, { pos: d.pos.slice() }); });
+    // `mound` is the fleet chamber and is the only DEVICE kind in the table; every other built-in
+    // is filled by the registry. Infrastructure is flagged `mound` because it belongs on the mound
+    // registry page — that is a navigation fact, and it is not a claim that hardware exists.
+    var SEC = SECTOR_DEFS.map(function (d) { return makeChamber(d, d.id === 'mound' ? CHAMBER_DEVICE : CHAMBER_COLONY); });
     // operator overrides for ants: { roleIdLower: { name, color } } — presentation, persisted with the layout
     var antStyles = {};
-    /* OPERATOR-ADDED MOUND CHAMBERS — v0.3.8.122.
-       `+ Mound` puts a chamber in the colony straight away, drawn with the roster every mound runs
-       (fetched from /micromound/roster/defaults, never invented here — `moundDefaults` stays empty
-       until the server answers, and a chamber added before then simply has no residents yet).
+    /* OPERATOR PLAN CHAMBERS — `+ Mound`. v0.3.8.122, rebuilt by W3-08.
+
+       A plan chamber is a label an operator puts in their own colony view for a mound they intend
+       to enrol. It is drawn with the roster every mound runs, fetched from /colony/mound-roster and
+       never spelled out here — `moundDefaults` stays empty until the server answers.
+
+       WHAT IT IS NOT, AND WHAT NOW ENFORCES THAT. It is not a device and never becomes one: it is
+       built by `makeChamber(..., CHAMBER_PLAN)`, which refuses `setDevices`, so `deviceBacked` is
+       false for the life of the object. The renderer keys the device ring, the Queen's authority
+       conduit and the chamber outline off `deviceBacked` and `chamberKind` rather than off the
+       old `added` flag, so there is no path from "the operator pressed a button" to "the colony
+       shows hardware". Its seats are `planned`, not `residents`, and they carry no status the
+       colony did not observe.
 
        EVERY NAME AND COLOUR AN OPERATOR SETS ON ONE OF THESE IS PRESENTATION AND NOTHING ELSE. It
        lives in this layout, beside the chamber positions, and never reaches a device: a mound is
@@ -101,28 +156,34 @@
     /** Drop a stale local graph off every seat, so a closed card leaves no lines behind. */
     function clearRel(sec) { sec.pts.forEach(function (p) { if (p.rec && p.rec.rel) p.rec.rel = null; }); }
     var moundDefaults = [];
-    var addedMounds = [];   // [{ id, label, pos }] — persisted; the sector defs are derived
+    var planChambers = [];   // [{ id, label, pos }] — persisted; the chamber objects are derived
     var bySec = {}; SEC.forEach(function (s) { bySec[s.id] = s; });
-    /** Materialise one operator-added mound as a sector, in the same shape SECTOR_DEFS produce. */
-    function mountAddedMound(rec) {
+    /** Materialise one operator plan chamber. The kind is fixed here and cannot be argued with. */
+    function mountPlanChamber(rec) {
       if (bySec[rec.id]) return bySec[rec.id];
-      var d = { id: rec.id, label: rec.label, mound: true, added: true, color: '#a55a7e', core: '#c9cfdc',
+      var d = { id: rec.id, label: rec.label, mound: true, color: '#a55a7e', core: '#c9cfdc',
         pos: rec.pos.slice(), R: 34, n: 110, rot: .00006 };
-      var s = Object.assign({ morph: 0, frozen: null, defPos: d.pos.slice(), defLabel: d.label,
-        present: true, pts: [], links: [], records: [], residents: [], clusters: [], counts: null,
-        style: { color: null, glow: 1, bright: 1 } }, d, { pos: d.pos.slice() });
+      var s = makeChamber(d, CHAMBER_PLAN);
+      s.present = true;   // the operator asked for it. Presence was never the lie; the costume was.
       SEC.push(s); bySec[s.id] = s;
       return s;
     }
-    /** Where the next added mound sits: a ring below the colony, so they never land on each other. */
+    /** Where the next plan chamber sits: a ring below the colony, so they never land on each other. */
     function nextMoundSeat(n) {
       var th = n * 1.05 + .4;
       return [Math.cos(th) * 260, 300 + (n % 2 ? 40 : 0), Math.sin(th) * 200];
     }
-    /** The residents an added mound shows: the default roster, as presentation-only ants. */
-    function moundResidents(sectorId) {
+    /* THE SEATS A PLAN CHAMBER SHOWS, AND WHY THEY ARE NOT RESIDENTS.
+       A resident has a registry role or a device behind it and a status the colony observed —
+       `working` needs a running task, `idle` and `disabled` come off the registry. A plan seat has
+       none of that, so it does not get the shape that carries it: no workers, no trail, and
+       `status: 'planned'`, which is not one of the three states an ant is allowed to report. They
+       are kept in `planned` rather than `residents` so nothing downstream can add the two together
+       and call the total a roster. */
+    function plannedRoster(sectorId) {
       return moundDefaults.map(function (a) {
-        return { roleId: sectorId + '/' + a.name, name: a.name, status: 'idle', workers: [], trail: null, note: a.role };
+        return { roleId: sectorId + '/' + a.name, name: a.name, status: 'planned', planned: true,
+          workers: [], trail: null, note: a.role };
       });
     }
     /** A chamber is drawn only when the scene names it (the mound only when the fleet has one). */
@@ -160,7 +221,13 @@
     function rebuildAuthorities() {
       var want = {}, changed = false;
       SEC.forEach(function (s) {
-        if (!s.mound) return;
+        /* A CONDUIT IS THE STATEMENT THAT A CHAMBER ANSWERS TO THE QUEEN, so a chamber that
+           answers to nothing does not get one. W3-08 deliberately reverses half of `.123`: wiring
+           every chamber flagged `mound` put an authority strand on an operator's placeholder, and
+           a strand carrying charter particles to a device that was never enrolled is the console
+           asserting a command path that does not exist. Infrastructure and the fleet chamber keep
+           theirs — both have something at the far end. */
+        if (!s.mound || s.chamberKind === CHAMBER_PLAN) return;
         want[s.id] = true;
         if (!authorities[s.id]) { authorities[s.id] = mkRoot('queen', s.id, 1, 20); changed = true; }
       });
@@ -252,7 +319,7 @@
       if (!held) return sec;
       return {
         id: sec.id, label: sec.label,
-        residents: sec.residents || [], runningTasks: sec.runningTasks || [],
+        residents: sec.residents || [], planned: sec.planned || [], runningTasks: sec.runningTasks || [],
         records: held.records, clusters: held.clusters, recordCount: held.recordCount,
       };
     }
@@ -434,7 +501,9 @@
          others, and drawing her as one seat among seven on the same ring said otherwise. She sits
          at the centre of her own chamber at nearly double size, and the ring closes around her. */
       var top = s.strata.length ? s.strata[0].y - s.R * .42 : -s.R * .4;   // −y is up: the row sits over the highest level
-      var resList = sec.residents || [];
+      /* Plan seats ride the same ring and are NOT the same thing. Each carries `planned: true`
+         all the way to the draw call, and `s.planned` is kept apart from `s.residents` below. */
+      var resList = (sec.residents || []).concat(sec.planned || []);
       function isQueenSeat(r) { return s.id === 'queen' && String(r.roleId || '').toLowerCase() === 'queen'; }
       var ringN = Math.max(1, resList.filter(function (r) { return !isQueenSeat(r); }).length), ringI = 0;
       resList.forEach(function (r, ri) {
@@ -444,7 +513,7 @@
         var base = queenSeat ? [0, 0, 0] : [Math.cos(th) * s.R * .58, 0, Math.sin(th) * s.R * .58];
         var rowX = queenSeat ? 0 : ((ringI - .5) / ringN - .5) * s.R * 2.2;
         var ov = antStyles[String(r.roleId || '').toLowerCase()] || {};
-        pts.push({ o: base, org: [rowX, queenSeat ? top - s.R * .22 : top, 0], layer: 1, cl: 0, sz: queenSeat ? 4.4 : 2.4, a: .95, ph: ri, born: 0, rec: null, below: false, queen: queenSeat, antColor: ov.color || null, resident: { roleId: r.roleId, name: ov.name || r.name || r.roleId, registryName: r.name || r.roleId, status: r.status, trail: r.trail || null, workers: (r.workers || []).length, color: ov.color || null } });
+        pts.push({ o: base, org: [rowX, queenSeat ? top - s.R * .22 : top, 0], layer: 1, cl: 0, sz: queenSeat ? 4.4 : 2.4, a: .95, ph: ri, born: 0, rec: null, below: false, queen: queenSeat, antColor: ov.color || null, resident: { roleId: r.roleId, name: ov.name || r.name || r.roleId, registryName: r.name || r.roleId, status: r.status, planned: !!r.planned, trail: r.trail || null, workers: (r.workers || []).length, color: ov.color || null } });
         var roleIdx = pts.length - 1;
         var wn = (r.workers || []).length;
         (r.workers || []).forEach(function (w, wi) {
@@ -465,8 +534,10 @@
       pts.forEach(function (p) { p.linked = false; });
       links.forEach(function (lk) { if (pts[lk[0]]) pts[lk[0]].linked = true; if (pts[lk[1]]) pts[lk[1]].linked = true; });
       s.pts = pts; s.links = links;
-      s.records = sec.records || []; s.residents = sec.residents || []; s.clusters = sec.clusters || [];
-      s.counts = { records: sec.recordCount != null ? sec.recordCount : s.records.length, running: (sec.runningTasks || []).length, residents: s.residents.length, verified: s.records.filter(function (r) { return r.verification === 'verified'; }).length };
+      s.records = sec.records || []; s.residents = sec.residents || []; s.planned = sec.planned || []; s.clusters = sec.clusters || [];
+      // `residents` counts units the colony has. `planned` counts seats on a plan. Two numbers,
+      // because one number that silently means either is how a plan chamber read as a fleet member.
+      s.counts = { records: sec.recordCount != null ? sec.recordCount : s.records.length, running: (sec.runningTasks || []).length, residents: s.residents.length, planned: s.planned.length, verified: s.records.filter(function (r) { return r.verification === 'verified'; }).length };
     }
     // one-shot flights: a recorded transition plays once, ant from → to, then is done
     var flights = [], playedTransitions = {};
@@ -718,7 +789,7 @@
       var ants = {}; Object.keys(antStyles).forEach(function (k) { if (antStyles[k].name || antStyles[k].color) ants[k] = antStyles[k]; });
       // The added mounds themselves, not just their seats: without this the chambers vanish on
       // reload and the operator's fleet labelling goes with them.
-      var mounds = addedMounds.map(function (m) { return { id: m.id, label: m.label, pos: (bySec[m.id] || m).pos.slice() }; });
+      var mounds = planChambers.map(function (m) { return { id: m.id, label: m.label, pos: (bySec[m.id] || m).pos.slice() }; });
       return { schema: LAYOUT_SCHEMA, positions: positions, names: names, styles: styles, ants: ants, mounds: mounds };
     }
     function validColor(c) { return typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c) ? c.toLowerCase() : null; }
@@ -783,17 +854,27 @@
       // Added mounds are restored BEFORE the styles and names above would want them — so they are
       // re-read here and the whole apply runs again over the enlarged sector list.
       if (Array.isArray(l.mounds)) {
-        addedMounds = [];
+        planChambers = [];
         l.mounds.slice(0, 24).forEach(function (m) {
           if (!m || typeof m.id !== 'string' || m.id.indexOf('mound:') !== 0) return;
           var pos = Array.isArray(m.pos) && m.pos.length === 3 && m.pos.every(function (n) { return typeof n === 'number' && isFinite(n) && Math.abs(n) <= 1200; })
-            ? m.pos.slice() : nextMoundSeat(addedMounds.length);
+            ? m.pos.slice() : nextMoundSeat(planChambers.length);
           var rec = { id: m.id, label: String(m.label || 'MICROMOUND').toUpperCase().slice(0, 28), pos: pos };
-          addedMounds.push(rec); mountAddedMound(rec);
+          planChambers.push(rec); mountPlanChamber(rec);
         });
-        // second pass so a restored mound picks up its own name, seat and style
+        /* SEAT THEM FROM WHATEVER ROSTER WE ALREADY HAVE. W3-08 — `setMoundDefaults` back-fills
+           chambers that existed when the roster landed, and `addMound` seats a new one, but a
+           chamber RESTORED from the layout after the roster had already arrived was seated by
+           neither and came up empty. The two fetches race in colony-host.js, so which way it fell
+           was luck. A chamber restored BEFORE the roster still fills in later, by the same
+           back-fill that has always handled that order. */
         SEC.forEach(function (s2) {
-          if (!s2.added) return;
+          if (s2.chamberKind === CHAMBER_PLAN && !s2.planned.length && moundDefaults.length)
+            rebuildSector(s2, { residents: [], planned: plannedRoster(s2.id), records: [], clusters: [] });
+        });
+        // second pass so a restored plan chamber picks up its own name, seat and style
+        SEC.forEach(function (s2) {
+          if (s2.chamberKind !== CHAMBER_PLAN) return;
           var p2 = l.positions && l.positions[s2.id]; if (Array.isArray(p2) && p2.length === 3) s2.pos = p2.slice();
           var nm3 = l.names && l.names[s2.id]; if (typeof nm3 === 'string' && nm3.trim()) { s2.label = nm3.trim().toUpperCase().slice(0, 28); s2.renamed = true; }
           var st3 = l.styles && l.styles[s2.id];
@@ -1155,7 +1236,15 @@
           // grains grow as the strata form, so a level's records read as a row and not as dust
           var rad = Math.max(.6, p.sz * q.s * (.95 + .5 * sh) * (res ? 1 : 1 + m * .4)) * (hp ? 1.5 : 1);
           var alpha = Math.min(1, a * tw * (.7 + .8 * sh) * LT.expo * (hp ? 1.4 : 1));
-          if (res) {
+          if (res && res.planned) {
+            flushGrains();   // a seat paints over grains too, exactly as the point order always meant
+            /* A PLAN SEAT IS NOT AN ANT. Hollow and dashed — no halo, no lit core, no status ring.
+               The filled shape is the colony saying it has a unit here; this shape is an operator
+               saying they mean to. The two are never one glyph. */
+            ctx.beginPath(); ctx.arc(q.x, q.y, rad, 0, TAU);
+            ctx.setLineDash([2, 2]); ctx.strokeStyle = 'rgba(' + col + ',' + (alpha * .85) + ')';
+            ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]);
+          } else if (res) {
             flushGrains();   // ants paint over grains, exactly as the point order always meant
             // AN ANT IS NOT A GRAIN: a soft halo, a bright core and a ring — the record grains are
             // flat discs. Working ants pulse; a worker is the same shape, smaller.
@@ -1218,16 +1307,25 @@
             ctx.beginPath(); ctx.arc(rq.x, rq.y, 2.4, 0, TAU); ctx.fillStyle = 'rgba(' + c0.join(',') + ',.9)'; ctx.fill();
           });
         }
-        // THE DEVICE RING MARKS EVERY MOUND, not only the built-in fleet chamber. v0.3.8.123 —
-        // this was keyed on `s.id === 'mound'`, so an operator-added chamber and infrastructure
-        // were drawn as plain spheres and read as ordinary chambers. The ring is what says "this
-        // one is hardware", and it is the same claim for all three kinds.
-        if (s.mound) {
+        /* THE DEVICE RING MARKS HARDWARE, AND ONLY HARDWARE. W3-08.
+
+           `.123` keyed it on `s.mound` and said in its own comment that the ring "is what says
+           'this one is hardware', and it is the same claim for all three kinds." It was the same
+           claim, and for two of the three it was false: INFRASTRUCTURE is a registry sector with
+           eight software roles and no device, and a `+ Mound` chamber had nothing behind it at
+           all. Now it is drawn from `deviceBacked`, a getter over the mound ids the fleet listing
+           returned — so it cannot appear on a chamber that holds none. */
+        if (s.deviceBacked) {
           for (var k2 = 0; k2 < 6; k2++) { var th3 = k2 * 1.047 + .5; var w2 = [s.pos[0] + Math.cos(th3) * s.R * .62, s.pos[1] + Math.sin(th3) * s.R * .5, s.pos[2] + Math.sin(th3 * 2) * 8]; var q2 = proj(w2); if (q2) { ctx.beginPath(); ctx.arc(q2.x, q2.y, Math.max(.8, 1.6 * q2.s), 0, TAU); ctx.fillStyle = isLight() ? 'rgba(64,78,98,' + (.5 * fog(q2.zc)) + ')' : 'rgba(201,207,220,' + (.5 * fog(q2.zc)) + ')'; ctx.fill(); } }
           if (s.stopped) { ctx.beginPath(); ctx.arc(pr.x, pr.y, s.R * 1.2 * pr.s, 0, TAU); ctx.strokeStyle = 'rgba(226,31,123,.8)'; ctx.lineWidth = 2.2; ctx.stroke(); }
+        } else if (s.chamberKind === CHAMBER_PLAN) {
+          // A PLAN CHAMBER LOOKS LIKE A PLAN: dashed and open, a shape no device chamber draws.
+          ctx.beginPath(); ctx.arc(pr.x, pr.y, s.R * 1.14 * pr.s, 0, TAU);
+          ctx.setLineDash([3, 5]); ctx.strokeStyle = 'rgba(' + c0.join(',') + ',' + (.55 * fog(pr.zc)) + ')';
+          ctx.lineWidth = 1.1; ctx.stroke(); ctx.setLineDash([]);
         }
         if (tier >= 1) {
-          label(s.label + (s.mound && s.stopped ? ' · STOPPED' : ''), pr.x, pr.y + (s.R + 18) * pr.s,
+          label(s.label + (s.chamberKind === CHAMBER_PLAN ? ' · PLAN · NO DEVICE' : (s.mound && s.stopped ? ' · STOPPED' : '')), pr.x, pr.y + (s.R + 18) * pr.s,
             '600 ' + Math.max(8, Math.min(11, 9 * pr.s * 8)) + "px 'IBM Plex Mono',monospace",
             'rgba(' + (isLight() ? shade3(c0, .62).join(',') : c0.join(',')) + ',' + ((isFocused ? .95 : (isLight() ? .8 : .5)) * fog(pr.zc)) + ')', 'center');
         }
@@ -1345,35 +1443,43 @@
       getOptions: function () { return { motion: opts.motion, labels: opts.labels, trails: opts.trails, env: opts.env, conduits: Object.assign({}, opts.conduits), links: Object.assign({}, opts.links) }; },
       setSectorStyle: function (id, patch) { var s = bySec[id]; if (!s) return; patch = patch || {}; if ('color' in patch) s.style.color = validColor(patch.color); if ('glow' in patch) s.style.glow = clampNum(patch.glow, .5, 2.5, 1); if ('bright' in patch) s.style.bright = clampNum(patch.bright, .3, 2.5, 1); saveLayout(); },
       isMound: function (id) { var s = bySec[id]; return !!(s && s.mound); },
-      isAddedMound: function (id) { var s = bySec[id]; return !!(s && s.added); },
-      /** The roster every mound runs, from the server. Presentation only — see `addedMounds`. */
+      /** Is this chamber a plan — an operator's label with no device behind it? */
+      isPlanChamber: function (id) { var s = bySec[id]; return !!(s && s.chamberKind === CHAMBER_PLAN); },
+      /** What kind of chamber this is: 'colony' | 'device' | 'plan'. Null for an id we do not have. */
+      chamberKind: function (id) { var s = bySec[id]; return s ? s.chamberKind : null; },
+      /** Does this chamber stand for enrolled hardware? Derived from the ids the fleet returned. */
+      isDeviceBacked: function (id) { var s = bySec[id]; return !!(s && s.deviceBacked); },
+      /** The roster every mound runs, from the server. Presentation only — see `planChambers`. */
       setMoundDefaults: function (list) {
         if (!Array.isArray(list)) return;
         moundDefaults = list.filter(function (a) { return a && typeof a.name === 'string' && a.name; })
           .slice(0, 24).map(function (a) { return { name: String(a.name).slice(0, 40), role: String(a.role || '').slice(0, 80) }; });
-        // A chamber added before the roster arrived fills in now rather than staying empty.
+        // A plan chamber created before the roster arrived fills in now rather than staying empty.
         // v0.3.9.4 — through `vaultOver`, like every other rebuild: filling in a roster must not
-        // empty a mound chamber the vault is feeding.
-        SEC.forEach(function (s2) { if (s2.added) rebuildSector(s2, vaultOver({ id: s2.id, residents: moundResidents(s2.id), records: [], clusters: [] })); });
+        // empty a chamber the vault is feeding.
+        SEC.forEach(function (s2) { if (s2.chamberKind === CHAMBER_PLAN) rebuildSector(s2, vaultOver({ id: s2.id, label: s2.label, residents: [], planned: plannedRoster(s2.id), records: [], clusters: [] })); });
       },
-      /** Add a mound chamber. Returns its id. The label is the operator's from the first frame. */
+      /** Add a PLAN chamber. Returns its id. The label is the operator's from the first frame.
+          The id shape `mound:N` is the persisted layout's and does not change; what changed is that
+          the object behind it is built as a plan and can never be handed a device. */
       addMound: function (label) {
-        var n = addedMounds.length + 1, id = 'mound:' + n;
+        var n = planChambers.length + 1, id = 'mound:' + n;
         while (bySec[id]) { n++; id = 'mound:' + n; }
-        var rec = { id: id, label: String(label || ('MICROMOUND ' + n)).toUpperCase().slice(0, 28), pos: nextMoundSeat(addedMounds.length) };
-        addedMounds.push(rec);
-        var s2 = mountAddedMound(rec);
-        rebuildSector(s2, vaultOver({ id: id, residents: moundResidents(id), records: [], clusters: [] }));
+        var rec = { id: id, label: String(label || ('MICROMOUND ' + n)).toUpperCase().slice(0, 28), pos: nextMoundSeat(planChambers.length) };
+        planChambers.push(rec);
+        var s2 = mountPlanChamber(rec);
+        rebuildSector(s2, vaultOver({ id: id, label: rec.label, residents: [], planned: plannedRoster(id), records: [], clusters: [] }));
         rebuildAll(); saveLayout(); api.focus(id);
         return id;
       },
-      /** Remove one. Only ever an ADDED chamber: the registry's own sectors are not the operator's
-          to delete, and silently ignoring the difference is how a colony loses a real chamber. */
+      /** Remove one. Only ever a PLAN chamber: the registry's own sectors and the fleet chamber are
+          not the operator's to delete, and silently ignoring the difference is how a colony loses a
+          real chamber. */
       removeMound: function (id) {
-        var s2 = bySec[id]; if (!s2 || !s2.added) return false;
+        var s2 = bySec[id]; if (!s2 || s2.chamberKind !== CHAMBER_PLAN) return false;
         SEC = SEC.filter(function (x) { return x.id !== id; });
         delete bySec[id];
-        addedMounds = addedMounds.filter(function (m) { return m.id !== id; });
+        planChambers = planChambers.filter(function (m) { return m.id !== id; });
         if (focused === id) { focused = null; }
         rebuildAll(); saveLayout(); api.survey();
         return true;
@@ -1393,8 +1499,13 @@
           so the flag travels with the row rather than the page guessing from the id. */
       listMounds: function () {
         return SEC.filter(function (x) { return x.mound; }).map(function (x) {
+          /* THE ROW CARRIES THE KIND, because the page that renders it must not guess from the id.
+             `residents` counts units the colony has; `planned` counts seats on a plan; the two are
+             never summed. `deviceBacked` is the chamber's own getter, not a flag copied here. */
           return { id: x.id, label: x.label, color: x.style.color || x.color,
-            residents: x.residents.length, removable: !!x.added, present: !!x.present };
+            kind: x.chamberKind, deviceBacked: x.deviceBacked, devices: x.devices,
+            residents: x.residents.length, planned: x.planned.length,
+            removable: x.chamberKind === CHAMBER_PLAN, present: !!x.present };
         });
       },
       getSectorStyle: function (id) { var s = bySec[id]; return s ? { color: s.style.color, glow: s.style.glow, bright: s.style.bright, defaultColor: s.color } : null; },
@@ -1556,11 +1667,25 @@
           rebuildSector(s, vaultOver(sec));
         });
         SEC.forEach(function (s) {
-          // An ADDED mound is the operator's, not the server's: the snapshot has never heard of it
-          // and must not switch it off. Everything else is present exactly when the projection
-          // says so, which is the rule that stops a chamber outliving the roles behind it.
-          if (s.added) s.present = true;
-          else if (s.id === 'mound') { s.present = !!(scene.mound && scene.mound.present); if (s.present) s.stopped = (scene.mound.mounds || []).some(function (m) { return m.stopped; }); }
+          /* WHAT MAKES A CHAMBER PRESENT, PER KIND. W3-08.
+
+             PLAN — the operator's own. The snapshot has never heard of it and must not switch it
+             off. `.129` wrote `if (s.added) s.present = true;` and stopped there, which was a
+             correct presence rule and the only rule, so everything downstream drew the result as
+             hardware. It is still present. It is no longer allowed to look like a device.
+
+             DEVICE — the chamber is HANDED the mound ids the fleet listing returned and `present`
+             is a consequence of holding some. `.129` read `scene.mound.present`, a boolean off the
+             wire that nothing here could check; now the chamber carries what it claims.
+
+             COLONY — present exactly when the projection named it, which is the rule that stops a
+             chamber outliving the roles behind it. */
+          if (s.chamberKind === CHAMBER_PLAN) s.present = true;
+          else if (s.chamberKind === CHAMBER_DEVICE) {
+            s.setDevices(((scene.mound && scene.mound.mounds) || []).map(function (m) { return m.moundId; }));
+            s.present = s.deviceBacked;
+            if (s.present) s.stopped = (scene.mound.mounds || []).some(function (m) { return m.stopped; });
+          }
           else s.present = !!named[s.id];
         });
         // The mission circuit: the chambers with RUNNING tasks, in the canonical order, from the Queen.
@@ -1595,7 +1720,7 @@
         var s = bySec[secId], p = s && s.pts[idx];
         return (p && (p.rec || p.resident)) || null;
       },
-      sectorInfo: function (id) { var s = bySec[id]; return s ? { id: s.id, label: s.label, color: s.color, counts: s.counts, clusters: s.clusters, present: s.present } : null; },
+      sectorInfo: function (id) { var s = bySec[id]; return s ? { id: s.id, label: s.label, color: s.color, kind: s.chamberKind, deviceBacked: s.deviceBacked, devices: s.devices, counts: s.counts, clusters: s.clusters, present: s.present } : null; },
       mount: mount, unmount: unmount, destroy: destroy, on: on
     };
     var handlers = {};
@@ -1763,7 +1888,7 @@
         var hpr = proj(hit.pos), overNucleus = hpr && Math.hypot(hpr.x - m.x, hpr.y - m.y) < Math.max(10, hit.R * hpr.s * .34);
         cv.style.cursor = overNucleus ? 'move' : 'pointer';
         var hc = hit.counts || {};
-        tip.textContent = hit.label + ' · ' + (hc.records ? hc.records + ' record' + (hc.records === 1 ? '' : 's') : 'no records') + (hc.verified ? ' (' + hc.verified + ' verified)' : '') + ' · ' + (hc.residents || 0) + ' resident' + (hc.residents === 1 ? '' : 's') + (hc.running ? ' · ' + hc.running + ' running' : '');
+        tip.textContent = hit.label + ' · ' + (hc.records ? hc.records + ' record' + (hc.records === 1 ? '' : 's') : 'no records') + (hc.verified ? ' (' + hc.verified + ' verified)' : '') + ' · ' + (hit.chamberKind === CHAMBER_PLAN ? (hc.planned || 0) + ' planned seat' + (hc.planned === 1 ? '' : 's') + ' · no device' : (hc.residents || 0) + ' resident' + (hc.residents === 1 ? '' : 's')) + (hc.running ? ' · ' + hc.running + ' running' : '');
         tip.style.display = 'block'; tip.style.left = (e.clientX + 14) + 'px'; tip.style.top = (e.clientY - 10) + 'px';
       } else { if (!dragging()) cv.style.cursor = 'grab'; tip.style.display = 'none'; }
     }

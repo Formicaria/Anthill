@@ -621,7 +621,14 @@ public class ColonyLiveGuardTests
     public void TheMoundChamber_ExistsOnlyWhenTheFleetSaysSo()
     {
         var live = Code("colony-live.js");
-        Assert.Contains("s.present = !!(scene.mound && scene.mound.present)", live);
+
+        // W3-08 — STRONGER THAN `.129`'s RULE, AND THIS ASSERTION MOVED WITH IT. The chamber used
+        // to read `scene.mound.present`, a boolean off the wire that nothing in the browser could
+        // check. It is now HANDED the mound ids the fleet listing returned, and `present` is a
+        // consequence of holding some. A chamber cannot be present and hold nothing.
+        Assert.Contains("s.setDevices(((scene.mound && scene.mound.mounds) || []).map(", live);
+        Assert.Contains("s.present = s.deviceBacked;", live);
+        Assert.DoesNotContain("s.present = !!(scene.mound && scene.mound.present)", live);
         Assert.Contains("return m.stopped;", live);
         foreach (var asset in new[] { "colony-live.js", "colony-home.js" })
             foreach (var invented in new[] { "'edge_queen'", "'online'", "'offline'", "'quiesced'" })
@@ -1090,18 +1097,23 @@ public class ColonyLiveGuardTests
         Assert.Contains("setMoundDefaults", live);
         Assert.Contains("moundDefaults", live);
 
-        // Added chambers survive a reload, and the snapshot cannot switch them off — the server has
-        // never heard of them.
+        // Plan chambers survive a reload, and the snapshot cannot switch them off — the server has
+        // never heard of them. The persisted key is still `mounds`, so an operator's saved layout
+        // from before W3-08 restores unchanged.
         Assert.Contains("mounds: mounds", live);
-        Assert.Contains("if (s.added) s.present = true;", live);
+        Assert.Contains("if (s.chamberKind === CHAMBER_PLAN) s.present = true;", live);
+        // The flag that used to carry this is GONE, not merely unused. `added` was a boolean any
+        // future edit could set on a chamber that mattered; the kind is fixed by the constructor.
+        Assert.DoesNotContain("s.added", live);
+        Assert.DoesNotContain("addedMounds", live);
 
         // Only the operator's own chambers can be deleted. A registry sector is refused in the
         // renderer, not merely hidden in the page: a button that exists to be refused is worse than
         // no button, and hiding is not enforcing. The registry now LISTS every mound (.123 —
         // infrastructure belongs on the page that lists mounds), so `removable` is what the row
         // renders and `added` is still what the renderer enforces.
-        Assert.Contains("if (!s2 || !s2.added) return false;", live);
-        Assert.Contains("removable: !!x.added", live);
+        Assert.Contains("if (!s2 || s2.chamberKind !== CHAMBER_PLAN) return false;", live);
+        Assert.Contains("removable: x.chamberKind === CHAMBER_PLAN", live);
         Assert.Contains("m.removable", home);
         Assert.Contains("return SEC.filter(function (x) { return x.mound; })", live);
 
@@ -1421,9 +1433,11 @@ public class ColonyLiveGuardTests
         var live = Code("colony-live.js");
 
         // Derived from the table, not a list. `s.mound` is the flag every kind of mound carries:
-        // infrastructure, the fleet chamber, and each one an operator added.
+        // infrastructure, the fleet chamber, and each plan an operator placed — and W3-08 excludes
+        // the plans, because a conduit is the statement that a chamber answers to the Queen and a
+        // chamber with no device answers to nobody. That is half of `.123` deliberately reversed.
         Assert.Contains("function rebuildAuthorities()", live);
-        Assert.Contains("if (!s.mound) return;", live);
+        Assert.Contains("if (!s.mound || s.chamberKind === CHAMBER_PLAN) return;", live);
         Assert.Contains("authorities[s.id] = mkRoot('queen', s.id, 1, 20)", live);
 
         // The single hard-coded strand is gone, at both ends — the root and its particle stream.
@@ -1439,14 +1453,19 @@ public class ColonyLiveGuardTests
         // Drawn only for a chamber that is on screen.
         Assert.Contains("if (!bySec[id] || !bySec[id].present) return;", live);
 
-        // The device ring marks every mound too, not just the built-in one — it is the mark that
-        // says "this one is hardware", and that claim is the same for all three kinds.
-        Assert.Contains("if (s.mound) {", live);
+        // THE DEVICE RING MARKS HARDWARE AND ONLY HARDWARE — W3-08. `.123` drew it for every
+        // chamber flagged `mound` and said in its own comment that the claim "is the same for all
+        // three kinds". It was, and for two of them it was false: INFRASTRUCTURE has eight software
+        // roles and no device, and a `+ Mound` chamber had nothing at all. `deviceBacked` is a
+        // getter over the mound ids the fleet listing returned, so the ring cannot be drawn without
+        // them.
+        Assert.Contains("if (s.deviceBacked) {", live);
+        Assert.DoesNotContain("if (s.mound) {", live);
         // The STOPPED suffix moved with it. `else if (s.id === 'mound')` still exists one function
         // away — that one reads the SERVER'S fleet chamber out of the snapshot, which is a different
         // question from "is this hardware" — so the assertion is on what the label now says rather
         // than on the absence of a substring that legitimately survives elsewhere.
-        Assert.Contains("s.label + (s.mound && s.stopped ? ' \u00b7 STOPPED' : '')", live);
+        Assert.Contains("s.chamberKind === CHAMBER_PLAN ? ' \u00b7 PLAN \u00b7 NO DEVICE' : (s.mound && s.stopped ? ' \u00b7 STOPPED' : '')", live);
 
         // VACUITY FLOOR: the draw loop this guard reasons about is here and does consult them.
         Assert.Contains("function eachAuthority(fn)", live);
@@ -1621,5 +1640,84 @@ public class ColonyLiveGuardTests
         Assert.Contains("function mmSetupRender()", mm);
         Assert.Contains("function mmSetupBind()", mm);
         Assert.Contains("mmSetupLoad();", mm);
+    }
+
+    /// <summary>
+    /// A CHAMBER MAY NOT CLAIM A DEVICE IT DOES NOT HAVE — W3-08.
+    ///
+    /// The transition roadmap forbids exactly one thing here: subscription state and operator
+    /// action may control what is AVAILABLE, and may never fabricate colony activity. `.122`
+    /// through `.129` did fabricate it. `+ Mound` created a chamber, `setTopology` answered it with
+    /// `if (s.added) s.present = true;`, and everything downstream then drew a fleet member — the
+    /// device ring that means "this one is hardware", an authority conduit carrying charter
+    /// particles from the Queen, and seven residents reporting `idle`. No device had been enrolled
+    /// for any of it. The code said, correctly, that it was presentation; the pixels said otherwise,
+    /// and the pixels are what the operator reads.
+    ///
+    /// The fix is a SHAPE, not a rule. A chamber is built by one constructor which fixes its kind;
+    /// `deviceBacked` is a getter over the mound ids the fleet listing returned and has no setter;
+    /// and a plan chamber's `setDevices` throws. There is no flag left to set, which is the only
+    /// form of "do not do this again" that survives the next contributor.
+    ///
+    /// THE BEHAVIOUR IS TESTED WHERE IT CAN BE RUN: `tests/ui/colony-chambers.test.js` loads
+    /// colony-live.js in a vm context and exercises the contract — the throw, the getter, the
+    /// presence rule, the layout round-trip and a forged layout entry. This guard is the source
+    /// scan beside it, and it exists for the one thing the node suite cannot see: that the
+    /// RENDERER still keys the ring, the conduit, the outline and the seat glyph off the kind
+    /// rather than off something a future edit can fake. Both run in `scripts/validate.sh`.
+    /// </summary>
+    [Fact]
+    public void AChamberCannotClaimADeviceItDoesNotHave()
+    {
+        var live = Code("colony-live.js");
+        var home = Code("colony-home.js");
+
+        // ONE CONSTRUCTOR, THREE KINDS. A chamber object cannot be assembled anywhere else, so
+        // there is no second place for a kind to be decided or forgotten.
+        Assert.Contains("function makeChamber(d, kind)", live);
+        Assert.Contains("var CHAMBER_COLONY = 'colony', CHAMBER_DEVICE = 'device', CHAMBER_PLAN = 'plan';", live);
+        Assert.Single(Regex.Matches(live, @"Object\.defineProperty\(s, 'deviceBacked'"));
+        Assert.Single(Regex.Matches(live, @"function makeChamber\("));
+
+        // `deviceBacked` IS DERIVED AND HAS NO SETTER. Under the file's own 'use strict' an
+        // assignment throws rather than quietly doing nothing somewhere nobody is looking.
+        Assert.Contains("get: function () { return devices.length > 0; }", live);
+        Assert.DoesNotContain("deviceBacked =", live);
+
+        // A PLAN CHAMBER REFUSES DEVICES. Not "does not receive them" — refuses, loudly.
+        Assert.Contains("if (kind !== CHAMBER_DEVICE) throw new Error(", live);
+
+        // Only the fleet chamber is built as a device kind, and only from the table.
+        Assert.Contains("d.id === 'mound' ? CHAMBER_DEVICE : CHAMBER_COLONY", live);
+        Assert.Contains("var s = makeChamber(d, CHAMBER_PLAN);", live);
+
+        // A PLAN'S SEATS ARE NOT RESIDENTS. `working`, `idle` and `disabled` each require something
+        // the colony observed; a plan seat gets `planned`, which is none of them, and is counted in
+        // its own field so nothing downstream can total the two and call the result a roster.
+        Assert.Contains("status: 'planned', planned: true,", live);
+        Assert.Contains("planned: s.planned.length", live);
+        Assert.Contains("res && res.planned", live);
+        Assert.DoesNotContain("status: 'idle'", live);
+
+        // THE RENDERER'S THREE MARKS ARE KEYED OFF THE KIND. The device ring needs real ids; the
+        // dashed outline is a shape no device chamber draws; the label says so in words.
+        Assert.Contains("if (s.deviceBacked) {", live);
+        Assert.Contains("} else if (s.chamberKind === CHAMBER_PLAN) {", live);
+        Assert.Contains("\u00b7 PLAN \u00b7 NO DEVICE", live);
+
+        // THE PAGE IS TOLD THE KIND RATHER THAN GUESSING IT FROM AN ID. A registry row that infers
+        // "this one is a plan" from the string `mound:` is the convention this whole change exists
+        // to replace.
+        Assert.Contains("kind: x.chamberKind, deviceBacked: x.deviceBacked, devices: x.devices,", live);
+        Assert.Contains("m.kind === 'plan'", home);
+        Assert.Contains("no device enrolled", home);
+
+        // VACUITY FLOOR: the behavioural suite this guard defers to is actually present, and it is
+        // in the directory `scripts/validate.sh` runs.
+        var suite = Path.Combine(SourceText.RepoRoot(), "tests", "ui", "colony-chambers.test.js");
+        Assert.True(File.Exists(suite), "tests/ui/colony-chambers.test.js is missing; this guard is alone.");
+        var js = File.ReadAllText(suite);
+        Assert.Contains("throwsWith(() => s.setDevices(['mnd-forged'])", js);
+        Assert.Contains("a saved layout restores a plan as a plan", js);
     }
 }
