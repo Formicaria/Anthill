@@ -55,9 +55,14 @@ services:
     network_mode: "host"
     environment:
       - FORAGER_PORT=8790
-      # LOOPBACK ONLY. FORAGER has no authentication of its own — it is designed to own its
-      # local interface. Binding it to 0.0.0.0 publishes an unauthenticated knowledge base to
-      # your network. Put a reverse proxy with auth in front before you change this.
+      # LOOPBACK ONLY BY DEFAULT. FORAGER authenticates every /api route as of 0.7.0 — an
+      # operator key, plus scoped `fgr_` integration tokens — so the old note here claiming it
+      # has no authentication of its own was wrong, and stayed wrong long enough to cost a day.
+      # Keep it on loopback anyway: auth is not a reason to publish a knowledge base to the LAN.
+      #
+      # THE COLONY NEEDS A TOKEN NOW. Mint a scoped one in FORAGER's settings and put it in
+      # .anthill/config.json as `knowledge_forager_token`, or every retrieval and ingestion call
+      # comes back 401. There is no automatic mint yet — see W3-03, managed engine supervision.
       - FORAGER_HOST=127.0.0.1
       - FORAGER_DATA_DIR=/data
       # Directory import is refused unless this names the folders FORAGER may scan. Leaving it
