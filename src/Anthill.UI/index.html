@@ -2499,7 +2499,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <button class="clb-btn" data-homeact="mission" title="Approach the Queen's core">Mission</button>
               <button class="clb-btn" data-homeact="memory" title="Approach Memory">Memory</button>
               <button class="clb-btn" data-homeact="mounds" title="The mound registry — every mound chamber, its settings, and where one is deleted">Mounds</button>
-              <button class="clb-btn clb-addmound" data-homeact="addmound" id="clb-addmound" title="Add a Micromound chamber to the colony — a label for your own fleet; it changes nothing on the device">+ Mound</button>
+              <button class="clb-btn clb-addmound" data-homeact="addmound" id="clb-addmound" title="Place a PLAN chamber in the colony — a label for a mound you intend to enrol. It has no device behind it, the colony draws it dashed and open, and nothing about it reaches hardware">+ Mound plan</button>
               <button class="clb-btn" data-homeact="follow" title="Ride the active mission circuit">Follow</button>
               <button class="clb-btn" data-homeact="resetview" title="Reset orbit and zoom">Reset view</button>
               <span class="clb-sep"></span>
@@ -3342,7 +3342,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="mm-f"><label for="mm-ms-worker">Worker (blank = Mound Major's choice)</label><input id="mm-ms-worker"></div>
             <div class="mm-f"><label for="mm-ms-duration">Duration (s)</label><input id="mm-ms-duration" placeholder="900"></div>
             <div class="mm-f mm-wide"><label for="mm-ms-reason">Reason (recorded, never branched on)</label><input id="mm-ms-reason"></div>
-            <div class="mm-f mm-wide"><label for="mm-ms-steps">Steps &mdash; one per line: <code>step_id | op | capability | params | evidence_tag | confirms | condition</code><br>ops: sense, act, routine, verify, report &nbsp;&middot;&nbsp; params: <code>on_s=10</code> &nbsp;&middot;&nbsp; condition: <code>before lt 30</code></label><textarea id="mm-ms-steps" style="min-height:96px" placeholder="before | sense | sense.soil_moisture | | before&#10;water | act | act.water_valve | on_s=10 | watering | | before lt 30&#10;after | sense | sense.soil_moisture | | after&#10;confirm | verify | sense.soil_moisture | | | water"></textarea></div>
+            <div class="mm-f mm-wide"><label for="mm-ms-steps">Steps &mdash; one per line: <code>step_id | op | capability | params | evidence_tag | confirms | condition | settle_s | expect</code><br>ops: sense, act, routine, verify, report &nbsp;&middot;&nbsp; params: <code>on_s=10</code> &nbsp;&middot;&nbsp; condition: <code>before lt 30</code> &nbsp;&middot;&nbsp; settle_s: seconds of travel time before a <code>sense</code> or <code>verify</code>, 10 at most &nbsp;&middot;&nbsp; expect: <code>gt 30 pct</code> &mdash; the postcondition, on a <code>verify</code> that names what it confirms</label><textarea id="mm-ms-steps" style="min-height:96px" placeholder="before | sense | sense.soil_moisture | | before&#10;water | act | act.water_valve | on_s=10 | watering | | before lt 30&#10;after | sense | sense.soil_moisture | | after&#10;confirm | verify | sense.soil_moisture | | | water | | 2 | gt 30 pct"></textarea></div>
           </div>
           <button class="mm-btn" data-onclick="mmDispatch()">Dispatch mission</button>
         </div>

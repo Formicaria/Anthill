@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
 using Micromound.Protocol;
@@ -24,7 +25,11 @@ public sealed record EnrollmentRequest(
     string Tier,
     string HardwareProfile,
     IReadOnlyList<string> Capabilities,
-    int ProtocolVersion);
+    int ProtocolVersion,
+    // v0.3.9.4. Both were sent by the device and dropped here as unknown JSON members since
+    // v0.9.15 / v0.9.30 respectively. Defaulted so every existing caller still compiles.
+    IReadOnlyList<string>? Features = null,
+    string DriverSchemasJson = "");
 
 public sealed record EnrollmentResult(bool Accepted, string Reason, MoundRecord? Mound)
 {
@@ -152,6 +157,11 @@ public sealed class MicromoundEnrollment(IMoundStore store, IEventBus events)
         mound.Tier = request.Tier;
         mound.HardwareProfile = request.HardwareProfile;
         mound.Capabilities = [.. request.Capabilities];
+        // v0.3.9.4. Re-enrollment REPLACES both, it does not merge: a reflashed mound running older
+        // firmware advertises less, and carrying the old list forward would have the colony believe
+        // in a feature the device on the bench no longer has.
+        mound.Features = [.. request.Features ?? []];
+        mound.DriverSchemasJson = request.DriverSchemasJson;
         mound.EnrolledAt = now.ToWire();
         mound.ProtocolVersion = request.ProtocolVersion;
         mound.LastSeq = -1;

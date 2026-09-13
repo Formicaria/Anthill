@@ -322,9 +322,13 @@ async function mmIssueConfig() {
 
 function mmSteps() {
   /* One step per line:
-       step_id | op | capability | params | evidence_tag | confirms | condition
+       step_id | op | capability | params | evidence_tag | confirms | condition | settle_s | expect
      params:    `k=v k=v`  (numeric — MissionStep.parameters is a double map)
      condition: `source_step op value`
+     settle_s:  seconds to wait BEFORE the step runs, so an actuator has time to travel.
+                `sense` and `verify` only, and the mound refuses anything over 10 s.
+     expect:    `op value [±tolerance] [unit]` — the postcondition. `verify` only, and only on a
+                step that also names what it `confirms`.
      `routine_id` is taken from the capability column when op is `routine`, which
      is the field the protocol actually reads for that op. */
   const out = [];
@@ -350,6 +354,36 @@ function mmSteps() {
       const c = f[6].split(/\s+/).filter(Boolean);
       if (c.length === 3 && MM_COND_OPS.includes(c[1]) && Number.isFinite(Number(c[2])))
         step.condition = { source_step: c[0], op: c[1], value: Number(c[2]) };
+    }
+    if (f[7]) {
+      // A bounded wait for the physical world, not a scheduling primitive. Sent only when it reads
+      // as a real number: `settle_s: NaN` serialises to null and lands as the zero nobody typed.
+      const s = Number(f[7]);
+      if (Number.isFinite(s)) step.settle_s = s;
+    }
+    if (f[8]) {
+      /* THE POSTCONDITION — `StepExpectation`, written the way a refusal prints it, so an
+         expectation the mound rejected can be pasted straight back in.
+
+         Sent only when the operator wrote a usable one. An `expect: {}` deserializes into op "" and
+         value 0 — an assertion nobody made, which the validator refuses and a mound older than
+         `v0.9.30` ignores entirely while still reporting the action confirmed. Absent is the honest
+         thing when there is nothing to assert.
+
+         Tolerance and unit both trail the value and are both optional: the next word is the
+         tolerance if it reads as a number, and the unit otherwise. A leading ± is accepted and
+         dropped, because that is how `Describe()` prints one. */
+      const e = f[8].split(/\s+/).filter(Boolean);
+      if (e.length >= 2 && MM_COND_OPS.includes(e[0]) && Number.isFinite(Number(e[1]))) {
+        const expect = { op: e[0], value: Number(e[1]) };
+        let rest = e.slice(2);
+        if (rest.length) {
+          const t = rest[0].replace(/^±/, '');
+          if (t !== '' && Number.isFinite(Number(t))) { expect.tolerance = Number(t); rest = rest.slice(1); }
+        }
+        if (rest.length) expect.unit = rest.join(' ');
+        step.expect = expect;
+      }
     }
     out.push(step);
   });
@@ -475,8 +509,16 @@ function mmChamber() {
   box.innerHTML =
     '<h3>Colony chamber · ' + escapeHtml(chamber.label) + '</h3>'
     + '<div class="mm-lede">This is how this mound appears in <strong>your</strong> colony view — its name, its '
-    + 'colour and its ' + chamber.residents + ' ant names. None of it reaches a device: an enrolled mound keeps '
+    + 'colour and its ' + (chamber.kind === 'plan' ? chamber.planned : chamber.residents) + ' ant names. None of it reaches a device: an enrolled mound keeps '
     + 'answering under the identity its enrollment token gave it, whatever you call it here.</div>'
+    /* AND IF THERE IS NO DEVICE, SAY SO FIRST. W3-08 — this panel is reached from the colony and
+       from the mound registry, and until now it described a plan chamber in exactly the words it
+       used for a fleet member. `deviceBacked` is the renderer's getter over the mound ids the
+       fleet listing returned; a plan chamber can never have any. */
+    + (chamber.deviceBacked ? '' : '<div class="mm-lede"><strong>No device is enrolled against this chamber.</strong> '
+        + 'It is a plan: a label you placed in your own colony view for a mound you mean to enrol. The colony draws it '
+        + 'dashed and open for that reason, its ant names are hollow seats rather than units, and nothing in it reports '
+        + 'status — there is nothing to report until a device enrols.</div>')
     + '<button class="btn btn-sm" id="mm-chamber-del">Delete chamber</button>'
     + '<span class="mm-sub" style="margin-left:8px">Removes the chamber from the colony view only. No device is retired.</span>';
   const del = document.getElementById('mm-chamber-del');
