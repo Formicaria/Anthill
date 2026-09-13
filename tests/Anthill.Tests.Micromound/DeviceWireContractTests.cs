@@ -99,14 +99,31 @@ public class DeviceWireContractTests
             "fewer JSON field names than the enrolment exchange has; the regex found "
           + $"{names.Count}: {string.Join(", ", names)}");
 
-        // What `/micromound/v0/enroll` reads off the request. `mound_id`, `capabilities` and
-        // `protocol_version` are accepted too and are deliberately NOT required — the device sends
-        // none of them, and requiring them is precisely what made M1 unusable.
-        var accepted = new[] { "token", "device_public_key", "hardware_profile", "tier" };
+        // What `/micromound/v0/enroll` reads off the request. None of these are REQUIRED except
+        // `token` — the device may send any subset, and requiring them is precisely what made M1
+        // unusable. The list was previously short of `mound_id`, `capabilities` and
+        // `protocol_version`, which the endpoint has always accepted and a comment here has always
+        // said it accepts; the literal simply never caught up. v0.3.9.4.
+        //
+        // `features` and `driver_schemas` are new, and they are why this test was red the first
+        // time it ever ran: the device has sent them since v0.9.30 and v0.9.15, and the colony
+        // dropped both as unknown JSON members. A postcondition could be authored, ignored, and
+        // reported as met. See MicromoundEnrollment and MicromoundMissions.
+        var accepted = new[]
+        {
+            "token", "device_public_key", "hardware_profile", "tier",
+            "mound_id", "capabilities", "protocol_version",
+            "features", "driver_schemas",
+        };
 
-        // What it must put in the response. The mound persists this key and checks every downlink
-        // envelope against it forever after.
-        var returned = new[] { "controller_public_key" };
+        // What it must put in the response. `controller_public_key` is the load-bearing one — the
+        // mound persists it and checks every downlink envelope against it forever after — but the
+        // device reads the rest too, so a rename in any of them is equally a contract change.
+        var returned = new[]
+        {
+            "controller_public_key", "accepted", "reason",
+            "mound_id", "colony_version", "protocol_version", "sync_interval_s",
+        };
 
         var unhandled = names.Except(accepted, StringComparer.Ordinal)
                              .Except(returned, StringComparer.Ordinal)

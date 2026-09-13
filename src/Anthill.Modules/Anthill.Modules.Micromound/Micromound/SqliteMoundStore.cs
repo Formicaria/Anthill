@@ -95,6 +95,14 @@ public sealed class SqliteMoundStore : IMoundStore, IDisposable
             enrolled_at TEXT NOT NULL DEFAULT '', last_seen TEXT NOT NULL DEFAULT '',
             last_seq INTEGER NOT NULL DEFAULT -1, last_digest TEXT NOT NULL DEFAULT '',
             sync_interval_s INTEGER NOT NULL DEFAULT 15,
+            -- v0.3.9.4: what the device advertised about itself. Empty reads as advertised
+            -- nothing, which is the correct reading of an absent advertisement.
+            --
+            -- The DEFAULT only helps a table being CREATED. An existing database is migrated by
+            -- EnsureColumns below, because CREATE TABLE IF NOT EXISTS does exactly nothing to a
+            -- table that already exists - including adding columns to it.
+            features_json TEXT NOT NULL DEFAULT '[]',
+            driver_schemas_json TEXT NOT NULL DEFAULT '',
             stopped INTEGER NOT NULL DEFAULT 0, protocol_version INTEGER NOT NULL DEFAULT 0,
             -- v0.3.8.114: authority and configuration. Every one carries a DEFAULT, so an existing
             -- database opened by this build reads them as absent rather than failing — and absent
@@ -167,7 +175,69 @@ public sealed class SqliteMoundStore : IMoundStore, IDisposable
                 cmd.CommandText = statement;
                 cmd.ExecuteNonQuery();
             }
+
+            EnsureColumns(conn);
         }
+    }
+
+    /// <summary>
+    /// Add columns an older database is missing. v0.3.9.4.
+    ///
+    /// WHY THIS EXISTS AT ALL, and it is not a new-feature problem. `CREATE TABLE IF NOT EXISTS`
+    /// does nothing whatsoever to a table that already exists, columns included, so every column
+    /// added to `SchemaStatements` since this store's first release has been invisible to any
+    /// database created before it. The `DEFAULT` clauses read as though they cover that — the
+    /// v0.3.8.114 note says an existing database "reads them as absent rather than failing" — and
+    /// they never did: a DEFAULT applies when a row is inserted into a column that exists, not when
+    /// the column is missing entirely. An upgraded install would take `no such column` on its first
+    /// upsert.
+    ///
+    /// ANTHILL.Core has carried the same migration shape since v0.3.8.91
+    /// (`SqliteMemory.Schema.cs:609`). This store never got one. Modelled on it deliberately rather
+    /// than invented, so there is one idiom to learn.
+    ///
+    /// Every column here is nullable or defaulted, and a legacy row reading empty is the truthful
+    /// answer: a mound enrolled before the colony could read an advertisement did not make one.
+    /// </summary>
+    private static void EnsureColumns(SqliteConnection conn)
+    {
+        HashSet<string> ColumnsFor(string table)
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"PRAGMA table_info({table})";
+            using var reader = cmd.ExecuteReader();
+            var cols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            while (reader.Read()) cols.Add(reader.GetString(1));
+            return cols;
+        }
+
+        void AddMissing(string table, Dictionary<string, string> wanted)
+        {
+            var existing = ColumnsFor(table);
+            if (existing.Count == 0) return;   // table absent; CREATE above owns it
+            foreach (var (col, type) in wanted)
+            {
+                if (existing.Contains(col)) continue;
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = $"ALTER TABLE {table} ADD COLUMN {col} {type}";
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        AddMissing("micromound_mounds", new()
+        {
+            ["features_json"] = "TEXT NOT NULL DEFAULT '[]'",
+            ["driver_schemas_json"] = "TEXT NOT NULL DEFAULT ''",
+            // v0.3.8.114's columns, which have had no migration since they were added. A database
+            // written before .114 is missing every one of these too.
+            ["charter_id"] = "TEXT NOT NULL DEFAULT ''",
+            ["charter_expires_at"] = "TEXT NOT NULL DEFAULT ''",
+            ["lease_expires_at"] = "TEXT NOT NULL DEFAULT ''",
+            ["quiesced"] = "INTEGER NOT NULL DEFAULT 0",
+            ["autonomy_policy"] = "TEXT NOT NULL DEFAULT 'manual_only'",
+            ["manifest_id"] = "TEXT NOT NULL DEFAULT ''",
+            ["configuration_revision"] = "TEXT NOT NULL DEFAULT ''",
+        });
     }
 
     // ---- Mounds -------------------------------------------------------------------------------
@@ -204,15 +274,17 @@ public sealed class SqliteMoundStore : IMoundStore, IDisposable
                 (mound_id,name,tier,public_key,hardware_profile,capabilities_json,enrolled_at,
                  last_seen,last_seq,last_digest,sync_interval_s,stopped,protocol_version,
                  charter_id,charter_expires_at,lease_expires_at,quiesced,autonomy_policy,
-                 manifest_id,configuration_revision)
+                 manifest_id,configuration_revision,features_json,driver_schemas_json)
                 VALUES ($id,$name,$tier,$key,$hw,$caps,$enrolled,$seen,$seq,$digest,$interval,$stop,$proto,
-                        $charter,$charterexp,$lease,$quiesced,$policy,$manifest,$configrev)
+                        $charter,$charterexp,$lease,$quiesced,$policy,$manifest,$configrev,
+                        $features,$schemas)
                 ON CONFLICT(mound_id) DO UPDATE SET name=$name,tier=$tier,public_key=$key,
                 hardware_profile=$hw,capabilities_json=$caps,enrolled_at=$enrolled,last_seen=$seen,
                 last_seq=$seq,last_digest=$digest,sync_interval_s=$interval,stopped=$stop,
                 protocol_version=$proto,charter_id=$charter,charter_expires_at=$charterexp,
                 lease_expires_at=$lease,quiesced=$quiesced,autonomy_policy=$policy,
-                manifest_id=$manifest,configuration_revision=$configrev";
+                manifest_id=$manifest,configuration_revision=$configrev,
+                features_json=$features,driver_schemas_json=$schemas";
             Bind(cmd, "$id", mound.MoundId); Bind(cmd, "$name", mound.Name); Bind(cmd, "$tier", mound.Tier);
             Bind(cmd, "$key", mound.PublicKey); Bind(cmd, "$hw", mound.HardwareProfile);
             Bind(cmd, "$caps", JsonSerializer.Serialize(mound.Capabilities));
@@ -224,6 +296,8 @@ public sealed class SqliteMoundStore : IMoundStore, IDisposable
             Bind(cmd, "$lease", mound.LeaseExpiresAt); Bind(cmd, "$quiesced", mound.Quiesced ? 1 : 0);
             Bind(cmd, "$policy", MicromoundAutonomy.Value(mound.AutonomyPolicy));
             Bind(cmd, "$manifest", mound.ManifestId); Bind(cmd, "$configrev", mound.ConfigurationRevision);
+            Bind(cmd, "$features", JsonSerializer.Serialize(mound.Features));
+            Bind(cmd, "$schemas", mound.DriverSchemasJson);
             cmd.ExecuteNonQuery();
         }
     }
@@ -259,7 +333,7 @@ public sealed class SqliteMoundStore : IMoundStore, IDisposable
         @"SELECT mound_id,name,tier,public_key,hardware_profile,capabilities_json,enrolled_at,
                  last_seen,last_seq,last_digest,sync_interval_s,stopped,protocol_version,
                  charter_id,charter_expires_at,lease_expires_at,quiesced,autonomy_policy,
-                 manifest_id,configuration_revision
+                 manifest_id,configuration_revision,features_json,driver_schemas_json
           FROM micromound_mounds";
 
     private static MoundRecord ReadMound(SqliteDataReader r) => new()
@@ -275,6 +349,8 @@ public sealed class SqliteMoundStore : IMoundStore, IDisposable
         LeaseExpiresAt = r.GetString(15), Quiesced = r.GetInt32(16) == 1,
         AutonomyPolicy = MicromoundAutonomy.Parse(r.GetString(17)),
         ManifestId = r.GetString(18), ConfigurationRevision = r.GetString(19),
+        Features = JsonSerializer.Deserialize<List<string>>(r.GetString(20)) ?? [],
+        DriverSchemasJson = r.GetString(21),
     };
 
     // ---- Enrollment tokens --------------------------------------------------------------------

@@ -64,6 +64,35 @@ public sealed class MoundRecord
     [JsonPropertyName("stopped")] public bool Stopped { get; set; }
     [JsonPropertyName("protocol_version")] public int ProtocolVersion { get; set; }
 
+    /// <summary>
+    /// Protocol features the device advertised at enrollment. v0.3.9.4 — UPSTREAM.md §amendments.
+    ///
+    /// NOT A GRANT, A FACT, exactly like <see cref="Capabilities"/>. A mound advertising
+    /// `postconditions` evaluates a step's `expect`; one that does not confirms on presence alone
+    /// and reports `succeeded` either way. The colony sent this field nowhere and read it nowhere
+    /// until now, which is how a postcondition could be authored, ignored, and reported as met.
+    ///
+    /// Empty means none — including for every mound enrolled before this landed, which is correct:
+    /// an absent advertisement is not an advertisement.
+    /// </summary>
+    [JsonPropertyName("features")] public List<string> Features { get; set; } = [];
+
+    /// <summary>
+    /// The driver setting schemas the device shipped, kept as the device sent them — raw JSON text.
+    ///
+    /// TEXT, NOT A JsonElement, and the reason is a real bug rather than taste. A JsonElement's
+    /// lifetime is its backing JsonDocument's, and ASP.NET disposes the request's document when the
+    /// request completes — so a JsonElement parked on a long-lived MoundRecord is a use-after-
+    /// dispose sitting in the fleet listing waiting for someone to read it. Caught by
+    /// StorePersistenceTests, which refused to round-trip the nullable struct and was right to.
+    ///
+    /// Unmodelled on purpose. The colony does not interpret these yet — the hardware form
+    /// UPSTREAM.md assigns upstream is unbuilt — and a model here would need editing every time a
+    /// driver gains a field, which is the drift this whole exercise is about. Keeping the bytes
+    /// means the form gets built later against what the device actually sent.
+    /// </summary>
+    [JsonPropertyName("driver_schemas_json")] public string DriverSchemasJson { get; set; } = "";
+
     // ---- Authority. v0.3.8.114 — the fields M1 had no command path to fill. -------------------
 
     /// <summary>The charter currently in force, or empty for none — which means observe only.</summary>

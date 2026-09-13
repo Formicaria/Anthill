@@ -157,7 +157,12 @@ public static partial class ApiHost
         [property: JsonPropertyName("tier")] string? Tier,
         [property: JsonPropertyName("mound_id")] string? MoundId,
         [property: JsonPropertyName("capabilities")] List<string>? Capabilities,
-        [property: JsonPropertyName("protocol_version")] int? ProtocolVersion);
+        [property: JsonPropertyName("protocol_version")] int? ProtocolVersion,
+        // v0.3.9.4 — read at last. Pinned from the device's side by
+        // DeviceWireContractTests.TheEnrolmentFieldsTheDeviceSends_AreTheOnesThisColonyAccepts,
+        // which is the test that caught them being dropped.
+        [property: JsonPropertyName("features")] List<string>? Features,
+        [property: JsonPropertyName("driver_schemas")] JsonElement? DriverSchemas);
 
     private sealed record MoundStopRequest(
         [property: JsonPropertyName("mound_id")] string? MoundId);
@@ -432,7 +437,10 @@ public static partial class ApiHost
                 body.MoundId?.Trim() ?? "", body.Token, body.DevicePublicKey ?? "",
                 string.IsNullOrWhiteSpace(body.Tier) ? MoundTiers.EdgeQueen : body.Tier,
                 body.HardwareProfile ?? "", body.Capabilities ?? [],
-                body.ProtocolVersion ?? ProtocolVersion.Current),
+                body.ProtocolVersion ?? ProtocolVersion.Current,
+                // GetRawText() here, not the JsonElement: the request's JsonDocument is disposed
+                // when the request completes, and the record outlives it by design.
+                body.Features ?? [], body.DriverSchemas?.GetRawText() ?? ""),
                 DateTimeOffset.UtcNow);
 
             // A REFUSAL IS AN HTTP 4xx, not a 200 carrying `accepted: false`. The device reads the

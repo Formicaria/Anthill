@@ -122,6 +122,23 @@ public sealed class MicromoundMissions(IMoundStore store, MicromoundIdentity ide
 
         if (!verdict.Allowed) return Refuse(request, [verdict.Reason]);
 
+        // POSTCONDITIONS: THE ADVERTISEMENT IS THE PRIMARY CHECK. v0.3.9.4, UPSTREAM.md.
+        //
+        // A mound older than v0.9.30 ignores a step's `expect` and confirms on presence alone — it
+        // reports `succeeded` where a current mound would report `unverified`. It ignores
+        // `required_features` too, so the backstop below cannot save it. Nothing on the wire can.
+        // The only thing that can is refusing to author the mission in the first place, here,
+        // against what the device said it could do when it enrolled.
+        //
+        // Silent in one direction is the phrase UPSTREAM.md uses, and it is the whole problem: the
+        // colony would be told the postcondition held by a mound that never looked at it.
+        var wantsPostconditions = request.Steps.Any(s => s.Expect is not null);
+        if (wantsPostconditions && !mound.Features.Contains(ProtocolFeatures.Postconditions, StringComparer.Ordinal))
+            return Refuse(request, [
+                $"mound '{request.MoundId}' does not advertise the '{ProtocolFeatures.Postconditions}' feature, "
+              + "so it would ignore this mission's expectations and report success either way. "
+              + "Re-enroll it on micromound v0.9.30 or later, or author the mission without an `expect`."]);
+
         var mission = new Mission
         {
             MissionId = Guid.NewGuid().ToString(),
@@ -141,6 +158,10 @@ public sealed class MicromoundMissions(IMoundStore store, MicromoundIdentity ide
                 .Where(s => !string.IsNullOrEmpty(s.EvidenceTag))
                 .Select(s => s.EvidenceTag)
                 .Distinct(StringComparer.Ordinal)],
+            // The backstop. A CURRENT mound that somehow lacks the feature refuses the mission
+            // whole rather than running it with the assertion ignored. Derived from the steps like
+            // the three above, so it cannot drift from what the mission actually asks for.
+            RequiredFeatures = wantsPostconditions ? [ProtocolFeatures.Postconditions] : [],
             // A mission's safe state may only RESTATE the charter's (§9). Copying it rather than
             // accepting one from the caller removes the only way to get that wrong: "two documents
             // disagreeing about where the hardware goes when the watchdog trips is a contradiction
