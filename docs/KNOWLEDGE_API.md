@@ -3,12 +3,13 @@
 The colony's own knowledge surface. Base path `/knowledge`, ANTHILL's standard envelope, ANTHILL's
 standard auth.
 
-**The console never talks to FORAGER directly.** ANTHILL is the authenticated edge: the browser
-holds an ANTHILL session, ANTHILL holds the FORAGER credential, and the two are never the same
-secret. FORAGER authenticates its own routes as of 0.6 (`Authorization: Bearer`, operator key or an
-`fgr_…` integration token, loopback included) — v0.3.8.158 corrected an earlier claim here that it
-had no authentication at all. That does not make a browser-to-FORAGER path acceptable: it would put
-the knowledge base on the operator's network under a credential the console would then have to hold.
+**The console never talks to FORAGER directly.** FORAGER authenticates every `/api` route and has
+since its 0.7.0 (`Authorization: Bearer`, operator key or an `fgr_…` integration token, loopback
+included); ANTHILL holds that credential, the browser holds an ANTHILL session, and the two are never
+the same secret. v0.3.8.158 and W3-04 each corrected an earlier claim here that FORAGER had no
+authentication at all. That does not make a browser-to-FORAGER path acceptable: it would put the
+knowledge base on the operator's network, over plain HTTP, under a credential the console would then
+have to hold. ANTHILL is the authenticated edge, and FORAGER is built to own its loopback interface.
 
 ---
 

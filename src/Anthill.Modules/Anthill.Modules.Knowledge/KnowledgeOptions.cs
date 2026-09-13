@@ -26,16 +26,26 @@ public sealed record KnowledgeOptions
     public string Endpoint { get; init; } = "http://127.0.0.1:8790";
 
     /// <summary>
-    /// Bearer token, for operators who have put FORAGER behind an authenticating proxy. FORAGER
-    /// itself has no authentication — it expects to own its loopback interface. Empty is the normal
-    /// case and is not a warning.
+    /// Bearer credential for FORAGER. **Required against FORAGER 0.7.0 and later**, which
+    /// authenticates every `/api` route — only `/health`, `/ready`, `/openapi.json` and `/session`
+    /// are public. Empty is NOT the normal case any more: it means every retrieval and every
+    /// ingestion call answers 401.
+    ///
+    /// The value is an `fgr_` integration token the FORAGER operator mints in its Settings, with
+    /// scopes and an optional project limit. ANTHILL cannot mint it: minting is an operator act on
+    /// FORAGER's side and no token scope grants it. Rotation is picked up on the next call, because
+    /// options are re-read per call.
+    ///
+    /// Carried as `ConfigSecurity.Secret` — never rendered in `config.example.json`, never returned
+    /// by a route, never published in a module-registration event.
     /// </summary>
     public string Token { get; init; } = "";
 
     /// <summary>
-    /// Whether a non-loopback endpoint is permitted. OFF by default. FORAGER has no auth of its
-    /// own, so pointing ANTHILL at one across a network is a decision with a real blast radius, and
-    /// it should be one an operator makes on purpose rather than one a copied config makes for them.
+    /// Whether a non-loopback endpoint is permitted. OFF by default. FORAGER authenticates its API
+    /// but still terminates plain HTTP and is built to own its loopback interface, so pointing
+    /// ANTHILL at one across a network is a decision with a real blast radius, and it should be one
+    /// an operator makes on purpose rather than one a copied config makes for them.
     /// </summary>
     public bool AllowRemoteEndpoint { get; init; }
 
@@ -92,7 +102,7 @@ public sealed record KnowledgeOptions
             return $"the knowledge endpoint must be http or https, not '{uri.Scheme}'";
         if (!AllowRemoteEndpoint && !IsLoopback(uri))
             return $"the knowledge endpoint '{uri.Host}' is not loopback and knowledge_forager_allow_remote is false. "
-                 + "FORAGER has no authentication of its own; enable this only behind a trusted proxy.";
+                 + "FORAGER authenticates its API but does not terminate TLS; enable this only behind a trusted proxy.";
         return null;
     }
 

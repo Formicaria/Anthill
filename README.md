@@ -435,11 +435,14 @@ therefore refuses a non-loopback endpoint unless you say otherwise:
 }
 ```
 
-Set `knowledge_forager_token` only if you have put FORAGER behind an authenticating proxy; empty is
-the normal case for a loopback install and is not a misconfiguration. `knowledge_forager_allow_remote`
-is not editable from the console on purpose — putting an unauthenticated knowledge base on your
-network is a decision to make in the file, deliberately, rather than one to inherit from a copied
-config.
+`knowledge_forager_token` is **required** against FORAGER 0.7.0 and later, loopback or not: FORAGER
+authenticates every `/api` route, and a colony without a credential gets 401 on every retrieval and
+ingestion call. Mint an `fgr_` integration token in FORAGER's Settings, scope it to `read` and
+`ingest`, limit it to the projects you have mapped, and paste it here. Rotating it takes effect on
+the next call. (This paragraph used to say the token was only for proxied installs; that was true
+before FORAGER 2026-09-08 and false after.) `knowledge_forager_allow_remote` is not editable from the
+console on purpose — putting a knowledge base on your network over plain HTTP is a decision to make
+in the file, deliberately, rather than one to inherit from a copied config.
 
 ### When something is not working
 

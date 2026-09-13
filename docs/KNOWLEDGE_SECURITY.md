@@ -20,12 +20,17 @@ influence what the colony ingests next.
 
 ---
 
-## 2. FORAGER has no authentication
+## 2. FORAGER authenticates its API, and ANTHILL must hold a credential
 
-Stated plainly because the design is built around it rather than around a hope.
+**Corrected 2026-09-11 (W3-04).** This section previously read "FORAGER has no authentication" and
+was false from FORAGER's `007_operator_access` (2026-09-08) onward. It is stated plainly now for the
+same reason it was stated plainly then: the design is built around it rather than around a hope.
 
-FORAGER binds `127.0.0.1` and expects to be the only tenant of its own machine. Its own
-documentation says to put a reverse proxy in front before exposing it. Consequences:
+FORAGER authenticates every `/api` route — `app.use('/api', authenticate(...))` at
+`src/server/app.ts:44`, mounted ahead of every router, with `/health`, `/ready`, `/openapi.json` and
+`/session` the only public paths. It still binds `127.0.0.1` and still expects to be the only tenant
+of its own machine, and its documentation still says to put a reverse proxy in front before exposing
+it. Consequences:
 
 - **ANTHILL is the authenticated edge.** Every `/knowledge/*` route requires `read_knowledge` or
   `manage_knowledge` through the existing `RequireAuth` gate. The console never talks to FORAGER
@@ -34,10 +39,17 @@ documentation says to put a reverse proxy in front before exposing it. Consequen
   and the check runs on the parsed address (so all of `127/8` and `::1` work) at configuration time
   *and again per call* — the second check catches a path that somehow carried an absolute URL past
   the first.
-- **An optional bearer token** (`knowledge_forager_token`, `ConfigSecurity.Secret`) is sent when
-  configured, for operators who have put a proxy in front. It is never rendered in
-  `config.example.json`, never returned by any route, and never published in a module-registration
-  event — `RegistrationPublishesNoSecret` asserts it.
+- **A required bearer token** (`knowledge_forager_token`, `ConfigSecurity.Secret`). It is an `fgr_`
+  integration token the FORAGER operator mints, carrying scopes, an optional project limit, an
+  expiry and immediate revocation; ANTHILL holds it and cannot mint it. Scope it minimally — `read`
+  and `ingest` are what this integration uses — and limit it to the mapped projects, so a leaked
+  colony credential cannot read a knowledge base the colony was never mapped to. It is never
+  rendered in `config.example.json`, never returned by any route, and never published in a
+  module-registration event — `RegistrationPublishesNoSecret` asserts it.
+- **A refused credential is reported, not swallowed.** `ForagerKnowledgeProvider.ProbeAsync` treats
+  a 401 on `/api/capabilities` as an unusable service with a stated reason. Before W3-04 it
+  collapsed that 401 into "declared nothing" and reported `Reachable=true, Compatible=true` while
+  every query failed.
 
 If you run FORAGER on another host, you are choosing to put an unauthenticated knowledge base on a
 network. The flag exists so that is a decision somebody made, not one a copied config made for them.

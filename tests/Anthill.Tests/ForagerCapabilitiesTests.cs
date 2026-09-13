@@ -200,6 +200,49 @@ public class ForagerCapabilitiesTests
     }
 
     /// <summary>
+    /// W3-04 REGRESSION GUARD. FORAGER authenticates every `/api` route and mounts the middleware
+    /// AHEAD of its routers, so a colony with no credential gets 401 on /api/capabilities — not the
+    /// 404 the additive rule tolerates — while /api/ready, which is public, still answers 200.
+    ///
+    /// The probe used to collapse any capability failure into "declared nothing" and report
+    /// Reachable=true, Compatible=true, Usable=true to an operator whose every query would 401.
+    /// This is the fixture for that exact drift: a 401 must be UNUSABLE and must say why.
+    /// </summary>
+    [Fact]
+    public async System.Threading.Tasks.Task ARefusedCredential_IsReported_NotSwallowed()
+    {
+        var (provider, _) = Rig(new RecordingForager()
+            .Route("/api/ready", ReadyBody)
+            .Route("/api/capabilities", """{"error":{"code":"unauthenticated","message":"Sign in first.","request_id":"r1"}}""", HttpStatusCode.Unauthorized));
+
+        var availability = await provider.ProbeAsync(CancellationToken.None);
+
+        Assert.True(availability.Reachable);        // /ready answered — that truth stands
+        Assert.False(availability.Compatible);      // but it cannot be used
+        Assert.False(availability.Usable);
+        Assert.NotNull(availability.Reason);
+        Assert.Contains("credential", availability.Reason!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("knowledge_forager_token", availability.Reason!);
+    }
+
+    /// <summary>The same guard from the other side: any non-404 capability failure is reported.
+    /// A 404 must STAY tolerated (the test above this one pins that), so a fix that made every
+    /// failure fatal would break every older producer. Both directions are pinned on purpose.</summary>
+    [Fact]
+    public async System.Threading.Tasks.Task ACapabilityRouteThatFails_IsReported_ButReachabilityStands()
+    {
+        var (provider, _) = Rig(new RecordingForager()
+            .Route("/api/ready", ReadyBody)
+            .Route("/api/capabilities", """{"error":{"code":"internal_error","message":"boom","request_id":"r2"}}""", HttpStatusCode.InternalServerError));
+
+        var availability = await provider.ProbeAsync(CancellationToken.None);
+
+        Assert.True(availability.Reachable);
+        Assert.False(availability.Usable);
+        Assert.NotNull(availability.Reason);
+    }
+
+    /// <summary>
     /// A DECLARED protocol outside the window is refused with both numbers — reachable, honest,
     /// and not usable. Never a silent downgrade to the old routes (contract §3).
     /// </summary>
