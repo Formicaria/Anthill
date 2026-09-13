@@ -584,5 +584,6 @@ public static class EventTypes
     public const string MicromoundActionDegraded = "micromound_action_degraded";
     public const string MicromoundDownlinkRefused = "micromound_downlink_refused";
     public const string MicromoundMoundQuiesced = "micromound_mound_quiesced";
+    public const string MicromoundLeaseRenewalRefused = "micromound_lease_renewal_refused";
     public const string MicromoundMoundUnlinked = "micromound_mound_unlinked";
 }

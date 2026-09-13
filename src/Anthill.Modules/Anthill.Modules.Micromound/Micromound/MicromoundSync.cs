@@ -61,6 +61,12 @@ public static class MicromoundEvents
     public const string MoundQuiesced = EventTypes.MicromoundMoundQuiesced;
 
     /// <summary>
+    /// The beat was acknowledged and the lease was NOT renewed, on a mound that has not reported
+    /// itself quiesced. In practice that means the charter behind it has expired.
+    /// </summary>
+    public const string LeaseRenewalRefused = EventTypes.MicromoundLeaseRenewalRefused;
+
+    /// <summary>
     /// An operator removed a device. Everything keyed to it went with it, and the device is not
     /// told: its next beat is refused as an unknown mound, which is the correct answer.
     /// </summary>
@@ -189,7 +195,7 @@ public sealed class MicromoundSync(
             // the previous one did.
             mound.LastSeen = now.ToWire();
             _store.UpsertMound(mound);
-            if (!stop) _charters.RenewLease(mound, now);
+            RenewLeaseOrReport(mound, now, stop);
 
             var repeated = envelopes.Count > 0;
 
@@ -284,7 +290,7 @@ public sealed class MicromoundSync(
         // THE LEASE, RENEWED ON THE ACKNOWLEDGED BEAT AND NOWHERE ELSE (§5). Not while a stop is in
         // force: a stop halts mound-directed action, and handing back fresh authority in the same
         // response that carries the stop order would be the colony arguing with itself.
-        if (!stop) _charters.RenewLease(mound, now);
+        RenewLeaseOrReport(mound, now, stop);
 
         var ingest = _evidence.Ingest(moundId, records, items, now);
 
@@ -494,6 +500,41 @@ public sealed class MicromoundSync(
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Renew on the acknowledged beat (§5) — and say so out loud when it does not happen.
+    ///
+    /// v0.3.8.153 / R-01. Both call sites used to discard this bool.
+    /// <see cref="MicromoundCharters.RenewLease"/> already refuses correctly past charter expiry, so
+    /// the colony declined the renewal and then acked the beat anyway; the device, which renewed
+    /// unconditionally off that ack, heard a yes. Two independent failures pointing the same
+    /// direction, which is why neither of them caught the other.
+    ///
+    /// The ACK IS DELIBERATELY NOT CHANGED HERE. Carrying lease state on the wire is a protocol
+    /// change and it belongs with the PROTOCOL.md amendments, compatibility window and all. What
+    /// changes today is that the colony stops being silent about a divergence it can already see.
+    ///
+    /// A quiesced mound is not reported: <see cref="MicromoundCharters.RenewLease"/> refuses those
+    /// by design, mirroring the device, and that refusal is the expected one rather than news.
+    /// </summary>
+    private void RenewLeaseOrReport(MoundRecord mound, DateTimeOffset now, bool stop)
+    {
+        if (stop) return;
+        if (_charters.RenewLease(mound, now)) return;
+        if (mound.Quiesced) return;
+
+        Publish(MicromoundEvents.LeaseRenewalRefused,
+            $"Micromound '{mound.MoundId}' acknowledged a beat, but the colony declined to renew its " +
+            "lease: its charter has expired. The mound keeps no authority past that and enters safe_state.",
+            new Dictionary<string, object?>
+            {
+                ["mound_id"] = mound.MoundId,
+                ["charter_id"] = mound.CharterId,
+                ["charter_expires_at"] = mound.CharterExpiresAt,
+                ["lease_expires_at"] = mound.LeaseExpiresAt,
+                ["at"] = now.ToWire(),
+            });
     }
 
     private void Publish(string eventType, string message, Dictionary<string, object?> metadata)
