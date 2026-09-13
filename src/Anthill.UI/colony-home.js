@@ -257,7 +257,8 @@
        purpose and must be able to find it in order to delete it again. */
     var list = live.listMounds().filter(function (m) { return m.present || m.removable; });
     if (!list.length) {
-      box.innerHTML = '<div class="muted">No mound chambers. Use <strong>+ Mound</strong> on Colony › Live to add one.</div>';
+      box.innerHTML = '<div class="muted">No mound chambers. Enrol a device, or use <strong>+ Mound plan</strong> '
+        + 'on Colony › Live to place a label for one you intend to enrol.</div>';
       return;
     }
     box.innerHTML = list.map(function (m) {
@@ -276,8 +277,17 @@
       return '<div class="mound-row" data-mound="' + escapeHtml(m.id) + '">'
         + '<span class="mound-dot" style="background:' + escapeHtml(m.color) + '"></span>'
         + '<span class="mound-name">' + escapeHtml(m.label) + '</span>'
-        + '<span class="muted mound-facts">' + m.residents + ' ant' + (m.residents === 1 ? '' : 's')
-        + (infra ? ' · built in, no device' : m.removable ? ' · label only' : ' · built in') + '</span>'
+        /* WHAT THE ROW SAYS ABOUT HARDWARE COMES FROM THE CHAMBER, NOT FROM THE ID. W3-08.
+           `label only` was true and far too quiet: it read as a styling note beside a row that
+           otherwise looked exactly like a fleet member. A plan row now counts PLANNED seats, says
+           it has no device, and a device row states how many it actually stands for. */
+        + '<span class="muted mound-facts">'
+        + (m.kind === 'plan' ? m.planned + ' planned ant' + (m.planned === 1 ? '' : 's')
+                             : m.residents + ' ant' + (m.residents === 1 ? '' : 's'))
+        + (infra ? ' · built in, no device'
+                 : m.kind === 'plan' ? ' · plan, no device enrolled'
+                 : m.deviceBacked ? ' · ' + m.devices.length + ' device' + (m.devices.length === 1 ? '' : 's')
+                 : ' · built in') + '</span>'
         + '<button class="btn btn-sm" data-homeact="' + (infra ? 'infraopen' : 'moundopen') + '"'
         + ' data-mound-id="' + escapeHtml(m.id) + '">Settings</button>'
         + (m.removable
@@ -306,7 +316,9 @@
     if (dot) dot.style.background = s.color;
     if (name) name.value = s.label;
     var c = s.counts || {};
-    if (facts) facts.textContent = (c.records ? c.records + ' record' + (c.records === 1 ? '' : 's') : 'no records') + (c.verified ? ' (' + c.verified + ' verified)' : '') + ' · ' + (c.residents || 0) + ' resident' + (c.residents === 1 ? '' : 's') + (c.running ? ' · ' + c.running + ' running' : '');
+    // A plan chamber holds seats, not residents. Printing "0 residents" for one is true and tells
+    // the operator nothing about why; printing the planned count and "no device" tells them both.
+    if (facts) facts.textContent = (c.records ? c.records + ' record' + (c.records === 1 ? '' : 's') : 'no records') + (c.verified ? ' (' + c.verified + ' verified)' : '') + ' · ' + (s.chamberKind === 'plan' ? (c.planned || 0) + ' planned seat' + (c.planned === 1 ? '' : 's') + ' · no device enrolled' : (c.residents || 0) + ' resident' + (c.residents === 1 ? '' : 's')) + (c.running ? ' · ' + c.running + ' running' : '');
     var live = liveApi(), st = live && live.getSectorStyle(s.id);
     if (st) { var col = $('clb-sec-color'), gl = $('clb-sec-glow'), br = $('clb-sec-bright'); if (col) col.value = st.color || st.defaultColor; if (gl) gl.value = st.glow; if (br) br.value = st.bright; if (dot) dot.style.background = st.color || st.defaultColor; }
     // ONE DOOR, NOT TWO. v0.3.8.124 — the panel offered `settings →` beside `registry →`, which
