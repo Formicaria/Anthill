@@ -240,6 +240,20 @@ arrived after that audit shipped, and this reconciliation supersedes the audit's
 
 ## The producer moved while Phase 0 was being recorded — F0 @ `566de69`
 
+> **CORRECTION, 2026-09-11 (W0-03 §2.5 / W3-04).** Everything in this section describes code on
+> `origin/contract/anthill-integration-v1`, **not on Forager `main`**. `566de69` and `fc3a44b` are
+> commits on that branch and it has never landed. On the shipping producer, `/api/capabilities`,
+> `X-Forager-Project`, `instance_id` and `protocol_version` return **zero grep hits** under
+> `forager/src`. The descriptions below are accurate about the code; only the tense was wrong.
+> W0-03 §2.4 decided: **rebase and land the branch, minus `scope.ts`** — renumber its migrations to
+> `009`/`010`, and rewrite the `authentication` block of the capability response, which hardcodes
+> `required: false` and would lie to every consumer on the first request while sitting behind the
+> auth middleware it claims does not exist. Not yet done; see `docs/transition/completed/`.
+>
+> `knowledge_revisions`, `pairing_credentials` and `/api/feed` are **adopted wire names for work
+> unbuilt on both sides** — zero hits on `main` and zero on the contract branch. They are not
+> producer commitments.
+
 FORAGER's own Phase 0 landed on its branch as this document was being written (producer phases are
 F-numbered; its gap list is G-numbered; its audit is `anthill-integration-audit.md` and it pins the
 contract verbatim as `01-SHARED-CONTRACT.md` in that repository — the both-repositories requirement
@@ -286,7 +300,7 @@ handshake tomorrow; the response-side project checks stay regardless, as the con
 | --- | --- | --- |
 | §3 versioned capability response (engine identity, protocol, schema, import/export versions, auth requirements, optional ops) | `GET /api/ready` (version, schema_version, backend) + `GET /api/settings` (limits, formats, roots). No protocol version, no instance identity, no auth declaration, no import versions | Consume `/api/ready` + `/api/settings` as the interim capability pair; full response is **P1** |
 | §2 "identify the exact service and data store"; §5 `producer_instance_id` / `producer_generation` | No persistent instance identity anywhere. `/api/settings` reports `data_dir`, which is the closest fact | Managed mode: ANTHILL owns the process and its `FORAGER_DATA_DIR`, so identity is held by ownership. Attached mode: interim identity = endpoint + `data_dir` + version tuple, verified on every (re)connect; persistent id + generation is **P7** |
-| §3 authenticated pairing, scoped credentials, rotation/revocation | No authentication of any kind (deliberate; binds `127.0.0.1`) | ANTHILL already sends `Authorization: Bearer` when configured; producer auth consuming it is **P3**. Until then: managed = loopback + process ownership; attached-remote = deliberate config + authenticating proxy, per FORAGER's own docs |
+| §3 authenticated pairing, scoped credentials, rotation/revocation | **MET, 2026-09-08.** FORAGER authenticates every `/api` route (`src/server/app.ts:44`); `/health`, `/ready`, `/openapi.json`, `/session` are the only public paths. `fgr_` integration tokens with five scopes (`read, ingest, review, export, projects`), optional `project_ids` limiting, expiry and immediate revocation (`services/access.ts`, migration `007_operator_access`). Minting is an operator act; a token cannot mint tokens, grant folders or change configuration | **ANTHILL must hold an `fgr_` token.** `knowledge_forager_token` is REQUIRED, not optional — without it every retrieval and ingestion call 401s. This row previously read "No authentication of any kind (deliberate; binds `127.0.0.1`)" and was false from 2026-09-08; the error was repeated in three other docs and is corrected in all four as of 2026-09-11 (W3-04). **`X-Forager-Project` is superseded as an authorization boundary** by the token's own `project_ids`, bound at mint time (W0-03 §2.4) — ANTHILL still sends the header as a diagnostic; do not re-land `scope.ts` |
 | §4 immutable revision identity + logical content hash + publication ledger | No revision counter, no ledger, no publication event. Jobs publish nothing; the export manifest is the only content-addressed artifact | Producer revisions/ledger is **P8**. Interim delivery identities (consumer-side, and named as such): package delivery = sha256 of `anthill-package.json` (whose own per-file sha256 make the logical content reproducible); live delivery = completed `job_id` + terminal timestamp watermark |
 | §5 durable scoped change feed with cursors; push optional | Absent entirely (no SSE/WS/outbox/`since=`/ETag) | **P2**. Until then A3's reconciliation path is polling `GET /api/projects/:id/jobs` + `GET /api/projects/:id/exports` against a durable ANTHILL-side watermark — explicitly the interim substitute for the feed, not a second delivery system |
 | §5 envelope fields | N/A (no producer events) | ANTHILL's A3 receipt table adopts the envelope's field vocabulary now (`event_id`, `sequence`, `revision_id`, `producer_instance_id`, `producer_generation`, `origin_kind`, `causation_id`, `logical_content_hash`, `publication_status`) so producer events land in an already-shaped consumer when P2/P8 arrive; interim rows are synthesized from polling with `origin_kind` saying so |

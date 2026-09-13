@@ -63,10 +63,11 @@ internal sealed class ForagerClient : IDisposable
     /// <paramref name="projectScope"/> (v0.3.8.143, A1): the FORAGER project this call is scoped
     /// to, sent as `X-Forager-Project` when non-empty. FORAGER's direct-id routes
     /// (`/api/knowledge/:id`, `/api/jobs/:id`, `/api/entities/:id`, …) enforce it since its
-    /// `fc3a44b` — a foreign id answers 404. Until producer authentication lands the header is a
-    /// declaration rather than a credential; the moment it does, these same calls become
-    /// authorization with no consumer edit, which is why it is sent NOW. Project-rooted paths
-    /// carry the project in the URL and pass null.
+    /// `fc3a44b` — a foreign id answers 404. W0-03 §2.4 superseded the header as an authorization
+    /// boundary: FORAGER's authorization is the token's own `project_ids`, bound at mint time, and
+    /// a header a caller sets about itself is strictly weaker than that. It is still sent, on
+    /// purpose — it costs two lines and it is the diagnostic that says which project a call meant.
+    /// Project-rooted paths carry the project in the URL and pass null.
     /// </summary>
     public async Task<KnowledgeOutcome<T>> GetAsync<T>(string path, int timeoutMs, CancellationToken cancellationToken,
         string? projectScope = null)
@@ -80,7 +81,7 @@ internal sealed class ForagerClient : IDisposable
 
     private async Task<KnowledgeOutcome<T>> SendAsync<T>(
         HttpMethod method, string path, object? body, int timeoutMs, CancellationToken cancellationToken,
-        string? projectScope = null)
+        string? projectScope = null, bool isRetry = false)
         where T : class
     {
         var options = _options();
@@ -164,8 +165,36 @@ internal sealed class ForagerClient : IDisposable
                     $"the knowledge service response could not be read: {error.Message}");
             }
 
+            // W3-04 — re-authenticate on 401 rather than failing dark, within the one meaning that
+            // is honest here. ANTHILL CANNOT MINT ITS OWN CREDENTIAL: FORAGER only mints from the
+            // operator key (`services/access.ts` — `POST /api/settings/tokens` is operator-only, and
+            // no scope grants it), so there is no refresh grant to exchange and inventing one would
+            // be a lie in code. What an operator DOES do is rotate the token in config, and options
+            // are re-read per call by design — so the recoverable case is exactly this one: the
+            // credential changed between building this request and reading its answer. Retry once,
+            // with the new secret. Not a loop: `isRetry` makes a second 401 final, so a genuinely
+            // bad token fails on the second response instead of hammering the producer.
+            if (response.StatusCode == HttpStatusCode.Unauthorized && !isRetry)
+            {
+                var rotated = _options();
+                if (rotated.Token.Length > 0 && !string.Equals(rotated.Token, options.Token, StringComparison.Ordinal))
+                    return await SendAsync<T>(method, path, body, timeoutMs, cancellationToken, projectScope, isRetry: true)
+                        .ConfigureAwait(false);
+            }
+
             if (!response.IsSuccessStatusCode)
+            {
+                // A 401 with no token configured at all is the single most common way this
+                // integration is broken, and "the knowledge service refused the request" sends the
+                // operator to the wrong place. Name the setting.
+                if (response.StatusCode == HttpStatusCode.Unauthorized && options.Token.Length == 0)
+                    return KnowledgeOutcome<T>.Failed(KnowledgeFailure.Unauthorized,
+                        "the knowledge service requires a credential and knowledge_forager_token is empty. "
+                      + "FORAGER authenticates every /api route; mint an integration token in its Settings "
+                      + "(scopes read+ingest, limited to the mapped projects) and set knowledge_forager_token.");
+
                 return Failure<T>(response.StatusCode, payload);
+            }
 
             if (payload.Length == 0)
                 return KnowledgeOutcome<T>.Failed(KnowledgeFailure.Malformed,

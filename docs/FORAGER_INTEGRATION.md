@@ -225,10 +225,13 @@ story trivial (see §9).
 
 ## 6. Authentication and the security boundary
 
-**FORAGER has no authentication.** It binds `127.0.0.1` and expects to be the only tenant of its
-own machine. Its own documentation says to put a reverse proxy in front before exposing it. This
-is a real property of the system and the integration is built around it rather than pretending
-otherwise:
+**FORAGER authenticates every `/api` route.** Corrected 2026-09-11 (W3-04); this section
+previously said the opposite and that error cost real debugging time. Since FORAGER 0.7.0,
+`app.use('/api', authenticate(...))` (`src/server/app.ts:44`) is mounted ahead of every router.
+`/health`, `/ready`, `/openapi.json` and `/session` are public; everything else requires a
+credential. It still binds `127.0.0.1` and still expects to be the only tenant of its own machine,
+and its documentation still says to put a reverse proxy in front before exposing it — but the
+authentication is now FORAGER's own, not the proxy's. The integration is built around that:
 
 1. **ANTHILL's endpoint is the authenticated one.** Every `/knowledge/*` route in `ApiHost`
    requires `read_knowledge` or `manage_knowledge` through the existing `RequireAuth` gate. The
@@ -237,7 +240,11 @@ otherwise:
    configuration time and re-validated per call. A non-loopback endpoint requires the operator to
    set it explicitly and is reported in readiness output, so "my knowledge base is on another
    host" is a visible decision rather than an accident.
-3. **An optional bearer token** (`knowledge_forager_token`) is sent when configured, for operators
+3. **A required bearer token** (`knowledge_forager_token`) — an `fgr_` integration token minted by
+   the FORAGER operator, scoped minimally (`read` + `ingest`) and limited to the mapped projects.
+   ANTHILL cannot mint it: minting is an operator act on FORAGER's side and no token scope grants
+   it. A 401 is surfaced to the operator naming the setting, never swallowed. Rotation takes effect
+   on the next call, because options are re-read per call. Formerly described here as optional, for operators
    who have put FORAGER behind a proxy. It is `ConfigSecurity.Secret` and never rendered.
 4. **Ingestion paths are guarded on the ANTHILL side before they are sent.** A mission cannot ask
    FORAGER to index `/etc`, `C:\`, `~/.ssh`, or anything else outside the mission workspace,

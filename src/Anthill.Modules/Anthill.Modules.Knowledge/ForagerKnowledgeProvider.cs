@@ -83,9 +83,36 @@ internal sealed class ForagerKnowledgeProvider : IKnowledgeProvider, IKnowledgeI
         // from before it existed: tolerated, nothing declared, the ready facts stand alone. Any
         // OTHER failure is reported as the probe's weather, not swallowed — but does not unseat
         // reachability, which /ready already established.
+        //
+        // W3-04: this line used to read `caps.Ok ? caps.Value : null`, which made the paragraph
+        // above a lie. FORAGER has authenticated every /api route since its 0.7.0, and the auth
+        // middleware is mounted AHEAD of the routers (`src/server/app.ts:44`), so a colony with no
+        // credential gets 401 on this call — not 404 — while /ready, which is public, still answers
+        // 200. The old line collapsed that 401 into "declared nothing" and the probe went on to
+        // report Reachable=true, Compatible=true, Usable=true to an operator whose every subsequent
+        // retrieval would 401. Verified against a live Forager 0.7.0 on 2026-09-11:
+        // GET /api/ready -> 200, GET /api/capabilities -> 401 {"error":{"code":"unauthenticated"}}.
         var caps = await _client.GetAsync<ForagerCapabilities>("capabilities", options.ProbeTimeoutMs, cancellationToken)
             .ConfigureAwait(false);
-        var declared = caps.Ok ? caps.Value : null;
+
+        ForagerCapabilities? declared = null;
+        string? capabilityFailure = null;
+        if (caps.Ok)
+        {
+            declared = caps.Value;
+        }
+        else if (caps.Failure != KnowledgeFailure.NotFound)
+        {
+            // Unauthorized is called out by name because it is the one failure an operator can fix
+            // in thirty seconds, and the one the generic wording ("could not report capabilities")
+            // sends them to look for a network fault instead.
+            capabilityFailure = caps.Failure == KnowledgeFailure.Unauthorized
+                ? "the knowledge service refused this colony's credential. FORAGER authenticates every "
+                  + "/api route; mint an integration token in its Settings and set "
+                  + "knowledge_forager_token to it. "
+                  + (caps.Reason ?? "the knowledge service refused the request")
+                : caps.Reason ?? "the knowledge service did not report its capabilities";
+        }
 
         /* v0.3.8.158 — AND WHETHER THE CREDENTIAL WORKS, which readiness cannot answer.
          *
@@ -131,9 +158,15 @@ internal sealed class ForagerKnowledgeProvider : IKnowledgeProvider, IKnowledgeI
             InstanceId = declared?.Instance?.InstanceId,
             InstanceGeneration = declared?.Instance?.Generation,
             InstanceMode = declared?.Instance?.Mode,
-            Compatible = incompatible is null,
+            // Compatible is false for a refused credential as well as for a declared version
+            // outside the window. Both mean the same thing to a caller — the service answered and
+            // cannot be used — and Usable is the only gate the console reads. Two probes can say
+            // the credential was refused: W3-04's /capabilities (an engine that still gates it) and
+            // .158's /projects (the cheapest route that always does). Either is enough.
+            Compatible = incompatible is null && capabilityFailure is null && authenticated != false,
             Authenticated = authenticated,
             Reason = incompatible
+                ?? capabilityFailure
                 ?? (authenticated == false
                         ? "the knowledge service refused this colony's credential — set "
                           + "knowledge_forager_token to an integration token from FORAGER's Settings page"
