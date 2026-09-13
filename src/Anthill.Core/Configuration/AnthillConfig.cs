@@ -783,7 +783,8 @@ public sealed class AnthillConfig
     /// response, not the example file, not the docs. The console can set it and cannot read it.
     /// </summary>
     [ConfigKey(Exposure = ConfigExposure.Editable,
-        Security = ConfigSecurity.Secret, EnvOverride = "ANTHILL_KNOWLEDGE_FORAGER_TOKEN")]
+        Security = ConfigSecurity.Secret, EnvOverride = "ANTHILL_KNOWLEDGE_FORAGER_TOKEN",
+        Summary = "**required when `knowledge_enabled`** — FORAGER authenticates every `/api` route; an `fgr_` integration token minted by the FORAGER operator. Empty means 401 on every call")]
     [JsonPropertyName("knowledge_forager_token")] public string KnowledgeForagerToken { get; set; } = "";
 
     /// <summary>
