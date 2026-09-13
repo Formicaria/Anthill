@@ -93,7 +93,7 @@ public class DesktopShellTests
 
         // A Linux host can compile and publish it; running it still needs Windows.
         Assert.Contains("<EnableWindowsTargeting>true</EnableWindowsTargeting>", csproj);
-        Assert.Contains("net9.0-windows", csproj);
+        Assert.Contains("net10.0-windows", csproj);
     }
 
     /// <summary>

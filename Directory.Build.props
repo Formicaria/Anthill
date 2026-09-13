@@ -5,7 +5,19 @@
     single edit flips the target framework or language version for the whole solution.
   -->
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <!--
+      v0.3.9 / W0 05 — net10.0. .NET 9 is STS and leaves support on 10 November 2026; .NET 10 is LTS
+      to 14 November 2028. MICROMOUND made this move at v0.9.36 and ANTHILL could not consume it
+      afterwards: a net9.0 project cannot reference a net10.0 one, and no SDK version fixes that
+      direction. See docs/transition/adr/ADR-001-dotnet-target-framework.md.
+
+      LangVersion deliberately stays at 13, the same rule MICROMOUND used: this is a RUNTIME move and
+      a runtime move must not change a signed byte. C# 14 is a separate decision on its own merits.
+
+      NOTE the interaction with TreatWarningsAsErrors below. A TFM bump admits the net10 analyzer set
+      against that flag, so new warnings arrive as build FAILURES. Re-run the census the way .112 did.
+    -->
+    <TargetFramework>net10.0</TargetFramework>
     <LangVersion>13.0</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -25,6 +37,23 @@
     -->
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
+
+    <!--
+      SQLITEPCLRAW, PINNED HERE AND NOWHERE ELSE. v0.3.9.4.
+
+      Microsoft.Data.Sqlite 10.0.0 resolves bundle_e_sqlite3 2.1.11, and 2.1.11 carries
+      GHSA-2m69-gcr7-jv3q (high) exactly like the 2.1.10 before it. The net10 SDK audits
+      TRANSITIVE packages by default where net9 audited direct ones only, so nothing here got
+      worse — the SDK just started looking somewhere nobody had looked, and found something that
+      had been sitting there the whole time. `dotnet nuget why` showed the same three-link chain
+      under all eight projects, so one override at the bundle closes all of them.
+
+      NOT 3.53.3. The 3.x line renumbered to track SQLite's own version, and raw's core, provider,
+      lib and bundle have to stay aligned with each other — pinning the bundle forward while
+      Microsoft.Data.Sqlite still expects the 2.1.x contract buys a runtime DllNotFoundException
+      instead of a build error, which is a worse trade in every direction.
+    -->
+    <SqlitePclRawVersion>2.1.13</SqlitePclRawVersion>
     <!-- v0.3.8.48, found by Windows CI: invariant globalization disables the ICU mapping that
          lets Windows resolve IANA timezone ids ("America/Chicago"), so FindSystemTimeZoneById
          threw, the scheduler's fallback degraded every zone to UTC, and each Windows schedule

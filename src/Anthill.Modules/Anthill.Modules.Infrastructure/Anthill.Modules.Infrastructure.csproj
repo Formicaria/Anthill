@@ -19,7 +19,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
+    <!-- v0.3.9.4 — 10.0.0 to match the TFM, and because 9.0.0 drags SQLitePCLRaw.lib.e_sqlite3
+         2.1.10 in transitively, which carries GHSA-2m69-gcr7-jv3q (high). The net10 SDK audits
+         transitive packages by default where net9 audited direct ones only, so the TFM move did
+         not create this — it started looking where nobody had looked. See W0-05-CENSUS.md. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
+    <!-- Explicit, to override the vulnerable 2.1.11 this would otherwise resolve. Version lives in
+         Directory.Build.props so there is one to change rather than three. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="$(SqlitePclRawVersion)" />
   </ItemGroup>
 
   <ItemGroup>

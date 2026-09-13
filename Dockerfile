@@ -12,7 +12,7 @@
 # stage). If you want native-kernel acceleration in-container, add a cmake build stage before
 # the `build` stage below and copy the resulting .so into native/anthill_kernel/ first.
 
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY . .
 # Publishing the Cli project directly (rather than restoring/building via Anthill.sln) restores
@@ -23,13 +23,19 @@ RUN dotnet publish src/Anthill.Cli/Anthill.Cli.csproj \
     -c Release \
     -o /app/publish
 
-FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 
 # curl is only here so HEALTHCHECK below can hit the app's own unauthenticated /health endpoint.
+#
+# The 10.0 images are Ubuntu 24.04, which ships an `ubuntu` user at UID 1000 that nothing here
+# uses. It goes, so `anthill` keeps the UID it has always had: every /app/.anthill volume already
+# out there is owned by 1000, and moving to another UID would lock a deployed colony out of its own
+# data on the first pull. The 9.0 images had no such user, which is why this never came up.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
+    && if id ubuntu >/dev/null 2>&1; then userdel -r ubuntu; fi \
     && useradd --uid 1000 --create-home --home-dir /app --shell /usr/sbin/nologin anthill
 
 COPY --from=build /app/publish .

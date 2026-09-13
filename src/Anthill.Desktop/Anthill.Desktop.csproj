@@ -9,7 +9,7 @@
        scripts/validate build it by name, and DesktopShellTests pins that wiring. -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net9.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <!-- Lets a Linux host compile and publish the Windows shell; running it still needs Windows. -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>

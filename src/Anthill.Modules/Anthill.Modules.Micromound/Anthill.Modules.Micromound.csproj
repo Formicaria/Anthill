@@ -34,12 +34,75 @@
 
   <ItemGroup>
     <!-- SqliteMoundStore — same package and version the infrastructure's repository persists through. -->
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
+    <!-- v0.3.9.4 — 10.0.0 to match the TFM, and because 9.0.0 drags SQLitePCLRaw.lib.e_sqlite3
+         2.1.10 in transitively, which carries GHSA-2m69-gcr7-jv3q (high). The net10 SDK audits
+         transitive packages by default where net9 audited direct ones only, so the TFM move did
+         not create this — it started looking where nobody had looked. See W0-05-CENSUS.md. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
+    <!-- Explicit, to override the vulnerable 2.1.11 this would otherwise resolve. Version lives in
+         Directory.Build.props so there is one to change rather than three. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="$(SqlitePclRawVersion)" />
   </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="Anthill.Tests" />
     <InternalsVisibleTo Include="Anthill.Tests.Micromound" />
   </ItemGroup>
+
+
+  <!--
+    THE PIN, AND WHY THERE IS ONE. $(MicromoundRepoPath) above reaches OUT of this repository into a
+    checkout nothing here controls, and until W0 05 nothing checked WHICH micromound it landed on.
+    CI pinned one (ci.yml env.MICROMOUND_REF); a dev box pinned none and compiled whatever was
+    sitting in the sibling directory. So the two machines built different contracts, and the
+    disagreement surfaced as NETSDK1045 naming a file in somebody else's repository — an error that
+    sends every reader to the wrong place. Worse, it surfaced RED on the dev box and GREEN in CI,
+    which is the signal pointing backwards.
+
+    This is the recorded compatible range. Both ends were observed rather than guessed at:
+      MIN 0.9.10 — the ref ci.yml has been building green against.
+      MAX 0.9.44 — what a current working copy holds.
+    Neither end claims every version in between was tested. Moving either one is a deliberate act
+    and goes together with re-running tests/Anthill.Tests.Micromound. See
+    docs/transition/adr/ADR-001-dotnet-target-framework.md §5.
+
+    -p:SkipMicromoundVersionCheck=true escapes it, for the one case that deserves an escape:
+    deliberately testing an unreleased micromound. It is not for making a red build green.
+  -->
+  <PropertyGroup>
+    <MicromoundMinVersion>0.9.10</MicromoundMinVersion>
+    <MicromoundMaxVersion>0.9.44</MicromoundMaxVersion>
+  </PropertyGroup>
+
+  <Target Name="VerifyMicromoundCheckout"
+          BeforeTargets="CollectPackageReferences;PrepareForBuild"
+          Condition="'$(SkipMicromoundVersionCheck)' != 'true'">
+
+    <PropertyGroup>
+      <_MmProps>$([MSBuild]::NormalizePath('$(MicromoundRepoPath)', 'Directory.Build.props'))</_MmProps>
+    </PropertyGroup>
+
+    <Error Condition="!Exists('$(_MmProps)')"
+           Text="MICROMOUND checkout not found. Looked for '$(_MmProps)'. This project compiles against the MICROMOUND wire contract, which lives in its own repository. Clone it and either put it beside the ANTHILL repo or pass -p:MicromoundRepoPath=&lt;path&gt;. Expected version $(MicromoundMinVersion) to $(MicromoundMaxVersion)." />
+
+    <XmlPeek XmlInputPath="$(_MmProps)" Query="//MicromoundVersion/text()">
+      <Output TaskParameter="Result" ItemName="_MmVersionPeek" />
+    </XmlPeek>
+
+    <PropertyGroup>
+      <_MmVersion>@(_MmVersionPeek)</_MmVersion>
+      <_MmInRange Condition="'$(_MmVersion)' != '' AND
+                             $([System.Version]::Parse('$(_MmVersion)').CompareTo($([System.Version]::Parse('$(MicromoundMinVersion)')))) &gt;= 0 AND
+                             $([System.Version]::Parse('$(_MmVersion)').CompareTo($([System.Version]::Parse('$(MicromoundMaxVersion)')))) &lt;= 0">true</_MmInRange>
+    </PropertyGroup>
+
+    <Error Condition="'$(_MmVersion)' == ''"
+           Text="Could not read &lt;MicromoundVersion&gt; from '$(_MmProps)'. That checkout does not look like a MICROMOUND repository." />
+
+    <Error Condition="'$(_MmInRange)' != 'true'"
+           Text="MICROMOUND version mismatch. The checkout at '$(MicromoundRepoPath)' is v$(_MmVersion); this ANTHILL records a compatible range of v$(MicromoundMinVersion) to v$(MicromoundMaxVersion). Check out a micromound in range, or — if you mean to widen it — change MicromoundMinVersion/MicromoundMaxVersion in Anthill.Modules.Micromound.csproj and re-run tests/Anthill.Tests.Micromound. Do not skip this to make a build go green." />
+
+    <Message Importance="normal" Text="MICROMOUND v$(_MmVersion) at '$(MicromoundRepoPath)' — within recorded range v$(MicromoundMinVersion)..v$(MicromoundMaxVersion)." />
+  </Target>
 
 </Project>
