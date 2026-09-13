@@ -20,8 +20,33 @@ concurrency:
 # so every job that compiles .NET has to fetch it first. The ref is pinned HERE, in one place,
 # rather than at each checkout site: a commit to micromound must not be able to turn this
 # repository's CI red with nobody having touched this repository. Bump deliberately.
+#
+# W0 05 — PINNED BY COMMIT SHA, NOT BY TAG. A tag is a moving label: whoever holds the micromound
+# repo can retarget v0.9.10 and this workflow follows it with no commit here. The comment at the
+# checkout step below already records this step drifting once. A SHA cannot drift.
+#
+# THIS PIN IS ALSO KNOWN-STALE, AND IS DELIBERATELY LEFT AT v0.9.10 FOR NOW. Read this before
+# "fixing" it. v0.9.10 is net9.0; micromound moved to net10.0 at v0.9.36 and is now v0.9.44. This
+# pin is 34 releases behind, and until ANTHILL moved to net10.0 it was the only reason this workflow
+# was green - a dev box with a current sibling checkout got NETSDK1045 while CI passed. Green here
+# has NOT meant the integration works; it has meant CI was building an old contract.
+#
+# It is not bumped in the same change as the TFM move, and the reason is diagnosability, not
+# availability: there is NO evidence that ANTHILL's module code compiles against the v0.9.44
+# contract. It cannot have been proven on a dev box, because a dev box could not restore at all.
+# Landing an unverified contract bump and an unverified runtime bump together produces one red
+# build and no way to tell which caused it.
+#
+# TO CLOSE THIS, in this order:
+#   1. Land the TFM move on its own and get a green run here. That proves net10 alone.
+#   2. Then set MICROMOUND_REF to 3c17360d31df2fb93a931412673292c8c3bff53d (v0.9.44, == origin/main
+#      as of 10 Sep 2026, net10.0) and raise MicromoundMinVersion in
+#      src/Anthill.Modules/Anthill.Modules.Micromound/Anthill.Modules.Micromound.csproj to match.
+#      Re-run tests/Anthill.Tests.Micromound. That proves the contract separately.
+# Keep this value and that version range moving together. They are one decision in two files.
 env:
-  MICROMOUND_REF: v0.9.10
+  # v0.9.10 - net9.0. See the block above before changing.
+  MICROMOUND_REF: 213e6556f5199afcad1c91e0e790febcab4f8b92
 
 jobs:
   build-and-test:
@@ -64,10 +89,10 @@ jobs:
           ref: ${{ env.MICROMOUND_REF }}
           path: .micromound
 
-      - name: Setup .NET 9
+      - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: '10.0.x'
 
       - name: Restore
         run: dotnet restore Anthill.sln -p:MicromoundRepoPath=${{ github.workspace }}/.micromound
@@ -112,10 +137,10 @@ jobs:
           ref: ${{ env.MICROMOUND_REF }}
           path: .micromound
 
-      - name: Setup .NET 9
+      - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: '10.0.x'
 
       - name: Publish self-contained single-file (matches build.sh)
         run: |

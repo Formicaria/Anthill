@@ -43,11 +43,11 @@ else
     . /etc/os-release
     PKG_URL="https://packages.microsoft.com/config/${ID}/${VERSION_ID}/packages-microsoft-prod.deb"
     if curl -fsSL "$PKG_URL" -o /tmp/packages-microsoft-prod.deb 2>/dev/null; then
-        log "Installing .NET 9 SDK via Microsoft's apt repository (${ID} ${VERSION_ID})"
+        log "Installing .NET 10 SDK via Microsoft's apt repository (${ID} ${VERSION_ID})"
         dpkg -i /tmp/packages-microsoft-prod.deb
         rm -f /tmp/packages-microsoft-prod.deb
         apt-get update -qq
-        apt-get install -y dotnet-sdk-9.0
+        apt-get install -y dotnet-sdk-10.0
     else
         # No Microsoft apt repo entry for this exact distro/version (common on very new or
         # unusual releases) — fall back to the official install script, which works on any
@@ -56,7 +56,7 @@ else
         log "No Microsoft apt repo for ${ID} ${VERSION_ID} — falling back to dotnet-install.sh"
         apt-get install -y curl ca-certificates
         curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
-        bash /tmp/dotnet-install.sh --channel 9.0 --install-dir /usr/share/dotnet
+        bash /tmp/dotnet-install.sh --channel 10.0 --install-dir /usr/share/dotnet
         ln -sf /usr/share/dotnet/dotnet /usr/local/bin/dotnet
         rm -f /tmp/dotnet-install.sh
     fi

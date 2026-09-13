@@ -572,7 +572,7 @@ Repo: `formicaria/anthill`; remote `https://github.com/formicaria/anthill.git`. 
 `-c Release`, and stop `Anthill.Api` first — a running instance locks `Anthill.Core.dll`. The
 operator now works on a **Linux laptop** (bash); the earlier PowerShell 5.1 machine is still in use
 occasionally, where `&&` is a parse error and statements must be separated. A Linux sandbox CAN
-build and test everything except `Anthill.Desktop` (net9.0-windows ref packs): .NET 9 SDK tarball +
+build and test everything except `Anthill.Desktop` (net10.0-windows ref packs): .NET 10 SDK tarball +
 the operator's NuGet cache as `NUGET_PACKAGES`, restore fully offline.
 
 Version bumps touch FIVE markers (RegressionGuardTests + the PLAN mention):
