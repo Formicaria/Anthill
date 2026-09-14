@@ -729,9 +729,9 @@ public sealed class AnthillConfig
     // case the rule exists for.
     //
     // WHAT STAYS IN THE FILE, and why. knowledge_forager_allow_remote permits reaching a knowledge
-    // service across a network.
-    // knowledge_forager_allow_remote permits reaching one across a network, and FORAGER has no
-    // authentication of its own. knowledge_project_map decides which knowledge a mission may read.
+    // service across a network, carrying the colony's fgr_ credential with it — FORAGER authenticates
+    // every /api route, so the credential travels wherever the endpoint points, and that is a decision
+    // no console gets to make. knowledge_project_map decides which knowledge a mission may read.
     // Each of those either REDIRECTS what the colony believes or WIDENS who may read what, so making
     // any of them console-writable would let a console compromise do the same without touching a
     // file. That is the property this section was written to keep, and it is unchanged.
@@ -788,9 +788,10 @@ public sealed class AnthillConfig
     [JsonPropertyName("knowledge_forager_token")] public string KnowledgeForagerToken { get; set; } = "";
 
     /// <summary>
-    /// Permit a non-loopback FORAGER endpoint. Off by default: FORAGER has no auth, so reaching one
-    /// across a network is a decision with a real blast radius and should be made deliberately
-    /// rather than inherited from a copied config.
+    /// Permit a non-loopback FORAGER endpoint. Off by default: reaching one across a network sends
+    /// the colony's fgr_ token to whatever answers at that address and widens which FORAGER the
+    /// colony trusts as organizational fact - a decision with a real blast radius, to be made
+    /// deliberately rather than inherited from a copied config.
     ///
     /// DELIBERATELY NOT EDITABLE, and it did not follow knowledge_enabled across in v0.3.8.124. The
     /// switch above only starts using what the file already permits; this one CHANGES what is

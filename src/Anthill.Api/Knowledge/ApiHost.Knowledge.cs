@@ -19,10 +19,12 @@ namespace Anthill.Api;
 ///
 /// TWO BOUNDARY RULES, both load-bearing:
 ///
-/// 1. THE CONSOLE NEVER TALKS TO FORAGER DIRECTLY. FORAGER has no authentication of its own — it
-///    expects to own its loopback interface — so ANTHILL is the authenticated edge. Routing the
-///    browser at FORAGER's port would put an unauthenticated knowledge base on the operator's
-///    network with the colony's blessing.
+/// 1. THE CONSOLE NEVER TALKS TO FORAGER DIRECTLY. FORAGER authenticates every /api route with an
+///    fgr_ integration token (0.7.0), but that token is the COLONY's credential, scoped to the
+///    mapped projects - it is not an operator's session. ANTHILL is the authenticated edge for
+///    people. Routing the browser at FORAGER's port would either hand the colony's token to every
+///    operator or put a knowledge base with no operator identity on the network with the colony's
+///    blessing.
 ///
 /// 2. THE SCOPE IS RESOLVED HERE, from the caller's requested project through the operator's
 ///    configured map. A caller cannot name a FORAGER project id directly, so no request can reach a
