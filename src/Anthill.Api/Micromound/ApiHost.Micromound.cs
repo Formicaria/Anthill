@@ -285,8 +285,12 @@ public static partial class ApiHost
             .Distinct(StringComparer.Ordinal)
             .ToList();
 
+        // Then every step in full - settle window and postcondition included - because the
+        // capability list above is what an approver used to see, and it was not enough to
+        // know what they were approving. One renderer, shared with the module: MissionText.
         return $"Micromound '{parked.MoundId}' — {parked.Steps.Count} step(s): "
              + (capabilities.Count > 0 ? string.Join(", ", capabilities) : "(no capability named)")
+             + MissionText.DescribeSteps(parked.Steps)
              + $"\nRequested by {parked.RequestedBy} as '{parked.Origin}'."
              + (string.IsNullOrWhiteSpace(parked.Reason) ? "" : $"\nReason: {parked.Reason}")
              + $"\nPolicy: {policyReason}";
