@@ -144,7 +144,11 @@ public class ShippedChangelogTests
         foreach (var (mojibake, repaired) in EncodingRepairs)
             entry = entry.Replace(mojibake, repaired, StringComparison.Ordinal);
 
-        return Regex.Replace(Regex.Replace(entry, @"docs/archive/v\d+/", "docs/"), @"\s+", " ").Trim();
+        var content = Regex.Replace(Regex.Replace(entry, @"docs/archive/v\d+/", "docs/"), @"\s+", " ").Trim();
+
+        // The rule that separates the last entry from the `## Earlier releases` trailer is the
+        // file's layout, not the entry's words — formatting, like everything else stripped here.
+        return Regex.Replace(content, @"(\s---)+$", "");
     }
 
     /// <summary>The path of the frozen pre-renumbering history. v0.3.9.3.</summary>
@@ -173,18 +177,30 @@ public class ShippedChangelogTests
         return all;
     }
 
-    /// <summary>The `## vX` entries in a changelog, keyed by version, text and all.</summary>
+    /// <summary>
+    /// The `## vX` entries in a changelog, keyed by version, text and all.
+    ///
+    /// AN ENTRY ENDS AT THE NEXT HEADING OF ANY KIND. v0.3.9.10 — until now it ended at the next
+    /// VERSION heading, which was the same thing for every entry but the oldest. `.9.3` put an
+    /// `## Earlier releases` trailer after that one, and slicing to the next `## v` ran the `.34`
+    /// entry through the trailer to the end of the file. The public checkout has 118 tags and not
+    /// `v0.3.8.34`, so CI never compared that entry; the first build on a checkout carrying all 293
+    /// reported `.34` as edited after shipping, over words nobody wrote into it. A guard that is
+    /// wrong on the one machine that has the evidence is the arrangement `.41` already called the
+    /// worst available.
+    /// </summary>
     private static Dictionary<string, string> Entries(string changelog)
     {
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
         var matches = Regex.Matches(changelog, @"^##\s+v(?<v>\d+(?:\.\d+)+).*$", RegexOptions.Multiline);
+        var headings = Regex.Matches(changelog, @"^##\s", RegexOptions.Multiline).Select(h => h.Index).ToArray();
 
-        for (var i = 0; i < matches.Count; i++)
+        foreach (Match m in matches)
         {
-            var start = matches[i].Index;
-            var end = i + 1 < matches.Count ? matches[i + 1].Index : changelog.Length;
+            var start = m.Index;
+            var end = headings.FirstOrDefault(h => h > start, changelog.Length);
             // Last write wins is fine: duplicate headings are a separate guard's problem.
-            result[matches[i].Groups["v"].Value] = changelog[start..end];
+            result[m.Groups["v"].Value] = changelog[start..end];
         }
         return result;
     }

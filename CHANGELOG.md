@@ -1,3 +1,82 @@
+## v0.3.9.10 - the field fix meets the trunk: release/v0.3.8.152 merged forward
+
+**A DESKTOP INSTALL THAT WOULD NOT BOOT WAS FIXED ON A BRANCH MAIN NEVER TOOK.** `.152` was cut in a
+hurry for a field failure -- `Access to the path 'C:\Program Files\Anthill\workspace' is denied`,
+at the outermost frame, over a directory the colony only ever reads -- and shipped from its own
+line. Main kept moving: `.153` through `.160`, then the whole `v0.3.9` vault lane, sixteen commits
+without the fix. So every deploy from `origin/main` since has carried the `EnsureWorkspace` loop
+that bricked that install, and every operator on a per-user install has been one bad
+`agent_workspace_dir` away from a colony that refuses to exist.
+
+This release is the merge, and it is where the trunk moves to net10. What was already fixed is
+finally on the branch that deploys. Two things are written here — the framework move, and a guard
+that was reading past the end of the record — both because this release was built on a machine
+that had every tag and one SDK.
+
+### What arrives, from the seven commits of the release line
+
+- **Storage and reading scope are two classes, not one.** The colony's own storage --
+  `workspace_root`, `db_path`, `backup_dir`, `logs_dir`, `exports_dir` -- still refuses the boot
+  when it cannot be written, and should. The reading scope is prepared, and when it cannot be, that
+  is an `error` finding beside every other configuration finding. Loud, not fatal. The console comes
+  up, and the console is where the fault gets fixed.
+- **A refusal names the setting, not only the path.** `ColonyStorageException` carries the key, the
+  value as written, where it resolved to, and the file to edit, in that order.
+- **A machine-wide install is told it cannot replace itself** before any window exists --
+  `InstallSite` answers from the program directory, ahead of the marker, because location outranks
+  the marker.
+- **`sandbox_without_workspace` tests the resolved path**, not the authored one.
+- **Line endings belong to the repository.** `.gitattributes` says so; one machine's `.git/config`
+  no longer gets a vote.
+
+### The trunk moves to net10, and builds against the runtime as it is
+
+MICROMOUND went to net10 at v0.9.36 for LTS; ADR-001 settled that ANTHILL follows it rather than
+the device runtime bending back to an STS framework so the colony could stay put. The move was
+written as the first commit of the transition branch, which would have made this the last net9
+release — built, as CI still builds `main`, against a micromound pinned at v0.9.10 that a dev box
+cannot even restore against. There is no reason for a last net9 release. So the move is here:
+`net10.0` in `Directory.Build.props`, and `global.json` pinning the SDK at 10.0.100 with
+`latestFeature` roll-forward, so two repositories cannot drift apart again. The recorded compatible
+range of the runtime stays at v0.9.10–v0.9.44, and that is a statement rather than an oversight:
+this release was also built and tested on the box that cut it against an unreleased 0.9.45
+checkout, with the version check escaped for exactly the purpose the csproj names, and two of the
+188 contract tests failed there — the console's mission form does not send `settle_s`, and the
+enrolment endpoint does not handle the fields a 0.9.45 device advertises. Both are closed by the
+transition branch that follows this commit, which is where the range moves. What the net10 SDK
+raised, it raised because
+it audits transitive packages where net9 audited direct ones: NU1903 on
+`SQLitePCLRaw.lib.e_sqlite3` (GHSA-2m69-gcr7-jv3q), in the tree the whole time. `Microsoft.Data.Sqlite`
+goes to 10.0.0 to match the TFM and the bundle is pinned at 2.1.13 in one place, because 10.0.0
+alone still resolved 2.1.11 and 2.1.11 carries the same advisory. Zero new analyzer warnings under
+`TreatWarningsAsErrors`; `dotnet list package --vulnerable --include-transitive` reports nothing in
+any of ten projects. CI's own pin stays at v0.9.10 for one more release, on purpose: it is inside
+the range, and moving the framework and the contract CI builds against in one change would leave a
+red with no way to say which caused it. `ci.yml` says so, at length, with the order to close it in.
+
+### A guard that was reading past the end of the record
+
+`ShippedChangelogTests` compares every tagged entry with its text at the tag, and sliced each entry
+to the next `## v` heading — the same thing as the next heading of any kind, for every entry but
+the oldest. `.9.3` put an `## Earlier releases` trailer after that one, so the `.34` entry ran
+through the trailer to the end of the file, and on any checkout that carries the `v0.3.8.34` tag
+the guard reported an edit nobody made. GitHub's checkout has 118 tags and not that one, which is
+why CI never said so; the box that cuts releases has all 293 and said so the first time this
+release was built on it. An entry now ends at the next heading of any kind, and the rule that
+separates the last entry from the trailer is treated as the formatting it is.
+
+### Why the merge is its own release
+
+The version markers, `RegressionGuardTests` and the tag guard all agree that a commit on `main`
+carries the version it ships. A merge that changes what boots but keeps yesterday's number would be
+a `.9.9` that is not the `.9.9` anyone tested. The changelog keeps both lines in release order:
+main's entries down to `.153`, then `.152` in the slot main skipped, then the `.151` they share.
+
+The transition branch (`transition/wave-0-3`: the charter-expiry fix on both sides, the colony
+that invents no elements, Forager authentication, the runtime range to 0.9.45, retirement as a
+state, the managed knowledge engine) was cut from the release line and follows this commit onto
+`main`.
+
 ## v0.3.9.9 - the fix for it was green and inert, for its own reason
 
 **v0.3.9.8 SHIPPED, THE OPERATOR INSTALLED IT, QUEUED MORE MISSIONS, AND NOTHING CHANGED.** Read out
