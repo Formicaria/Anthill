@@ -67,10 +67,19 @@ public static class MicromoundEvents
     public const string LeaseRenewalRefused = EventTypes.MicromoundLeaseRenewalRefused;
 
     /// <summary>
-    /// An operator removed a device. Everything keyed to it went with it, and the device is not
-    /// told: its next beat is refused as an unknown mound, which is the correct answer.
+    /// P-3. An operator retired a device — unlinked it, replaced it, or revoked its key. The row
+    /// and everything under it stay; what changes is that the mound receives no new authority and
+    /// its lease is left to lapse. The device is not told: its next beat is acknowledged as coming
+    /// from a retired identity, its evidence kept and marked, and nothing renewed.
     /// </summary>
-    public const string MoundUnlinked = EventTypes.MicromoundMoundUnlinked;
+    public const string MoundRetired = EventTypes.MicromoundMoundRetired;
+
+    /// <summary>
+    /// P-3. An operator purged a RETIRED mound's rows — charters, queued downlink, evidence,
+    /// actions, reports, token — the deletion retirement deliberately is not. Warned about at the
+    /// call, because those rows are the only record of what a machine physically did.
+    /// </summary>
+    public const string MoundPurged = EventTypes.MicromoundMoundPurged;
 }
 
 /// <summary>
@@ -131,6 +140,12 @@ public sealed class MicromoundSync(
             return Refuse(moundId, ["unknown mound; enrollment is the only way a key becomes known"], "", false);
 
         var stop = MicromoundStop.AppliesTo(mound, options);
+
+        // P-3. A RETIRED MOUND IS STILL HEARD, AND NEVER RENEWED. Its beat is verified like any
+        // other — a retired device's evidence still has to be authentic — and what it reports is
+        // stored and marked. What it does not get is authority: no lease renewal, no drained
+        // queue, and the ack says why. Stop still reaches it, because stop reaches everything.
+        var retired = mound.IsRetired;
 
         if (string.IsNullOrEmpty(mound.PublicKey))
             return Refuse(moundId, ["mound has no bound key; it has not completed enrollment"], "", stop);
@@ -195,7 +210,7 @@ public sealed class MicromoundSync(
             // the previous one did.
             mound.LastSeen = now.ToWire();
             _store.UpsertMound(mound);
-            RenewLeaseOrReport(mound, now, stop);
+            if (!retired) RenewLeaseOrReport(mound, now, stop);
 
             var repeated = envelopes.Count > 0;
 
@@ -204,10 +219,11 @@ public sealed class MicromoundSync(
                 Downlink =
                 [
                     SignAck(moundId, repeated ? envelopes[^1].Id : "", mound.LastSeq, [],
-                        repeated ? "duplicate" : "nothing new", now),
+                        retired ? "retired identity" : repeated ? "duplicate" : "nothing new", now),
                 ],
                 Quiesced = mound.Quiesced,
                 Duplicate = repeated,
+                Retired = retired,
             };
         }
 
@@ -289,10 +305,17 @@ public sealed class MicromoundSync(
 
         // THE LEASE, RENEWED ON THE ACKNOWLEDGED BEAT AND NOWHERE ELSE (§5). Not while a stop is in
         // force: a stop halts mound-directed action, and handing back fresh authority in the same
-        // response that carries the stop order would be the colony arguing with itself.
-        RenewLeaseOrReport(mound, now, stop);
+        // response that carries the stop order would be the colony arguing with itself. And not
+        // for a retired mound, whose lease is meant to lapse: that lapse is the overlap bound.
+        if (!retired) RenewLeaseOrReport(mound, now, stop);
 
         var ingest = _evidence.Ingest(moundId, records, items, now);
+
+        // Kept, and marked. The only record of what a machine physically did does not become
+        // less true because an operator retired the machine — it becomes more important.
+        if (retired)
+            _store.MarkFromRetiredIdentity(moundId, ingest.StoredEvidenceIds,
+                [.. ingest.Actions.Select(a => a.Record.ActionId)]);
 
         foreach (var report in reports) RecordReport(moundId, report);
         foreach (var ack in deviceAcks) NoteDeviceAck(moundId, ack);
@@ -318,6 +341,7 @@ public sealed class MicromoundSync(
                 ["stop_in_effect"] = stop,
                 ["action_records"] = ingest.Actions.Count,
                 ["evidence_items"] = ingest.EvidenceItems,
+                ["from_retired_identity"] = retired,
             });
 
         if (mound.Quiesced && !wasQuiesced)
@@ -351,19 +375,22 @@ public sealed class MicromoundSync(
             _store.DiscardDownlink(moundId);
             downlink.Add(SignStop(mound, options, now));
         }
-        else
+        else if (!retired)
         {
             // Drained on ACKNOWLEDGEMENT, and therefore here — after the batch was believed and
-            // recorded, in the same response as the ack that says so.
+            // recorded, in the same response as the ack that says so. Not for a retired mound:
+            // nothing may be queued for one, and retirement discarded whatever was.
             downlink.AddRange(_store.DrainDownlink(moundId));
         }
 
-        downlink.Add(SignAck(moundId, fresh[^1].Id, mound.LastSeq, ingest.StoredEvidenceIds, "", now));
+        downlink.Add(SignAck(moundId, fresh[^1].Id, mound.LastSeq, ingest.StoredEvidenceIds,
+            retired ? "retired identity" : "", now));
 
         return new SyncOutcome(true, [], mound.LastSeq, mound.LastDigest, stop)
         {
             Downlink = downlink,
             Quiesced = mound.Quiesced,
+            Retired = retired,
         };
     }
 

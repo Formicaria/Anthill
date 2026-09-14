@@ -111,6 +111,16 @@ None of this is in the module by design — composition happens in `Anthill.Api`
    | `/micromound/evidence` | GET | `read_micromound` |
    | `/micromound/stop` | POST | `approve_micromound_actions` |
    | `/micromound/stop/resume` | POST | `approve_micromound_actions` |
+   | `/micromound/unlink` | POST | `manage_micromound` — retires; the row and its evidence stay |
+   | `/micromound/purge` | POST | `manage_micromound` — deletes a *retired* mound's rows; `confirm` repeats the id |
+
+   Retirement is a state, not a delete (P-3). A retired mound's beats are still verified and
+   what it reports is kept, marked `from_retired_identity`; it is granted nothing — no charter,
+   mission, configuration or lease renewal, and its id is never re-minted — and stop still
+   reaches it. `/micromound/unlink` sets that state (reason `unlinked`, `replaced` with a
+   `replaced_by` successor, or `revoked`). `/micromound/purge` is the deletion, on a retired mound
+   only, with the id typed back, because the evidence and action rows are the only record of what
+   a machine physically did.
 
    `/micromound/missions` and `/micromound/charters` are the command path, and as of `.114` they
    exist, behind `approve_micromound_actions`. The device pair (`/v0/enroll`,

@@ -134,6 +134,57 @@ public sealed class MoundRecord
     /// drivers and may refuse, so what is in force is a fact only the sync path can report.
     /// </summary>
     [JsonPropertyName("configuration_revision")] public string ConfigurationRevision { get; set; } = "";
+
+    // ---- Retirement. P-3 — a state, never a delete. -------------------------------------------
+    //
+    // Until these fields existed the colony had exactly one way to stop trusting a device: delete
+    // it, and everything keyed to it, evidence included. A replaced device kept beating, kept being
+    // acknowledged and kept renewing its own lease, because the sync path had no fact to gate on.
+    // Now it has one. A retired mound is refused nothing it REPORTS — its evidence is the only
+    // record of what a machine physically did, and refusing it loses safety information at the
+    // moment it matters most — and granted nothing it ASKS FOR: no charter, no mission, no
+    // configuration, no lease renewal, no re-mint of its id. Stop still reaches it, all three ways.
+
+    /// <summary>
+    /// When this mound was retired, as wire time, or empty while it is a live member of the fleet.
+    /// The retirement fact. Everything else about a retired mound derives from this being set.
+    /// </summary>
+    [JsonPropertyName("retired_at")] public string RetiredAt { get; set; } = "";
+
+    /// <summary>Why — one of <see cref="MoundRetirement"/>'s reasons. Empty while live.</summary>
+    [JsonPropertyName("retirement_reason")] public string RetirementReason { get; set; } = "";
+
+    /// <summary>
+    /// The mound that took over this one's role, when the reason is a replacement. Empty otherwise.
+    /// The successor is a NEW mound id with its own enrolment: a retired id is final, so that the
+    /// evidence under it can never be confused with a different device's.
+    /// </summary>
+    [JsonPropertyName("replaced_by")] public string ReplacedBy { get; set; } = "";
+
+    /// <summary>Derived, read-only, and on the wire as `retired` so a listing needs no date parsing.</summary>
+    [JsonPropertyName("retired")] public bool IsRetired => !string.IsNullOrEmpty(RetiredAt);
+}
+
+/// <summary>The reasons a mound leaves the fleet, and the one rule about leaving it.</summary>
+public static class MoundRetirement
+{
+    /// <summary>An operator removed it. The device is not told; its next beat is answered as retired.</summary>
+    public const string Unlinked = "unlinked";
+    /// <summary>Another mound took its role (entitlement model §7.3). `replaced_by` names the successor.</summary>
+    public const string Replaced = "replaced";
+    /// <summary>Its key is no longer trusted (key management §5.3). A revocation is a state, not a delete.</summary>
+    public const string Revoked = "revoked";
+
+    public static bool IsKnown(string reason) => reason is Unlinked or Replaced or Revoked;
+
+    /// <summary>
+    /// The one line every refusal a retired mound meets says, so an operator reading any of them
+    /// learns the same thing: what happened, and that the evidence is still there.
+    /// </summary>
+    public static string Describe(MoundRecord mound) =>
+        $"mound '{mound.MoundId}' was retired ({mound.RetirementReason}) at {mound.RetiredAt}"
+        + (string.IsNullOrEmpty(mound.ReplacedBy) ? "" : $", replaced by '{mound.ReplacedBy}'")
+        + "; a retired mound receives no new authority, and what it still reports is kept";
 }
 
 public static class MoundTiers
@@ -209,6 +260,13 @@ public sealed record SyncOutcome(
     /// device re-sends exactly this.
     /// </summary>
     public bool Duplicate { get; init; }
+
+    /// <summary>
+    /// P-3. The beat came from a retired identity: verified, its evidence kept and marked, its
+    /// lease NOT renewed and its queue not drained. The device is not told in so many words — the
+    /// ack's detail says "retired identity", and its lease lapsing is what tells it to stand down.
+    /// </summary>
+    public bool Retired { get; init; }
 
     public static SyncOutcome Refused(IReadOnlyList<string> refusals, string anchorDigest, bool stop) =>
         new(false, refusals, -1, anchorDigest, stop);

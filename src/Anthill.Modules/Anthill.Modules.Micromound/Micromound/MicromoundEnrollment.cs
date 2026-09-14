@@ -66,6 +66,14 @@ public sealed class MicromoundEnrollment(IMoundStore store, IEventBus events)
         var expiresAt = now.AddMinutes(options.EnrollmentTokenTtlMinutes);
 
         var existing = _store.GetMound(moundId);
+
+        // P-3. A retired id is final. Re-minting it would hand a new device the evidence lineage of
+        // the one an operator deliberately retired; the replacement gets an id of its own.
+        if (existing is { IsRetired: true })
+            throw new ArgumentException(
+                $"mound '{moundId}' is retired ({existing.RetirementReason}); a retired id is never "
+              + "re-minted — enrol the replacement under a new mound_id", nameof(moundId));
+
         _store.UpsertMound(new MoundRecord
         {
             MoundId = moundId,
@@ -139,6 +147,9 @@ public sealed class MicromoundEnrollment(IMoundStore store, IEventBus events)
 
         var mound = _store.GetMound(token.MoundId);
         if (mound is null) return Refuse(token.MoundId, "no such mound; an operator must create it first");
+
+        // P-3. A token minted before the mound was retired does not outlive the retirement.
+        if (mound.IsRetired) return Refuse(token.MoundId, MoundRetirement.Describe(mound));
 
         if (!ProtocolTime.TryParse(token.ExpiresAt, out var expires) || now >= expires)
             return Refuse(token.MoundId, "enrollment token expired");

@@ -109,6 +109,18 @@ public interface IMoundStore
     IReadOnlyList<IngestedAction> ActionsForMission(string moundId, string missionId);
 
     /// <summary>
+    /// P-3. Mark evidence and action records that arrived AFTER the mound was retired. They are
+    /// stored like any other — refusing a retired device's report loses safety information at the
+    /// moment it matters most — and marked, so nobody later reads a retired identity's proof as a
+    /// live one's (entitlement model §7.3: "accepted and marked from_retired_identity"). The mark is
+    /// the colony's, kept beside the record and never written into the device's own bytes.
+    /// </summary>
+    void MarkFromRetiredIdentity(string moundId, IReadOnlyList<string> evidenceIds, IReadOnlyList<string> actionIds);
+
+    /// <summary>The evidence and action ids under this mound that carry that mark.</summary>
+    IReadOnlySet<string> FromRetiredIdentity(string moundId);
+
+    /// <summary>
     /// Queue a signed envelope for a mound to collect on its next beat.
     ///
     /// THE COLONY NEVER DIALS A MOUND (PROTOCOL.md §1, and UPSTREAM.md's "never require an inbound
@@ -167,6 +179,7 @@ public sealed class InMemoryMoundStore : IMoundStore
     private readonly Dictionary<string, Dictionary<string, IngestedAction>> _actions =
         new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<Envelope>> _downlink = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<string>> _fromRetired = new(StringComparer.Ordinal);
     private readonly object _gate = new();
 
     public IReadOnlyList<MoundRecord> ListMounds()
@@ -194,6 +207,7 @@ public sealed class InMemoryMoundStore : IMoundStore
             _downlink.Remove(moundId);
             _evidence.Remove(moundId);
             _actions.Remove(moundId);
+            _fromRetired.Remove(moundId);
 
             // v0.3.8.114 — and the ones keyed by their OWN id rather than by the mound's, which is
             // why they were missed the first time. A charter, manifest, mission or report that
@@ -367,6 +381,31 @@ public sealed class InMemoryMoundStore : IMoundStore
                 .Where(a => string.Equals(a.Record.MissionId, missionId, StringComparison.Ordinal))
                 .ToList();
         }
+    }
+
+    public void MarkFromRetiredIdentity(string moundId, IReadOnlyList<string> evidenceIds, IReadOnlyList<string> actionIds)
+    {
+        ArgumentNullException.ThrowIfNull(evidenceIds);
+        ArgumentNullException.ThrowIfNull(actionIds);
+        lock (_gate)
+        {
+            if (!_fromRetired.TryGetValue(moundId, out var marked))
+            {
+                marked = new HashSet<string>(StringComparer.Ordinal);
+                _fromRetired[moundId] = marked;
+            }
+
+            marked.UnionWith(evidenceIds);
+            marked.UnionWith(actionIds);
+        }
+    }
+
+    public IReadOnlySet<string> FromRetiredIdentity(string moundId)
+    {
+        lock (_gate)
+            return _fromRetired.TryGetValue(moundId, out var marked)
+                ? new HashSet<string>(marked, StringComparer.Ordinal)
+                : new HashSet<string>(StringComparer.Ordinal);
     }
 
     public void QueueDownlink(string moundId, Envelope envelope)

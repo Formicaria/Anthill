@@ -585,5 +585,8 @@ public static class EventTypes
     public const string MicromoundDownlinkRefused = "micromound_downlink_refused";
     public const string MicromoundMoundQuiesced = "micromound_mound_quiesced";
     public const string MicromoundLeaseRenewalRefused = "micromound_lease_renewal_refused";
-    public const string MicromoundMoundUnlinked = "micromound_mound_unlinked";
+    // P-3. Retirement is a state and purge is a separate, later act. `micromound_mound_unlinked`
+    // was the event for the one act that existed — a hard delete — and no longer describes either.
+    public const string MicromoundMoundRetired = "micromound_mound_retired";
+    public const string MicromoundMoundPurged = "micromound_mound_purged";
 }

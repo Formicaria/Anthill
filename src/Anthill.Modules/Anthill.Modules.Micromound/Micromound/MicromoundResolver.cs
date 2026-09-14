@@ -93,6 +93,7 @@ public sealed class MicromoundResolver(IMoundStore store)
                 ? $"does not register routine '{wanted}'"
                 : $"does not have capability '{wanted}'");
 
+        if (status is "retired") blockers.Add("retired; it receives no new authority");
         if (status is "stopped") blockers.Add("a stop is in force");
         if (status is "unenrolled") blockers.Add("not enrolled");
         if (status is "offline") blockers.Add("offline — last seen " + (string.IsNullOrEmpty(mound.LastSeen)

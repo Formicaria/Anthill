@@ -84,6 +84,10 @@ public sealed class MicromoundCharters(IMoundStore store, MicromoundIdentity ide
             return Refuse(request.MoundId,
                 "mound is not enrolled, so there is no identity to bind this authority to");
 
+        // P-3. Retirement is final for authority. A charter is the grant, and a retired mound is
+        // granted nothing — its successor holds its own charter under its own id.
+        if (mound.IsRetired) return Refuse(request.MoundId, MoundRetirement.Describe(mound));
+
         if (MicromoundStop.AppliesTo(mound, MicromoundRuntime.Options))
             return Refuse(request.MoundId,
                 "a stop is in force; clearing it is an explicit act and a charter must not substitute for one");
@@ -197,6 +201,12 @@ public sealed class MicromoundCharters(IMoundStore store, MicromoundIdentity ide
         ArgumentNullException.ThrowIfNull(mound);
 
         if (string.IsNullOrEmpty(mound.CharterId)) return false;
+
+        // P-3. A retired mound's lease is meant to lapse: entitlement model §7.3 bounds the overlap
+        // between a replaced device and its successor at `lease_ttl_s` after the last beat the
+        // colony acknowledged as renewing, and this is where that bound is enforced. The sync path
+        // does not ask for a retired mound; this guard is for every other caller, present or future.
+        if (mound.IsRetired) return false;
 
         // "A fresh charter is the only way out of quiesce" — the device's own words, and the only
         // place the colony must not renew.

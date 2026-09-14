@@ -167,6 +167,17 @@ public static partial class ApiHost
     private sealed record MoundStopRequest(
         [property: JsonPropertyName("mound_id")] string? MoundId);
 
+    /// <summary>P-3. `reason` defaults to `unlinked`; `replaced_by` accompanies `replaced` only.</summary>
+    private sealed record MoundRetireRequest(
+        [property: JsonPropertyName("mound_id")] string? MoundId,
+        [property: JsonPropertyName("reason")] string? Reason,
+        [property: JsonPropertyName("replaced_by")] string? ReplacedBy);
+
+    /// <summary>P-3. `confirm` must repeat the mound id: a purge is typed, never clicked through.</summary>
+    private sealed record MoundPurgeRequest(
+        [property: JsonPropertyName("mound_id")] string? MoundId,
+        [property: JsonPropertyName("confirm")] string? Confirm);
+
     // ---- The command path's request shapes. v0.3.8.114. ----------------------------------------
 
     private sealed record CharterBody(
@@ -750,36 +761,114 @@ public static partial class ApiHost
             });
         });
 
-        // ---- Unlink: the device stops being this colony's ------------------------------------
+        // ---- Unlink: the device stops being this colony's, and its evidence stays ---------------
         //
-        // Manage, and it takes everything with it — charters, queued downlink, evidence, actions,
-        // reports and the token. A mound id can be re-minted, so anything left behind is authority
-        // and proof addressed to whatever claims that id next.
+        // P-3. This used to be `RemoveMound`: the row and everything keyed to it, evidence included,
+        // gone in one call. Retirement is a state now. The record stays with `retired_at`, the
+        // reason and (for a replacement) the successor; the mound receives no new authority and
+        // its lease is left to lapse; what it still reports is kept and marked. A mound id can be
+        // re-minted only if it is deleted, and a retired id is never re-minted — so nothing left
+        // behind is authority or proof addressed to whatever claims the id next. The rows are
+        // deleted by `/micromound/purge`, below, and only after this.
         app.MapPost("/micromound/unlink", async (HttpContext ctx) =>
         {
             var auth = RequireAuth(ctx, MicromoundPermissions.Manage); if (auth is not null) return auth;
-            MoundStopRequest? body;
-            try { body = await ctx.Request.ReadFromJsonAsync<MoundStopRequest>(); }
+            MoundRetireRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<MoundRetireRequest>(); }
             catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
             if (body is null || string.IsNullOrWhiteSpace(body.MoundId))
                 return ApiJson.Error("mound_id is required.", "bad_request");
 
             var moundId = body.MoundId.Trim();
-            if (Mounds.GetMound(moundId) is null)
-                return ApiJson.Error($"No such mound '{moundId}'.", "not_found");
+            var reason = string.IsNullOrWhiteSpace(body.Reason) ? MoundRetirement.Unlinked : body.Reason.Trim();
+            var by = CurrentUsername(ctx) ?? "operator";
 
+            var outcome = MicromoundRetirement.Retire(Mounds, moundId, reason, body.ReplacedBy, DateTimeOffset.UtcNow);
+            if (!outcome.Retired)
+                return ApiJson.Error(outcome.Refusal, outcome.Mound is null ? "not_found" : "refused");
+
+            BuildMicromoundWidgets();
+
+            Queen.Events.Publish(new Anthill.SDK.Events.ColonyEvent
+            {
+                EventType = MicromoundEvents.MoundRetired,
+                Message = $"Micromound '{moundId}' retired ({reason})"
+                        + (string.IsNullOrEmpty(outcome.Mound!.ReplacedBy) ? "" : $", replaced by '{outcome.Mound.ReplacedBy}'")
+                        + ". Its evidence, actions and reports are kept; it receives no new authority.",
+                Metadata = new Dictionary<string, object?>
+                {
+                    ["module"] = MicromoundModule.ModuleName,
+                    ["mound_id"] = moundId,
+                    ["reason"] = reason,
+                    ["replaced_by"] = outcome.Mound.ReplacedBy,
+                    ["discarded_downlink"] = outcome.DiscardedDownlink,
+                    ["by"] = by,
+                },
+            });
+
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["mound_id"] = moundId,
+                ["retired"] = true,
+                ["retired_at"] = outcome.Mound.RetiredAt,
+                ["reason"] = reason,
+                ["replaced_by"] = outcome.Mound.ReplacedBy,
+                ["discarded_downlink"] = outcome.DiscardedDownlink,
+                // The device keeps its own keypair and will keep dialling in. Its beats are still
+                // verified and its evidence still kept — marked as from a retired identity — but
+                // its lease is never renewed again, so it quiesces on its own within one lease TTL.
+                // That lapse is how it finds out. Re-adopting the hardware means a NEW mound id.
+                ["note"] = "The device is not told. Its evidence is kept and marked; its lease lapses "
+                         + "within one lease TTL and it enters its safe state. Rows are only deleted by "
+                         + "POST /micromound/purge, which warns before it does.",
+            });
+        });
+
+        // ---- Purge: the deletion retirement deliberately is not -------------------------------
+        //
+        // Two steps, on purpose. Retention §4.4: the evidence and action rows are the only record
+        // of what a machine physically did, with a twelve-month floor that no commercial setting
+        // lowers, and the product must warn before removing them. So a purge is a separate call, on
+        // a mound that is already retired, with the id typed back as confirmation.
+        app.MapPost("/micromound/purge", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, MicromoundPermissions.Manage); if (auth is not null) return auth;
+            MoundPurgeRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<MoundPurgeRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            if (body is null || string.IsNullOrWhiteSpace(body.MoundId))
+                return ApiJson.Error("mound_id is required.", "bad_request");
+
+            var moundId = body.MoundId.Trim();
+            var mound = Mounds.GetMound(moundId);
+            if (mound is null) return ApiJson.Error($"No such mound '{moundId}'.", "not_found");
+
+            if (!mound.IsRetired)
+                return ApiJson.Error(
+                    $"Mound '{moundId}' is not retired. Retire it first (POST /micromound/unlink); a purge "
+                  + "is the second step and never the first.", "refused");
+
+            if (!string.Equals(body.Confirm?.Trim(), moundId, StringComparison.Ordinal))
+                return ApiJson.Error(
+                    "A purge deletes this mound's evidence and action records — the only record of what "
+                  + $"the machine physically did. To proceed, send confirm: \"{moundId}\".", "refused");
+
+            var evidence = Mounds.EvidenceFor(moundId).Count;
             var removed = Mounds.RemoveMound(moundId);
             BuildMicromoundWidgets();
 
             Queen.Events.Publish(new Anthill.SDK.Events.ColonyEvent
             {
-                EventType = MicromoundEvents.MoundUnlinked,
-                Message = $"Micromound '{moundId}' unlinked. Its charters, queued downlink, evidence "
-                        + "and action records were removed with it.",
+                EventType = MicromoundEvents.MoundPurged,
+                Message = $"Micromound '{moundId}' purged: its charters, queued downlink, {evidence} evidence "
+                        + "item(s), action records, reports and token were deleted.",
                 Metadata = new Dictionary<string, object?>
                 {
                     ["module"] = MicromoundModule.ModuleName,
                     ["mound_id"] = moundId,
+                    ["retired_at"] = mound.RetiredAt,
+                    ["retirement_reason"] = mound.RetirementReason,
+                    ["evidence_items"] = evidence,
                     ["by"] = CurrentUsername(ctx) ?? "operator",
                 },
             });
@@ -788,11 +877,7 @@ public static partial class ApiHost
             {
                 ["mound_id"] = moundId,
                 ["removed"] = removed,
-                // The device keeps its own keypair and will keep dialling in. It gets refused as an
-                // unknown mound, loudly, which is the correct answer and worth saying out loud here
-                // so nobody reads the next refusal as a fault.
-                ["note"] = "The device is not told. Its next beat is refused as an unknown mound; "
-                         + "re-adopting it needs a freshly minted enrollment token.",
+                ["evidence_items_deleted"] = evidence,
             });
         });
 

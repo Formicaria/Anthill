@@ -44,6 +44,7 @@ public static class MicromoundWidgets
         payload.Offline = payload.Items.Count(i => i.Status == "offline");
         payload.Stopped = payload.Items.Count(i => i.Status == "stopped");
         payload.Unenrolled = payload.Items.Count(i => i.Status == "unenrolled");
+        payload.Retired = payload.Items.Count(i => i.Status == "retired");
 
         return JsonSerializer.Serialize(payload, Options);
     }
@@ -166,6 +167,9 @@ public static class MicromoundWidgets
     public static string StatusOf(MoundRecord mound, MicromoundOptions options, DateTimeOffset now,
         bool globalStop)
     {
+        // P-3. Retired outranks everything else a status could say: the row is kept for its
+        // evidence and is not a member of the working fleet, stopped or otherwise.
+        if (mound.IsRetired) return "retired";
         if (globalStop || mound.Stopped) return "stopped";
         if (string.IsNullOrEmpty(mound.PublicKey)) return "unenrolled";
         if (!ProtocolTime.TryParse(mound.LastSeen, out var seen)) return "offline";
@@ -184,6 +188,8 @@ public static class MicromoundWidgets
         [JsonPropertyName("offline")] public int Offline { get; set; }
         [JsonPropertyName("stopped")] public int Stopped { get; set; }
         [JsonPropertyName("unenrolled")] public int Unenrolled { get; set; }
+        /// <summary>P-3. Counted in `total`, kept for their evidence, not part of the working fleet.</summary>
+        [JsonPropertyName("retired")] public int Retired { get; set; }
         [JsonPropertyName("items")] public List<FleetItem> Items { get; set; } = [];
     }
 
