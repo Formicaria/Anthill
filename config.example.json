@@ -196,5 +196,9 @@
   "knowledge_max_context_chars": 12000,
   "knowledge_cache_seconds": 30,
   "knowledge_project_map": {},
-  "knowledge_default_project": ""
+  "knowledge_default_project": "",
+  "knowledge_forager_managed": false,
+  "knowledge_forager_runtime_path": "",
+  "knowledge_forager_entry_path": "",
+  "knowledge_forager_data_dir": ""
 }

@@ -142,12 +142,21 @@ public static partial class ApiHost
             () =>
             {
                 var settings = AnthillRuntime.Knowledge;
+                // Attached mode uses the file's endpoint and token. Managed mode (W3-03) overrides
+                // both with the supervised engine's discovered loopback endpoint and per-start
+                // credential; while that engine is still starting the token is blanked so the module
+                // reports "starting" rather than 401ing a half-up engine. ForagerEngine is null in
+                // attached mode, and ResolveKnowledgeTransport then changes nothing.
+                var endpoint = settings.Endpoint;
+                var token = settings.Token;
+                var allowRemote = settings.AllowRemote;
+                ResolveKnowledgeTransport(settings, ref endpoint, ref token, ref allowRemote);
                 return new KnowledgeOptions
                 {
                     Enabled = settings.Enabled,
-                    Endpoint = settings.Endpoint,
-                    Token = settings.Token,
-                    AllowRemoteEndpoint = settings.AllowRemote,
+                    Endpoint = endpoint,
+                    Token = token,
+                    AllowRemoteEndpoint = allowRemote,
                     ProbeTimeoutMs = settings.ProbeTimeoutMs,
                     RetrievalTimeoutMs = settings.RetrievalTimeoutMs,
                     IngestionTimeoutMs = settings.IngestionTimeoutMs,

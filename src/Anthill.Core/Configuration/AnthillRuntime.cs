@@ -1546,6 +1546,11 @@ public static class AnthillRuntime
             ProjectMap = new Dictionary<string, string>(
                 config.KnowledgeProjectMap ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase),
             DefaultProject = Env("ANTHILL_KNOWLEDGE_DEFAULT_PROJECT") ?? config.KnowledgeDefaultProject,
+            // W3-03 managed engine. Off is attached mode, the default.
+            Managed = Flag(Env("ANTHILL_KNOWLEDGE_FORAGER_MANAGED"), config.KnowledgeForagerManaged),
+            RuntimePath = Env("ANTHILL_KNOWLEDGE_FORAGER_RUNTIME_PATH") ?? config.KnowledgeForagerRuntimePath,
+            EntryPath = Env("ANTHILL_KNOWLEDGE_FORAGER_ENTRY_PATH") ?? config.KnowledgeForagerEntryPath,
+            DataDir = Env("ANTHILL_KNOWLEDGE_FORAGER_DATA_DIR") ?? config.KnowledgeForagerDataDir,
         };
     }
 

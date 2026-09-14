@@ -35,6 +35,15 @@ internal sealed class ForagerKnowledgeProvider : IKnowledgeProvider, IKnowledgeI
     private readonly KnowledgeOptionsSource _options;
     private readonly KnowledgeCache _cache;
 
+    // W3-03 item 4 — the instance id first seen at this endpoint, pinned for the process. A later
+    // probe that sees a DIFFERENT id means a different engine is answering here (an operator
+    // repointed the endpoint, or something else bound the port); we stop trusting it rather than
+    // read another store's knowledge as if it were ours. A managed restart keeps the same id — it
+    // travels with the database — so it never trips on our own supervisor. In-process by design:
+    // a pin that survived an Anthill restart would need somewhere durable to live, which is the
+    // supervisor's install record in managed mode and a W3-04 concern for attached mode.
+    private string? _pinnedInstanceId;
+
     public ForagerKnowledgeProvider(KnowledgeOptionsSource options, ForagerClient client, KnowledgeCache cache)
     {
         _options = options;
@@ -140,6 +149,21 @@ internal sealed class ForagerKnowledgeProvider : IKnowledgeProvider, IKnowledgeI
         else if (declared?.CanonicalSchemaVersion is int schema && schema != SupportedCanonicalSchemaVersion)
             incompatible = $"the knowledge service publishes canonical schema {schema}; this build consumes {SupportedCanonicalSchemaVersion}";
 
+        // Identity pin. First sight records the instance id; a later mismatch at the same endpoint
+        // is a different engine, reported like an incompatibility — the service answered and cannot
+        // be trusted, never a silent switch to another store's knowledge.
+        string? identityMismatch = null;
+        var seenInstance = declared?.Instance?.InstanceId;
+        if (!string.IsNullOrEmpty(seenInstance))
+        {
+            var pinned = Interlocked.CompareExchange(ref _pinnedInstanceId, seenInstance, null);
+            if (pinned is not null && !string.Equals(pinned, seenInstance, StringComparison.Ordinal))
+                identityMismatch =
+                    $"the knowledge service identity changed: this endpoint first reported instance {pinned} and now "
+                  + $"reports {seenInstance}. A different engine is answering at {options.Endpoint}; not trusting it. "
+                  + "Restart Anthill if the engine was deliberately replaced.";
+        }
+
         return new KnowledgeAvailability
         {
             Enabled = true,
@@ -162,11 +186,13 @@ internal sealed class ForagerKnowledgeProvider : IKnowledgeProvider, IKnowledgeI
             // outside the window. Both mean the same thing to a caller — the service answered and
             // cannot be used — and Usable is the only gate the console reads. Two probes can say
             // the credential was refused: W3-04's /capabilities (an engine that still gates it) and
-            // .158's /projects (the cheapest route that always does). Either is enough.
-            Compatible = incompatible is null && capabilityFailure is null && authenticated != false,
+            // .158's /projects (the cheapest route that always does). Either is enough. And a
+            // different engine answering at a pinned endpoint (W3-03) is refused the same way.
+            Compatible = incompatible is null && capabilityFailure is null && identityMismatch is null && authenticated != false,
             Authenticated = authenticated,
             Reason = incompatible
                 ?? capabilityFailure
+                ?? identityMismatch
                 ?? (authenticated == false
                         ? "the knowledge service refused this colony's credential — set "
                           + "knowledge_forager_token to an integration token from FORAGER's Settings page"

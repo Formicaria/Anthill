@@ -152,6 +152,10 @@ directory. `anthill --config` prints the active path.
 | `knowledge_cache_seconds` | int | `30` | no | `ANTHILL_KNOWLEDGE_CACHE_SECONDS` | range 0–3600 |
 | `knowledge_project_map` | object | `{}` | no | — | **changes what the colony may do** |
 | `knowledge_default_project` | string | `""` | no | `ANTHILL_KNOWLEDGE_DEFAULT_PROJECT` |  |
+| `knowledge_forager_managed` | bool | `false` | no | `ANTHILL_KNOWLEDGE_FORAGER_MANAGED` | start and supervise a bundled FORAGER engine instead of attaching to one an operator runs. Off by default; when on, knowledge_forager_endpoint/token are ignored and the host mints the credential; **changes what the colony may do** |
+| `knowledge_forager_runtime_path` | string | `""` | no | `ANTHILL_KNOWLEDGE_FORAGER_RUNTIME_PATH` | path to the Node runtime the managed engine runs under; empty finds `node` on PATH. Managed mode only |
+| `knowledge_forager_entry_path` | string | `""` | no | `ANTHILL_KNOWLEDGE_FORAGER_ENTRY_PATH` | path to the bundled FORAGER server entry (server.mjs). Required when knowledge_forager_managed is on. Managed mode only |
+| `knowledge_forager_data_dir` | string | `""` | no | `ANTHILL_KNOWLEDGE_FORAGER_DATA_DIR` | data directory the managed engine owns; empty defaults under the colony state directory. Managed mode only |
 
 ## Deliberately absent from `config.example.json`
 
