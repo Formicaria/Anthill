@@ -248,7 +248,22 @@ arrived after that audit shipped, and this reconciliation supersedes the audit's
 > W0-03 §2.4 decided: **rebase and land the branch, minus `scope.ts`** — renumber its migrations to
 > `009`/`010`, and rewrite the `authentication` block of the capability response, which hardcodes
 > `required: false` and would lie to every consumer on the first request while sitting behind the
-> auth middleware it claims does not exist. Not yet done; see `docs/transition/completed/`.
+> auth middleware it claims does not exist.
+>
+> **LANDED, 2026-09-14**, on Forager `transition/wave-0-3` as `047f683`, `e2fa2ba` and `984a76d`
+> (migrations `012_instance_identity` and `013_source_rejections` — `009`–`011` had been taken by
+> the import gate in the meantime). What shipped differs from the description below in exactly the
+> ways W0-03 required and two more: the `authentication` block says `required: true, schemes:
+> ['bearer', 'session']` and `capabilities.authentication` is true, because the producer authenticates
+> every `/api` route now; `capabilities.exports.anthill.package_version` is the adapter's actual **5**,
+> not the 1 the branch pinned, so the capability response and the re-pinned window in
+> `FORAGER_A0_COMPATIBILITY.md` now agree; a store-lock holder on the same host whose process is gone is
+> reclaimed at once rather than after the 90-second window, so a supervisor restarting a crashed
+> engine is not refused by the corpse; and `/health` carries `instance_id`, `generation` and a
+> per-process `started_at` for a launcher that has no token yet. `scope.ts` and `X-Forager-Project`
+> enforcement were not landed, as decided — the token's `project_ids` does that job. The consumer
+> side of this (A1: retire the endpoint+data_dir+version tuple; verify `instance_id` on reconnect)
+> is the W3-03 host batch.
 >
 > `knowledge_revisions`, `pairing_credentials` and `/api/feed` are **adopted wire names for work
 > unbuilt on both sides** — zero hits on `main` and zero on the contract branch. They are not
