@@ -110,7 +110,11 @@ public sealed class SqliteMoundStore : IMoundStore, IDisposable
             charter_id TEXT NOT NULL DEFAULT '', charter_expires_at TEXT NOT NULL DEFAULT '',
             lease_expires_at TEXT NOT NULL DEFAULT '', quiesced INTEGER NOT NULL DEFAULT 0,
             autonomy_policy TEXT NOT NULL DEFAULT 'manual_only',
-            manifest_id TEXT NOT NULL DEFAULT '', configuration_revision TEXT NOT NULL DEFAULT '')",
+            manifest_id TEXT NOT NULL DEFAULT '', configuration_revision TEXT NOT NULL DEFAULT '',
+            -- P-3: retirement is a state. Empty retired_at is a live mound, which is what every
+            -- row written before these columns existed truthfully is.
+            retired_at TEXT NOT NULL DEFAULT '', retirement_reason TEXT NOT NULL DEFAULT '',
+            replaced_by TEXT NOT NULL DEFAULT '')",
         @"CREATE TABLE IF NOT EXISTS micromound_enrollment_tokens (
             mound_id TEXT PRIMARY KEY, token_hash TEXT NOT NULL,
             issued_at TEXT NOT NULL, expires_at TEXT NOT NULL,
@@ -149,12 +153,16 @@ public sealed class SqliteMoundStore : IMoundStore, IDisposable
         // them. A global key would let one mound's proof answer for another's action.
         @"CREATE TABLE IF NOT EXISTS micromound_evidence (
             mound_id TEXT NOT NULL, evidence_id TEXT NOT NULL, item_json TEXT NOT NULL,
-            captured_at TEXT NOT NULL DEFAULT '', PRIMARY KEY (mound_id, evidence_id))",
+            captured_at TEXT NOT NULL DEFAULT '',
+            -- P-3: the colony's mark, beside the device's bytes and never inside them.
+            from_retired_identity INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (mound_id, evidence_id))",
         // The device's report and the colony's verdict, side by side. colony_outcome is never
         // written back into record_json — the disagreement is the interesting part.
         @"CREATE TABLE IF NOT EXISTS micromound_actions (
             mound_id TEXT NOT NULL, action_id TEXT NOT NULL, mission_id TEXT NOT NULL DEFAULT '',
             record_json TEXT NOT NULL, colony_outcome TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '',
+            from_retired_identity INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (mound_id, action_id))",
         @"CREATE INDEX IF NOT EXISTS idx_micromound_actions_mission ON micromound_actions (mound_id, mission_id)",
         // The mound's own account of a mission. Keyed by (mound, mission) and replaced rather than
@@ -237,7 +245,14 @@ public sealed class SqliteMoundStore : IMoundStore, IDisposable
             ["autonomy_policy"] = "TEXT NOT NULL DEFAULT 'manual_only'",
             ["manifest_id"] = "TEXT NOT NULL DEFAULT ''",
             ["configuration_revision"] = "TEXT NOT NULL DEFAULT ''",
+            // P-3. A database from before retirement existed holds only live mounds.
+            ["retired_at"] = "TEXT NOT NULL DEFAULT ''",
+            ["retirement_reason"] = "TEXT NOT NULL DEFAULT ''",
+            ["replaced_by"] = "TEXT NOT NULL DEFAULT ''",
         });
+
+        AddMissing("micromound_evidence", new() { ["from_retired_identity"] = "INTEGER NOT NULL DEFAULT 0" });
+        AddMissing("micromound_actions", new() { ["from_retired_identity"] = "INTEGER NOT NULL DEFAULT 0" });
     }
 
     // ---- Mounds -------------------------------------------------------------------------------
@@ -274,17 +289,19 @@ public sealed class SqliteMoundStore : IMoundStore, IDisposable
                 (mound_id,name,tier,public_key,hardware_profile,capabilities_json,enrolled_at,
                  last_seen,last_seq,last_digest,sync_interval_s,stopped,protocol_version,
                  charter_id,charter_expires_at,lease_expires_at,quiesced,autonomy_policy,
-                 manifest_id,configuration_revision,features_json,driver_schemas_json)
+                 manifest_id,configuration_revision,features_json,driver_schemas_json,
+                 retired_at,retirement_reason,replaced_by)
                 VALUES ($id,$name,$tier,$key,$hw,$caps,$enrolled,$seen,$seq,$digest,$interval,$stop,$proto,
                         $charter,$charterexp,$lease,$quiesced,$policy,$manifest,$configrev,
-                        $features,$schemas)
+                        $features,$schemas,$retired,$retirereason,$replacedby)
                 ON CONFLICT(mound_id) DO UPDATE SET name=$name,tier=$tier,public_key=$key,
                 hardware_profile=$hw,capabilities_json=$caps,enrolled_at=$enrolled,last_seen=$seen,
                 last_seq=$seq,last_digest=$digest,sync_interval_s=$interval,stopped=$stop,
                 protocol_version=$proto,charter_id=$charter,charter_expires_at=$charterexp,
                 lease_expires_at=$lease,quiesced=$quiesced,autonomy_policy=$policy,
                 manifest_id=$manifest,configuration_revision=$configrev,
-                features_json=$features,driver_schemas_json=$schemas";
+                features_json=$features,driver_schemas_json=$schemas,
+                retired_at=$retired,retirement_reason=$retirereason,replaced_by=$replacedby";
             Bind(cmd, "$id", mound.MoundId); Bind(cmd, "$name", mound.Name); Bind(cmd, "$tier", mound.Tier);
             Bind(cmd, "$key", mound.PublicKey); Bind(cmd, "$hw", mound.HardwareProfile);
             Bind(cmd, "$caps", JsonSerializer.Serialize(mound.Capabilities));
@@ -298,6 +315,8 @@ public sealed class SqliteMoundStore : IMoundStore, IDisposable
             Bind(cmd, "$manifest", mound.ManifestId); Bind(cmd, "$configrev", mound.ConfigurationRevision);
             Bind(cmd, "$features", JsonSerializer.Serialize(mound.Features));
             Bind(cmd, "$schemas", mound.DriverSchemasJson);
+            Bind(cmd, "$retired", mound.RetiredAt); Bind(cmd, "$retirereason", mound.RetirementReason);
+            Bind(cmd, "$replacedby", mound.ReplacedBy);
             cmd.ExecuteNonQuery();
         }
     }
@@ -333,7 +352,8 @@ public sealed class SqliteMoundStore : IMoundStore, IDisposable
         @"SELECT mound_id,name,tier,public_key,hardware_profile,capabilities_json,enrolled_at,
                  last_seen,last_seq,last_digest,sync_interval_s,stopped,protocol_version,
                  charter_id,charter_expires_at,lease_expires_at,quiesced,autonomy_policy,
-                 manifest_id,configuration_revision,features_json,driver_schemas_json
+                 manifest_id,configuration_revision,features_json,driver_schemas_json,
+                 retired_at,retirement_reason,replaced_by
           FROM micromound_mounds";
 
     private static MoundRecord ReadMound(SqliteDataReader r) => new()
@@ -351,6 +371,7 @@ public sealed class SqliteMoundStore : IMoundStore, IDisposable
         ManifestId = r.GetString(18), ConfigurationRevision = r.GetString(19),
         Features = JsonSerializer.Deserialize<List<string>>(r.GetString(20)) ?? [],
         DriverSchemasJson = r.GetString(21),
+        RetiredAt = r.GetString(22), RetirementReason = r.GetString(23), ReplacedBy = r.GetString(24),
     };
 
     // ---- Enrollment tokens --------------------------------------------------------------------
@@ -741,6 +762,45 @@ public sealed class SqliteMoundStore : IMoundStore, IDisposable
         }
 
         return actions;
+    }
+
+    public void MarkFromRetiredIdentity(string moundId, IReadOnlyList<string> evidenceIds, IReadOnlyList<string> actionIds)
+    {
+        ArgumentNullException.ThrowIfNull(evidenceIds);
+        ArgumentNullException.ThrowIfNull(actionIds);
+        if (evidenceIds.Count == 0 && actionIds.Count == 0) return;
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            foreach (var id in evidenceIds)
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "UPDATE micromound_evidence SET from_retired_identity=1 WHERE mound_id=$mound AND evidence_id=$id";
+                Bind(cmd, "$mound", moundId); Bind(cmd, "$id", id);
+                cmd.ExecuteNonQuery();
+            }
+            foreach (var id in actionIds)
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "UPDATE micromound_actions SET from_retired_identity=1 WHERE mound_id=$mound AND action_id=$id";
+                Bind(cmd, "$mound", moundId); Bind(cmd, "$id", id);
+                cmd.ExecuteNonQuery();
+            }
+        }
+    }
+
+    public IReadOnlySet<string> FromRetiredIdentity(string moundId)
+    {
+        var marked = new HashSet<string>(StringComparer.Ordinal);
+        using var conn = Connect();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"SELECT evidence_id FROM micromound_evidence WHERE mound_id=$mound AND from_retired_identity=1
+                            UNION ALL
+                            SELECT action_id FROM micromound_actions WHERE mound_id=$mound AND from_retired_identity=1";
+        Bind(cmd, "$mound", moundId);
+        using var r = cmd.ExecuteReader();
+        while (r.Read()) marked.Add(r.GetString(0));
+        return marked;
     }
 
     public void QueueDownlink(string moundId, Envelope envelope)

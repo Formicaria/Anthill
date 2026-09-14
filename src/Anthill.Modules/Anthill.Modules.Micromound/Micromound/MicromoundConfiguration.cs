@@ -80,6 +80,9 @@ public sealed class MicromoundConfiguration(IMoundStore store, MicromoundIdentit
         if (string.IsNullOrEmpty(mound.PublicKey))
             return Refuse(request.MoundId, ["mound is not enrolled, so nothing can be signed for it"]);
 
+        // P-3. A hardware map is authority over what the device does with its hardware.
+        if (mound.IsRetired) return Refuse(request.MoundId, [MoundRetirement.Describe(mound)]);
+
         // A stop halts mound-directed action, and delivering a new hardware map is directing it.
         // SAFETY.md gives stop precedence over "missions, configuration, routine work, autonomy,
         // backlog" — configuration is named in that list, second.

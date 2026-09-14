@@ -243,7 +243,8 @@ the ledger with it:
 |---|---|---|
 | Fleet, with the colony's status verdict | `GET /micromound/mounds` | rendered — table with class, status, last beat, charter, lease, queued downlink |
 | Mint an enrollment token | `POST /micromound/mounds` | rendered — shown once, stored nowhere, guarded by `AMintedToken_IsNeverPersisted` |
-| Retire a device | `POST /micromound/unlink` | rendered — confirms, and repeats the API's note that the device is not told |
+| Retire a device | `POST /micromound/unlink` | rendered — confirms, and repeats the API's note that the device is not told. Retirement is a state: the row and its evidence stay |
+| Purge a retired device | `POST /micromound/purge` | rendered on retired rows — the id is typed back; warns that the evidence is the only record of what the machine did |
 | Per-mound stop / resume | `POST /micromound/stop`, `/stop/resume` | rendered on each fleet row |
 | Issue a charter | `POST /micromound/charters` | rendered — capabilities, routines, ceiling, duration, lease, safe state, evidence policy, per-capability limits |
 | Author a manifest | `POST /micromound/config` | rendered — hardware bindings, capabilities, routines, workers, reasoning mode, safe state |

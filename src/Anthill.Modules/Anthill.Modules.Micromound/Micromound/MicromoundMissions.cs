@@ -98,6 +98,10 @@ public sealed class MicromoundMissions(IMoundStore store, MicromoundIdentity ide
         if (string.IsNullOrEmpty(mound.PublicKey))
             return Refuse(request, ["mound is not enrolled, so nothing can be signed for it"]);
 
+        // P-3. Whatever charter a retired mound still holds on file is the one it may finish
+        // acting under until its lease lapses; it is not one the colony dispatches new work on.
+        if (mound.IsRetired) return Refuse(request, [MoundRetirement.Describe(mound)]);
+
         if (string.IsNullOrEmpty(mound.CharterId))
             return Refuse(request,
                 ["this mound holds no charter, and a mission carries no authority of its own"]);

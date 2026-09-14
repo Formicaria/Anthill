@@ -167,10 +167,13 @@ function mmRenderFleet() {
         <td>${m.charter_id ? escapeHtml(m.charter_id.slice(0, 12)) + '…' : '<span class="mm-sub">none — observe only</span>'}</td>
         <td>${escapeHtml(m.lease_expires_at || '—')}</td>
         <td>${Number(pending[id] || 0)}</td>
-        <td class="mm-acts">
+        <td class="mm-acts">${m.retired ? `
+          <span class="mm-sub">retired ${escapeHtml(m.retirement_reason || '')}${m.replaced_by ? ' → ' + escapeHtml(m.replaced_by) : ''}</span>
+          <button class="mm-btn" data-onclick="mmEvidence('${escapeHtml(id)}')">Evidence</button>
+          <button class="mm-btn mm-danger" data-onclick="mmPurge('${escapeHtml(id)}')">Purge</button>` : `
           <button class="mm-btn" data-onclick="mmStop('${escapeHtml(id)}',${m.stopped ? 'false' : 'true'})">${m.stopped ? 'Resume' : 'Stop'}</button>
           <button class="mm-btn" data-onclick="mmEvidence('${escapeHtml(id)}')">Evidence</button>
-          <button class="mm-btn mm-danger" data-onclick="mmUnlink('${escapeHtml(id)}')">Unlink</button>
+          <button class="mm-btn mm-danger" data-onclick="mmUnlink('${escapeHtml(id)}')">Unlink</button>`}
         </td>
       </tr>`;
   }).join('')}</tbody></table>
@@ -208,12 +211,29 @@ async function mmMint() {
   loadMicromound();
 }
 
+// P-3. Unlink RETIRES the mound: the record and its evidence stay, it receives no new authority,
+// and its lease lapses. Deleting the rows is a separate act, below, on a mound already retired.
 async function mmUnlink(id) {
-  if (!await uiConfirm(`Unlink Micromound '${id}'?\n\nThis removes its charters, queued downlink, `
-    + `evidence, action records and token. The device is NOT told — its next beat is refused as an `
-    + `unknown mound, and re-adopting it needs a freshly minted token.`)) return;
+  if (!await uiConfirm(`Unlink Micromound '${id}'?\n\nThe device is retired: it receives no new charters, `
+    + `missions or configuration, its lease is left to lapse, and its id is never re-minted. Its evidence, `
+    + `action records and reports are KEPT. The device is NOT told — its lease lapsing is how it finds out.`,
+    { title: 'Retire device', ok: 'Unlink', danger: true })) return;
   const d = await mmPost('/micromound/unlink', { mound_id: id }, 'Unlink');
-  if (d && d.note) mmSay('Unlinked. ' + d.note, true);
+  if (d && d.note) mmSay('Retired. ' + d.note, true);
+  if (id === mmSelected) mmSelect('');
+  loadMicromound();
+}
+
+// The deletion retirement deliberately is not. Typed, not clicked through: the rows it removes are
+// the only record of what the machine physically did (retention §4.4).
+async function mmPurge(id) {
+  const typed = await uiPrompt(`Purge Micromound '${id}'?\n\nThis DELETES its evidence and action records — `
+    + `the only record of what the machine physically did — plus its charters, reports, queued downlink `
+    + `and token. There is no undo. Type the mound id to confirm.`,
+    { title: 'Purge retired device', ok: 'Purge', danger: true });
+  if (typed === null) return;
+  const d = await mmPost('/micromound/purge', { mound_id: id, confirm: typed.trim() }, 'Purge');
+  if (d) mmSay(`Purged '${id}': ${Number(d.evidence_items_deleted || 0)} evidence item(s) deleted.`, true);
   if (id === mmSelected) mmSelect('');
   loadMicromound();
 }
