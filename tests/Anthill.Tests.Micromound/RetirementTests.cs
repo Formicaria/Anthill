@@ -77,7 +77,6 @@ public class RetirementTests
     {
         using var workspace = new TempWorkspace();
         var h = Enrolled();
-        Charter(h, Now);
 
         h.Device.EnqueueUplink(EnvelopeKinds.EvidenceBundle, new EvidenceBundle
         {
@@ -85,6 +84,12 @@ public class RetirementTests
             Items = [new EvidenceItem { EvidenceId = "ev-before", Type = "reading", CapturedAt = Now.AddSeconds(-30).ToWire() }],
         }, Now);
         Assert.True(h.Colony.Sync.AcceptUplink(h.Device.MoundId, h.Device.DrainUplink(), Now).Accepted);
+
+        // Queue a charter AFTER that sync so it is still awaiting collection when the retirement
+        // lands -- which is the state whose discard we check below. Issued before the sync, it would
+        // have been drained into that sync's response (downlink is delivered on acknowledgement),
+        // leaving nothing for the retirement to discard.
+        Charter(h, Now);
 
         var outcome = Retire(h);
 
