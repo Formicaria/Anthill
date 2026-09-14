@@ -40,6 +40,22 @@ public sealed record KnowledgeSettings
     /// <summary>The project for callers with no ANTHILL project. Never a fallback for an unmapped mission.</summary>
     public string DefaultProject { get; init; } = "";
 
+    // ---- Managed engine (W3-03) ---------------------------------------------------------------
+    // Attached mode uses Endpoint/Token above. Managed mode ignores them: the supervisor discovers
+    // the endpoint from the engine's startup line and generates the credential per start.
+
+    /// <summary>Whether the host starts and supervises its own FORAGER engine. Off is attached mode.</summary>
+    public bool Managed { get; init; }
+
+    /// <summary>Node runtime for the managed engine. Empty finds `node` on PATH. Managed mode only.</summary>
+    public string RuntimePath { get; init; } = "";
+
+    /// <summary>The bundled FORAGER server entry the managed engine runs. Managed mode only.</summary>
+    public string EntryPath { get; init; } = "";
+
+    /// <summary>The data directory the managed engine owns. Empty defaults under the colony state dir. Managed mode only.</summary>
+    public string DataDir { get; init; } = "";
+
     /// <summary>The safe state. What every caller sees before a configuration has been projected.</summary>
     public static readonly KnowledgeSettings Off = new();
 

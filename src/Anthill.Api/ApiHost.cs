@@ -426,6 +426,7 @@ public static partial class ApiHost
         if (AnthillRuntime.EnableMicromound) MapMicromoundEndpoints(app);
 #endif
         MapKnowledgeEndpoints(app);     // v0.3.8.121: FORAGER knowledge — see Knowledge/
+        MapForagerEngineEndpoints(app); // W3-03: managed engine lifecycle — see Knowledge/ApiHost.ForagerSupervisor.cs
         MapEventStreamEndpoints(app);   // v3.8.3: SSE — see ApiHost.EventStream.cs
         MapColonyLiveEndpoints(app);    // v0.3.8.115: the Colony Live read model — see ColonyLive/
         AssertNoDuplicateRoutes(app);
@@ -504,6 +505,28 @@ public static partial class ApiHost
             try { Queen.ReportModelFitness(); }
             catch { /* a warning that throws would be worse than the mismatch it describes */ }
         });
+
+        // v0.3.8.153 (W3-03) — supervise the knowledge engine when managed mode is on.
+        //
+        // Built here so the static is set before the server serves a request; STARTED on a
+        // background task so a slow or failing engine never delays boot, exactly as the knowledge
+        // module does no I/O at registration. In attached mode this constructs an inert supervisor
+        // and starts nothing. Stopped on the host's own shutdown so the engine drains with us.
+        InitForagerSupervisor();
+        if (ForagerEngine!.IsManaged)
+        {
+            Console.WriteLine("Knowledge engine: managed — supervising a bundled FORAGER (starts in the background).");
+            _ = ForagerEngine.StartAsync();
+            app.Lifetime.ApplicationStopping.Register(() =>
+            {
+                try { ForagerEngine?.StopAsync().GetAwaiter().GetResult(); }
+                catch (Exception e) { Console.Error.WriteLine($"[knowledge-engine] stop failed: {e.Message}"); }
+            });
+        }
+        else
+        {
+            Console.WriteLine("Knowledge engine: attached mode — this host talks to a FORAGER an operator runs.");
+        }
 
         app.Run();
         return 0;

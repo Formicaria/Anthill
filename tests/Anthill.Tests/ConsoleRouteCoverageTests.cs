@@ -116,6 +116,19 @@ public class ConsoleRouteCoverageTests
         // starts ingestion. It was recorded here for exactly five releases so the deferral could be
         // checked on every run rather than remembered, which is the whole argument for the ledger.
 
+        // --- UI GAP, opened by W3-03 (the managed knowledge engine) ------------------------------
+        //
+        // The host can now start and supervise a bundled FORAGER, and this route is where it says
+        // what that engine is doing: starting, running, backing off, or stopped at its restart
+        // ceiling with the reason. The Knowledge tab keeps reading /knowledge/status, which answers
+        // "can I retrieve right now" for both modes and is the right question for the panel it has.
+        // The engine's lifecycle belongs in the unified shell's module states (W3-01 item 3) — the
+        // surface that does not exist yet — and a one-off panel for it in this console would be a
+        // second implementation of that shell's job. Managed mode is off by default and FileOnly,
+        // so no operator reaches a state this route explains and the console does not.
+        ["/knowledge/engine"] = "UI GAP — the managed engine's lifecycle (starting / running / backoff / "
+            + "failed, with the reason). Belongs to the W3-01 shell's module states; attached mode, the "
+            + "default, has nothing to show here.",
     };
 
     /// <summary>Every route literal the API maps, normalised so `{id}` segments compare.</summary>

@@ -88,6 +88,16 @@ public static class EventTypes
     /// have had to distinguish the two by reading their metadata.</summary>
     public const string KnowledgeReviewProposed = "knowledge_review_proposed";
 
+    // W3-03 — the managed knowledge engine's lifecycle, for the operator's event log. Three states
+    // an operator acts on: it came up (ready), it fell over and is being restarted (crashed), or it
+    // is stopped and will not be restarted without them (failed, e.g. the restart ceiling or a
+    // configuration a restart cannot fix). "Starting" and "stopped-on-request" are not here on
+    // purpose: neither is something an operator needs a log row to act on, and the vocabulary is the
+    // events the system produces, not every state it passes through.
+    public const string KnowledgeEngineReady = "knowledge_engine_ready";
+    public const string KnowledgeEngineCrashed = "knowledge_engine_crashed";
+    public const string KnowledgeEngineFailed = "knowledge_engine_failed";
+
     public const string MissionContextResolved = "mission_context_resolved";
     public const string MissionEvaluated = "mission_evaluated";
     public const string MissionOutcome = "mission_outcome";

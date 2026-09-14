@@ -877,6 +877,59 @@ public sealed class AnthillConfig
     [ConfigKey(EnvOverride = "ANTHILL_KNOWLEDGE_DEFAULT_PROJECT")]
     [JsonPropertyName("knowledge_default_project")] public string KnowledgeDefaultProject { get; set; } = "";
 
+    // ---- Managed FORAGER engine (W3-03) --------------------------------------------------------
+    // Everything above configures ATTACHED mode: an operator runs FORAGER themselves and points the
+    // colony at its endpoint with a token they minted. These four keys add MANAGED mode, where the
+    // host starts the bundled engine, owns its data path, mints and injects its credential, and
+    // stops it -- the roadmap's "no separate terminal, no manual token copying" (W3-03).
+    //
+    // OFF BY DEFAULT, and that default is deliberate: attached mode is the supported arrangement
+    // through the migration, and turning a config toggle into "this process now spawns and owns a
+    // subprocess" is a decision with a real blast radius -- the same reason knowledge_forager_allow_remote
+    // is FileOnly. In managed mode the endpoint and token above are IGNORED: the endpoint is the
+    // loopback port the engine reports on startup, and the credential is one the host generates per
+    // start and writes to a file only it and the engine can read, never config.json.
+
+    /// <summary>
+    /// Whether the host starts and supervises its own FORAGER engine (managed mode) instead of
+    /// talking to one an operator runs (attached mode). Off by default. When on,
+    /// knowledge_forager_endpoint and knowledge_forager_token are not used -- the endpoint is
+    /// discovered from the engine's startup line and the credential is host-generated per start.
+    /// A supervised engine that will not start does NOT stop the colony booting; knowledge simply
+    /// reports as unavailable until it is up, the same as an unreachable attached engine.
+    /// </summary>
+    [ConfigKey(Security = ConfigSecurity.Safety, EnvOverride = "ANTHILL_KNOWLEDGE_FORAGER_MANAGED",
+        Summary = "start and supervise a bundled FORAGER engine instead of attaching to one an operator runs. Off by default; when on, knowledge_forager_endpoint/token are ignored and the host mints the credential")]
+    [JsonPropertyName("knowledge_forager_managed")] public bool KnowledgeForagerManaged { get; set; } = false;
+
+    /// <summary>
+    /// The Node runtime the managed engine runs under. Empty means "find `node` on PATH", which is
+    /// what a bundled self-contained package sets up. Managed mode only.
+    /// </summary>
+    [ConfigKey(Security = ConfigSecurity.Environment, EnvOverride = "ANTHILL_KNOWLEDGE_FORAGER_RUNTIME_PATH",
+        Summary = "path to the Node runtime the managed engine runs under; empty finds `node` on PATH. Managed mode only")]
+    [JsonPropertyName("knowledge_forager_runtime_path")] public string KnowledgeForagerRuntimePath { get; set; } = "";
+
+    /// <summary>
+    /// The FORAGER server entry the managed engine runs -- the bundled `server.mjs` (or
+    /// `dist/server/server/index.js` from source). Required when knowledge_forager_managed is on;
+    /// empty refuses to start the engine with a reason rather than guessing a path. The release
+    /// manifest (W2-06) will supply this for a packaged install; until it exists this names it.
+    /// </summary>
+    [ConfigKey(Security = ConfigSecurity.Environment, EnvOverride = "ANTHILL_KNOWLEDGE_FORAGER_ENTRY_PATH",
+        Summary = "path to the bundled FORAGER server entry (server.mjs). Required when knowledge_forager_managed is on. Managed mode only")]
+    [JsonPropertyName("knowledge_forager_entry_path")] public string KnowledgeForagerEntryPath { get; set; } = "";
+
+    /// <summary>
+    /// The data directory the managed engine owns (FORAGER_DATA_DIR). Empty defaults to
+    /// `<colony state>/forager-data`. This is the store whose one-writer lock and instance identity
+    /// the supervisor verifies; two colonies must never point a managed engine at one directory.
+    /// Managed mode only.
+    /// </summary>
+    [ConfigKey(Security = ConfigSecurity.Environment, EnvOverride = "ANTHILL_KNOWLEDGE_FORAGER_DATA_DIR",
+        Summary = "data directory the managed engine owns; empty defaults under the colony state directory. Managed mode only")]
+    [JsonPropertyName("knowledge_forager_data_dir")] public string KnowledgeForagerDataDir { get; set; } = "";
+
     /// <summary>
     /// Safety-profile overrides applied before the user's on-disk config is merged on top.
     /// Mirrors <c>_safety_profile_overrides</c> in the Python runtime: every shipped profile
