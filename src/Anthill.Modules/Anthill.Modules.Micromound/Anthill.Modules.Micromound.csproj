@@ -61,7 +61,7 @@
 
     This is the recorded compatible range. Both ends were observed rather than guessed at:
       MIN 0.9.10 — the ref ci.yml has been building green against.
-      MAX 0.9.44 — what a current working copy holds.
+      MAX 0.9.45 — the charter-expiry fix (R-01) is what this ANTHILL is built against.
     Neither end claims every version in between was tested. Moving either one is a deliberate act
     and goes together with re-running tests/Anthill.Tests.Micromound. See
     docs/transition/adr/ADR-001-dotnet-target-framework.md §5.
@@ -71,7 +71,7 @@
   -->
   <PropertyGroup>
     <MicromoundMinVersion>0.9.10</MicromoundMinVersion>
-    <MicromoundMaxVersion>0.9.44</MicromoundMaxVersion>
+    <MicromoundMaxVersion>0.9.45</MicromoundMaxVersion>
   </PropertyGroup>
 
   <Target Name="VerifyMicromoundCheckout"
