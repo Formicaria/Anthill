@@ -29,9 +29,9 @@ permissions:
 # ProjectReference, pinned in one place. Keep this value in step with ci.yml's — a release must
 # be built against the same contract CI proved green.
 env:
-  # v0.9.10, pinned by SHA not tag - a tag can be moved. Known-stale and deliberately so; the
-  # full reasoning and the staged next value live in ci.yml's env block. KEEP THE TWO IN SYNC.
-  MICROMOUND_REF: 213e6556f5199afcad1c91e0e790febcab4f8b92
+  # v0.9.45 on micromound main, pinned by SHA not tag - a tag can be moved. The reasoning, and
+  # the thirty-five releases it sat at v0.9.10, are in ci.yml's env block. KEEP THE TWO IN SYNC.
+  MICROMOUND_REF: 0aa1ea187303dc1cc012caa928ce98b37b1373cb
 
 jobs:
   verify-version:
