@@ -60,7 +60,8 @@
     which is the signal pointing backwards.
 
     This is the recorded compatible range. Both ends were observed rather than guessed at:
-      MIN 0.9.10 — the ref ci.yml has been building green against.
+      MIN 0.9.45 — the ref ci.yml builds against, and the floor of what was tested: nothing between
+                  0.9.10 and it ever was, and MissionStep.SettleSeconds is not in 0.9.10.
       MAX 0.9.45 — the charter-expiry fix (R-01) is what this ANTHILL is built against.
     Neither end claims every version in between was tested. Moving either one is a deliberate act
     and goes together with re-running tests/Anthill.Tests.Micromound. See
@@ -70,7 +71,7 @@
     deliberately testing an unreleased micromound. It is not for making a red build green.
   -->
   <PropertyGroup>
-    <MicromoundMinVersion>0.9.10</MicromoundMinVersion>
+    <MicromoundMinVersion>0.9.45</MicromoundMinVersion>
     <MicromoundMaxVersion>0.9.45</MicromoundMaxVersion>
   </PropertyGroup>
 
