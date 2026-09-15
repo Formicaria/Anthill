@@ -125,7 +125,12 @@ internal static class UpdateService
                 // A machine-wide install cannot be replaced without elevation by anybody, so it is
                 // told once, plainly, and left alone. This is the only prompt this class can raise
                 // on its own, and it exists because the alternative is silently doing nothing.
-                if (IsMachineWide(site))
+                //
+                // v0.3.8.152: the question is now answered by the detector, which decides it from
+                // the program directory alone. The copy that made this necessary — a pre-v0.3.8.149
+                // machine-wide install with no marker file — read as `WindowsPortable` here and was
+                // told it could update itself.
+                if (site.MachineWide)
                 {
                     owner.BeginInvoke(() => OfferMigration(owner, tray, latest, tag!, asset));
                     return;
@@ -347,17 +352,6 @@ internal static class UpdateService
     }
 
     /// <summary>An install under Program Files: replaceable only with elevation, by anyone.</summary>
-    private static bool IsMachineWide(InstallSite site)
-    {
-        if (site.Shape != InstallShape.WindowsInstalled) return false;
-        foreach (var folder in new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86 })
-        {
-            var root = Environment.GetFolderPath(folder);
-            if (!string.IsNullOrEmpty(root) && UpdateApplier.IsInside(site.ProgramDirectory, root)) return true;
-        }
-        return false;
-    }
-
     private readonly record struct Asset(string Name, string Url, string DigestUrl);
 
     private static (string? Latest, string? Tag, Asset? Asset) QueryLatest(InstallSite site)

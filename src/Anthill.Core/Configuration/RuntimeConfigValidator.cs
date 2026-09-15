@@ -65,10 +65,22 @@ public static class RuntimeConfigValidator
         // one feature's four keys rather than a combination across features.
         findings.AddRange(AnthillRuntime.MissionReplay.Validate());
 
+        // THE READING SCOPE COULD NOT BE PREPARED AT BOOT. v0.3.8.152.
+        //
+        // Reported at "error" rather than "warning" because, unlike the combinations above, this is
+        // not a configuration that merely cannot do what it claims — it is one the colony already
+        // TRIED to make work and was refused by the filesystem. It stays a finding rather than a
+        // refusal to boot for the reason this whole validator exists: an operator with a broken
+        // workspace path needs a running console to fix it in. Refusing the boot takes away the
+        // only tool that repairs the fault, which is what v0.3.8.151 and earlier did.
+        if (!string.IsNullOrEmpty(AnthillRuntime.AgentWorkspaceProblem))
+            Add("error", "agent_workspace_unusable", AnthillRuntime.AgentWorkspaceProblem);
+
         // Sandbox execution needs a usable workspace root.
         if (AnthillRuntime.EnableSandboxExecution
+            && string.IsNullOrEmpty(AnthillRuntime.AgentWorkspaceProblem)
             && (string.IsNullOrWhiteSpace(AnthillRuntime.AllowedWorkspaceRoot)
-                || !Directory.Exists(AnthillRuntime.AllowedWorkspaceRoot)))
+                || !Directory.Exists(AnthillRuntime.PathFromScript(AnthillRuntime.AllowedWorkspaceRoot))))
             Add("warning", "sandbox_without_workspace",
                 $"Sandbox execution is enabled but the workspace root "
                 + $"('{AnthillRuntime.AllowedWorkspaceRoot}') does not exist — every sandbox run will fall back.");
